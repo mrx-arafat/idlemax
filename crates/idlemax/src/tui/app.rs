@@ -1,0 +1,271 @@
+//! Delivery: dashboard state and key handling; turns keys into confirmed requests.
+
+use idlemax_core::protocol::ControlRequest;
+use idlemax_core::types::{ControlAction, ControlScope, RecommendationStatus, UnixMs};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::widgets::TableState;
+
+use super::feed::{Request, Snapshot, Update};
+
+const FLASH_MS: UnixMs = 6_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tab {
+    Devices,
+    Jobs,
+    Quota,
+    Advice,
+    Events,
+}
+
+impl Tab {
+    pub const ALL: [Tab; 5] = [
+        Tab::Devices,
+        Tab::Jobs,
+        Tab::Quota,
+        Tab::Advice,
+        Tab::Events,
+    ];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Tab::Devices => "Devices",
+            Tab::Jobs => "Jobs",
+            Tab::Quota => "Quota",
+            Tab::Advice => "Advice",
+            Tab::Events => "Events",
+        }
+    }
+
+    pub fn index(self) -> usize {
+        Tab::ALL.iter().position(|t| *t == self).unwrap_or(0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Confirm {
+    pub prompt: String,
+    pub request: Request,
+}
+
+#[derive(Debug, Clone)]
+pub struct Flash {
+    pub text: String,
+    pub error: bool,
+    pub at_ms: UnixMs,
+}
+
+#[derive(Debug)]
+pub struct App {
+    pub source: String,
+    pub tab: Tab,
+    pub data: Option<Snapshot>,
+    pub updated_ms: Option<UnixMs>,
+    pub fetch_error: Option<String>,
+    pub flash: Option<Flash>,
+    pub confirm: Option<Confirm>,
+    pub tables: [TableState; 5],
+    pub quit: bool,
+}
+
+impl App {
+    pub fn new(source: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            tab: Tab::Devices,
+            data: None,
+            updated_ms: None,
+            fetch_error: None,
+            flash: None,
+            confirm: None,
+            tables: Default::default(),
+            quit: false,
+        }
+    }
+
+    pub fn apply(&mut self, update: Update, now_ms: UnixMs) {
+        match update {
+            Update::Snapshot(snap, at) => {
+                self.data = Some(*snap);
+                self.updated_ms = Some(at);
+                self.fetch_error = None;
+                self.clamp_selections();
+            }
+            Update::FetchFailed(e) => self.fetch_error = Some(e),
+            Update::Done(text) => self.flash(format!("ok: {text}"), false, now_ms),
+            Update::Failed(text) => self.flash(text, true, now_ms),
+        }
+    }
+
+    /// Flash text still worth showing at `now_ms`.
+    pub fn live_flash(&self, now_ms: UnixMs) -> Option<&Flash> {
+        self.flash.as_ref().filter(|f| now_ms - f.at_ms < FLASH_MS)
+    }
+
+    pub fn rows(&self, tab: Tab) -> usize {
+        self.data.as_ref().map_or(0, |d| match tab {
+            Tab::Devices => d.status.devices.len(),
+            Tab::Jobs => d.jobs.len(),
+            Tab::Quota => d.quota.len(),
+            Tab::Advice => d.advice.len(),
+            Tab::Events => d.events.len(),
+        })
+    }
+
+    pub fn selected(&self, tab: Tab) -> Option<usize> {
+        self.tables[tab.index()]
+            .selected()
+            .filter(|i| *i < self.rows(tab))
+    }
+
+    /// Scope and label that p and r act on in the current tab.
+    pub fn target(&self) -> Option<(ControlScope, String)> {
+        let data = self.data.as_ref()?;
+        let sel = self.selected(self.tab);
+        match self.tab {
+            Tab::Devices => sel.map(|i| {
+                let id = data.status.devices[i].info.id.clone();
+                (ControlScope::Device(id.clone()), format!("device {id}"))
+            }),
+            Tab::Jobs => sel.map(|i| {
+                let id = data.jobs[i].id;
+                (ControlScope::Job(id), format!("job {id}"))
+            }),
+            Tab::Quota => sel.map(|i| {
+                let name = data.quota[i].account.clone();
+                (
+                    ControlScope::Account(name.clone()),
+                    format!("account {name}"),
+                )
+            }),
+            Tab::Advice | Tab::Events => Some((ControlScope::Global, "everything".into())),
+        }
+    }
+
+    pub fn on_key(&mut self, key: KeyEvent, now_ms: UnixMs) -> Option<Request> {
+        if let Some(confirm) = self.confirm.take() {
+            return match key.code {
+                KeyCode::Char('y' | 'Y') | KeyCode::Enter => Some(confirm.request),
+                _ => {
+                    self.flash("cancelled".into(), false, now_ms);
+                    None
+                }
+            };
+        }
+        let ctrl_c =
+            key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
+        match key.code {
+            _ if ctrl_c => self.quit = true,
+            KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
+            KeyCode::Tab | KeyCode::Right => self.switch(1),
+            KeyCode::BackTab | KeyCode::Left => self.switch(Tab::ALL.len() - 1),
+            KeyCode::Char(c @ '1'..='5') => self.tab = Tab::ALL[usize::from(c as u8 - b'1')],
+            KeyCode::Down => self.tables[self.tab.index()].select_next(),
+            KeyCode::Up => self.tables[self.tab.index()].select_previous(),
+            KeyCode::Char('p') => return self.control_target(ControlAction::Pause, now_ms),
+            KeyCode::Char('r') => return self.control_target(ControlAction::Resume, now_ms),
+            KeyCode::Char('P') => return Some(control(ControlScope::Global, ControlAction::Pause)),
+            KeyCode::Char('R') => {
+                return Some(control(ControlScope::Global, ControlAction::Resume))
+            }
+            KeyCode::Char('s') => self.ask(
+                "Stop ALL jobs on every device and hold new ones?".into(),
+                control(ControlScope::Global, ControlAction::StopAll),
+            ),
+            KeyCode::Char('k') => self.ask_cancel_job(now_ms),
+            KeyCode::Char('a') => return self.advice_action(true, now_ms),
+            KeyCode::Char('d') => return self.advice_action(false, now_ms),
+            KeyCode::Char('f') if self.tab == Tab::Advice => return Some(Request::RefreshAdvice),
+            _ => {}
+        }
+        self.clamp_selections();
+        None
+    }
+
+    fn switch(&mut self, step: usize) {
+        self.tab = Tab::ALL[(self.tab.index() + step) % Tab::ALL.len()];
+    }
+
+    fn ask(&mut self, prompt: String, request: Request) {
+        self.confirm = Some(Confirm { prompt, request });
+    }
+
+    fn flash(&mut self, text: String, error: bool, now_ms: UnixMs) {
+        self.flash = Some(Flash {
+            text,
+            error,
+            at_ms: now_ms,
+        });
+    }
+
+    fn control_target(&mut self, action: ControlAction, now_ms: UnixMs) -> Option<Request> {
+        match self.target() {
+            Some((scope, _)) => Some(control(scope, action)),
+            None => {
+                self.flash("select a row first".into(), true, now_ms);
+                None
+            }
+        }
+    }
+
+    fn ask_cancel_job(&mut self, now_ms: UnixMs) {
+        let job = (self.tab == Tab::Jobs)
+            .then(|| self.selected(Tab::Jobs))
+            .flatten()
+            .and_then(|i| self.data.as_ref().map(|d| &d.jobs[i]))
+            .filter(|j| !j.status.is_terminal())
+            .map(|j| (j.id, j.spec.name.clone()));
+        match job {
+            Some((id, name)) => {
+                self.ask(format!("Cancel job {id} ({name})?"), Request::CancelJob(id))
+            }
+            None => self.flash(
+                "k: select a queued or running job on the Jobs tab".into(),
+                true,
+                now_ms,
+            ),
+        }
+    }
+
+    fn advice_action(&mut self, accept: bool, now_ms: UnixMs) -> Option<Request> {
+        let rec = (self.tab == Tab::Advice)
+            .then(|| self.selected(Tab::Advice))
+            .flatten()
+            .and_then(|i| self.data.as_ref().map(|d| &d.advice[i]))
+            .filter(|r| r.status == RecommendationStatus::Open);
+        match (rec.map(|r| r.id), accept) {
+            (Some(id), true) => Some(Request::AcceptAdvice(id)),
+            (Some(id), false) => Some(Request::DismissAdvice(id)),
+            (None, _) => {
+                self.flash(
+                    "a/d: select open advice on the Advice tab".into(),
+                    true,
+                    now_ms,
+                );
+                None
+            }
+        }
+    }
+
+    /// Keeps every table selection on an existing row.
+    fn clamp_selections(&mut self) {
+        for tab in Tab::ALL {
+            let n = self.rows(tab);
+            let state = &mut self.tables[tab.index()];
+            let sel = match (n, state.selected()) {
+                (0, _) => None,
+                (_, None) => Some(0),
+                (n, Some(i)) => Some(i.min(n - 1)),
+            };
+            state.select(sel);
+        }
+    }
+}
+
+fn control(scope: ControlScope, action: ControlAction) -> Request {
+    Request::Control(ControlRequest {
+        scope,
+        action,
+        reason: Some("tui".into()),
+    })
+}

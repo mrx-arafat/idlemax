@@ -1,0 +1,260 @@
+//! Domain: AI quota accounts, windows and the spendable rules (pure; time is a parameter).
+//!
+//! Numbers come from 03-design-options.md and are estimates to tune after a week of data.
+
+mod rules;
+
+pub use rules::{is_limit_message, spendable, views, SpendContext};
+
+use serde::{Deserialize, Serialize};
+
+use crate::types::{ProbeSource, QuotaWindowKind, UnixMs};
+
+pub const MINUTE_MS: i64 = 60_000;
+pub const WEEK_MINUTES: u32 = 7 * 24 * 60;
+pub const ROLLING_RESERVE_PCT: f64 = 40.0;
+pub const WEEKLY_RESERVE_PCT: f64 = 30.0;
+/// Weekly reserve in the last 24 h before the weekly reset.
+pub const WEEKLY_FINAL_DAY_RESERVE_PCT: f64 = 15.0;
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct QuotaConfig {
+    pub accounts: Vec<AccountConfig>,
+}
+
+impl QuotaConfig {
+    pub fn account(&self, name: &str) -> Option<&AccountConfig> {
+        self.accounts.iter().find(|a| a.name == name)
+    }
+
+    pub fn validate(&self) -> Result<(), QuotaConfigError> {
+        let mut seen = std::collections::BTreeSet::new();
+        for account in &self.accounts {
+            let name_ok = account
+                .name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+            if account.name.is_empty() || account.name.starts_with('.') || !name_ok {
+                return Err(QuotaConfigError::InvalidName(account.name.clone()));
+            }
+            if !seen.insert(account.name.as_str()) {
+                return Err(QuotaConfigError::DuplicateAccount(account.name.clone()));
+            }
+            for w in &account.windows {
+                w.validate(&account.name)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum QuotaConfigError {
+    /// Names become file names (`quota-<name>.json`): letters, digits, `.`, `_`, `-`.
+    #[error("quota account name {0:?} must be non-empty letters, digits, '.', '_' or '-'")]
+    InvalidName(String),
+    #[error("quota account {0} is listed twice")]
+    DuplicateAccount(String),
+    #[error("quota account {account}: {field} must be within 0..=100, got {value}")]
+    PercentOutOfRange {
+        account: String,
+        field: &'static str,
+        value: f64,
+    },
+    #[error("quota account {0}: rolling window minutes must be > 0")]
+    ZeroMinutes(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Provider {
+    #[default]
+    Claude,
+    Codex,
+    Agy,
+    Api,
+}
+
+impl Provider {
+    /// CLI name used as the `interactive_use` key; API accounts have no CLI.
+    pub fn cli(self) -> Option<&'static str> {
+        match self {
+            Provider::Claude => Some("claude"),
+            Provider::Codex => Some("codex"),
+            Provider::Agy => Some("agy"),
+            Provider::Api => None,
+        }
+    }
+
+    fn default_probe(self) -> ProbeSource {
+        match self {
+            Provider::Claude => ProbeSource::ClaudeStatusline,
+            Provider::Codex => ProbeSource::CodexSessions,
+            Provider::Agy | Provider::Api => ProbeSource::Manual,
+        }
+    }
+
+    /// Windows assumed when the config lists none. Codex Pro reports only a weekly
+    /// window; a reported 5-hour window is added at evaluation time.
+    fn default_windows(self) -> Vec<WindowConfig> {
+        match self {
+            Provider::Claude | Provider::Agy => {
+                vec![
+                    WindowConfig::default_for(rolling_5h()),
+                    WindowConfig::default_for(QuotaWindowKind::Weekly),
+                ]
+            }
+            Provider::Codex => vec![WindowConfig::default_for(QuotaWindowKind::Weekly)],
+            Provider::Api => Vec::new(),
+        }
+    }
+}
+
+/// `[[quota.accounts]]` entry.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AccountConfig {
+    pub name: String,
+    pub provider: Provider,
+    /// Empty means the provider defaults.
+    pub windows: Vec<WindowConfig>,
+    /// None means the provider default (claude_statusline, codex_sessions, manual).
+    pub probe: Option<ProbeSource>,
+    /// Capture file, sessions dir or manual file; None means the probe's default path.
+    pub probe_path: Option<String>,
+}
+
+impl AccountConfig {
+    pub fn effective_probe(&self) -> ProbeSource {
+        self.probe.unwrap_or_else(|| self.provider.default_probe())
+    }
+
+    pub fn effective_windows(&self) -> Vec<WindowConfig> {
+        if self.windows.is_empty() {
+            self.provider.default_windows()
+        } else {
+            self.windows.clone()
+        }
+    }
+}
+
+/// TOML: `{ kind = "rolling", minutes = 300, reserve_pct = 40 }` or `{ kind = "weekly", reserve_pct = 30 }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WindowConfig {
+    #[serde(flatten)]
+    pub kind: QuotaWindowKind,
+    /// Percent kept back for interactive use.
+    pub reserve_pct: f64,
+    /// Weekly windows: reserve in the last 24 h before reset.
+    #[serde(default)]
+    pub final_day_reserve_pct: Option<f64>,
+}
+
+impl WindowConfig {
+    pub fn default_for(kind: QuotaWindowKind) -> Self {
+        match kind {
+            QuotaWindowKind::Rolling { .. } => Self {
+                kind,
+                reserve_pct: ROLLING_RESERVE_PCT,
+                final_day_reserve_pct: None,
+            },
+            QuotaWindowKind::Weekly => Self {
+                kind,
+                reserve_pct: WEEKLY_RESERVE_PCT,
+                final_day_reserve_pct: Some(WEEKLY_FINAL_DAY_RESERVE_PCT),
+            },
+        }
+    }
+
+    fn validate(&self, account: &str) -> Result<(), QuotaConfigError> {
+        if self.kind == (QuotaWindowKind::Rolling { minutes: 0 }) {
+            return Err(QuotaConfigError::ZeroMinutes(account.to_string()));
+        }
+        let pcts = [
+            ("reserve_pct", Some(self.reserve_pct)),
+            ("final_day_reserve_pct", self.final_day_reserve_pct),
+        ];
+        for (field, value) in pcts {
+            if let Some(v) = value.filter(|v| !(0.0..=100.0).contains(v)) {
+                return Err(QuotaConfigError::PercentOutOfRange {
+                    account: account.to_string(),
+                    field,
+                    value: v,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn rolling_5h() -> QuotaWindowKind {
+    QuotaWindowKind::Rolling { minutes: 300 }
+}
+
+/// Window length in minutes; weekly is 7 days.
+pub fn window_minutes(kind: QuotaWindowKind) -> u32 {
+    match kind {
+        QuotaWindowKind::Rolling { minutes } => minutes,
+        QuotaWindowKind::Weekly => WEEK_MINUTES,
+    }
+}
+
+/// Maps a provider-reported window length to a kind (Codex `window_minutes`).
+pub fn window_from_minutes(minutes: u32) -> QuotaWindowKind {
+    if minutes >= WEEK_MINUTES {
+        QuotaWindowKind::Weekly
+    } else {
+        QuotaWindowKind::Rolling { minutes }
+    }
+}
+
+/// Short display name: "5h", "90m", "weekly".
+pub fn window_label(kind: QuotaWindowKind) -> String {
+    match kind {
+        QuotaWindowKind::Weekly => "weekly".into(),
+        QuotaWindowKind::Rolling { minutes } if minutes % 60 == 0 => format!("{}h", minutes / 60),
+        QuotaWindowKind::Rolling { minutes } => format!("{minutes}m"),
+    }
+}
+
+/// How much the evaluator trusts a window's data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowState {
+    /// Fresh snapshot, window running.
+    Active,
+    /// Rolling window not running (none reported or its reset passed): nothing used.
+    NotStarted,
+    /// Newest snapshot is older than the freshness limit.
+    Stale,
+    /// Weekly window reset since the last snapshot; waiting for fresh data.
+    ResetPending,
+    #[default]
+    NoData,
+}
+
+/// GET /v1/quota row: one account window. `spendable` and `reasons` are the
+/// account-level verdict, repeated on every row of that account.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct QuotaView {
+    pub account: String,
+    pub provider: Provider,
+    /// None only on the single row of an account with no windows.
+    pub window: Option<QuotaWindowKind>,
+    pub state: WindowState,
+    pub used_pct: Option<f64>,
+    /// Reserve in force now (the weekly final-day reserve applies near reset).
+    pub reserve_pct: f64,
+    /// Spendable percent above the reserve; 0 when the data is not trusted.
+    pub headroom_pct: f64,
+    pub resets_at_ms: Option<UnixMs>,
+    pub snapshot_ms: Option<UnixMs>,
+    pub source: Option<ProbeSource>,
+    pub spendable: bool,
+    /// Why the account is or is not spendable.
+    pub reasons: Vec<String>,
+    /// Evaluation time.
+    pub at_ms: UnixMs,
+}

@@ -1,0 +1,19 @@
+# MVP job 2: nightly repo health (clippy, tests, audit) for one repo, one repo per job.
+# Copy this file per repo and change the name and the path argument.
+# cpu_heavy keeps it off the server; the Mac guard runs it only when idle, on AC and not swapping.
+# Queue it: idlemax job add examples/jobs/repo-health-project-a.toml
+name = "repo-health-project-a"
+command = ["/home/you/idlemax/examples/scripts/repo-health.sh", "/home/you/src/project-a"]
+cost = "cpu_heavy"
+requires = ["cargo", "git"]
+devices = ["my-laptop"]
+priority = 3
+# The whole macos_laptop RAM budget: nothing else runs beside a Rust build.
+mem_mb = 1024
+max_runtime_secs = 1500
+# Kill rather than SIGSTOP: a stopped cargo holds the target dir lock and blocks your builds.
+on_user_active = "kill"
+
+[env]
+CARGO_BUILD_JOBS = "2"
+CARGO_TERM_COLOR = "never"

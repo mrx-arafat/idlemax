@@ -1,0 +1,58 @@
+# idlemax coordinator (job queue, leases, quota ledger, HTTP API, dashboard).
+# Runs on the server next to production sites, so it is capped hard.
+# Bind it to the tailnet IP in $IDLEMAX_HOME/config.toml, never a public address.
+# Install: see README "Install on Linux".
+
+[Unit]
+Description=idlemax coordinator
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=idlemax
+Group=idlemax
+Environment=IDLEMAX_HOME=/var/lib/idlemax
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/idlemax coord
+# The tailnet IP may not exist yet at boot; retry instead of giving up.
+Restart=on-failure
+RestartSec=10
+
+# Caps from docs/PLAN.md: never starve the sites on this box.
+MemoryHigh=192M
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=20%
+CPUWeight=10
+IOWeight=10
+Nice=10
+TasksMax=64
+
+# Hardening: write access only to the state dir.
+StateDirectory=idlemax
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

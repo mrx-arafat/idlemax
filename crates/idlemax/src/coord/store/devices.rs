@@ -1,0 +1,200 @@
+//! Device registry, last heartbeat state and per-minute metrics history (adapter).
+
+use std::collections::BTreeMap;
+
+use idlemax_core::protocol::{DeviceView, Heartbeat};
+use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
+use rusqlite::{params, Connection, OptionalExtension, Row};
+
+use super::{
+    json_col, json_text, opt_json_col, u64_from_sql, u64_to_sql, Store, StoreError, StoreResult,
+};
+
+/// One device minute folded from its heartbeats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetricsMinute {
+    pub device: DeviceId,
+    pub minute_ms: UnixMs,
+    pub samples: u32,
+    pub cpu_busy_pct_avg: f64,
+    pub load_avg_1m_max: f64,
+    pub mem_free_pct_min: f64,
+    pub mem_available_bytes_min: u64,
+    pub swap_used_bytes_max: u64,
+    pub disk_free_bytes_min: u64,
+    /// Lowest idle reading in the minute: high means idle the whole minute.
+    pub user_idle_secs_min: Option<u64>,
+    /// False when any sample in the minute was on battery.
+    pub on_ac_power: Option<bool>,
+    pub running_jobs_max: u32,
+    /// Worst `GuardAction::severity` in the minute.
+    pub guard_severity_max: u8,
+}
+
+const MINUTE_MS: i64 = 60_000;
+
+const UPSERT_DEVICE: &str = "
+INSERT INTO devices (id, info, first_seen_ms, last_seen_ms, metrics, guard, running,
+                     interactive_use, local_paused)
+VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8)
+ON CONFLICT (id) DO UPDATE SET
+  info = excluded.info, last_seen_ms = excluded.last_seen_ms, metrics = excluded.metrics,
+  guard = excluded.guard, running = excluded.running,
+  interactive_use = excluded.interactive_use, local_paused = excluded.local_paused";
+
+// SET expressions read the row before the update, so `samples` is the old count.
+const FOLD_MINUTE: &str = "
+INSERT INTO metrics_minute (device, minute_ms, samples, cpu_busy_pct_avg, load_avg_1m_max,
+  mem_free_pct_min, mem_available_bytes_min, swap_used_bytes_max, disk_free_bytes_min,
+  user_idle_secs_min, on_ac_power, running_jobs_max, guard_severity_max)
+VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+ON CONFLICT (device, minute_ms) DO UPDATE SET
+  samples = samples + 1,
+  cpu_busy_pct_avg = (cpu_busy_pct_avg * samples + excluded.cpu_busy_pct_avg) / (samples + 1),
+  load_avg_1m_max = max(load_avg_1m_max, excluded.load_avg_1m_max),
+  mem_free_pct_min = min(mem_free_pct_min, excluded.mem_free_pct_min),
+  mem_available_bytes_min = min(mem_available_bytes_min, excluded.mem_available_bytes_min),
+  swap_used_bytes_max = max(swap_used_bytes_max, excluded.swap_used_bytes_max),
+  disk_free_bytes_min = min(disk_free_bytes_min, excluded.disk_free_bytes_min),
+  user_idle_secs_min = coalesce(min(user_idle_secs_min, excluded.user_idle_secs_min),
+                                user_idle_secs_min, excluded.user_idle_secs_min),
+  on_ac_power = coalesce(min(on_ac_power, excluded.on_ac_power),
+                         on_ac_power, excluded.on_ac_power),
+  running_jobs_max = max(running_jobs_max, excluded.running_jobs_max),
+  guard_severity_max = max(guard_severity_max, excluded.guard_severity_max)";
+
+impl Store {
+    /// Stores the device's latest state, folds its metrics into the current minute and
+    /// records its quota snapshots. Returns the previous `last_seen_ms` (None when new).
+    pub fn record_heartbeat(&mut self, hb: &Heartbeat, now: UnixMs) -> StoreResult<Option<UnixMs>> {
+        let id = &hb.device.id;
+        if id.trim().is_empty() {
+            return Err(StoreError::Invalid("heartbeat device id is empty".into()));
+        }
+        let tx = self.conn.transaction()?;
+        let previous = tx
+            .query_row(
+                "SELECT last_seen_ms FROM devices WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        tx.prepare_cached(UPSERT_DEVICE)?.execute(params![
+            id,
+            json_text(&hb.device)?,
+            now,
+            json_text(&hb.metrics)?,
+            json_text(&hb.guard)?,
+            json_text(&hb.running)?,
+            json_text(&hb.interactive_use)?,
+            hb.local_paused,
+        ])?;
+        fold_minute(&tx, hb, now)?;
+        super::quota::insert_snapshots(&tx, &hb.quota)?;
+        tx.commit()?;
+        Ok(previous)
+    }
+
+    /// Every known device. Online means a heartbeat within `offline_after_ms` of `now`;
+    /// paused means a Global or Device control is in effect.
+    pub fn devices(&self, now: UnixMs, offline_after_ms: i64) -> StoreResult<Vec<DeviceView>> {
+        let paused = self.paused_scopes()?;
+        let global = paused.contains(&ControlScope::Global);
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT info, last_seen_ms, metrics, guard, running, local_paused
+             FROM devices ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], device_from_row)?;
+        rows.map(|row| {
+            let mut view = row?;
+            view.online = now.saturating_sub(view.last_seen_ms) <= offline_after_ms;
+            view.paused = global || paused.contains(&ControlScope::Device(view.info.id.clone()));
+            Ok(view)
+        })
+        .collect()
+    }
+
+    /// Newest interactive use per CLI name across all devices, sorted by name.
+    pub fn interactive_use(&self) -> StoreResult<Vec<(String, UnixMs)>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT interactive_use FROM devices")?;
+        let lists = stmt.query_map([], |r| json_col::<Vec<(String, UnixMs)>>(r, 0))?;
+        let mut newest: BTreeMap<String, UnixMs> = BTreeMap::new();
+        for list in lists {
+            for (cli, at) in list? {
+                let slot = newest.entry(cli).or_insert(at);
+                *slot = (*slot).max(at);
+            }
+        }
+        Ok(newest.into_iter().collect())
+    }
+
+    /// Minute rows for one device from `since_ms` on, oldest first.
+    pub fn metrics_minutes(
+        &self,
+        device: &str,
+        since_ms: UnixMs,
+    ) -> StoreResult<Vec<MetricsMinute>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT device, minute_ms, samples, cpu_busy_pct_avg, load_avg_1m_max,
+               mem_free_pct_min, mem_available_bytes_min, swap_used_bytes_max,
+               disk_free_bytes_min, user_idle_secs_min, on_ac_power, running_jobs_max,
+               guard_severity_max
+             FROM metrics_minute WHERE device = ?1 AND minute_ms >= ?2 ORDER BY minute_ms",
+        )?;
+        let rows = stmt.query_map(params![device, since_ms], minute_from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+}
+
+fn fold_minute(conn: &Connection, hb: &Heartbeat, now: UnixMs) -> StoreResult<()> {
+    let m = &hb.metrics;
+    let running = i64::try_from(hb.running.len()).unwrap_or(i64::MAX);
+    conn.prepare_cached(FOLD_MINUTE)?.execute(params![
+        hb.device.id,
+        now - now.rem_euclid(MINUTE_MS),
+        m.cpu_busy_pct,
+        m.load_avg_1m,
+        m.mem_free_pct,
+        u64_to_sql(m.mem_available_bytes),
+        u64_to_sql(m.swap_used_bytes),
+        u64_to_sql(m.disk_free_bytes),
+        m.user_idle_secs.map(u64_to_sql),
+        m.on_ac_power,
+        running,
+        hb.guard.action.severity(),
+    ])?;
+    Ok(())
+}
+
+fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
+    Ok(DeviceView {
+        info: json_col(r, 0)?,
+        last_seen_ms: r.get(1)?,
+        metrics: opt_json_col(r, 2)?,
+        guard: opt_json_col(r, 3)?,
+        running: json_col(r, 4)?,
+        local_paused: r.get(5)?,
+        online: false,
+        paused: false,
+    })
+}
+
+fn minute_from_row(r: &Row<'_>) -> rusqlite::Result<MetricsMinute> {
+    Ok(MetricsMinute {
+        device: r.get(0)?,
+        minute_ms: r.get(1)?,
+        samples: r.get(2)?,
+        cpu_busy_pct_avg: r.get(3)?,
+        load_avg_1m_max: r.get(4)?,
+        mem_free_pct_min: r.get(5)?,
+        mem_available_bytes_min: u64_from_sql(r.get(6)?),
+        swap_used_bytes_max: u64_from_sql(r.get(7)?),
+        disk_free_bytes_min: u64_from_sql(r.get(8)?),
+        user_idle_secs_min: r.get::<_, Option<i64>>(9)?.map(u64_from_sql),
+        on_ac_power: r.get(10)?,
+        running_jobs_max: r.get(11)?,
+        guard_severity_max: r.get(12)?,
+    })
+}

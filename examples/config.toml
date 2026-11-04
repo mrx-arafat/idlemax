@@ -1,0 +1,51 @@
+# idlemax config for the Mac (agent). Copy to ~/.idlemax/config.toml after `idlemax init`.
+# Every key is optional; anything left out uses the built-in default shown in the comment.
+# The server has its own file: examples/config.server.toml.
+
+[coordinator]
+# Where this agent and the CLI reach the coordinator: the server over the tailnet.
+url = "http://100.64.0.10:7878"
+
+[agent]
+# Device id used in job specs' `devices`; defaults to the hostname.
+device_id = "my-laptop"
+# Guard preset: macos_laptop (default on macOS) or linux_server.
+profile = "macos_laptop"
+# Local agent API, always loopback: `idlemax local status|stop-all|resume`.
+listen = "127.0.0.1:7879"
+sample_secs = 30
+heartbeat_secs = 30
+# AI accounts this device may spend: only where you logged in to the CLIs yourself.
+ai_accounts = ["claude-max", "codex-pro"]
+# argv[0] values a job may run. Empty allows nothing.
+command_allowlist = [
+  "/home/you/idlemax/examples/scripts/kb-refresh.sh",
+  "/home/you/idlemax/examples/scripts/index-refresh.sh",
+  "/home/you/idlemax/examples/scripts/repo-health.sh",
+  "/home/you/idlemax/examples/scripts/pr-review-drafts.sh",
+]
+
+# Overrides on top of the profile preset (docs/PLAN.md "Guard presets"); unknown keys are errors.
+[guard]
+# load_1m_pause = 6.0
+# user_idle_min_secs = 600
+# mem_free_pct_pause = 30.0
+
+# Keep the accounts identical on every device and on the coordinator.
+# Windows left out use the provider defaults (reserve 40% per 5-hour window, 30% weekly,
+# 15% in the last 24 h before the weekly reset).
+[[quota.accounts]]
+name = "claude-max"
+provider = "claude"
+probe = "claude_statusline"
+windows = [
+  { kind = "rolling", minutes = 300, reserve_pct = 40.0 },
+  { kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 },
+]
+
+[[quota.accounts]]
+name = "codex-pro"
+provider = "codex"
+probe = "codex_sessions"
+# Codex Pro reports only the weekly window.
+windows = [{ kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 }]

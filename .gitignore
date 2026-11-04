@@ -1,0 +1,8 @@
+target/
+.idlemax-dev/
+
+# internal build orchestration notes (kept local)
+docs/PLAN.md
+docs/status/
+docs/contract-requests.md
+docs/CONTRACT_READY

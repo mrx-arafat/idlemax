@@ -1,0 +1,15 @@
+# MVP job 1b: incremental CodeGraph sync of the active repos.
+# Queue it: idlemax job add examples/jobs/index-refresh.toml
+name = "index-refresh"
+command = ["/home/you/idlemax/examples/scripts/index-refresh.sh"]
+cost = "cpu_heavy"
+requires = ["codegraph"]
+devices = ["my-laptop"]
+priority = 2
+mem_mb = 768
+max_runtime_secs = 1800
+# Kill rather than SIGSTOP: a stopped sync would hold the index lock that interactive sessions use.
+on_user_active = "kill"
+
+[env]
+REPOS = "/home/you/src/project-a /home/you/src/project-b"

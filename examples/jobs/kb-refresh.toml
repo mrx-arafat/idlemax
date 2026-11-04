@@ -1,0 +1,15 @@
+# MVP job 1a: fast-forward a notes or knowledge-base repo and report what changed.
+# Queue it: idlemax job add examples/jobs/kb-refresh.toml
+name = "kb-refresh"
+command = ["/home/you/idlemax/examples/scripts/kb-refresh.sh"]
+cost = "cpu_light"
+requires = ["git"]
+devices = ["my-laptop"]
+priority = 4
+mem_mb = 384
+max_runtime_secs = 1800
+# Kill rather than SIGSTOP: a stopped job would hold the repo's git lock.
+on_user_active = "kill"
+
+[env]
+KB_DIR = "/home/you/notes"

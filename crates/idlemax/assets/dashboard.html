@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>idlemax</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230f6b66'/%3E%3Cpath d='M5 4h2v8H5zM9 4h2v8H9z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --panel-2: #f8f9fa;
+  --ink: #16191d;
+  --muted: #5c6570;
+  --faint: #6b747e;
+  --line: #e0e4e9;
+  --line-strong: #c9cfd6;
+  --accent: #0f6b66;
+  --accent-ink: #ffffff;
+  --ok: #17663f;
+  --ok-bg: #e3f3ea;
+  --warn: #855400;
+  --warn-bg: #fbefd5;
+  --bad: #b0261c;
+  --bad-bg: #fbe7e4;
+  --info: #24529f;
+  --info-bg: #e6edfa;
+  --neutral-bg: #eaedf1;
+  --focus: #2d6fd6;
+  --radius: 8px;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0e1013;
+    --panel: #16191e;
+    --panel-2: #1b1f25;
+    --ink: #e6e9ed;
+    --muted: #9ba4ae;
+    --faint: #808993;
+    --line: #272c33;
+    --line-strong: #363c45;
+    --accent: #3cb3a9;
+    --accent-ink: #071413;
+    --ok: #55c48e;
+    --ok-bg: #12301f;
+    --warn: #e2ac43;
+    --warn-bg: #33270e;
+    --bad: #f17b70;
+    --bad-bg: #3a1613;
+    --info: #80a9ef;
+    --info-bg: #14223a;
+    --neutral-bg: #232830;
+    --focus: #6ea2f5;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.num, .mono { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+[hidden] { display: none !important; }
+
+/* Header */
+.top {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.top-in {
+  max-width: 1320px; margin: 0 auto; padding: 10px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+}
+.brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+.brand h1 { font-size: 17px; margin: 0; letter-spacing: 0.01em; }
+.brand .ver { font-size: 12px; color: var(--faint); }
+.updated { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--panel); color: var(--ink);
+  cursor: pointer; white-space: nowrap; font-size: 13px; font-weight: 500;
+}
+.btn:hover { background: var(--panel-2); }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line-strong)); }
+.btn.danger:hover { background: var(--bad-bg); }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--ink); background: var(--panel-2); }
+
+/* Badges */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 7px; border-radius: 10px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+  background: var(--neutral-bg); color: var(--muted); white-space: nowrap;
+}
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.badge.bad { background: var(--bad-bg); color: var(--bad); }
+.badge.info { background: var(--info-bg); color: var(--info); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* Layout */
+main { max-width: 1320px; margin: 0 auto; padding: 16px; }
+.banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 10px 14px; margin-bottom: 14px;
+  border-radius: var(--radius); border: 1px solid; font-weight: 500;
+}
+.banner.warn { background: var(--warn-bg); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.banner.bad { background: var(--bad-bg); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font-size: 22px; font-weight: 600; line-height: 1.2; margin-top: 2px; }
+.tile .v.bad { color: var(--bad); }
+.tile .v.warn { color: var(--warn); }
+.grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1080px) { .grid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
+.col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+
+/* Cards */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.card-h {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+}
+.card-h h2 { font-size: 13.5px; margin: 0 auto 0 0; font-weight: 650; }
+.card-b { padding: 12px 14px; }
+.card-b.flush { padding: 0; }
+.empty { color: var(--muted); padding: 14px; text-align: center; font-size: 13px; }
+.err { color: var(--bad); padding: 10px 14px; font-size: 13px; }
+
+/* Devices */
+.devices { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.dev { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--panel-2); min-width: 0; }
+.dev-h { display: flex; align-items: flex-start; gap: 8px; }
+.dev-h .name { font-weight: 650; overflow-wrap: anywhere; }
+.dev-h .sub { font-size: 12px; color: var(--muted); }
+.dev-h .badges { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.guard { margin: 10px 0 0; font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.reasons { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.reasons li { overflow-wrap: anywhere; }
+.reasons li::before { content: "- "; color: var(--faint); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; margin-top: 10px; }
+.stat .k { font-size: 11px; color: var(--muted); }
+.stat .v { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev-jobs { margin-top: 10px; font-size: 12.5px; display: grid; gap: 4px; }
+.dev-jobs .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dev-jobs .row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-a { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+/* Tables */
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--panel-2); white-space: nowrap; }
+th:first-child, td:first-child { padding-left: 14px; }
+th:last-child, td:last-child { padding-right: 14px; }
+tbody tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+td .t2 { font-size: 12px; color: var(--muted); margin-top: 1px; overflow-wrap: anywhere; }
+td.acts { white-space: nowrap; text-align: right; }
+td.acts .btn + .btn { margin-left: 4px; }
+.job-name { font-weight: 600; overflow-wrap: anywhere; }
+select {
+  height: 28px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--panel); font-size: 12.5px;
+}
+
+/* Quota */
+.acct + .acct { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.acct-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.acct-h .name { font-weight: 650; margin-right: auto; }
+.win { margin-top: 10px; }
+.win-h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; font-size: 12.5px; }
+.meter { position: relative; height: 8px; border-radius: 4px; background: var(--neutral-bg); margin-top: 5px; overflow: hidden; }
+.meter > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 4px; }
+.meter > span.warn { background: var(--warn); }
+.meter > span.bad { background: var(--bad); }
+.meter > i { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--ink); opacity: 0.55; }
+.win .reasons { margin-top: 4px; }
+
+/* Advice */
+.adv + .adv { border-top: 1px solid var(--line); }
+.adv { padding: 12px 14px; }
+.adv-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.adv-h .title { font-weight: 650; flex: 1 1 200px; overflow-wrap: anywhere; }
+.adv p { margin: 6px 0 0; color: var(--ink); overflow-wrap: anywhere; }
+.adv .meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.adv details { margin-top: 6px; font-size: 12.5px; }
+.adv summary { cursor: pointer; color: var(--muted); }
+.adv ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.adv li { overflow-wrap: anywhere; }
+.adv .sugg { margin-top: 8px; font-size: 12.5px; padding: 8px 10px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.adv-a { display: flex; gap: 6px; margin-top: 10px; }
+.adv.closed { opacity: 0.7; }
+
+/* Events */
+.ev { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 2px 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.ev:last-child { border-bottom: 0; }
+.ev .when { color: var(--muted); }
+.ev .what { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.ev .msg { grid-column: 2; overflow-wrap: anywhere; }
+
+/* Login */
+.login { max-width: 420px; margin: 12vh auto 0; padding: 0 16px; }
+.login .card-b { display: grid; gap: 10px; }
+.login label { font-size: 13px; color: var(--muted); }
+.login input {
+  height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--panel); width: 100%;
+}
+.login code { font-family: var(--mono); font-size: 12px; background: var(--neutral-bg); padding: 1px 5px; border-radius: 4px; }
+.login .err { padding: 0; }
+
+/* Dialog and toasts */
+dialog {
+  border: 1px solid var(--line-strong); border-radius: 10px; padding: 0;
+  background: var(--panel); color: var(--ink); width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+dialog::backdrop { background: rgba(10, 12, 15, 0.45); }
+dialog .card-b p { margin: 0; }
+dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14px 14px; }
+.toasts { position: fixed; right: 16px; bottom: 16px; left: 16px; display: grid; justify-items: end; gap: 8px; pointer-events: none; z-index: 20; }
+.toast {
+  pointer-events: auto; max-width: min(420px, 100%);
+  padding: 9px 12px; border-radius: 8px; font-size: 13px;
+  background: var(--ink); color: var(--panel); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.toast.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
+
+@media (max-width: 560px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .btn { height: 40px; }
+  .btn.sm { height: 36px; padding: 0 12px; }
+  select { height: 36px; }
+  .top-in { padding: 8px 16px; }
+  .actions { width: 100%; }
+}
+</style>
+</head>
+<body>
+<noscript><p style="padding:16px">The idlemax dashboard needs JavaScript.</p></noscript>
+
+<section class="login" id="login" hidden>
+  <div class="card">
+    <div class="card-h"><h2>Connect to idlemax</h2></div>
+    <form class="card-b" id="login-form" autocomplete="off">
+      <label for="token-input">Paste the token from <code>$IDLEMAX_HOME/token</code> on the coordinator.</label>
+      <input id="token-input" type="password" spellcheck="false" autocapitalize="off" required>
+      <div class="err" id="login-err" role="alert" hidden></div>
+      <div><button class="btn primary" type="submit">Connect</button></div>
+    </form>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="top-in">
+      <div class="brand"><h1>idlemax</h1><span class="ver" id="ver"></span><span id="cluster-badge"></span></div>
+      <span class="updated" id="updated" aria-live="polite"></span>
+      <div class="actions">
+        <button class="btn" type="button" id="btn-refresh">Refresh</button>
+        <button class="btn" type="button" id="btn-pause">Pause all</button>
+        <button class="btn" type="button" id="btn-resume">Resume all</button>
+        <button class="btn danger" type="button" id="btn-stop">Stop all</button>
+        <button class="btn ghost" type="button" id="btn-logout" title="Forget the token in this browser">Forget token</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="banners"></div>
+    <div class="tiles" id="tiles"></div>
+    <div class="grid">
+      <div class="col">
+        <section class="card" aria-labelledby="h-devices">
+          <div class="card-h"><h2 id="h-devices">Devices</h2></div>
+          <div class="card-b" id="devices"></div>
+        </section>
+        <section class="card" aria-labelledby="h-jobs">
+          <div class="card-h">
+            <h2 id="h-jobs">Jobs</h2>
+            <label class="muted" for="job-filter" style="font-size:12px">Status</label>
+            <select id="job-filter">
+              <option value="">All</option>
+              <option>queued</option><option>leased</option><option>running</option><option>paused</option>
+              <option>succeeded</option><option>failed</option><option>killed</option><option>cancelled</option><option>parked</option>
+            </select>
+          </div>
+          <div class="card-b flush" id="jobs"></div>
+        </section>
+      </div>
+      <div class="col">
+        <section class="card" aria-labelledby="h-advice">
+          <div class="card-h">
+            <h2 id="h-advice">Advice</h2>
+            <button class="btn sm" type="button" id="btn-advice-refresh">Re-run advisor</button>
+          </div>
+          <div class="card-b flush" id="advice"></div>
+        </section>
+        <section class="card" aria-labelledby="h-quota">
+          <div class="card-h"><h2 id="h-quota">AI quota</h2></div>
+          <div class="card-b" id="quota"></div>
+        </section>
+        <section class="card" aria-labelledby="h-events">
+          <div class="card-h"><h2 id="h-events">Events</h2></div>
+          <div class="card-b flush" id="events"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <div class="card-h"><h2 id="confirm-title">Confirm</h2></div>
+  <div class="card-b"><p id="confirm-text"></p></div>
+  <div class="foot">
+    <button class="btn" type="button" id="confirm-no">Cancel</button>
+    <button class="btn primary" type="button" id="confirm-yes">Confirm</button>
+  </div>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+"use strict";
+
+const POLL_MS = 5000;
+const TOKEN_KEY = "idlemax.token";
+const ACTIVE = new Set(["leased", "running", "paused"]);
+const TERMINAL = new Set(["succeeded", "failed", "killed", "cancelled", "parked"]);
+
+// Token: localStorage when available, memory otherwise.
+let memToken = "";
+const tokenStore = {
+  get() { try { return localStorage.getItem(TOKEN_KEY) || memToken; } catch (_) { return memToken; } },
+  set(v) {
+    memToken = v;
+    try { if (v) localStorage.setItem(TOKEN_KEY, v); else localStorage.removeItem(TOKEN_KEY); } catch (_) { /* private mode */ }
+  },
+};
+
+// DOM helper. Children are appended as text nodes, never parsed as HTML.
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : String(v));
+    }
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    el.append(kid instanceof Node ? kid : String(kid));
+  }
+  return el;
+}
+const $ = (id) => document.getElementById(id);
+
+// Formatting.
+function fmtBytes(b) {
+  if (b == null || !isFinite(b)) return "-";
+  const gib = b / 1073741824;
+  if (gib >= 1) return `${gib.toFixed(gib >= 100 ? 0 : 1)} GiB`;
+  return `${Math.round(b / 1048576)} MiB`;
+}
+function fmtPct(p, digits = 0) { return p == null || !isFinite(p) ? "-" : `${Number(p).toFixed(digits)}%`; }
+function fmtDur(secs) {
+  if (secs == null || !isFinite(secs)) return "-";
+  secs = Math.max(0, Math.round(secs));
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  if (m < 60) return `${m}m`;
+  const hr = Math.floor(m / 60);
+  if (hr < 48) return m % 60 ? `${hr}h ${m % 60}m` : `${hr}h`;
+  return `${Math.floor(hr / 24)}d ${hr % 24}h`;
+}
+function fmtAgo(ms) {
+  if (!ms) return "-";
+  const d = (Date.now() - ms) / 1000;
+  if (Math.abs(d) < 5) return "now";
+  return d > 0 ? `${fmtDur(d)} ago` : `in ${fmtDur(-d)}`;
+}
+function fmtTime(ms) {
+  if (!ms) return "";
+  const t = new Date(ms);
+  return t.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+}
+function clock(ms) {
+  if (!ms) return "-";
+  const t = new Date(ms);
+  const sameDay = t.toDateString() === new Date().toDateString();
+  return sameDay
+    ? t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+    : t.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function when(ms) { return h("span", { class: "num", title: fmtTime(ms) }, fmtAgo(ms)); }
+const label = (s) => String(s || "").replace(/_/g, " ");
+
+const JOB_TONE = { queued: "", leased: "info", running: "info", paused: "warn", succeeded: "ok", failed: "bad", killed: "bad", cancelled: "", parked: "warn" };
+const GUARD_TONE = { run: "ok", hold: "", pause: "warn", kill: "bad" };
+const KIND_TONE = { assign: "info", do: "info", fix: "bad", follow_up: "", warn: "warn" };
+function badge(text, tone, dot) { return h("span", { class: `badge ${tone || ""}` }, dot ? h("span", { class: "dot" }) : null, text); }
+function jobBadge(status) { return badge(label(status), JOB_TONE[status]); }
+function guardText(action) {
+  if (!action) return "unknown";
+  if (action.kind === "run") return `run, ${action.slots} slot${action.slots === 1 ? "" : "s"}, ${action.mem_mib} MiB`;
+  return action.kind;
+}
+
+// API.
+class AuthError extends Error {}
+async function api(method, path, body) {
+  const headers = { Authorization: `Bearer ${tokenStore.get()}`, Accept: "application/json" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, {
+    method, headers, cache: "no-store",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data = null;
+  if (text) { try { data = JSON.parse(text); } catch (_) { data = null; } }
+  const msg = (data && typeof data.error === "string" && data.error) || `HTTP ${res.status}`;
+  if (res.status === 401) throw new AuthError(msg);
+  if (!res.ok) throw new Error(msg);
+  return data;
+}
+const control = (scope, action, reason) => api("POST", "/v1/control", { scope, action, reason: reason || "dashboard" });
+const scopes = {
+  global: () => ({ type: "global" }),
+  device: (id) => ({ type: "device", id }),
+  account: (id) => ({ type: "account", id }),
+  job: (id) => ({ type: "job", id }),
+};
+
+// State and polling.
+const state = { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0, busy: false, timer: 0, showClosed: false };
+
+async function refresh() {
+  if (state.busy || !tokenStore.get()) return;
+  state.busy = true;
+  const filter = $("job-filter").value;
+  const jobsPath = `/v1/jobs?limit=100${filter ? `&status=${encodeURIComponent(filter)}` : ""}`;
+  const calls = [
+    ["status", api("GET", "/v1/status")],
+    ["jobs", api("GET", jobsPath)],
+    ["quota", api("GET", "/v1/quota")],
+    ["advice", api("GET", "/v1/advice")],
+    ["events", api("GET", "/v1/events?limit=60")],
+  ];
+  const results = await Promise.allSettled(calls.map((c) => c[1]));
+  state.busy = false;
+  if (results.some((r) => r.status === "rejected" && r.reason instanceof AuthError)) {
+    logout("The coordinator rejected this token. Paste the current one.");
+    return;
+  }
+  let anyOk = false;
+  results.forEach((r, i) => {
+    const key = calls[i][0];
+    if (r.status === "fulfilled") { state[key] = r.value; delete state.errors[key]; anyOk = true; }
+    else state.errors[key] = r.reason && r.reason.message ? r.reason.message : "request failed";
+  });
+  if (anyOk) state.lastOk = Date.now();
+  render();
+}
+
+function schedule() {
+  clearInterval(state.timer);
+  state.timer = setInterval(() => { if (!document.hidden) refresh(); else renderUpdated(); }, POLL_MS);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+
+// Actions.
+function toast(text, tone) {
+  const el = h("div", { class: `toast ${tone || ""}`, role: tone === "bad" ? "alert" : "status" }, text);
+  $("toasts").append(el);
+  setTimeout(() => el.remove(), tone === "bad" ? 7000 : 3500);
+}
+async function act(btn, doneText, fn) {
+  if (btn) btn.disabled = true;
+  try {
+    const out = await fn();
+    if (doneText) toast(typeof doneText === "function" ? doneText(out) : doneText);
+    return out;
+  } catch (e) {
+    if (e instanceof AuthError) logout("The coordinator rejected this token. Paste the current one.");
+    else toast(`Failed: ${e.message}`, "bad");
+    return undefined;
+  } finally {
+    if (btn) btn.disabled = false;
+    refresh();
+  }
+}
+
+let confirmResolve = null;
+function confirmBox(title, text, yesLabel) {
+  $("confirm-title").textContent = title;
+  $("confirm-text").textContent = text;
+  $("confirm-yes").textContent = yesLabel || "Confirm";
+  const dlg = $("confirm");
+  dlg.showModal();
+  $("confirm-no").focus();
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
+function closeConfirm(answer) {
+  const dlg = $("confirm");
+  if (dlg.open) dlg.close();
+  if (confirmResolve) { confirmResolve(answer); confirmResolve = null; }
+}
+$("confirm-yes").addEventListener("click", () => closeConfirm(true));
+$("confirm-no").addEventListener("click", () => closeConfirm(false));
+$("confirm").addEventListener("cancel", (e) => { e.preventDefault(); closeConfirm(false); });
+
+const STOP_TEXT = "Running jobs get SIGTERM, then SIGKILL after 15 s, and nothing new starts until you resume.";
+async function stopAll(btn, scope, where) {
+  const ok = await confirmBox(`Stop all ${where}?`, STOP_TEXT, "Stop all");
+  if (ok) act(btn, `Stop all sent ${where}`, () => control(scope, "stop_all"));
+}
+
+$("btn-refresh").addEventListener("click", () => refresh());
+$("btn-pause").addEventListener("click", (e) => act(e.currentTarget, "Paused everywhere", () => control(scopes.global(), "pause")));
+$("btn-resume").addEventListener("click", (e) => act(e.currentTarget, "Resumed everywhere", () => control(scopes.global(), "resume")));
+$("btn-stop").addEventListener("click", (e) => stopAll(e.currentTarget, scopes.global(), "everywhere"));
+$("btn-logout").addEventListener("click", () => logout(""));
+$("btn-advice-refresh").addEventListener("click", (e) => act(e.currentTarget, "Advisor re-ran", () => api("POST", "/v1/advice/refresh")));
+$("job-filter").addEventListener("change", () => refresh());
+
+// Rendering.
+function render() {
+  renderUpdated();
+  renderHeader();
+  renderTiles();
+  renderDevices();
+  renderJobs();
+  renderAdvice();
+  renderQuota();
+  renderEvents();
+}
+
+function renderUpdated() {
+  const errs = Object.keys(state.errors).length;
+  $("updated").textContent = state.lastOk
+    ? `Updated ${fmtAgo(state.lastOk)}${errs ? `, ${errs} request${errs === 1 ? "" : "s"} failing` : ""}`
+    : errs ? "Cannot reach the coordinator" : "Loading";
+}
+
+function renderHeader() {
+  const s = state.status;
+  $("ver").textContent = s && s.version ? `v${s.version}` : "";
+  $("cluster-badge").replaceChildren(
+    !s ? "" : s.global_paused ? badge("paused", "warn", true) : badge("running", "ok", true)
+  );
+  const banners = [];
+  if (state.errors.status) banners.push(h("div", { class: "banner bad", role: "alert" }, `Status request failed: ${state.errors.status}`));
+  if (s && s.global_paused) {
+    banners.push(h("div", { class: "banner warn" }, "Everything is paused. No job starts on any device until you resume.",
+      h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, "Resumed everywhere", () => control(scopes.global(), "resume")) }, "Resume all")));
+  }
+  $("banners").replaceChildren(...banners);
+}
+
+function renderTiles() {
+  const s = state.status;
+  if (!s) { $("tiles").replaceChildren(); return; }
+  const c = s.jobs || {};
+  const devs = s.devices || [];
+  const online = devs.filter((d) => d.online).length;
+  const tile = (k, v, tone) => h("div", { class: "tile" }, h("div", { class: "k" }, k), h("div", { class: `v num ${tone || ""}` }, v));
+  $("tiles").replaceChildren(
+    tile("Devices online", `${online}/${devs.length}`, devs.length && online < devs.length ? "warn" : ""),
+    tile("Queued", c.queued || 0),
+    tile("Running", (c.running || 0) + (c.leased || 0)),
+    tile("Paused", c.paused || 0, c.paused ? "warn" : ""),
+    tile("Parked", c.parked || 0, c.parked ? "warn" : ""),
+    tile("Failed", (c.failed || 0) + (c.killed || 0), c.failed || c.killed ? "bad" : ""),
+    tile("Open advice", s.open_advice || 0),
+  );
+}
+
+function stat(k, v, title) { return h("div", { class: "stat", title: title || null }, h("div", { class: "k" }, k), h("div", { class: "v num" }, v)); }
+
+function renderDevices() {
+  const box = $("devices");
+  const s = state.status;
+  if (!s) { box.replaceChildren(state.errors.status ? h("div", { class: "err" }, state.errors.status) : h("div", { class: "empty" }, "Loading")); return; }
+  const devs = (s.devices || []).slice().sort((a, b) => (b.online - a.online) || String(a.info.id).localeCompare(String(b.info.id)));
+  if (!devs.length) { box.replaceChildren(h("div", { class: "empty" }, "No device has sent a heartbeat yet. Start `idlemax agent` on a device.")); return; }
+  box.replaceChildren(h("div", { class: "devices" }, devs.map(deviceCard)));
+}
+
+function deviceCard(d) {
+  const info = d.info || {};
+  const m = d.metrics || null;
+  const g = d.guard || null;
+  const kind = g && g.action ? g.action.kind : null;
+  const badges = [
+    d.online ? badge("online", "ok", true) : badge(`offline, seen ${fmtAgo(d.last_seen_ms)}`, "bad", true),
+    d.paused ? badge("paused", "warn") : null,
+    d.local_paused ? badge("kill switch", "warn") : null,
+  ];
+  const stats = m ? [
+    stat("CPU busy", fmtPct(m.cpu_busy_pct)),
+    stat("Load 1m", m.load_avg_1m != null ? Number(m.load_avg_1m).toFixed(2) : "-", `${m.cpu_count || info.cpu_count || "?"} cores`),
+    stat("Mem free", fmtPct(m.mem_free_pct), `${fmtBytes(m.mem_available_bytes)} available of ${fmtBytes(m.mem_total_bytes)}`),
+    stat("Swap used", fmtBytes(m.swap_used_bytes), `of ${fmtBytes(m.swap_total_bytes)}`),
+    stat("Disk free", fmtBytes(m.disk_free_bytes), `of ${fmtBytes(m.disk_total_bytes)}`),
+    stat("User idle", m.user_idle_secs == null ? "n/a" : fmtDur(m.user_idle_secs)),
+    stat("Power", m.on_ac_power == null ? "n/a" : `${m.on_ac_power ? "AC" : "battery"}${m.battery_pct != null ? ` ${fmtPct(m.battery_pct)}` : ""}`),
+    stat("Thermal", m.thermal_limited == null ? "n/a" : m.thermal_limited ? "limited" : "ok"),
+  ] : [];
+  const running = d.running || [];
+  const id = info.id;
+  return h("article", { class: "dev" },
+    h("div", { class: "dev-h" },
+      h("div", null,
+        h("div", { class: "name" }, id || "(no id)"),
+        h("div", { class: "sub" }, [info.hostname && info.hostname !== id ? info.hostname : null, label(info.os), label(info.profile), info.agent_version ? `agent ${info.agent_version}` : null].filter(Boolean).join(" · "))),
+      h("div", { class: "badges" }, badges)),
+    g ? h("div", { class: "guard" }, h("span", { class: "muted" }, "Guard"), badge(guardText(g.action), GUARD_TONE[kind]), g.user_active ? badge("user active", "") : null) : null,
+    g && g.reasons && g.reasons.length ? h("ul", { class: "reasons" }, g.reasons.map((r) => h("li", null, r))) : null,
+    stats.length ? h("div", { class: "stats" }, stats) : h("div", { class: "muted", style: "margin-top:10px;font-size:12.5px" }, "No metrics yet."),
+    running.length ? h("div", { class: "dev-jobs" }, running.map((j) => h("div", { class: "row" },
+      jobBadge(j.status), h("span", { class: "t" }, `#${j.id} ${j.name}`),
+      h("span", { class: "faint num", style: "margin-left:auto" }, j.rss_bytes != null ? fmtBytes(j.rss_bytes) : `${j.mem_mb} MiB cap`)))) : null,
+    h("div", { class: "dev-a" },
+      d.paused
+        ? h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Resumed ${id}`, () => control(scopes.device(id), "resume")) }, "Resume")
+        : h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Paused ${id}`, () => control(scopes.device(id), "pause")) }, "Pause"),
+      h("button", { class: "btn sm danger", type: "button", onclick: (e) => stopAll(e.currentTarget, scopes.device(id), `on ${id}`) }, "Stop all")),
+  );
+}
+
+function renderJobs() {
+  const box = $("jobs");
+  const jobs = state.jobs;
+  if (state.errors.jobs) { box.replaceChildren(h("div", { class: "err" }, state.errors.jobs)); return; }
+  if (!jobs) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  if (!jobs.length) {
+    const f = $("job-filter").value;
+    box.replaceChildren(h("div", { class: "empty" }, f ? `No ${f} jobs.` : "No jobs yet. Queue one with `idlemax job add <spec.toml>`."));
+    return;
+  }
+  const rows = jobs.map((j) => {
+    const spec = j.spec || {};
+    const runFor = j.started_ms ? ((j.finished_ms || Date.now()) - j.started_ms) / 1000 : null;
+    const acts = [];
+    if (j.status === "running") acts.push(h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Pausing job #${j.id}`, () => control(scopes.job(j.id), "pause")) }, "Pause"));
+    if (j.status === "paused") acts.push(h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Resuming job #${j.id}`, () => control(scopes.job(j.id), "resume")) }, "Resume"));
+    if (!TERMINAL.has(j.status)) acts.push(h("button", { class: "btn sm danger", type: "button", onclick: (e) => act(e.currentTarget, `Cancelled job #${j.id}`, () => api("POST", `/v1/jobs/${encodeURIComponent(j.id)}/cancel`)) }, "Cancel"));
+    const detail = [label(spec.cost), spec.ai_account ? `account ${spec.ai_account}` : null, spec.priority ? `priority ${spec.priority}` : null].filter(Boolean).join(" · ");
+    const outcome = j.last_error || (j.exit_code != null ? `exit ${j.exit_code}` : "");
+    return h("tr", null,
+      h("td", { class: "num mono" }, `#${j.id}`),
+      h("td", null, h("div", { class: "job-name" }, spec.name || "(unnamed)"), h("div", { class: "t2" }, detail),
+        outcome ? h("div", { class: "t2", style: j.last_error ? "color:var(--bad)" : null }, outcome) : null),
+      h("td", null, jobBadge(j.status), h("div", { class: "t2 num" }, `try ${j.attempts || 0}/${spec.cost === "ai" ? 1 : spec.max_attempts || "?"}`)),
+      h("td", null, j.device || h("span", { class: "faint" }, "-")),
+      h("td", { class: "r" }, h("div", null, when(j.created_ms)), h("div", { class: "t2 num" }, runFor != null ? `ran ${fmtDur(runFor)}` : "")),
+      h("td", { class: "acts" }, acts),
+    );
+  });
+  box.replaceChildren(h("div", { class: "scroll" }, h("table", null,
+    h("thead", null, h("tr", null, h("th", null, "ID"), h("th", null, "Job"), h("th", null, "Status"), h("th", null, "Device"), h("th", { class: "r" }, "Created"), h("th", { class: "r" }, h("span", { class: "faint" }, "Actions")))),
+    h("tbody", null, rows))));
+}
+
+function renderAdvice() {
+  const box = $("advice");
+  const recs = state.advice;
+  if (state.errors.advice) { box.replaceChildren(h("div", { class: "err" }, state.errors.advice)); return; }
+  if (!recs) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  const open = recs.filter((r) => r.status === "open");
+  const closed = recs.filter((r) => r.status !== "open");
+  const items = open.map((r) => adviceItem(r, true));
+  if (!open.length) items.push(h("div", { class: "empty" }, "Nothing needs you right now."));
+  if (closed.length) {
+    items.push(h("div", { class: "adv", style: "padding:8px 14px" },
+      h("button", { class: "btn ghost sm", type: "button", onclick: () => { state.showClosed = !state.showClosed; renderAdvice(); } },
+        state.showClosed ? `Hide ${closed.length} closed` : `Show ${closed.length} closed`)));
+    if (state.showClosed) items.push(...closed.slice(0, 30).map((r) => adviceItem(r, false)));
+  }
+  box.replaceChildren(...items);
+}
+
+function adviceItem(r, isOpen) {
+  const job = r.suggested_job;
+  const conf = r.confidence != null ? `${Math.round(Math.max(0, Math.min(1, r.confidence)) * 100)}% confidence` : null;
+  return h("article", { class: `adv ${isOpen ? "" : "closed"}` },
+    h("div", { class: "adv-h" }, badge(label(r.kind), KIND_TONE[r.kind]), h("span", { class: "title" }, r.title || "(untitled)"),
+      isOpen ? null : badge(label(r.status), r.status === "accepted" ? "ok" : "")),
+    r.why ? h("p", null, r.why) : null,
+    job ? h("div", { class: "sugg" }, h("span", { class: "muted" }, "Queues "), h("strong", null, job.name || "(unnamed)"),
+      h("span", { class: "muted" }, ` · ${label(job.cost)}${job.devices && job.devices.length ? ` · on ${job.devices.join(", ")}` : ""}`),
+      job.command && job.command.length ? h("div", { class: "mono", style: "margin-top:4px" }, job.command.join(" ")) : null) : null,
+    r.evidence && r.evidence.length ? h("details", null, h("summary", null, `Evidence (${r.evidence.length})`), h("ul", null, r.evidence.map((e) => h("li", null, e)))) : null,
+    h("div", { class: "meta" }, h("span", null, r.source === "ai" ? "AI advisor" : "Rules"), conf ? h("span", null, conf) : null, when(r.at_ms)),
+    isOpen ? h("div", { class: "adv-a" },
+      job ? h("button", { class: "btn sm primary", type: "button", onclick: (e) => act(e.currentTarget, (out) => out && out.id ? `Queued job #${out.id}` : "Accepted", () => api("POST", `/v1/advice/${encodeURIComponent(r.id)}/accept`)) }, "Accept and queue") : null,
+      h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, "Dismissed", () => api("POST", `/v1/advice/${encodeURIComponent(r.id)}/dismiss`)) }, "Dismiss")) : null,
+  );
+}
+
+function windowLabel(w) {
+  if (!w) return "window";
+  if (w.kind === "weekly") return "Weekly";
+  if (w.kind === "rolling") return w.minutes % 60 === 0 ? `${w.minutes / 60}-hour` : `${w.minutes}-minute`;
+  return label(w.kind);
+}
+
+function renderQuota() {
+  const box = $("quota");
+  const rows = state.quota;
+  if (state.errors.quota) { box.replaceChildren(h("div", { class: "err", style: "padding:0" }, state.errors.quota)); return; }
+  if (!rows) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  if (!rows.length) { box.replaceChildren(h("div", { class: "empty" }, "No AI accounts configured. Add [[quota.accounts]] to config.toml.")); return; }
+  const paused = new Set((state.status && state.status.paused_accounts) || []);
+  const byAcct = new Map();
+  for (const r of rows) {
+    if (!byAcct.has(r.account)) byAcct.set(r.account, []);
+    byAcct.get(r.account).push(r);
+  }
+  box.replaceChildren(...[...byAcct].map(([name, wins]) => {
+    // spendable and reasons are the account verdict, repeated on every window row.
+    const spendable = wins.length > 0 && wins.every((w) => w.spendable);
+    const reasons = wins[0].reasons || [];
+    const isPaused = paused.has(name);
+    return h("div", { class: "acct" },
+      h("div", { class: "acct-h" },
+        h("span", { class: "name" }, name),
+        h("span", { class: "muted", style: "font-size:12px" }, label(wins[0].provider)),
+        isPaused ? badge("paused", "warn") : spendable ? badge("spendable", "ok") : badge("held", ""),
+        isPaused
+          ? h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Resumed ${name}`, () => control(scopes.account(name), "resume")) }, "Resume")
+          : h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Paused ${name}`, () => control(scopes.account(name), "pause")) }, "Pause")),
+      wins.filter((w) => w.window).map(quotaWindow),
+      reasons.length ? h("ul", { class: "reasons" }, reasons.map((r) => h("li", null, r))) : null);
+  }));
+}
+
+const WINDOW_STATE = { not_started: "not started", stale: "stale data", reset_pending: "reset, waiting for data", no_data: "no data" };
+
+function quotaWindow(w) {
+  const used = w.used_pct;
+  const known = used != null && isFinite(used);
+  const pct = known ? Math.max(0, Math.min(100, used)) : 0;
+  const line = 100 - Math.max(0, Math.min(100, w.reserve_pct || 0));
+  const tone = !known ? "" : pct >= 100 ? "bad" : pct >= line ? "warn" : "";
+  const bar = h("span", { class: tone });
+  bar.style.width = `${pct}%`;
+  const mark = h("i", { title: `reserve starts at ${line}%` });
+  mark.style.left = `calc(${line}% - 1px)`;
+  const stateNote = WINDOW_STATE[w.state];
+  return h("div", { class: "win" },
+    h("div", { class: "win-h" },
+      h("span", null, h("strong", null, windowLabel(w.window)),
+        h("span", { class: "muted num" }, ` ${known ? `${Math.round(used)}% used` : "usage unknown"}, reserve ${fmtPct(w.reserve_pct)}`),
+        stateNote ? h("span", { class: "faint" }, `, ${stateNote}`) : null),
+      h("span", { class: "muted num", title: fmtTime(w.resets_at_ms) }, w.resets_at_ms ? `resets ${fmtAgo(w.resets_at_ms)}` : "reset unknown")),
+    h("div", { class: "meter", role: "img", "aria-label": known ? `${Math.round(used)} percent used, reserve from ${line} percent` : "usage unknown" }, bar, mark),
+  );
+}
+
+function renderEvents() {
+  const box = $("events");
+  const evs = state.events;
+  if (state.errors.events) { box.replaceChildren(h("div", { class: "err" }, state.errors.events)); return; }
+  if (!evs) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  if (!evs.length) { box.replaceChildren(h("div", { class: "empty" }, "No events yet.")); return; }
+  const tone = (k) => /failed|killed|offline|error|expired/.test(k) ? "bad" : /parked|paused|guard|quota/.test(k) ? "warn" : /succeeded|online/.test(k) ? "ok" : "";
+  box.replaceChildren(...evs.map((e) => h("div", { class: "ev" },
+    h("span", { class: "when num mono", title: fmtTime(e.at_ms) }, clock(e.at_ms)),
+    h("span", { class: "what" }, badge(label(e.kind), tone(String(e.kind))),
+      e.device ? h("span", { class: "muted" }, e.device) : null,
+      e.job != null ? h("span", { class: "muted mono" }, `#${e.job}`) : null),
+    e.message ? h("span", { class: "msg" }, e.message) : null,
+  )));
+}
+
+// Login flow.
+function logout(msg) {
+  tokenStore.set("");
+  clearInterval(state.timer);
+  Object.assign(state, { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0 });
+  $("app").hidden = true;
+  $("login").hidden = false;
+  const err = $("login-err");
+  err.textContent = msg || "";
+  err.hidden = !msg;
+  $("token-input").value = "";
+  $("token-input").focus();
+}
+function start() {
+  $("login").hidden = true;
+  $("app").hidden = false;
+  render();
+  refresh();
+  schedule();
+}
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const t = $("token-input").value.trim();
+  if (!t) return;
+  tokenStore.set(t);
+  const btn = e.submitter || null;
+  if (btn) btn.disabled = true;
+  try {
+    await api("GET", "/v1/status");
+    start();
+  } catch (err) {
+    if (err instanceof AuthError) logout("That token was rejected.");
+    else { tokenStore.set(""); $("login-err").textContent = `Cannot reach the coordinator: ${err.message}`; $("login-err").hidden = false; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+if (tokenStore.get()) start(); else logout("");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+# idlemax config for the server (coordinator plus a linux_server agent).
+# Copy to /var/lib/idlemax/config.toml (the systemd units set IDLEMAX_HOME=/var/lib/idlemax).
+
+[coordinator]
+# Bind to the tailnet IP only, never a public address.
+listen = "100.64.0.10:7878"
+url = "http://100.64.0.10:7878"
+# A lease lives this long without a heartbeat before the job is re-queued with backoff.
+lease_secs = 120
+offline_after_secs = 90
+metrics_retention_days = 7
+
+[agent]
+device_id = "my-server"
+profile = "linux_server"
+listen = "127.0.0.1:7879"
+# Never run AI jobs here: no CLI logins on the server and no credential copying.
+ai_accounts = []
+# The server takes only cpu_light and io jobs.
+command_allowlist = ["gh", "git"]
+
+[advisor]
+enabled = true
+# The AI pass runs as a normal ai job on a device that may spend this account.
+ai_account = "claude-max"
+# Job template names whose advice is queued without asking; empty means always ask.
+auto_accept = []
+
+# Same accounts as on every agent; the coordinator owns the reserve and spendable math.
+[[quota.accounts]]
+name = "claude-max"
+provider = "claude"
+probe = "claude_statusline"
+windows = [
+  { kind = "rolling", minutes = 300, reserve_pct = 40.0 },
+  { kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 },
+]
+
+[[quota.accounts]]
+name = "codex-pro"
+provider = "codex"
+probe = "codex_sessions"
+windows = [{ kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 }]

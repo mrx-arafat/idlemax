@@ -1,0 +1,21 @@
+# MVP job 3: quota sweep. Spends leftover Claude quota on draft reviews of PRs waiting on you.
+# The scheduler leases it only when the account is spendable: below 100 - reserve in every window,
+# final third of the 5-hour window (or weekly reset < 24 h away), no interactive claude use in
+# the last 30 min, and no other AI job on this account anywhere. AI jobs never retry.
+# Drafts land in the inbox; nothing is posted.
+# Queue it: idlemax job add examples/jobs/pr-review-drafts-claude.toml
+name = "pr-review-drafts-claude"
+command = ["/home/you/idlemax/examples/scripts/pr-review-drafts.sh", "claude"]
+cost = "ai"
+ai_account = "claude-max"
+token_class = "medium"
+requires = ["claude", "gh"]
+devices = ["my-laptop"]
+priority = 5
+mem_mb = 512
+max_runtime_secs = 1800
+# Network bound with near-zero CPU; pausing mid-request wastes quota. Resource breaches still pause or kill it.
+on_user_active = "continue"
+
+[env]
+MAX_PRS = "3"

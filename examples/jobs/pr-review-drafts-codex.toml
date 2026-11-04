@@ -1,0 +1,17 @@
+# MVP job 3 on Codex: same quota sweep, spending the weekly Codex Pro window in quiet weeks.
+# Codex Pro reports only a weekly window, so this runs only in the last 24 h before that reset.
+# Queue it: idlemax job add examples/jobs/pr-review-drafts-codex.toml
+name = "pr-review-drafts-codex"
+command = ["/home/you/idlemax/examples/scripts/pr-review-drafts.sh", "codex"]
+cost = "ai"
+ai_account = "codex-pro"
+token_class = "medium"
+requires = ["codex", "gh"]
+devices = ["my-laptop"]
+priority = 5
+mem_mb = 512
+max_runtime_secs = 1800
+on_user_active = "continue"
+
+[env]
+MAX_PRS = "3"

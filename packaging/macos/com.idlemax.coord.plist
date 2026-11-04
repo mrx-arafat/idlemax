@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  idlemax coordinator as a per-user LaunchAgent, for a Mac-only setup.
+  In production the coordinator runs on the server (packaging/linux/idlemax-coord.service).
+  Render the @BIN@ and @HOME@ placeholders before loading (see README "Install on macOS").
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.idlemax.coord</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>@BIN@</string>
+		<string>coord</string>
+	</array>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>LowPriorityBackgroundIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>20</integer>
+
+	<key>StandardOutPath</key>
+	<string>@HOME@/.idlemax/logs/coord.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.idlemax/logs/coord.log</string>
+</dict>
+</plist>

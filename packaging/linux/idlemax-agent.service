@@ -1,0 +1,60 @@
+# idlemax device agent for a Linux server.
+# Samples metrics, runs the guard, heartbeats to the coordinator and runs leased jobs.
+# Install: see README "Install on Linux".
+#
+# Jobs run as the idlemax user. The runner uses `systemd-run --user --scope` only when that
+# user has a user manager bus; without lingering (the default) it runs jobs under
+# `nice -n 19 ionice -c3` inside this unit's cgroup, so the caps below bound the agent plus
+# its one job (linux_server preset: 1 job, 512 MiB). Keep lingering off for the idlemax user
+# so every job stays inside these caps.
+
+[Unit]
+Description=idlemax agent
+After=network-online.target tailscaled.service idlemax-coord.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=idlemax
+Group=idlemax
+Environment=IDLEMAX_HOME=/var/lib/idlemax
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/idlemax agent
+Restart=on-failure
+RestartSec=10
+# Let the agent SIGTERM its jobs and SIGKILL them after 15 s before systemd steps in.
+KillMode=mixed
+TimeoutStopSec=30
+
+# Agent plus job budget, lowest priority on every axis.
+MemoryHigh=576M
+MemoryMax=640M
+MemorySwapMax=0
+CPUQuota=100%
+CPUWeight=10
+IOWeight=10
+Nice=19
+IOSchedulingClass=idle
+TasksMax=256
+
+# Hardening that does not break ordinary jobs (no MemoryDenyWriteExecute: node and JITs need it).
+# Jobs can write only to $IDLEMAX_HOME and a private /tmp; add ReadWritePaths= in a drop-in if a job needs more.
+StateDirectory=idlemax
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

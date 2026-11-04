@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  idlemax device agent, per-user LaunchAgent.
+  Render the @BIN@, @HOME@ and @PATH@ placeholders before loading (see README "Install on macOS").
+  Run `idlemax init` first so @HOME@/.idlemax/logs exists.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.idlemax.agent</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>@BIN@</string>
+		<string>agent</string>
+	</array>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- launchd starts agents with a bare PATH; capability detection and jobs need the shell's PATH. -->
+		<key>PATH</key>
+		<string>@PATH@</string>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- Restart after a crash, not after a clean exit. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+
+	<!-- Lowest priority class: background QoS, throttled I/O, nice 20. -->
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>LowPriorityBackgroundIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>20</integer>
+
+	<!-- The agent sends SIGTERM to jobs and SIGKILL after 15 s; give it time before launchd kills it. -->
+	<key>ExitTimeOut</key>
+	<integer>30</integer>
+
+	<key>StandardOutPath</key>
+	<string>@HOME@/.idlemax/logs/agent.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.idlemax/logs/agent.log</string>
+</dict>
+</plist>
