@@ -1,6 +1,6 @@
 //! The agent event loop: sample and guard, reconcile jobs with the runner, trips to the
 //! coordinator, local controls, shutdown. Adapter layer around the domain `Guard`,
-//! `AgentState` and `Outbox`; it decides nothing itself.
+//! `AgentState` and the durable outbox; it decides nothing itself.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use idlemax_core::guard::Guard;
 use idlemax_core::protocol::{AgentCommand, Heartbeat, HeartbeatReply, LocalStatus, RunningJob};
-use idlemax_core::reconcile::{fail_safe_decision, AgentAction, AgentState, Outbox, TickInput};
+use idlemax_core::reconcile::{fail_safe_decision, AgentAction, AgentState, TickInput};
 use idlemax_core::types::{ControlAction, DeviceInfo, GuardDecision, Job, UnixMs};
 use idlemax_core::VERSION;
 use tokio::sync::{mpsc, watch};
@@ -20,14 +20,13 @@ use tracing::{error, info, warn};
 use crate::state::now_ms;
 
 use super::client::CoordClient;
+use super::outbox::DurableOutbox;
 use super::probes::{Probes, Reading};
 use super::runner::Runner;
 use super::uplink::{self, Trip};
 
 /// Runner reaps exits and escalates kills this often.
 const REAP_EVERY: Duration = Duration::from_secs(5);
-/// Job updates kept while the coordinator is unreachable.
-const OUTBOX_CAP: usize = 1000;
 const UPDATES_PER_TRIP: usize = 50;
 /// Waiting for jobs to exit on shutdown, plus one last flush: above the runner's 15 s
 /// SIGKILL escalation and within launchd's default 20 s exit timeout.
@@ -41,6 +40,7 @@ pub struct Wiring {
     pub client: CoordClient,
     pub probes: Probes,
     pub runner: Runner,
+    pub outbox: DurableOutbox,
     pub pause_file: PathBuf,
     pub status: watch::Sender<LocalStatus>,
     pub sample_every: Duration,
@@ -58,7 +58,7 @@ pub struct Agent {
     sample_every: Duration,
     heartbeat_every: Duration,
     state: AgentState,
-    outbox: Outbox,
+    outbox: DurableOutbox,
     reading: Reading,
     decision: GuardDecision,
     running: Vec<RunningJob>,
@@ -81,7 +81,7 @@ impl Agent {
             sample_every: w.sample_every,
             heartbeat_every: w.heartbeat_every,
             state: AgentState::default(),
-            outbox: Outbox::new(OUTBOX_CAP),
+            outbox: w.outbox,
             reading: Reading::default(),
             decision: GuardDecision::default(),
             running: Vec::new(),

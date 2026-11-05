@@ -4,13 +4,15 @@ use idlemax_core::protocol::{
     AgentCommand, ClusterStatus, Heartbeat, HeartbeatReply, JobUpdate, RunningJob,
 };
 use idlemax_core::types::{
-    DeviceInfo, DeviceProfile, GuardAction, GuardDecision, Job, JobSpec, JobStatus, Os,
+    CostClass, DeviceInfo, DeviceProfile, EventKind, GuardAction, GuardDecision, Job, JobSpec,
+    JobStatus, Os,
 };
 use idlemax_core::{Config, Paths};
 use reqwest::StatusCode;
 use serde_json::json;
 use tokio::net::TcpListener;
 
+use super::agents::on_job_update;
 use super::{router, AppState};
 use crate::coord::store::Store;
 
@@ -123,4 +125,46 @@ async fn bearer_token_is_required_and_stop_all_kills_on_the_next_heartbeat() {
     let reply = api.heartbeat(vec![running]).await;
     assert_eq!(reply.commands, vec![AgentCommand::KillJob { id: job.id }]);
     assert!(reply.assign.is_empty());
+}
+
+#[test]
+fn a_replayed_job_update_changes_nothing_twice() {
+    const T0: i64 = 1_800_000_000_000;
+    let mut store = Store::open_in_memory().unwrap();
+    let spec = JobSpec {
+        name: "ai-pass".into(),
+        command: vec!["true".into()],
+        cost: CostClass::Ai,
+        ai_account: Some("claude-max".into()),
+        ..JobSpec::default()
+    };
+    let job = store.insert_job(&spec, T0).unwrap();
+    store.lease_job(job.id, "mac", T0 + 600_000, T0).unwrap();
+    let update = JobUpdate {
+        seq: 7,
+        id: job.id,
+        device: "mac".into(),
+        status: JobStatus::Failed,
+        error: Some("usage limit".into()),
+        rate_limited: true,
+        at_ms: T0 + 1_000,
+        ..JobUpdate::default()
+    };
+
+    // The agent sends it, is killed before the ack lands, and replays it after the restart.
+    on_job_update(&mut store, &update, T0 + 2_000).unwrap();
+    let after_first = store.get_job(job.id).unwrap().unwrap();
+    on_job_update(&mut store, &update, T0 + 9_000).unwrap();
+
+    assert_eq!(store.get_job(job.id).unwrap().unwrap(), after_first);
+    let kinds: Vec<EventKind> = store.events(0).unwrap().iter().map(|e| e.kind).collect();
+    assert_eq!(
+        kinds.len(),
+        2,
+        "one quota event and one transition: {kinds:?}"
+    );
+    assert_eq!(
+        store.limit_hits(0).unwrap(),
+        vec![("claude-max".into(), T0 + 2_000)]
+    );
 }

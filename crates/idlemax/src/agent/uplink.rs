@@ -18,19 +18,19 @@ pub struct Trip {
 
 pub async fn trip(
     client: CoordClient,
-    updates: Vec<(u64, JobUpdate)>,
+    updates: Vec<JobUpdate>,
     heartbeat: Option<Heartbeat>,
 ) -> Trip {
     let mut out = Trip::default();
-    for (seq, update) in &updates {
+    for update in &updates {
         match client.job_update(update).await {
-            Ok(()) => out.acked = Some(*seq),
+            Ok(acked) => out.acked = Some(acked),
             Err(e) if e.is_rejected() => {
                 tracing::warn!(
                     job = update.id,
                     "coordinator rejected job update, dropped: {e}"
                 );
-                out.acked = Some(*seq);
+                out.acked = Some(update.seq);
             }
             Err(e) => {
                 out.flush_error = Some(e);

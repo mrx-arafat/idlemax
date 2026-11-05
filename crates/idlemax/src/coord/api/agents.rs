@@ -7,17 +7,16 @@ use idlemax_core::advice::is_ai_pass;
 use idlemax_core::control::{
     came_online, is_held, may_assign, paused_accounts, reconcile_heartbeat, transition_event,
 };
-use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate};
+use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply};
 use idlemax_core::scheduler::{apply_update, lease_deadline, pick, SchedContext};
 use idlemax_core::types::{ControlScope, EventKind, Job, JobStatus, UnixMs};
 use idlemax_core::Config;
-use serde_json::{json, Value};
 
 use super::http::{ApiFailure, JsonBody};
 use super::jobs::quota_views;
 use super::offline_after_ms;
 use super::{advice, AppState};
-use crate::coord::store::{Store, StoreError};
+use crate::coord::store::{NewEvent, Store, StoreError, UpdateWrites};
 use crate::state::now_ms;
 
 /// `POST /v1/agent/heartbeat`.
@@ -36,18 +35,22 @@ pub async fn heartbeat(
 }
 
 /// `POST /v1/agent/job-update`. A succeeded advisor AI pass feeds its output to the advisor.
+/// The reply acks the update's `seq` once it is stored, or was stored before.
 pub async fn job_update(
     State(app): State<AppState>,
     JsonBody(update): JsonBody<JobUpdate>,
-) -> Result<Json<Value>, ApiFailure> {
+) -> Result<Json<JobUpdateReply>, ApiFailure> {
     let now = now_ms();
+    let seq = update.seq;
     let ai_output = app
         .with_store(move |store, _| on_job_update(store, &update, now))
         .await?;
     if let Some(output) = ai_output {
         advice::ingest_ai_output(&app, output, now).await;
     }
-    Ok(Json(json!({})))
+    Ok(Json(JobUpdateReply {
+        acked_seq: (seq != 0).then_some(seq),
+    }))
 }
 
 pub(super) fn on_heartbeat(
@@ -133,7 +136,9 @@ fn assign_jobs(
     Ok(leased)
 }
 
-/// Applies an agent's job update. Returns the output of a succeeded advisor AI pass.
+/// Applies an agent's job update once per (device, seq): the job state, the transition
+/// event and the quota side effects commit together, and a replay changes nothing.
+/// Returns the output of a succeeded advisor AI pass.
 pub(super) fn on_job_update(
     store: &mut Store,
     update: &JobUpdate,
@@ -142,25 +147,37 @@ pub(super) fn on_job_update(
     let job = store
         .get_job(update.id)?
         .ok_or_else(|| ApiFailure::NotFound(format!("job {} not found", update.id)))?;
-    if update.rate_limited {
-        if let Some(account) = &job.spec.ai_account {
-            store.record_limit_hit(account, now)?;
-            let msg = format!("{account}: usage limit hit, no more AI jobs this window");
-            store.append_event(
-                EventKind::Quota,
-                Some(&update.device),
-                Some(job.id),
-                &msg,
-                now,
-            )?;
-        }
+    let limit_hit = job
+        .spec
+        .ai_account
+        .as_deref()
+        .filter(|_| update.rate_limited);
+    let mut events = Vec::new();
+    if let Some(account) = limit_hit {
+        events.push(NewEvent {
+            kind: EventKind::Quota,
+            device: Some(update.device.clone()),
+            job: Some(job.id),
+            message: format!("{account}: usage limit hit, no more AI jobs this window"),
+        });
     }
-    let Some(next) = apply_update(&job, update, now) else {
+    let next = apply_update(&job, update, now);
+    if let Some(next) = &next {
+        events.extend(transition_entry(&job, next));
+    }
+    let writes = UpdateWrites {
+        limit_hit,
+        job: next.as_ref(),
+        events: &events,
+    };
+    if !store.commit_update(&update.device, update.seq, &writes, now)? {
+        tracing::debug!(job = job.id, device = %update.device, seq = update.seq, "replayed job update ignored");
+        return Ok(None);
+    }
+    let Some(next) = next else {
         tracing::debug!(job = job.id, device = %update.device, "stale job update ignored");
         return Ok(None);
     };
-    store.update_job(&next)?;
-    log_transition(store, &job, &next, now)?;
     let ai_done = next.status == JobStatus::Succeeded && is_ai_pass(&job.spec);
     Ok(update.output_tail.clone().filter(|_| ai_done))
 }
@@ -172,21 +189,30 @@ pub(super) fn log_transition(
     after: &Job,
     now: UnixMs,
 ) -> Result<(), StoreError> {
-    let Some(kind) = transition_event(before.status, after.status) else {
-        return Ok(());
-    };
-    let mut msg = format!("{}: {}", after.spec.name, after.status);
+    if let Some(e) = transition_entry(before, after) {
+        store.append_event(e.kind, e.device.as_ref(), e.job, &e.message, now)?;
+    }
+    Ok(())
+}
+
+/// The event for a stored status change, if that change is one worth logging.
+fn transition_entry(before: &Job, after: &Job) -> Option<NewEvent> {
+    let kind = transition_event(before.status, after.status)?;
+    let mut message = format!("{}: {}", after.spec.name, after.status);
     if let Some(code) = after.exit_code.filter(|_| after.status.is_terminal()) {
-        msg.push_str(&format!(" (exit {code})"));
+        message.push_str(&format!(" (exit {code})"));
     }
     if let Some(err) = after
         .last_error
         .as_deref()
         .filter(|_| after.status != JobStatus::Running)
     {
-        msg.push_str(&format!(": {err}"));
+        message.push_str(&format!(": {err}"));
     }
-    let device = after.device.as_ref().or(before.device.as_ref());
-    store.append_event(kind, device, Some(after.id), &msg, now)?;
-    Ok(())
+    Some(NewEvent {
+        kind,
+        device: after.device.clone().or_else(|| before.device.clone()),
+        job: Some(after.id),
+        message,
+    })
 }

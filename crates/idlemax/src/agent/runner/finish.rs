@@ -51,6 +51,8 @@ pub fn finish(
     };
     let output_path = write_note(paths, &report);
     JobUpdate {
+        // Stamped by the agent outbox.
+        seq: 0,
         id: ended.job.id,
         device: device.clone(),
         status: outcome.status,

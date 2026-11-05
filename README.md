@@ -266,7 +266,7 @@ Wire formats and semantics are in [docs/API.md](docs/API.md).
 | GET | `/healthz` | | `ok`, no auth |
 | GET | `/` | | web dashboard, no auth |
 | POST | `/v1/agent/heartbeat` | `Heartbeat` | `HeartbeatReply` |
-| POST | `/v1/agent/job-update` | `JobUpdate` | `{}` |
+| POST | `/v1/agent/job-update` | `JobUpdate` | `JobUpdateReply` |
 | GET | `/v1/status` | | `ClusterStatus` |
 | GET | `/v1/jobs?status=&limit=` | | `[Job]` |
 | POST | `/v1/jobs` | `JobSpec` | `Job` (201) |
@@ -333,7 +333,7 @@ Environment: `IDLEMAX_HOME` (state dir), `IDLEMAX_TOKEN` (overrides the token fi
 | `jobs/*.toml` | job templates the advisor may suggest |
 | `logs/jobs/<id>.log` | job output |
 | `inbox/<date>-<id>-<name>.md` | one note per finished job |
-| `agent/` | 24 h metrics ring, Claude statusline capture, `quota-<account>.json` manual usage files |
+| `agent/` | 24 h metrics ring, `outbox.jsonl` (job updates not yet acked by the coordinator), Claude statusline capture, `quota-<account>.json` manual usage files |
 
 ### Job specs
 

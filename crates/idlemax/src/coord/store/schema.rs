@@ -1,7 +1,8 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1];
+// V2 (advisor_inputs) lands from another branch; the merged list is [V1, V2, V3].
+pub(super) const MIGRATIONS: &[&str] = &[V1, V3];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -108,4 +109,15 @@ CREATE TABLE recommendations (
   status TEXT NOT NULL
 ) STRICT;
 CREATE INDEX recommendations_by_status ON recommendations(status, at_ms);
+"#;
+
+/// Agent job updates already applied, so a replayed update changes nothing twice.
+const V3: &str = r#"
+CREATE TABLE applied_updates (
+  device TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  at_ms INTEGER NOT NULL,
+  PRIMARY KEY (device, seq)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX applied_updates_age ON applied_updates(at_ms);
 "#;

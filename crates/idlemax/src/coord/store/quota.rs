@@ -29,12 +29,7 @@ impl Store {
 
     /// Remembers the newest usage limit or HTTP 429 seen for an AI account.
     pub fn record_limit_hit(&mut self, account: &str, at_ms: UnixMs) -> StoreResult<()> {
-        self.conn.execute(
-            "INSERT INTO rate_limits (account, at_ms) VALUES (?1, ?2)
-             ON CONFLICT (account) DO UPDATE SET at_ms = max(at_ms, excluded.at_ms)",
-            params![account, at_ms],
-        )?;
-        Ok(())
+        upsert_limit_hit(&self.conn, account, at_ms)
     }
 
     /// Newest limit hit per account when it is at or after `since_ms`, sorted by account.
@@ -45,6 +40,16 @@ impl Store {
         let rows = stmt.query_map([since_ms], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
+}
+
+/// The write behind `record_limit_hit`, usable inside a caller's transaction.
+pub(super) fn upsert_limit_hit(conn: &Connection, account: &str, at_ms: UnixMs) -> StoreResult<()> {
+    conn.execute(
+        "INSERT INTO rate_limits (account, at_ms) VALUES (?1, ?2)
+         ON CONFLICT (account) DO UPDATE SET at_ms = max(at_ms, excluded.at_ms)",
+        params![account, at_ms],
+    )?;
+    Ok(())
 }
 
 pub(super) fn insert_snapshots(conn: &Connection, snaps: &[QuotaSnapshot]) -> StoreResult<()> {

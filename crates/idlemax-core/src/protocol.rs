@@ -63,6 +63,9 @@ pub struct HeartbeatReply {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct JobUpdate {
+    /// Per-device sequence number from the agent outbox, unique across restarts. The
+    /// coordinator applies each (device, seq) once; 0 means unsequenced (old agent).
+    pub seq: u64,
     pub id: JobId,
     pub device: DeviceId,
     pub status: JobStatus,
@@ -76,6 +79,15 @@ pub struct JobUpdate {
     pub output_tail: Option<String>,
     /// A `killed` update caused by the owner (local stop_all): final, never re-queued.
     pub owner_stop: bool,
+}
+
+/// Reply to POST /v1/agent/job-update.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct JobUpdateReply {
+    /// The update's `seq`, once it is stored (or was stored before). None from a
+    /// coordinator that predates sequencing, or for an unsequenced update.
+    pub acked_seq: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

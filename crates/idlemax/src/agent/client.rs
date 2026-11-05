@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate};
+use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -84,9 +84,11 @@ impl CoordClient {
         self.post("/v1/agent/heartbeat", hb).await
     }
 
-    pub async fn job_update(&self, update: &JobUpdate) -> Result<(), ClientError> {
-        let _: serde_json::Value = self.post("/v1/agent/job-update", update).await?;
-        Ok(())
+    /// Sends one update and returns the sequence number the coordinator acked. A
+    /// coordinator that predates sequencing answers `{}`: the HTTP success acks it.
+    pub async fn job_update(&self, update: &JobUpdate) -> Result<u64, ClientError> {
+        let reply: JobUpdateReply = self.post("/v1/agent/job-update", update).await?;
+        Ok(reply.acked_seq.unwrap_or(update.seq))
     }
 
     async fn post<B, R>(&self, path: &str, body: &B) -> Result<R, ClientError>

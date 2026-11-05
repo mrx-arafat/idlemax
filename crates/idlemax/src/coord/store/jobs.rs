@@ -4,7 +4,7 @@
 use idlemax_core::protocol::JobCounts;
 use idlemax_core::types::{Job, JobId, JobSpec, JobStatus, UnixMs};
 use rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE;
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::{conversion_err, json_col, json_text, sql_limit, Store, StoreError, StoreResult};
 
@@ -75,39 +75,7 @@ impl Store {
     /// Use `lease_job` to assign: this write does not check the job is still queued.
     pub fn update_jobs(&mut self, jobs: &[Job]) -> StoreResult<()> {
         let tx = self.conn.transaction()?;
-        {
-            let mut stmt = tx.prepare_cached(
-                "UPDATE jobs SET spec = ?2, name = ?3, status = ?4, priority = ?5,
-                   ai_account = ?6, device = ?7, attempts = ?8, started_ms = ?9,
-                   finished_ms = ?10, lease_expires_ms = ?11, not_before_ms = ?12,
-                   exit_code = ?13, last_error = ?14, output_path = ?15
-                 WHERE id = ?1",
-            )?;
-            for job in jobs {
-                let changed = stmt
-                    .execute(params![
-                        job.id,
-                        json_text(&job.spec)?,
-                        job.spec.name,
-                        job.status.as_str(),
-                        job.spec.priority,
-                        job.spec.ai_account,
-                        job.device,
-                        job.attempts,
-                        job.started_ms,
-                        job.finished_ms,
-                        job.lease_expires_ms,
-                        job.not_before_ms,
-                        job.exit_code,
-                        job.last_error,
-                        job.output_path,
-                    ])
-                    .map_err(|e| lease_conflict(e, job.spec.ai_account.as_deref()))?;
-                if changed == 0 {
-                    return Err(StoreError::JobNotFound(job.id));
-                }
-            }
-        }
+        write_jobs(&tx, jobs)?;
         tx.commit()?;
         Ok(())
     }
@@ -201,6 +169,42 @@ impl Store {
         }
         Ok(counts)
     }
+}
+
+/// The writes behind `update_jobs`; the caller owns the transaction.
+pub(super) fn write_jobs(conn: &Connection, jobs: &[Job]) -> StoreResult<()> {
+    let mut stmt = conn.prepare_cached(
+        "UPDATE jobs SET spec = ?2, name = ?3, status = ?4, priority = ?5,
+           ai_account = ?6, device = ?7, attempts = ?8, started_ms = ?9,
+           finished_ms = ?10, lease_expires_ms = ?11, not_before_ms = ?12,
+           exit_code = ?13, last_error = ?14, output_path = ?15
+         WHERE id = ?1",
+    )?;
+    for job in jobs {
+        let changed = stmt
+            .execute(params![
+                job.id,
+                json_text(&job.spec)?,
+                job.spec.name,
+                job.status.as_str(),
+                job.spec.priority,
+                job.spec.ai_account,
+                job.device,
+                job.attempts,
+                job.started_ms,
+                job.finished_ms,
+                job.lease_expires_ms,
+                job.not_before_ms,
+                job.exit_code,
+                job.last_error,
+                job.output_path,
+            ])
+            .map_err(|e| lease_conflict(e, job.spec.ai_account.as_deref()))?;
+        if changed == 0 {
+            return Err(StoreError::JobNotFound(job.id));
+        }
+    }
+    Ok(())
 }
 
 /// Maps the one-AI-lease-per-account index violation to `AccountLeased`.

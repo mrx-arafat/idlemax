@@ -6,8 +6,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+mod journal;
 mod outbox;
 
+pub use journal::{encode_ack, encode_update, replay, Replayed};
 pub use outbox::Outbox;
 
 use crate::protocol::{AgentCommand, JobUpdate};

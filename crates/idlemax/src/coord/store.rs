@@ -13,6 +13,9 @@ mod quota;
 mod schema;
 #[cfg(test)]
 mod tests;
+mod updates;
+
+pub use updates::{NewEvent, UpdateWrites};
 
 use std::path::{Path, PathBuf};
 
@@ -24,7 +27,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 const DAY_MS: i64 = 86_400_000;
-/// Events and closed advice are kept this long.
+/// Events, closed advice and applied-update records are kept this long.
 const HISTORY_RETENTION_MS: i64 = 30 * DAY_MS;
 const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const WAL_SIZE_LIMIT_BYTES: i64 = 8 * 1024 * 1024;
@@ -69,6 +72,7 @@ pub struct PruneReport {
     pub quota: usize,
     pub events: usize,
     pub advice: usize,
+    pub updates: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
@@ -124,7 +128,8 @@ impl Store {
 
     /// Drops metrics and quota history older than `metrics_retention_ms` (the newest
     /// quota snapshot per account window always stays), plus events and closed advice
-    /// older than 30 days, then returns freed pages to the OS.
+    /// older than 30 days (and applied-update records of that age), then returns freed pages
+    /// to the OS.
     pub fn prune(&mut self, now: UnixMs, metrics_retention_ms: i64) -> StoreResult<PruneReport> {
         let metrics_cutoff = now.saturating_sub(metrics_retention_ms);
         let history_cutoff = now.saturating_sub(HISTORY_RETENTION_MS);
@@ -143,6 +148,10 @@ impl Store {
             events: tx.execute("DELETE FROM events WHERE at_ms < ?1", [history_cutoff])?,
             advice: tx.execute(
                 "DELETE FROM recommendations WHERE status <> 'open' AND at_ms < ?1",
+                [history_cutoff],
+            )?,
+            updates: tx.execute(
+                "DELETE FROM applied_updates WHERE at_ms < ?1",
                 [history_cutoff],
             )?,
         };

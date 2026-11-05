@@ -18,7 +18,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | GET | /healthz | | `ok` (text, no auth) |
 | GET | / | | dashboard HTML (no auth) |
 | POST | /v1/agent/heartbeat | `Heartbeat` | `HeartbeatReply` |
-| POST | /v1/agent/job-update | `JobUpdate` | `{}` |
+| POST | /v1/agent/job-update | `JobUpdate` | `JobUpdateReply` |
 | GET | /v1/status | | `ClusterStatus` |
 | GET | /v1/jobs?status=&limit= | | `[Job]` |
 | POST | /v1/jobs | `JobSpec` | `Job` |
@@ -121,8 +121,15 @@ Terminal updates carry `exit_code`, `output_path` (inbox file on the device) and
 An owner stop (coordinator or local `stop_all`) is final: the job ends `killed` and is not retried, while a guard kill is re-queued like any failed attempt.
 An update never moves a terminal job out of its terminal status, and an update from a device that does not hold the lease is ignored.
 
-Delivery is at least once: the agent queues updates in order and retries until it gets an answer, so the same update can arrive twice.
-Applying an identical update twice is a no-op, and a stale non-terminal update after a terminal one never reopens the job.
+Delivery is at least once and application is exactly once.
+The agent appends each update to `agent/outbox.jsonl` (fsynced) before it sends it, in order, and drops it once the coordinator acks its `seq`.
+After a crash or restart it replays whatever was never acked, so a `SIGKILL` between a job's exit and the ack still delivers that update.
+Each update carries `seq`, a per-device number that is unique across restarts (it starts at the wall clock in milliseconds and the journal keeps it rising).
+The coordinator stores `(device, seq)` in the same transaction as the job state, its event and any quota effect, and a replay of a stored `seq` changes nothing and is acked again.
+The reply is `{"acked_seq": <seq>}`; `seq` 0 (an agent without the outbox) is applied without deduplication and answered without an ack, and an old coordinator's `{}` counts as an ack of the update just sent.
+A stale non-terminal update after a terminal one never reopens the job.
+The journal holds at most 1000 updates; when it is full the oldest non-terminal update goes first, so exit codes survive a long outage, and the file is compacted when it is about twice that size.
+A torn last line from a crash is skipped.
 The coordinator answers 4xx (other than 401, 403, 408 and 429) only when an update can never succeed, such as an unknown job id or a job leased to another device; the agent then drops it.
 Auth failures, timeouts and 5xx keep the update queued for retry.
 The agent sends heartbeats from their own task, so a slow coordinator delays heartbeats but never local controls or guard actions.

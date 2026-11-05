@@ -5,6 +5,7 @@ pub mod api;
 pub mod client;
 mod event_loop;
 pub mod metrics;
+mod outbox;
 mod probes;
 pub mod quota_probe;
 mod ring;
@@ -25,6 +26,7 @@ use crate::state::{self, now_ms, StateError};
 use self::client::{ClientError, CoordClient};
 use self::event_loop::{Agent, Wiring};
 use self::metrics::{MetricsError, Sampler};
+use self::outbox::{DurableOutbox, OUTBOX_CAP};
 use self::probes::Probes;
 use self::ring::{MetricsRing, RingError};
 use self::runner::Runner;
@@ -64,6 +66,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
     let client = CoordClient::new(&config.coordinator.url, &token)?;
     let (probes, device) = open_probes(&paths, &config).await?;
     let runner = open_runner(&paths, &device, &config).await?;
+    let outbox = DurableOutbox::open(&paths.agent_state_dir(), OUTBOX_CAP, now_ms());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|source| AgentError::Bind { addr, source })?;
@@ -92,6 +95,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         client,
         probes,
         runner,
+        outbox,
         pause_file: paths.pause_file(),
         status: ports.status,
         sample_every: Duration::from_secs(config.agent.sample_secs),
