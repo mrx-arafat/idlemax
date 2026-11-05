@@ -1090,6 +1090,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
+ "hyper-util",
  "idlemax-core",
  "nix 0.31.3",
  "ratatui",
@@ -1102,6 +1103,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "toml",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2959,6 +2961,7 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+ "tokio",
  "tower",
  "tower-layer",
  "tower-service",

@@ -233,7 +233,22 @@ pub fn came_online(
     now_ms: UnixMs,
     offline_after_ms: i64,
 ) -> bool {
-    previous_seen_ms.is_none_or(|seen| now_ms.saturating_sub(seen) > offline_after_ms)
+    previous_seen_ms.is_none_or(|seen| !device_online(seen, now_ms, offline_after_ms))
+}
+
+/// A device is online through the exact offline limit and offline once it passes.
+pub fn device_online(last_seen_ms: UnixMs, now_ms: UnixMs, offline_after_ms: i64) -> bool {
+    now_ms.saturating_sub(last_seen_ms) <= offline_after_ms
+}
+
+/// The transition is new only for a device already online that has gone silent.
+pub fn offline_transition(
+    was_online: bool,
+    last_seen_ms: UnixMs,
+    now_ms: UnixMs,
+    offline_after_ms: i64,
+) -> bool {
+    was_online && !device_online(last_seen_ms, now_ms, offline_after_ms)
 }
 
 pub fn scope_label(scope: &ControlScope) -> String {
@@ -307,5 +322,28 @@ fn finish(job: &Job, status: JobStatus, note: &str, now_ms: UnixMs) -> Job {
         not_before_ms: None,
         last_error: Some(note.to_string()),
         ..job.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{came_online, device_online, offline_transition};
+
+    const SEEN: i64 = 1_800_000_000_000;
+    const LIMIT: i64 = 90_000;
+
+    #[test]
+    fn offline_starts_after_the_limit() {
+        assert!(device_online(SEEN, SEEN + LIMIT, LIMIT));
+        assert!(!device_online(SEEN, SEEN + LIMIT + 1, LIMIT));
+        assert!(came_online(Some(SEEN), SEEN + LIMIT + 1, LIMIT));
+        assert!(!came_online(Some(SEEN), SEEN + LIMIT, LIMIT));
+    }
+
+    #[test]
+    fn offline_transition_needs_a_previous_online_state() {
+        assert!(offline_transition(true, SEEN, SEEN + LIMIT + 1, LIMIT));
+        assert!(!offline_transition(false, SEEN, SEEN + LIMIT + 1, LIMIT));
+        assert!(!offline_transition(true, SEEN, SEEN + LIMIT, LIMIT));
     }
 }

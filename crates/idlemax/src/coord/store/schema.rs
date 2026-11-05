@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -128,4 +128,9 @@ CREATE TABLE applied_updates (
   PRIMARY KEY (device, seq)
 ) STRICT, WITHOUT ROWID;
 CREATE INDEX applied_updates_age ON applied_updates(at_ms);
+"#;
+
+/// Existing devices start offline, so an upgrade never repeats an old offline event.
+const V4: &str = r#"
+ALTER TABLE devices ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
 "#;

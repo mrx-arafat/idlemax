@@ -1,11 +1,10 @@
 //! Coordinator background sweeps (adapter): lease expiry and offline devices every 15 s,
 //! store pruning hourly, advisor refresh every 15 min. Loops log failures and continue.
 
-use std::collections::BTreeSet;
 use std::time::Duration;
 
 use idlemax_core::scheduler::expire_leases;
-use idlemax_core::types::{DeviceId, EventKind, UnixMs};
+use idlemax_core::types::{EventKind, UnixMs};
 use idlemax_core::Config;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, interval_at, Instant, MissedTickBehavior};
@@ -41,23 +40,17 @@ pub fn spawn(app: AppState) -> Vec<JoinHandle<()>> {
 async fn maintain(app: AppState) {
     let mut tick = interval(SWEEP_EVERY);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let mut online = BTreeSet::new();
     let mut last_prune_ms = 0;
     loop {
         tick.tick().await;
         let now = now_ms();
         let prune = now - last_prune_ms >= PRUNE_EVERY_MS;
-        let known = std::mem::take(&mut online);
-        let result = app
-            .with_store(move |store, cfg| sweep_once(store, cfg, known, prune, now))
-            .await;
-        match result {
-            Ok(still_online) => {
-                online = still_online;
-                if prune {
-                    last_prune_ms = now;
-                }
-            }
+        match app
+            .with_store(move |store, cfg| sweep_once(store, cfg, prune, now))
+            .await
+        {
+            Ok(()) if prune => last_prune_ms = now,
+            Ok(()) => {}
             Err(e) => tracing::warn!(error = %e, "coordinator sweep failed"),
         }
     }
@@ -74,22 +67,16 @@ async fn advise(app: AppState) {
     }
 }
 
-/// One sweep. Returns the devices online now, so the next sweep can see who went offline.
-fn sweep_once(
-    store: &mut Store,
-    cfg: &Config,
-    online: BTreeSet<DeviceId>,
-    prune: bool,
-    now: UnixMs,
-) -> Result<BTreeSet<DeviceId>, SweepError> {
+/// One sweep: lease expiry, persisted offline transitions, and periodic pruning.
+fn sweep_once(store: &mut Store, cfg: &Config, prune: bool, now: UnixMs) -> Result<(), SweepError> {
     expire(store, now)?;
-    let online = mark_offline(store, cfg, online, now)?;
+    mark_offline(store, cfg, now)?;
     if prune {
         let days = i64::from(cfg.coordinator.metrics_retention_days);
         let report = store.prune(now, days.saturating_mul(DAY_MS))?;
         tracing::debug!(?report, "store pruned");
     }
-    Ok(online)
+    Ok(())
 }
 
 /// Re-queues or parks jobs whose lease ran out (agent gone past max runtime plus grace).
@@ -118,23 +105,73 @@ fn expire(store: &mut Store, now: UnixMs) -> Result<(), StoreError> {
     Ok(())
 }
 
-/// Logs DeviceOffline once when a device online at the last sweep has gone silent.
-fn mark_offline(
-    store: &mut Store,
-    cfg: &Config,
-    mut was_online: BTreeSet<DeviceId>,
-    now: UnixMs,
-) -> Result<BTreeSet<DeviceId>, StoreError> {
-    let offline_after = offline_after_ms(cfg);
-    let mut online = BTreeSet::new();
-    for d in store.devices(now, offline_after)? {
-        if d.online {
-            online.insert(d.info.id);
-        } else if was_online.remove(&d.info.id) {
-            let silent_s = now.saturating_sub(d.last_seen_ms) / 1000;
-            let msg = format!("{} offline: no heartbeat for {silent_s} s", d.info.id);
-            store.append_event(EventKind::DeviceOffline, Some(&d.info.id), None, &msg, now)?;
+/// Persists DeviceOffline once for each online to offline transition.
+fn mark_offline(store: &mut Store, cfg: &Config, now: UnixMs) -> Result<(), StoreError> {
+    store.persist_offline_transitions(now, offline_after_ms(cfg))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use idlemax_core::protocol::Heartbeat;
+    use idlemax_core::types::{DeviceInfo, EventKind};
+
+    use super::{mark_offline, Store};
+    use idlemax_core::Config;
+
+    const T0: i64 = 1_800_000_000_000;
+
+    #[test]
+    fn restart_does_not_repeat_offline_event() {
+        let home = tempfile::tempdir().unwrap();
+        let db = home.path().join("coord.db");
+        let cfg = Config::default();
+        {
+            let mut store = Store::open(&db).unwrap();
+            store.record_heartbeat(&heartbeat(), T0).unwrap();
+            mark_offline(&mut store, &cfg, T0 + 90_001).unwrap();
+            assert_eq!(offline_events(&store), 1);
+        }
+        let mut restarted = Store::open(&db).unwrap();
+        mark_offline(&mut restarted, &cfg, T0 + 90_002).unwrap();
+        assert_eq!(offline_events(&restarted), 1);
+    }
+
+    #[test]
+    fn restart_while_online_emits_one_offline_event() {
+        let home = tempfile::tempdir().unwrap();
+        let db = home.path().join("coord.db");
+        let cfg = Config::default();
+        {
+            let mut store = Store::open(&db).unwrap();
+            store.record_heartbeat(&heartbeat(), T0).unwrap();
+        }
+        {
+            let mut restarted = Store::open(&db).unwrap();
+            mark_offline(&mut restarted, &cfg, T0 + 90_001).unwrap();
+            assert_eq!(offline_events(&restarted), 1);
+        }
+        let mut restarted = Store::open(&db).unwrap();
+        mark_offline(&mut restarted, &cfg, T0 + 90_002).unwrap();
+        assert_eq!(offline_events(&restarted), 1);
+    }
+
+    fn heartbeat() -> Heartbeat {
+        Heartbeat {
+            device: DeviceInfo {
+                id: "mac".into(),
+                ..DeviceInfo::default()
+            },
+            ..Heartbeat::default()
         }
     }
-    Ok(online)
+
+    fn offline_events(store: &Store) -> usize {
+        store
+            .events(0)
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == EventKind::DeviceOffline)
+            .count()
+    }
 }

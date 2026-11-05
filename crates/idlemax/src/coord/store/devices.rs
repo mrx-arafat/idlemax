@@ -2,22 +2,26 @@
 
 use std::collections::BTreeMap;
 
+use idlemax_core::control::{device_online, offline_transition};
 use idlemax_core::protocol::{DeviceView, Heartbeat};
-use idlemax_core::types::{ControlScope, UnixMs};
+use idlemax_core::types::{ControlScope, EventKind, UnixMs};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
-use super::{json_col, json_text, opt_json_col, u64_to_sql, Store, StoreError, StoreResult};
+use super::{
+    enum_text, json_col, json_text, opt_json_col, u64_to_sql, Store, StoreError, StoreResult,
+};
 
 const MINUTE_MS: i64 = 60_000;
 
 const UPSERT_DEVICE: &str = "
 INSERT INTO devices (id, info, first_seen_ms, last_seen_ms, metrics, guard, running,
-                     interactive_use, local_paused)
-VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8)
+                     interactive_use, local_paused, online)
+VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, 1)
 ON CONFLICT (id) DO UPDATE SET
   info = excluded.info, last_seen_ms = excluded.last_seen_ms, metrics = excluded.metrics,
   guard = excluded.guard, running = excluded.running,
-  interactive_use = excluded.interactive_use, local_paused = excluded.local_paused";
+  interactive_use = excluded.interactive_use, local_paused = excluded.local_paused,
+  online = 1";
 
 // SET expressions read the row before the update, so `samples` is the old count.
 const FOLD_MINUTE: &str = "
@@ -72,6 +76,43 @@ impl Store {
         Ok(previous)
     }
 
+    /// Persists online to offline transitions and their events in one transaction.
+    pub fn persist_offline_transitions(
+        &mut self,
+        now: UnixMs,
+        offline_after_ms: i64,
+    ) -> StoreResult<usize> {
+        let tx = self.conn.transaction()?;
+        let candidates = {
+            let mut stmt =
+                tx.prepare_cached("SELECT id, last_seen_ms, online FROM devices ORDER BY id")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<rusqlite::Result<Vec<(String, UnixMs, bool)>>>()?
+        };
+        let kind = enum_text(&EventKind::DeviceOffline)?;
+        let mut changed = 0;
+        {
+            let mut mark =
+                tx.prepare_cached("UPDATE devices SET online = 0 WHERE id = ?1 AND online = 1")?;
+            let mut event = tx.prepare_cached(
+                "INSERT INTO events (at_ms, kind, device, job, message)
+                 VALUES (?1, ?2, ?3, NULL, ?4)",
+            )?;
+            for (id, last_seen_ms, online) in candidates {
+                if offline_transition(online, last_seen_ms, now, offline_after_ms)
+                    && mark.execute([&id])? == 1
+                {
+                    let silent_s = now.saturating_sub(last_seen_ms) / 1000;
+                    let msg = format!("{id} offline: no heartbeat for {silent_s} s");
+                    event.execute(params![now, kind, id, msg])?;
+                    changed += 1;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
     /// Every known device. Online means a heartbeat within `offline_after_ms` of `now`;
     /// paused means a Global or Device control is in effect.
     pub fn devices(&self, now: UnixMs, offline_after_ms: i64) -> StoreResult<Vec<DeviceView>> {
@@ -84,7 +125,7 @@ impl Store {
         let rows = stmt.query_map([], device_from_row)?;
         rows.map(|row| {
             let mut view = row?;
-            view.online = now.saturating_sub(view.last_seen_ms) <= offline_after_ms;
+            view.online = device_online(view.last_seen_ms, now, offline_after_ms);
             view.paused = global || paused.contains(&ControlScope::Device(view.info.id.clone()));
             Ok(view)
         })

@@ -2,6 +2,7 @@
 //! runs the background sweeps, and stops cleanly on SIGINT or SIGTERM.
 
 pub mod api;
+mod server;
 pub mod store;
 mod sweep;
 pub mod web;
@@ -54,9 +55,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), CoordError> {
     let app = AppState::new(store, config, paths);
     let sweeps = sweep::spawn(app.clone());
     tracing::info!(%addr, "coordinator listening");
-    let served = axum::serve(listener, api::router(app, &token))
-        .with_graceful_shutdown(shutdown)
-        .await;
+    let served = server::serve(listener, api::router(app, &token), shutdown).await;
     sweeps.iter().for_each(|t| t.abort());
     tracing::info!("coordinator stopped");
     served.map_err(CoordError::Serve)
