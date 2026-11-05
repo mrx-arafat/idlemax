@@ -74,6 +74,7 @@ pub fn router(state: AppState, token: &str) -> Router {
     let v1 = Router::new()
         .route("/v1/agent/heartbeat", post(agents::heartbeat))
         .route("/v1/agent/job-update", post(agents::job_update))
+        .route("/v1/agent/advisor-inputs", post(agents::advisor_inputs))
         .route("/v1/status", get(jobs::status))
         .route("/v1/jobs", get(jobs::list).post(jobs::add))
         .route("/v1/jobs/{id}/cancel", post(jobs::cancel))

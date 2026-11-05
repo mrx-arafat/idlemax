@@ -4,6 +4,7 @@
 
 pub mod ai;
 pub mod inputs;
+mod merge;
 pub mod prompt;
 pub mod rules;
 mod text;
@@ -17,7 +18,11 @@ use crate::types::{
 };
 
 pub use ai::{is_ai_pass, AI_PASS_JOB_NAME};
-pub use inputs::{AdviceInput, GhItem, GithubSnapshot, GithubStatus, SessionMeta, SessionSignal};
+pub use inputs::{
+    AdviceInput, AdvisorInputs, GhItem, GithubSnapshot, GithubStatus, SessionMeta, SessionSignal,
+    StoredInputs,
+};
+pub use merge::merge_inputs;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AdviceError {

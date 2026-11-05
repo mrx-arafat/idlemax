@@ -1,11 +1,15 @@
-//! Tests: coordinator API bearer auth and stop_all over real HTTP on loopback.
+//! Tests: coordinator API bearer auth, stop_all and agent-sent advisor inputs over real
+//! HTTP on loopback.
 
+use idlemax_core::advice::{
+    AdvisorInputs, GhItem, GithubSnapshot, GithubStatus, SessionMeta, SessionSignal,
+};
 use idlemax_core::protocol::{
     AgentCommand, ClusterStatus, Heartbeat, HeartbeatReply, JobUpdate, RunningJob,
 };
 use idlemax_core::types::{
     CostClass, DeviceInfo, DeviceProfile, EventKind, GuardAction, GuardDecision, Job, JobSpec,
-    JobStatus, Os,
+    JobStatus, Os, Recommendation,
 };
 use idlemax_core::{Config, Paths};
 use reqwest::StatusCode;
@@ -15,6 +19,7 @@ use tokio::net::TcpListener;
 use super::agents::on_job_update;
 use super::{router, AppState};
 use crate::coord::store::Store;
+use crate::state::now_ms;
 
 const TOKEN: &str = "coord-t0ken";
 
@@ -167,4 +172,61 @@ fn a_replayed_job_update_changes_nothing_twice() {
         store.limit_hits(0).unwrap(),
         vec![("claude-max".into(), T0 + 2_000)]
     );
+}
+
+fn waiting_pr(number: u64) -> GhItem {
+    let five_days_ago = now_ms() - 5 * 24 * 3_600_000;
+    GhItem {
+        repo: "owner/app".into(),
+        number,
+        title: format!("Change {number}"),
+        created_ms: five_days_ago,
+        updated_ms: five_days_ago,
+        ..GhItem::default()
+    }
+}
+
+fn mac_inputs(pr: u64) -> AdvisorInputs {
+    AdvisorInputs {
+        device: "mac".into(),
+        github: GithubSnapshot {
+            status: GithubStatus::Ok,
+            review_requested: vec![waiting_pr(pr)],
+            ..GithubSnapshot::default()
+        },
+        sessions: vec![SessionMeta {
+            tool: "claude".into(),
+            id: "abc123".into(),
+            title: Some("Fix login".into()),
+            project: Some("myproj".into()),
+            last_activity_ms: now_ms() - 5 * 3_600_000,
+            signals: vec![SessionSignal::TestsFailing],
+        }],
+    }
+}
+
+#[tokio::test]
+async fn advisor_rules_fire_from_the_newest_inputs_an_agent_sent() {
+    let api = Api::start().await;
+    for pr in [1, 7] {
+        let res = api.post("/v1/agent/advisor-inputs", &mac_inputs(pr)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+    let blank = AdvisorInputs::default();
+    let res = api.post("/v1/agent/advisor-inputs", &blank).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    let recs: Vec<Recommendation> = api
+        .post("/v1/advice/refresh", &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let titles: Vec<&str> = recs.iter().map(|r| r.title.as_str()).collect();
+    assert!(
+        titles.contains(&"Review owner/app#7: Change 7"),
+        "titles: {titles:?}"
+    );
+    assert!(titles.contains(&"Session 'Fix login' in myproj still has failing tests"));
+    assert!(!titles.iter().any(|t| t.contains("#1:")), "old copy kept");
 }

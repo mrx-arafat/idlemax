@@ -163,11 +163,11 @@ async fn coord_and_agent_run_a_tiny_job() {
 
     let (coord_port, agent_port) = (free_port(), free_port());
     let coord = format!("http://127.0.0.1:{coord_port}");
-    // Advisor off: its refresh would call the real `gh` and read session dirs.
+    // Advisor and its feed off: they would call the real `gh` and read session dirs.
     let config = format!(
         "[coordinator]\nlisten = \"127.0.0.1:{coord_port}\"\nurl = \"{coord}\"\n\n\
          [agent]\ndevice_id = \"{DEVICE}\"\nlisten = \"127.0.0.1:{agent_port}\"\n\
-         sample_secs = 1\nheartbeat_secs = 1\ncommand_allowlist = [\"/bin/echo\"]\n\n\
+         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ncommand_allowlist = [\"/bin/echo\"]\n\n\
          [advisor]\nenabled = false\n\n\
          [guard]\n{PERMISSIVE_GUARD}"
     );

@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use idlemax_core::advice::AdvisorInputs;
 use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -89,6 +90,11 @@ impl CoordClient {
     pub async fn job_update(&self, update: &JobUpdate) -> Result<u64, ClientError> {
         let reply: JobUpdateReply = self.post("/v1/agent/job-update", update).await?;
         Ok(reply.acked_seq.unwrap_or(update.seq))
+    }
+
+    pub async fn advisor_inputs(&self, inputs: &AdvisorInputs) -> Result<(), ClientError> {
+        let _: serde_json::Value = self.post("/v1/agent/advisor-inputs", inputs).await?;
+        Ok(())
     }
 
     async fn post<B, R>(&self, path: &str, body: &B) -> Result<R, ClientError>

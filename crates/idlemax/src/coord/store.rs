@@ -8,6 +8,7 @@ mod advice;
 mod controls;
 mod devices;
 mod events;
+mod inputs;
 mod jobs;
 mod quota;
 mod schema;

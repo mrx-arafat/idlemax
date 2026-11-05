@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::ClusterStatus;
 use crate::quota::QuotaView;
-use crate::types::{Job, JobSpec, UnixMs};
+use crate::types::{DeviceId, Job, JobSpec, UnixMs};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AdviceInput {
@@ -22,6 +22,7 @@ pub struct AdviceInput {
 
 /// One open pull request or issue.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GhItem {
     /// owner/name
     pub repo: String,
@@ -51,6 +52,7 @@ pub enum GithubStatus {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GithubSnapshot {
     pub status: GithubStatus,
     pub review_requested: Vec<GhItem>,
@@ -81,6 +83,7 @@ impl SessionSignal {
 
 /// Metadata of one agent session; never message text.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SessionMeta {
     /// "claude" or "codex".
     pub tool: String,
@@ -90,4 +93,22 @@ pub struct SessionMeta {
     pub project: Option<String>,
     pub last_activity_ms: UnixMs,
     pub signals: Vec<SessionSignal>,
+}
+
+/// POST /v1/agent/advisor-inputs: what one device's agent read on its own host for the
+/// advisor. Metadata only: PR and issue headers, session titles and signals, never
+/// message text. Missing fields take defaults so an older or newer agent still decodes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AdvisorInputs {
+    pub device: DeviceId,
+    pub github: GithubSnapshot,
+    pub sessions: Vec<SessionMeta>,
+}
+
+/// A device's newest `AdvisorInputs` and when the coordinator received them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StoredInputs {
+    pub received_ms: UnixMs,
+    pub inputs: AdvisorInputs,
 }

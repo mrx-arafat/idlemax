@@ -19,6 +19,7 @@ use tracing::{error, info, warn};
 
 use crate::state::now_ms;
 
+use super::advisor_feed;
 use super::client::CoordClient;
 use super::outbox::DurableOutbox;
 use super::probes::{Probes, Reading};
@@ -45,6 +46,8 @@ pub struct Wiring {
     pub status: watch::Sender<LocalStatus>,
     pub sample_every: Duration,
     pub heartbeat_every: Duration,
+    /// How often to send the advisor inputs; None sends nothing.
+    pub advisor_inputs_every: Option<Duration>,
 }
 
 pub struct Agent {
@@ -57,6 +60,7 @@ pub struct Agent {
     status: watch::Sender<LocalStatus>,
     sample_every: Duration,
     heartbeat_every: Duration,
+    advisor_inputs_every: Option<Duration>,
     state: AgentState,
     outbox: DurableOutbox,
     reading: Reading,
@@ -80,6 +84,7 @@ impl Agent {
             status: w.status,
             sample_every: w.sample_every,
             heartbeat_every: w.heartbeat_every,
+            advisor_inputs_every: w.advisor_inputs_every,
             state: AgentState::default(),
             outbox: w.outbox,
             reading: Reading::default(),
@@ -103,6 +108,10 @@ impl Agent {
         let mut reap = ticker(REAP_EVERY, false);
         let mut trip: Option<JoinHandle<Trip>> = None;
         let mut beat_due = false;
+        let feed_on = self.advisor_inputs_every.is_some();
+        let mut feed_tick = ticker(self.advisor_inputs_every.unwrap_or_default(), true);
+        let mut feed: Option<JoinHandle<()>> = None;
+        let mut feed_due = false;
         self.on_sample().await;
         loop {
             tokio::select! {
@@ -116,14 +125,26 @@ impl Agent {
                 _ = sample.tick() => self.on_sample().await,
                 _ = beat.tick() => beat_due = true,
                 _ = reap.tick() => self.reap().await,
+                Some(done) = join(&mut feed) => {
+                    feed = None;
+                    log_feed_end(done);
+                }
+                _ = feed_tick.tick(), if feed_on => feed_due = true,
             }
             if trip.is_none() {
                 trip = self.next_trip(&mut beat_due);
+            }
+            if feed_due && feed.is_none() && self.online {
+                feed_due = false;
+                feed = Some(self.spawn_feed());
             }
             self.publish();
         }
         if let Some(t) = trip {
             t.abort();
+        }
+        if let Some(f) = feed {
+            f.abort();
         }
         self.shutdown().await;
     }
@@ -291,6 +312,12 @@ impl Agent {
         )))
     }
 
+    /// Sends the advisor inputs in its own task, so slow `gh` or session reads never stall the loop.
+    fn spawn_feed(&self) -> JoinHandle<()> {
+        let (client, device) = (self.client.clone(), self.device.id.clone());
+        tokio::spawn(advisor_feed::run(client, device))
+    }
+
     fn heartbeat(&self) -> Heartbeat {
         Heartbeat {
             device: self.device.clone(),
@@ -381,6 +408,12 @@ fn log_action(action: &AgentAction, outcome: &Result<(), String>) {
     }
 }
 
+fn log_feed_end(done: Result<(), JoinError>) {
+    if let Err(e) = done {
+        error!("advisor feed task failed: {e}");
+    }
+}
+
 /// Runs `f` on a blocking thread. A panic inside poisons nothing for later calls.
 async fn blocking<T, R>(
     cell: &Arc<Mutex<T>>,
@@ -398,9 +431,9 @@ where
     .await
 }
 
-/// Resolves when the trip in flight finishes; never while none is.
-async fn join(trip: &mut Option<JoinHandle<Trip>>) -> Option<Result<Trip, JoinError>> {
-    match trip {
+/// Resolves when the task in flight finishes; never while none is.
+async fn join<T>(task: &mut Option<JoinHandle<T>>) -> Option<Result<T, JoinError>> {
+    match task {
         Some(handle) => Some(handle.await),
         None => std::future::pending().await,
     }

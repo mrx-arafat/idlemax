@@ -67,6 +67,9 @@ pub struct AgentConfig {
     pub listen: String,
     pub sample_secs: u64,
     pub heartbeat_secs: u64,
+    /// Seconds between sends of the advisor inputs (`gh` summary, session metadata) to the
+    /// coordinator. 0 sends nothing from this device.
+    pub advisor_inputs_secs: u64,
     /// AI accounts this device may spend; names from `[[quota.accounts]]`.
     pub ai_accounts: Vec<String>,
     /// Allowed argv[0] values (bare names or absolute paths). Empty allows nothing.
@@ -81,6 +84,7 @@ impl Default for AgentConfig {
             listen: DEFAULT_AGENT_LISTEN.into(),
             sample_secs: 30,
             heartbeat_secs: 30,
+            advisor_inputs_secs: 15 * 60,
             ai_accounts: Vec::new(),
             command_allowlist: Vec::new(),
         }

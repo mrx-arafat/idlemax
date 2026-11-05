@@ -92,6 +92,7 @@ Put `packaging/claude-statusline-capture.sh` in front of your statusline in `~/.
 ## AI advisor
 
 The advisor reads coordinator state, your open PRs and review requests through `gh`, and metadata of recent Claude and Codex sessions (never message text).
+Each agent reads `gh` and the session files on its own device every 15 minutes and sends only that metadata to the coordinator, so the coordinator can run on a server that has neither.
 Its rules engine runs every 15 minutes and on `idlemax advise refresh`.
 It flags parked or failed jobs, offline devices, idle devices with an empty queue, quota about to reset unused, PRs waiting on you for 2+ days, and unfinished sessions.
 An AI pass runs as an ordinary `ai` job through `claude -p` with a strict JSON schema, only when `advisor.ai_account` is spendable under the rules above.
@@ -312,6 +313,7 @@ Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) an
 | `agent.profile` | from the OS | `macos_laptop` or `linux_server` guard preset |
 | `agent.listen` | `127.0.0.1:7879` | local agent API |
 | `agent.sample_secs`, `agent.heartbeat_secs` | `30`, `30` | guard sample and heartbeat intervals |
+| `agent.advisor_inputs_secs` | `900` | how often the agent sends its `gh` summary and session metadata to the advisor; `0` sends nothing |
 | `agent.ai_accounts` | `[]` | AI accounts this device may spend |
 | `agent.command_allowlist` | `[]` | exact `argv[0]` values a job may run; bare names resolve on the agent's PATH; empty denies all |
 | `[guard]` | preset values | any key from the guard table above |
@@ -469,7 +471,7 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 | macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap |
 | Claude quota | needs the statusline capture wrapper; until it writes data, Claude accounts are never spendable |
 | `agy` | interactive use is not detected |
-| Advisor | reads `gh` and sessions on the coordinator's host, so a server coordinator sees neither yet; the AI pass has not run end to end, because that spends quota |
+| Advisor | the AI pass has not run end to end, because that spends quota |
 | Web dashboard | not yet checked in a browser |
 | Runtime limit | measured on the wall clock, so a laptop that sleeps past it kills the job on wake |
 | Job updates | queued in agent memory only; after an agent crash the lease expires and the job is retried |

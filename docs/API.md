@@ -19,6 +19,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | GET | / | | dashboard HTML (no auth) |
 | POST | /v1/agent/heartbeat | `Heartbeat` | `HeartbeatReply` |
 | POST | /v1/agent/job-update | `JobUpdate` | `JobUpdateReply` |
+| POST | /v1/agent/advisor-inputs | `AdvisorInputs` | `{}` |
 | GET | /v1/status | | `ClusterStatus` |
 | GET | /v1/jobs?status=&limit= | | `[Job]` |
 | POST | /v1/jobs | `JobSpec` | `Job` |
@@ -147,6 +148,12 @@ The agent sends heartbeats from their own task, so a slow coordinator delays hea
   A queued or active job becomes `cancelled` (active ones get `kill_job`); a finished job is 409.
 
 ## Advice
+
+Each agent posts `AdvisorInputs` to `/v1/agent/advisor-inputs` every `agent.advisor_inputs_secs` (default 900 s, 0 sends nothing): `{device, github, sessions}`.
+`github` is the read-only `gh` summary (review requests, assigned PRs and issues), `sessions` is metadata of recent Claude and Codex sessions (tool, id, title, project, last activity, signals), never message text.
+All fields default, so an agent with fewer or more fields still decodes.
+The coordinator keeps the newest copy per device and the advisor uses the newest good GitHub summary plus the sessions of every device whose copy is under 3 days old.
+A coordinator older than this route answers 404; the agent logs a warning and tries again next interval.
 
 `Recommendation.key` is a stable dedup key (for example `parked_job:42`), so a refresh does not repeat advice the owner already saw.
 Accepting queues `suggested_job`; nothing runs on the advisor's word alone, except job names listed in `advisor.auto_accept`.

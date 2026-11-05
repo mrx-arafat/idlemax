@@ -3,7 +3,7 @@
 
 use axum::extract::State;
 use axum::Json;
-use idlemax_core::advice::is_ai_pass;
+use idlemax_core::advice::{is_ai_pass, AdvisorInputs};
 use idlemax_core::control::{
     came_online, is_held, may_assign, paused_accounts, reconcile_heartbeat, transition_event,
 };
@@ -11,6 +11,7 @@ use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateRepl
 use idlemax_core::scheduler::{apply_update, lease_deadline, pick, SchedContext};
 use idlemax_core::types::{ControlScope, EventKind, Job, JobStatus, UnixMs};
 use idlemax_core::Config;
+use serde_json::{json, Value};
 
 use super::http::{ApiFailure, JsonBody};
 use super::jobs::quota_views;
@@ -51,6 +52,23 @@ pub async fn job_update(
     Ok(Json(JobUpdateReply {
         acked_seq: (seq != 0).then_some(seq),
     }))
+}
+
+/// `POST /v1/agent/advisor-inputs`: keeps the newest copy per device for the advisor.
+pub async fn advisor_inputs(
+    State(app): State<AppState>,
+    JsonBody(inputs): JsonBody<AdvisorInputs>,
+) -> Result<Json<Value>, ApiFailure> {
+    if inputs.device.trim().is_empty() {
+        return Err(ApiFailure::BadRequest("device is empty".into()));
+    }
+    let now = now_ms();
+    app.with_store(move |store, _| {
+        store.put_advisor_inputs(&inputs, now)?;
+        Ok::<_, ApiFailure>(())
+    })
+    .await?;
+    Ok(Json(json!({})))
 }
 
 pub(super) fn on_heartbeat(

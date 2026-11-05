@@ -1,6 +1,7 @@
 //! Agent startup: wires config, guard, metrics, runner, local API and the coordinator
 //! client into the event loop. Adapter layer.
 
+mod advisor_feed;
 pub mod api;
 pub mod client;
 mod event_loop;
@@ -100,6 +101,8 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         status: ports.status,
         sample_every: Duration::from_secs(config.agent.sample_secs),
         heartbeat_every: Duration::from_secs(config.agent.heartbeat_secs),
+        advisor_inputs_every: (config.agent.advisor_inputs_secs > 0)
+            .then(|| Duration::from_secs(config.agent.advisor_inputs_secs)),
     });
     agent.run(shutdown, ports.control).await;
     tracing::info!("agent stopped");

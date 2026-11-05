@@ -71,7 +71,7 @@ pub async fn dismiss(
     ))
 }
 
-/// One advisor run: gather state, let the advisor decide (it may spawn `gh`), persist.
+/// One advisor run: gather state and the agents' inputs, let the advisor decide, persist.
 pub async fn run_refresh(app: &AppState, now: UnixMs) -> Result<(), ApiFailure> {
     let (state, existing) = app
         .with_store(move |store, cfg| {
@@ -80,6 +80,7 @@ pub async fn run_refresh(app: &AppState, now: UnixMs) -> Result<(), ApiFailure> 
                 status,
                 jobs: store.list_jobs(None, RECENT_JOBS)?,
                 quota: quota_views(store, cfg, now)?,
+                inputs: store.advisor_inputs()?,
             };
             Ok::<_, ApiFailure>((state, existing_advice(store, now)?))
         })

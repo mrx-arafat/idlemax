@@ -1,23 +1,20 @@
-//! Adapter: advisor use cases for the coordinator. Collects the read-only inputs (`gh`,
-//! session metadata, job templates), runs the `idlemax_core::advice` domain, and turns a
-//! due AI pass into a `claude -p` job. Never touches the store: the caller persists.
+//! Adapter: advisor use cases for the coordinator. Merges the inputs the agents sent (`gh`
+//! summary, session metadata) with the job templates, runs the `idlemax_core::advice`
+//! domain, and turns a due AI pass into a `claude -p` job. Never touches the store: the
+//! caller persists. The `github` and `sessions` readers run in the agent, on the host
+//! that has `gh` and the session files (see `agent::advisor_feed`).
 
 pub mod claude;
 pub mod github;
 pub mod sessions;
 pub mod templates;
 
-use std::path::PathBuf;
-use std::time::Duration;
-
-use idlemax_core::advice::{self, ai, AdviceError, AdviceInput, RefreshPlan};
+use idlemax_core::advice::{self, ai, AdviceError, AdviceInput, RefreshPlan, StoredInputs};
 use idlemax_core::config::AdvisorConfig;
 use idlemax_core::protocol::ClusterStatus;
 use idlemax_core::quota::QuotaView;
 use idlemax_core::types::{Job, JobId, JobSpec, Recommendation, UnixMs};
 use idlemax_core::Paths;
-
-const GH_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Coordinator state the advisor reads.
 #[derive(Debug, Clone, Default)]
@@ -26,6 +23,8 @@ pub struct CoordState {
     /// Recent jobs in any status (newest 500 is plenty).
     pub jobs: Vec<Job>,
     pub quota: Vec<QuotaView>,
+    /// Every device's newest advisor inputs, as the agents sent them.
+    pub inputs: Vec<StoredInputs>,
 }
 
 /// What to persist: insert advice (id 0; Accepted ones were auto-accepted), mark `close`
@@ -61,14 +60,9 @@ pub async fn refresh(
     if !cfg.enabled {
         return Ok(AdviceChanges::default());
     }
-    let github = github::read(GH_TIMEOUT).await;
     let jobs_dir = paths.jobs_dir();
-    let home = user_home();
-    let (templates, sessions) = tokio::task::spawn_blocking(move || {
-        let sessions = home.map(|h| sessions::read(&h, now_ms)).unwrap_or_default();
-        (templates::load(&jobs_dir), sessions)
-    })
-    .await?;
+    let templates = tokio::task::spawn_blocking(move || templates::load(&jobs_dir)).await?;
+    let (github, sessions) = advice::merge_inputs(&state.inputs, now_ms);
     let input = AdviceInput {
         now_ms,
         status: state.status,
@@ -110,12 +104,4 @@ fn changes(plan: RefreshPlan) -> AdviceChanges {
         queue,
         cancel: plan.cancel,
     }
-}
-
-// SHORTCUT: sessions and gh are read where the coordinator runs, so a server coordinator
-// sees neither; ship a session index and gh results from the Mac agent once coord moves there.
-fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
 }
