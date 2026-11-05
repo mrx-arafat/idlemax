@@ -10,6 +10,31 @@ use idlemax_core::Paths;
 
 use super::Runner;
 
+#[test]
+fn sleeping_past_runtime_survives_until_awake_limit() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    let mut task = job(9, &["sh", "-c", "while :; do sleep 1; done"], 64);
+    task.spec.max_runtime_secs = 10;
+    let wall = crate::state::now_ms();
+    r.start_at(&task, wall, 0).unwrap();
+    // Inject a clock with one hour of sleep and just one second awake.
+    let wall_slept = wall + 3_600_000;
+    r.poll_at(wall_slept, 1_000);
+    assert!(r.slots[&9].stop.is_none(), "sleep consumed the runtime cap");
+    r.poll_at(wall_slept + 9_001, 10_001);
+    assert!(matches!(
+        r.slots[&9].stop.as_ref().map(|s| &s.reason),
+        Some(idlemax_core::job_run::StopReason::MaxRuntime { limit_secs: 10 })
+    ));
+    let update = wait_ended(&mut r, Duration::from_secs(5));
+    assert_eq!(update.status, JobStatus::Killed);
+    assert_eq!(
+        update.error.as_deref(),
+        Some("max runtime of 10 s exceeded")
+    );
+}
+
 fn runner(home: &Path, allow: &[&str]) -> Runner {
     let config = AgentConfig {
         command_allowlist: allow.iter().map(|s| s.to_string()).collect(),

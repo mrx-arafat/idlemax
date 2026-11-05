@@ -20,6 +20,7 @@ pub struct Ended {
     pub exit: ExitInfo,
     pub stop: Option<StopReason>,
     pub clock: RunClock,
+    pub active_ms: i64,
     pub log_path: PathBuf,
     pub log_offset: u64,
 }
@@ -43,7 +44,7 @@ pub fn finish(
         outcome: &outcome,
         started_ms: ended.clock.started_ms(),
         finished_ms: now_ms,
-        active_ms: ended.clock.active_ms(now_ms),
+        active_ms: ended.active_ms,
         wrapper,
         log_path: &ended.log_path.to_string_lossy(),
         output: &output,

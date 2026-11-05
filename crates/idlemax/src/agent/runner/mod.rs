@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::process::{Child, ExitStatus};
+use std::time::Instant;
 
 use idlemax_core::config::AgentConfig;
 use idlemax_core::job_run::{self, AdmitError, ExitInfo, RunClock, StopReason, Wrapper};
@@ -74,6 +75,7 @@ pub struct Runner {
     usage_at_ms: UnixMs,
     slots: HashMap<JobId, Slot>,
     pending: Vec<JobUpdate>,
+    awake_origin: Instant,
 }
 
 struct Slot {
@@ -113,16 +115,27 @@ impl Runner {
             usage_at_ms: 0,
             slots: HashMap::new(),
             pending,
+            awake_origin: Instant::now(),
         }
     }
 
     /// Starts a leased job. On error nothing runs and no update is queued.
     pub fn start(&mut self, job: &Job) -> Result<(), RunnerError> {
+        let started_ms = now_ms();
+        let awake_ms = self.awake_ms();
+        self.start_at(job, started_ms, awake_ms)
+    }
+
+    fn start_at(
+        &mut self,
+        job: &Job,
+        started_ms: UnixMs,
+        awake_ms: i64,
+    ) -> Result<(), RunnerError> {
         if self.slots.contains_key(&job.id) {
             return Err(RunnerError::AlreadyRunning(job.id));
         }
         job_run::admit(&job.spec, &self.allowlist)?;
-        let started_ms = now_ms();
         let launched = launch::launch(&self.paths, &self.wrapper, job, started_ms)?;
         if let Err(e) = pidfile::write(&self.paths, job.id, launched.pid, started_ms) {
             warn!(job = job.id, error = %e, "cannot write job pid file");
@@ -132,7 +145,7 @@ impl Runner {
             job: job.clone(),
             child: launched.child,
             pid: launched.pid,
-            clock: RunClock::start(started_ms),
+            clock: RunClock::start(started_ms, awake_ms),
             log_path: launched.log_path,
             log_offset: launched.log_offset,
             usage: None,
@@ -144,6 +157,7 @@ impl Runner {
 
     /// SIGSTOP the job's process group. Unknown, stopping or paused jobs: no-op.
     pub fn pause(&mut self, id: JobId) -> Result<(), RunnerError> {
+        let awake_ms = self.awake_ms();
         let Some(slot) = self.slots.get_mut(&id) else {
             return Ok(());
         };
@@ -152,12 +166,13 @@ impl Runner {
         }
         os::signal_group(slot.pid, Sig::Stop)
             .map_err(|source| RunnerError::Signal { id, source })?;
-        slot.clock.pause(now_ms());
+        slot.clock.pause(awake_ms);
         Ok(())
     }
 
     /// SIGCONT the job's process group. Unknown or running jobs: no-op.
     pub fn resume(&mut self, id: JobId) -> Result<(), RunnerError> {
+        let awake_ms = self.awake_ms();
         let Some(slot) = self.slots.get_mut(&id) else {
             return Ok(());
         };
@@ -166,15 +181,16 @@ impl Runner {
         }
         os::signal_group(slot.pid, Sig::Cont)
             .map_err(|source| RunnerError::Signal { id, source })?;
-        slot.clock.resume(now_ms());
+        slot.clock.resume(awake_ms);
         Ok(())
     }
 
     /// SIGTERM the group (SIGCONT too if paused); `poll` sends SIGKILL after 15 s.
     /// The Killed update carries `error: None` so the caller can add its reason.
     pub fn kill(&mut self, id: JobId) -> Result<(), RunnerError> {
+        let awake_ms = self.awake_ms();
         match self.slots.get_mut(&id) {
-            Some(slot) => stop(slot, StopReason::Requested, now_ms())
+            Some(slot) => stop(slot, StopReason::Requested, now_ms(), awake_ms)
                 .map_err(|source| RunnerError::Signal { id, source }),
             None => Ok(()),
         }
@@ -184,13 +200,23 @@ impl Runner {
     /// Returns terminal updates only (succeeded, failed, killed).
     pub fn poll(&mut self) -> Vec<JobUpdate> {
         let now = now_ms();
+        self.poll_at(now, self.awake_ms())
+    }
+
+    fn poll_at(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         self.refresh_usage(now);
         for slot in self.slots.values_mut() {
-            enforce(slot, now);
+            enforce(slot, now, awake_ms);
         }
         let mut updates = std::mem::take(&mut self.pending);
-        updates.extend(self.reap(now));
+        updates.extend(self.reap(now, awake_ms));
         updates
+    }
+
+    // Rust's Instant uses CLOCK_UPTIME_RAW on macOS and CLOCK_MONOTONIC on Linux.
+    // Both exclude system suspend; Unix time remains for reports and pid identity.
+    fn awake_ms(&self) -> i64 {
+        i64::try_from(self.awake_origin.elapsed().as_millis()).unwrap_or(i64::MAX)
     }
 
     pub fn running(&self) -> Vec<RunningJob> {
@@ -215,7 +241,7 @@ impl Runner {
         }
     }
 
-    fn reap(&mut self, now: UnixMs) -> Vec<JobUpdate> {
+    fn reap(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         let ended: Vec<(JobId, ExitStatus)> = self
             .slots
             .iter_mut()
@@ -232,12 +258,12 @@ impl Runner {
             .filter_map(|(id, status)| {
                 self.slots
                     .remove(&id)
-                    .map(|slot| self.close(slot, status, now))
+                    .map(|slot| self.close(slot, status, now, awake_ms))
             })
             .collect()
     }
 
-    fn close(&self, slot: Slot, status: ExitStatus, now: UnixMs) -> JobUpdate {
+    fn close(&self, slot: Slot, status: ExitStatus, now: UnixMs, awake_ms: i64) -> JobUpdate {
         if let Err(e) = os::kill_leftovers(slot.pid) {
             warn!(job = slot.job.id, error = %e, "cannot kill leftover job processes");
         }
@@ -247,6 +273,7 @@ impl Runner {
             exit: exit_info(status),
             stop: slot.stop.map(|s| s.reason),
             clock: slot.clock,
+            active_ms: slot.clock.active_ms(awake_ms),
             log_path: slot.log_path,
             log_offset: slot.log_offset,
         };
@@ -291,7 +318,7 @@ impl Slot {
     }
 }
 
-fn enforce(slot: &mut Slot, now: UnixMs) {
+fn enforce(slot: &mut Slot, now: UnixMs, awake_ms: i64) {
     let id = slot.job.id;
     if let Some(stop) = slot.stop.as_mut() {
         if !stop.kill_sent && job_run::kill_due(stop.term_sent_ms, now) {
@@ -303,15 +330,15 @@ fn enforce(slot: &mut Slot, now: UnixMs) {
         return;
     }
     let rss = slot.usage.map(|u| u.rss_bytes);
-    if let Some(reason) = job_run::breach(&slot.job.spec, slot.clock.active_ms(now), rss) {
+    if let Some(reason) = job_run::breach(&slot.job.spec, slot.clock.active_ms(awake_ms), rss) {
         warn!(job = id, reason = ?reason.message(), "stopping job over its cap");
-        if let Err(e) = stop(slot, reason, now) {
+        if let Err(e) = stop(slot, reason, now, awake_ms) {
             warn!(job = id, error = %e, "cannot stop job");
         }
     }
 }
 
-fn stop(slot: &mut Slot, reason: StopReason, now: UnixMs) -> io::Result<()> {
+fn stop(slot: &mut Slot, reason: StopReason, now: UnixMs, awake_ms: i64) -> io::Result<()> {
     if slot.stop.is_some() {
         return Ok(());
     }
@@ -324,7 +351,7 @@ fn stop(slot: &mut Slot, reason: StopReason, now: UnixMs) -> io::Result<()> {
     if slot.clock.is_paused() {
         // A stopped process acts on SIGTERM only once continued.
         os::signal_group(slot.pid, Sig::Cont)?;
-        slot.clock.resume(now);
+        slot.clock.resume(awake_ms);
     }
     Ok(())
 }

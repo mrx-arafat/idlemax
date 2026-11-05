@@ -46,18 +46,21 @@ fn forbidden_env(key: &str) -> bool {
     key == crate::TOKEN_ENV || FORBIDDEN_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
 }
 
-/// Pause-aware run time: paused spans do not count against max runtime.
+/// Pure runtime accounting using adapter-supplied awake milliseconds.
+/// System sleep and explicitly paused spans do not consume the runtime cap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunClock {
     started_ms: UnixMs,
+    started_awake_ms: i64,
     paused_ms: i64,
-    paused_since_ms: Option<UnixMs>,
+    paused_since_ms: Option<i64>,
 }
 
 impl RunClock {
-    pub fn start(now_ms: UnixMs) -> Self {
+    pub fn start(now_ms: UnixMs, awake_ms: i64) -> Self {
         Self {
             started_ms: now_ms,
+            started_awake_ms: awake_ms,
             paused_ms: 0,
             paused_since_ms: None,
         }
@@ -71,21 +74,21 @@ impl RunClock {
         self.paused_since_ms.is_some()
     }
 
-    pub fn pause(&mut self, now_ms: UnixMs) {
-        self.paused_since_ms.get_or_insert(now_ms);
+    pub fn pause(&mut self, awake_ms: i64) {
+        self.paused_since_ms.get_or_insert(awake_ms);
     }
 
-    pub fn resume(&mut self, now_ms: UnixMs) {
+    pub fn resume(&mut self, awake_ms: i64) {
         if let Some(since) = self.paused_since_ms.take() {
-            self.paused_ms += (now_ms - since).max(0);
+            self.paused_ms += (awake_ms - since).max(0);
         }
     }
 
-    pub fn active_ms(&self, now_ms: UnixMs) -> i64 {
+    pub fn active_ms(&self, awake_ms: i64) -> i64 {
         let open = self
             .paused_since_ms
-            .map_or(0, |since| (now_ms - since).max(0));
-        (now_ms - self.started_ms - self.paused_ms - open).max(0)
+            .map_or(0, |since| (awake_ms - since).max(0));
+        (awake_ms - self.started_awake_ms - self.paused_ms - open).max(0)
     }
 }
 
@@ -253,6 +256,37 @@ mod tests {
         assert_eq!(
             admit(&s, &allow),
             Err(AdmitError::ForbiddenEnv("DYLD_INSERT_LIBRARIES".into()))
+        );
+    }
+
+    #[test]
+    fn run_clock_and_breach_measure_awake_time_and_ignore_sleep() {
+        let started_wall = 1_700_000_000_000;
+        let mut clock = RunClock::start(started_wall, 0);
+
+        // System sleeps for 2 hours, but awake clock only advances by 500 ms.
+        let awake_500ms = 500;
+        assert_eq!(clock.active_ms(awake_500ms), 500);
+
+        let mut s = spec(&["git"]);
+        s.max_runtime_secs = 2;
+        assert_eq!(breach(&s, clock.active_ms(awake_500ms), None), None);
+
+        // Paused for 300 ms awake time.
+        clock.pause(800);
+        assert!(clock.is_paused());
+        assert_eq!(clock.active_ms(1_000), 800);
+        clock.resume(1_100);
+        assert!(!clock.is_paused());
+        assert_eq!(clock.active_ms(1_100), 800);
+
+        // Awake time reaches 2301 ms (active = 2301 - 300 = 2001 ms > 2000 ms limit).
+        let awake_past = 2_301;
+        let active = clock.active_ms(awake_past);
+        assert_eq!(active, 2_001);
+        assert_eq!(
+            breach(&s, active, None),
+            Some(StopReason::MaxRuntime { limit_secs: 2 })
         );
     }
 }

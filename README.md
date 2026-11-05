@@ -53,7 +53,8 @@ Every job runs in its own process group at the lowest priority the OS offers:
 | Linux, otherwise | `nice -n 19 ionice -c3 <command>` | the runner's RSS check, plus the agent unit's cgroup caps |
 | Windows | idle priority class | the runner's RSS check |
 
-The runner also kills a job after `max_runtime_secs` (default 1800) of unpaused time.
+The runner also kills a job after `max_runtime_secs` (default 1800) of awake, unpaused time.
+System sleep does not consume this runtime budget on macOS or Linux.
 
 ## AI quota maximizer
 
