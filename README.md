@@ -319,7 +319,8 @@ The agent serves these on `agent.listen` (default `127.0.0.1:7879`, loopback onl
 
 The coordinator serves one self-contained page at `/` with no remote scripts, fonts or styles.
 It asks for the token once and keeps it in that browser's local storage until you press "Forget token".
-It refreshes every 5 s and shows devices with guard verdicts and metrics, jobs, AI quota per window, advice and events.
+It refreshes every 5 s, rebuilding a section only when its data changed, and shows devices with guard verdicts and metrics, jobs, AI quota per window, advice and events.
+It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, and accept or dismiss advice.
 
 ## Configuration reference
@@ -496,7 +497,6 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 | macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap |
 | Claude quota | needs the statusline capture wrapper; until it writes data, Claude accounts are never spendable |
 | Advisor | the AI pass has not run end to end, because that spends quota |
-| Web dashboard | not yet checked in a browser |
 | Runtime limit | measured on the wall clock, so a laptop that sleeps past it kills the job on wake |
 | Job updates | queued in agent memory only; after an agent crash the lease expires and the job is retried |
 

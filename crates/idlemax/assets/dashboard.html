@@ -17,6 +17,7 @@
   --faint: #6b747e;
   --line: #e0e4e9;
   --line-strong: #c9cfd6;
+  --control: #858d97;
   --accent: #0f6b66;
   --accent-ink: #ffffff;
   --ok: #17663f;
@@ -44,6 +45,7 @@
     --faint: #808993;
     --line: #272c33;
     --line-strong: #363c45;
+    --control: #6b747e;
     --accent: #3cb3a9;
     --accent-ink: #071413;
     --ok: #55c48e;
@@ -104,6 +106,8 @@ button, input, select { font: inherit; color: inherit; }
 .btn.primary:hover { filter: brightness(1.06); }
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line-strong)); }
 .btn.danger:hover { background: var(--bad-bg); }
+.btn.danger.solid { background: var(--bad); border-color: var(--bad); color: var(--accent-ink); }
+.btn.danger.solid:hover { background: var(--bad); filter: brightness(1.08); }
 .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
 .btn.ghost:hover { color: var(--ink); background: var(--panel-2); }
@@ -161,14 +165,15 @@ main { max-width: 1320px; margin: 0 auto; padding: 16px; }
 .dev-h .badges { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .guard { margin: 10px 0 0; font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .reasons { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
-.reasons li { overflow-wrap: anywhere; }
-.reasons li::before { content: "- "; color: var(--faint); }
+.reasons li { display: flex; gap: 5px; overflow-wrap: anywhere; }
+.reasons li::before { content: "-"; flex: none; color: var(--faint); }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; margin-top: 10px; }
 .stat .k { font-size: 11px; color: var(--muted); }
-.stat .v { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .v { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .dev-jobs { margin-top: 10px; font-size: 12.5px; display: grid; gap: 4px; }
 .dev-jobs .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dev-jobs .row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-jobs .row .badge, .dev-jobs .row .faint { flex: none; white-space: nowrap; }
 .dev-a { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 
 /* Tables */
@@ -180,12 +185,14 @@ th:first-child, td:first-child { padding-left: 14px; }
 th:last-child, td:last-child { padding-right: 14px; }
 tbody tr:last-child td { border-bottom: 0; }
 td.r, th.r { text-align: right; }
+td.nw { white-space: nowrap; }
+td.c-dev { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 td .t2 { font-size: 12px; color: var(--muted); margin-top: 1px; overflow-wrap: anywhere; }
 td.acts { white-space: nowrap; text-align: right; }
 td.acts .btn + .btn { margin-left: 4px; }
 .job-name { font-weight: 600; overflow-wrap: anywhere; }
 select {
-  height: 28px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 6px;
+  height: 28px; padding: 0 8px; border: 1px solid var(--control); border-radius: 6px;
   background: var(--panel); font-size: 12.5px;
 }
 
@@ -205,7 +212,7 @@ select {
 /* Advice */
 .adv + .adv { border-top: 1px solid var(--line); }
 .adv { padding: 12px 14px; }
-.adv-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.adv-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
 .adv-h .title { font-weight: 650; flex: 1 1 200px; overflow-wrap: anywhere; }
 .adv p { margin: 6px 0 0; color: var(--ink); overflow-wrap: anywhere; }
 .adv .meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
@@ -217,7 +224,8 @@ select {
 .adv-a { display: flex; gap: 6px; margin-top: 10px; }
 .adv.closed { opacity: 0.7; }
 
-/* Events */
+/* Events: a log pane, so it scrolls instead of stretching the page */
+#events { max-height: min(60vh, 520px); overflow-y: auto; overscroll-behavior: contain; }
 .ev { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 2px 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .ev:last-child { border-bottom: 0; }
 .ev .when { color: var(--muted); }
@@ -229,7 +237,7 @@ select {
 .login .card-b { display: grid; gap: 10px; }
 .login label { font-size: 13px; color: var(--muted); }
 .login input {
-  height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px;
+  height: 36px; padding: 0 10px; border: 1px solid var(--control); border-radius: 6px;
   background: var(--panel); width: 100%;
 }
 .login code { font-family: var(--mono); font-size: 12px; background: var(--neutral-bg); padding: 1px 5px; border-radius: 4px; }
@@ -246,19 +254,44 @@ dialog .card-b p { margin: 0; }
 dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14px 14px; }
 .toasts { position: fixed; right: 16px; bottom: 16px; left: 16px; display: grid; justify-items: end; gap: 8px; pointer-events: none; z-index: 20; }
 .toast {
-  pointer-events: auto; max-width: min(420px, 100%);
+  max-width: min(420px, 100%);
   padding: 9px 12px; border-radius: 8px; font-size: 13px;
   background: var(--ink); color: var(--panel); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 .toast.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
 
+/* Phone: jobs become stacked cards, the header stops sticking, targets reach 44 px. */
+@media (max-width: 640px) {
+  .jobs-table thead { display: none; }
+  .jobs-table, .jobs-table tbody { display: block; }
+  .jobs-table tr {
+    display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+    grid-template-areas: "id job status" ". dev created" ". acts acts";
+    gap: 4px 10px; padding: 12px 14px; border-bottom: 1px solid var(--line);
+  }
+  .jobs-table tbody tr:last-child { border-bottom: 0; }
+  .jobs-table td { display: block; padding: 0; border: 0; text-align: left; }
+  .jobs-table td.c-id { grid-area: id; }
+  .jobs-table td.c-job { grid-area: job; }
+  .jobs-table td.c-status { grid-area: status; text-align: right; }
+  .jobs-table td.c-dev { grid-area: dev; max-width: none; }
+  .jobs-table td.c-dev > .faint { display: none; }
+  .jobs-table td.c-created { grid-area: created; text-align: right; }
+  .jobs-table td.acts { grid-area: acts; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; white-space: normal; }
+  .jobs-table td.acts:empty { display: none; }
+  .jobs-table td.acts .btn + .btn { margin-left: 0; }
+}
 @media (max-width: 560px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .btn { height: 40px; }
-  .btn.sm { height: 36px; padding: 0 12px; }
-  select { height: 36px; }
-  .top-in { padding: 8px 16px; }
-  .actions { width: 100%; }
+  .tiles .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .btn { height: 44px; }
+  .btn.sm { height: 40px; padding: 0 12px; }
+  select { height: 40px; }
+  .top { position: static; }
+  .top-in { padding: 10px 16px; }
+  .actions { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .actions .btn { padding: 0 6px; }
+  #btn-logout { grid-column: span 2; }
 }
 </style>
 </head>
@@ -328,7 +361,7 @@ dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14
         </section>
         <section class="card" aria-labelledby="h-events">
           <div class="card-h"><h2 id="h-events">Events</h2></div>
-          <div class="card-b flush" id="events"></div>
+          <div class="card-b flush" id="events" tabindex="0" role="region" aria-labelledby="h-events"></div>
         </section>
       </div>
     </div>
@@ -421,7 +454,14 @@ function clock(ms) {
     ? t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
     : t.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
-function when(ms) { return h("span", { class: "num", title: fmtTime(ms) }, fmtAgo(ms)); }
+// Relative times change without new data, so renderUpdated() refreshes them in place.
+function rel(ms, pre = "", cls = "num") { return h("span", { class: cls, "data-rel": ms, "data-pre": pre, title: fmtTime(ms) }, pre + fmtAgo(ms)); }
+function when(ms) { return rel(ms); }
+function ran(j) {
+  if (!j.started_ms) return "";
+  if (j.finished_ms) return `ran ${fmtDur((j.finished_ms - j.started_ms) / 1000)}`;
+  return h("span", { "data-run": j.started_ms }, `ran ${fmtDur((Date.now() - j.started_ms) / 1000)}`);
+}
 const label = (s) => String(s || "").replace(/_/g, " ");
 
 const JOB_TONE = { queued: "", leased: "info", running: "info", paused: "warn", succeeded: "ok", failed: "bad", killed: "bad", cancelled: "", parked: "warn" };
@@ -461,7 +501,7 @@ const scopes = {
 };
 
 // State and polling.
-const state = { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0, busy: false, timer: 0, showClosed: false };
+const state = { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
 
 async function refresh() {
   if (state.busy || !tokenStore.get()) return;
@@ -477,6 +517,7 @@ async function refresh() {
   ];
   const results = await Promise.allSettled(calls.map((c) => c[1]));
   state.busy = false;
+  state.allFailed = results.every((r) => r.status === "rejected");
   if (results.some((r) => r.status === "rejected" && r.reason instanceof AuthError)) {
     logout("The coordinator rejected this token. Paste the current one.");
     return;
@@ -520,10 +561,11 @@ async function act(btn, doneText, fn) {
 }
 
 let confirmResolve = null;
-function confirmBox(title, text, yesLabel) {
+function confirmBox(title, text, yesLabel, danger) {
   $("confirm-title").textContent = title;
   $("confirm-text").textContent = text;
   $("confirm-yes").textContent = yesLabel || "Confirm";
+  $("confirm-yes").className = danger ? "btn danger solid" : "btn primary";
   const dlg = $("confirm");
   dlg.showModal();
   $("confirm-no").focus();
@@ -540,7 +582,7 @@ $("confirm").addEventListener("cancel", (e) => { e.preventDefault(); closeConfir
 
 const STOP_TEXT = "Running jobs get SIGTERM, then SIGKILL after 15 s, and nothing new starts until you resume.";
 async function stopAll(btn, scope, where) {
-  const ok = await confirmBox(`Stop all ${where}?`, STOP_TEXT, "Stop all");
+  const ok = await confirmBox(`Stop all ${where}?`, STOP_TEXT, "Stop all", true);
   if (ok) act(btn, `Stop all sent ${where}`, () => control(scope, "stop_all"));
 }
 
@@ -552,23 +594,45 @@ $("btn-logout").addEventListener("click", () => logout(""));
 $("btn-advice-refresh").addEventListener("click", (e) => act(e.currentTarget, "Advisor re-ran", () => api("POST", "/v1/advice/refresh")));
 $("job-filter").addEventListener("change", () => refresh());
 
-// Rendering.
+// Rendering. A section is rebuilt only when its data changed (the clock fields are ignored),
+// and a rebuild keeps keyboard focus and open <details>, so polling never eats a click or a read.
+const sig = {};
+const NOT_SHOWN = new Set(["at_ms", "lease_expires_ms", "snapshot_ms"]); // clock fields that move without a visible change
+function section(key, deps, boxId, fn) {
+  const next = JSON.stringify(deps, (k, v) => (NOT_SHOWN.has(k) ? undefined : v));
+  if (sig[key] === next) return;
+  sig[key] = next;
+  const box = $(boxId);
+  const focusables = () => [...box.querySelectorAll("button, select, summary")];
+  const focused = focusables().indexOf(document.activeElement);
+  const open = [...box.querySelectorAll("details")].map((d) => d.open);
+  fn();
+  box.querySelectorAll("details").forEach((d, i) => { d.open = Boolean(open[i]); });
+  if (focused >= 0) { const el = focusables()[focused]; if (el) el.focus({ preventScroll: true }); }
+}
+
 function render() {
+  const { status: s, errors: e } = state;
   renderUpdated();
-  renderHeader();
-  renderTiles();
-  renderDevices();
-  renderJobs();
-  renderAdvice();
-  renderQuota();
-  renderEvents();
+  section("header", [s && s.version, s && s.global_paused, e.status], "banners", renderHeader);
+  section("tiles", [s], "tiles", renderTiles);
+  // last_seen_ms is shown only for offline devices; online ones move it on every heartbeat.
+  const devs = s && (s.devices || []).map((d) => (d.online ? { ...d, last_seen_ms: 0 } : d));
+  section("devices", [devs, e.status], "devices", renderDevices);
+  section("jobs", [state.jobs, e.jobs, $("job-filter").value], "jobs", renderJobs);
+  section("advice", [state.advice, e.advice, state.showClosed], "advice", renderAdvice);
+  section("quota", [state.quota, s && s.paused_accounts, e.quota], "quota", renderQuota);
+  section("events", [state.events, e.events], "events", renderEvents);
 }
 
 function renderUpdated() {
   const errs = Object.keys(state.errors).length;
-  $("updated").textContent = state.lastOk
-    ? `Updated ${fmtAgo(state.lastOk)}${errs ? `, ${errs} request${errs === 1 ? "" : "s"} failing` : ""}`
-    : errs ? "Cannot reach the coordinator" : "Loading";
+  $("updated").textContent = !state.lastOk
+    ? (errs ? "Cannot reach the coordinator" : "Loading")
+    : state.allFailed ? `Cannot reach the coordinator, last update ${fmtAgo(state.lastOk)}`
+    : `Updated ${fmtAgo(state.lastOk)}${errs ? `, ${errs} request${errs === 1 ? "" : "s"} failing` : ""}`;
+  document.querySelectorAll("[data-rel]").forEach((el) => { el.textContent = el.dataset.pre + fmtAgo(Number(el.dataset.rel)); });
+  document.querySelectorAll("[data-run]").forEach((el) => { el.textContent = `ran ${fmtDur((Date.now() - Number(el.dataset.run)) / 1000)}`; });
 }
 
 function renderHeader() {
@@ -615,13 +679,27 @@ function renderDevices() {
   box.replaceChildren(h("div", { class: "devices" }, devs.map(deviceCard)));
 }
 
+// The label carries "on battery", so the value stays short enough for a four-column card.
+function powerStat(m) {
+  const pct = m.battery_pct != null ? fmtPct(m.battery_pct) : null;
+  if (m.on_ac_power === false) return stat("On battery", pct || "yes");
+  return stat("Power", m.on_ac_power == null ? "n/a" : ["AC", pct].filter(Boolean).join(" "));
+}
+
+// "macos laptop" already says macos, so the OS is shown only when the profile does not repeat it.
+function osAndProfile(info) {
+  const os = label(info.os);
+  const profile = label(info.profile);
+  return profile.startsWith(os) ? profile : [os, profile].filter(Boolean).join(" · ");
+}
+
 function deviceCard(d) {
   const info = d.info || {};
   const m = d.metrics || null;
   const g = d.guard || null;
   const kind = g && g.action ? g.action.kind : null;
   const badges = [
-    d.online ? badge("online", "ok", true) : badge(`offline, seen ${fmtAgo(d.last_seen_ms)}`, "bad", true),
+    d.online ? badge("online", "ok", true) : badge(rel(d.last_seen_ms, "offline, seen ", ""), "bad", true),
     d.paused ? badge("paused", "warn") : null,
     d.local_paused ? badge("kill switch", "warn") : null,
   ];
@@ -632,7 +710,7 @@ function deviceCard(d) {
     stat("Swap used", fmtBytes(m.swap_used_bytes), `of ${fmtBytes(m.swap_total_bytes)}`),
     stat("Disk free", fmtBytes(m.disk_free_bytes), `of ${fmtBytes(m.disk_total_bytes)}`),
     stat("User idle", m.user_idle_secs == null ? "n/a" : fmtDur(m.user_idle_secs)),
-    stat("Power", m.on_ac_power == null ? "n/a" : `${m.on_ac_power ? "AC" : "battery"}${m.battery_pct != null ? ` ${fmtPct(m.battery_pct)}` : ""}`),
+    powerStat(m),
     stat("Thermal", m.thermal_limited == null ? "n/a" : m.thermal_limited ? "limited" : "ok"),
   ] : [];
   const running = d.running || [];
@@ -641,7 +719,7 @@ function deviceCard(d) {
     h("div", { class: "dev-h" },
       h("div", null,
         h("div", { class: "name" }, id || "(no id)"),
-        h("div", { class: "sub" }, [info.hostname && info.hostname !== id ? info.hostname : null, label(info.os), label(info.profile), info.agent_version ? `agent ${info.agent_version}` : null].filter(Boolean).join(" · "))),
+        h("div", { class: "sub" }, [info.hostname && info.hostname !== id ? info.hostname : null, osAndProfile(info), info.agent_version ? `agent ${info.agent_version}` : null].filter(Boolean).join(" · "))),
       h("div", { class: "badges" }, badges)),
     g ? h("div", { class: "guard" }, h("span", { class: "muted" }, "Guard"), badge(guardText(g.action), GUARD_TONE[kind]), g.user_active ? badge("user active", "") : null) : null,
     g && g.reasons && g.reasons.length ? h("ul", { class: "reasons" }, g.reasons.map((r) => h("li", null, r))) : null,
@@ -669,7 +747,6 @@ function renderJobs() {
   }
   const rows = jobs.map((j) => {
     const spec = j.spec || {};
-    const runFor = j.started_ms ? ((j.finished_ms || Date.now()) - j.started_ms) / 1000 : null;
     const acts = [];
     if (j.status === "running") acts.push(h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Pausing job #${j.id}`, () => control(scopes.job(j.id), "pause")) }, "Pause"));
     if (j.status === "paused") acts.push(h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Resuming job #${j.id}`, () => control(scopes.job(j.id), "resume")) }, "Resume"));
@@ -677,16 +754,16 @@ function renderJobs() {
     const detail = [label(spec.cost), spec.ai_account ? `account ${spec.ai_account}` : null, spec.priority ? `priority ${spec.priority}` : null].filter(Boolean).join(" · ");
     const outcome = j.last_error || (j.exit_code != null ? `exit ${j.exit_code}` : "");
     return h("tr", null,
-      h("td", { class: "num mono" }, `#${j.id}`),
-      h("td", null, h("div", { class: "job-name" }, spec.name || "(unnamed)"), h("div", { class: "t2" }, detail),
+      h("td", { class: "c-id num mono" }, `#${j.id}`),
+      h("td", { class: "c-job" }, h("div", { class: "job-name" }, spec.name || "(unnamed)"), h("div", { class: "t2" }, detail),
         outcome ? h("div", { class: "t2", style: j.last_error ? "color:var(--bad)" : null }, outcome) : null),
-      h("td", null, jobBadge(j.status), h("div", { class: "t2 num" }, `try ${j.attempts || 0}/${spec.cost === "ai" ? 1 : spec.max_attempts || "?"}`)),
-      h("td", null, j.device || h("span", { class: "faint" }, "-")),
-      h("td", { class: "r" }, h("div", null, when(j.created_ms)), h("div", { class: "t2 num" }, runFor != null ? `ran ${fmtDur(runFor)}` : "")),
+      h("td", { class: "c-status" }, jobBadge(j.status), h("div", { class: "t2 num" }, `try ${j.attempts || 0}/${spec.cost === "ai" ? 1 : spec.max_attempts || "?"}`)),
+      h("td", { class: "c-dev", title: j.device }, j.device || h("span", { class: "faint" }, "-")),
+      h("td", { class: "c-created r nw" }, h("div", null, when(j.created_ms)), h("div", { class: "t2 num" }, ran(j))),
       h("td", { class: "acts" }, acts),
     );
   });
-  box.replaceChildren(h("div", { class: "scroll" }, h("table", null,
+  box.replaceChildren(h("div", { class: "scroll" }, h("table", { class: "jobs-table" },
     h("thead", null, h("tr", null, h("th", null, "ID"), h("th", null, "Job"), h("th", null, "Status"), h("th", null, "Device"), h("th", { class: "r" }, "Created"), h("th", { class: "r" }, h("span", { class: "faint" }, "Actions")))),
     h("tbody", null, rows))));
 }
@@ -702,7 +779,7 @@ function renderAdvice() {
   if (!open.length) items.push(h("div", { class: "empty" }, "Nothing needs you right now."));
   if (closed.length) {
     items.push(h("div", { class: "adv", style: "padding:8px 14px" },
-      h("button", { class: "btn ghost sm", type: "button", onclick: () => { state.showClosed = !state.showClosed; renderAdvice(); } },
+      h("button", { class: "btn ghost sm", type: "button", onclick: () => { state.showClosed = !state.showClosed; render(); } },
         state.showClosed ? `Hide ${closed.length} closed` : `Show ${closed.length} closed`)));
     if (state.showClosed) items.push(...closed.slice(0, 30).map((r) => adviceItem(r, false)));
   }
@@ -782,7 +859,7 @@ function quotaWindow(w) {
       h("span", null, h("strong", null, windowLabel(w.window)),
         h("span", { class: "muted num" }, ` ${known ? `${Math.round(used)}% used` : "usage unknown"}, reserve ${fmtPct(w.reserve_pct)}`),
         stateNote ? h("span", { class: "faint" }, `, ${stateNote}`) : null),
-      h("span", { class: "muted num", title: fmtTime(w.resets_at_ms) }, w.resets_at_ms ? `resets ${fmtAgo(w.resets_at_ms)}` : "reset unknown")),
+      w.resets_at_ms ? rel(w.resets_at_ms, "resets ", "muted num") : h("span", { class: "muted num" }, "reset unknown")),
     h("div", { class: "meter", role: "img", "aria-label": known ? `${Math.round(used)} percent used, reserve from ${line} percent` : "usage unknown" }, bar, mark),
   );
 }
@@ -808,6 +885,7 @@ function logout(msg) {
   tokenStore.set("");
   clearInterval(state.timer);
   Object.assign(state, { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0 });
+  Object.keys(sig).forEach((k) => delete sig[k]);
   $("app").hidden = true;
   $("login").hidden = false;
   const err = $("login-err");
