@@ -143,6 +143,9 @@ pub const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 pub struct JobSpec {
     pub name: String,
     pub command: Vec<String>,
+    /// Optional standard input, kept out of argv and operator job responses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
     pub cwd: Option<String>,
     pub env: BTreeMap<String, String>,
     /// Capabilities the device must have.
@@ -165,6 +168,7 @@ impl Default for JobSpec {
         Self {
             name: String::new(),
             command: Vec::new(),
+            stdin: None,
             cwd: None,
             env: BTreeMap::new(),
             requires: Vec::new(),

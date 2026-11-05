@@ -46,17 +46,42 @@ pub fn launch(
         .envs(&spec.env)
         .env_remove(TOKEN_ENV)
         .env(JOB_ID_ENV, job.id.to_string())
-        .stdin(Stdio::null())
+        .stdin(
+            spec.stdin
+                .as_ref()
+                .map_or_else(Stdio::null, |_| Stdio::piped()),
+        )
         .stdout(log)
         .stderr(stderr);
     isolate(&mut cmd);
-    let child = cmd.spawn().map_err(io_err("spawn", Path::new(exe)))?;
+    let mut child = cmd.spawn().map_err(io_err("spawn", Path::new(exe)))?;
+    feed_stdin(&mut child, spec.stdin.as_deref())?;
     Ok(Launched {
         pid: child.id(),
         child,
         log_path,
         log_offset,
     })
+}
+
+fn feed_stdin(child: &mut Child, input: Option<&str>) -> Result<(), RunnerError> {
+    let Some(input) = input else {
+        return Ok(());
+    };
+    let result = child
+        .stdin
+        .take()
+        .ok_or(RunnerError::StdinUnavailable)
+        .and_then(|mut stdin| {
+            stdin
+                .write_all(input.as_bytes())
+                .map_err(RunnerError::Stdin)
+        });
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
 }
 
 /// Own process group, so pause and kill reach every process the job starts.

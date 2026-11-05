@@ -1,5 +1,6 @@
 //! Adapter: the advisor AI pass as a `claude -p` job (official CLI, owner's login, no
-//! tools, no saved session), and extraction of its structured JSON from the result envelope.
+//! tools, no hooks, no MCP servers, no saved session), and extraction of its structured
+//! JSON from the result envelope.
 
 use idlemax_core::advice::ai::{AI_PASS_CLI, AI_PASS_TOKEN_CLASS};
 use idlemax_core::advice::{AiPass, AI_PASS_JOB_NAME};
@@ -29,7 +30,9 @@ pub fn pass_job(pass: &AiPass, schema: &Value) -> JobSpec {
     let command = [
         AI_PASS_CLI,
         "-p",
-        pass.prompt.as_str(),
+        "--settings",
+        "{\"disableAllHooks\":true}",
+        "--strict-mcp-config",
         "--output-format",
         "json",
         "--json-schema",
@@ -41,6 +44,7 @@ pub fn pass_job(pass: &AiPass, schema: &Value) -> JobSpec {
     JobSpec {
         name: AI_PASS_JOB_NAME.into(),
         command: command.iter().map(|s| s.to_string()).collect(),
+        stdin: Some(pass.prompt.clone()),
         requires: vec![AI_PASS_CLI.into()],
         priority: PRIORITY,
         cost: CostClass::Ai,
@@ -90,4 +94,43 @@ fn strip_fence(text: &str) -> &str {
         .or_else(|| t.strip_prefix("```"))
         .unwrap_or(t);
     t.strip_suffix("```").unwrap_or(t).trim()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pass_job_uses_stdin_and_disables_hooks_and_mcp() {
+        let prompt = "private advisor prompt sentinel";
+        let pass = AiPass {
+            account: "personal".into(),
+            prompt: prompt.into(),
+        };
+        let schema = serde_json::json!({"type": "object"});
+        let spec = pass_job(&pass, &schema);
+
+        assert!(spec.command.iter().all(|arg| !arg.contains(prompt)));
+        let stored = serde_json::to_value(&spec).unwrap();
+        assert_eq!(stored.get("stdin").and_then(Value::as_str), Some(prompt));
+        assert_eq!(
+            spec.command,
+            vec![
+                "claude",
+                "-p",
+                "--settings",
+                "{\"disableAllHooks\":true}",
+                "--strict-mcp-config",
+                "--output-format",
+                "json",
+                "--json-schema",
+                &schema.to_string(),
+                "--no-session-persistence",
+                "--tools",
+                "",
+            ]
+        );
+        assert!(!spec.command.iter().any(|arg| arg == "--setting-sources"));
+        assert!(!spec.command.iter().any(|arg| arg == "--bare"));
+    }
 }

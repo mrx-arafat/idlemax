@@ -43,6 +43,10 @@ pub enum RunnerError {
     Refused(#[from] AdmitError),
     #[error("command is empty")]
     EmptyCommand,
+    #[error("job stdin pipe unavailable")]
+    StdinUnavailable,
+    #[error("write job stdin: {0}")]
+    Stdin(#[source] io::Error),
     #[error("program {0:?} not found")]
     ProgramNotFound(String),
     #[error("program {0:?} must be a bare name or an absolute path")]

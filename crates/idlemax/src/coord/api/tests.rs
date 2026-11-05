@@ -89,6 +89,34 @@ fn mac_heartbeat(running: Vec<RunningJob>) -> Heartbeat {
 }
 
 #[tokio::test]
+async fn stdin_is_private_in_operator_responses_but_reaches_the_agent() {
+    let api = Api::start().await;
+    let secret = "private stdin sentinel";
+    let spec = JobSpec {
+        name: "stdin-job".into(),
+        command: vec!["cat".into()],
+        stdin: Some(secret.into()),
+        ..JobSpec::default()
+    };
+
+    let created = api.post("/v1/jobs", &spec).await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert!(!created.text().await.unwrap().contains(secret));
+    let listed = api
+        .http
+        .get(format!("{}/v1/jobs", api.base))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    assert!(!listed.text().await.unwrap().contains(secret));
+
+    let reply = api.heartbeat(Vec::new()).await;
+    assert_eq!(reply.assign[0].spec.stdin.as_deref(), Some(secret));
+}
+
+#[tokio::test]
 async fn bearer_token_is_required_and_stop_all_kills_on_the_next_heartbeat() {
     let api = Api::start().await;
     let anon = |path: &str| api.http.get(format!("{}{path}", api.base)).send();

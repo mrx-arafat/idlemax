@@ -14,7 +14,7 @@ use idlemax_core::types::{
 use idlemax_core::Config;
 
 use super::http::ApiFailure;
-use super::jobs::{add_job, apply_control, cluster_status, quota_views, LimitQuery};
+use super::jobs::{add_job, apply_control, cluster_status, operator_job, quota_views, LimitQuery};
 use super::{page_limit, AppState};
 use crate::advisor::{self as advisor_adapter, AdviceChanges, CoordState};
 use crate::coord::store::Store;
@@ -53,10 +53,10 @@ pub async fn accept(
 ) -> Result<Json<Job>, ApiFailure> {
     let Path(id) = path?;
     let now = now_ms();
-    Ok(Json(
+    Ok(Json(operator_job(
         app.with_store(move |store, cfg| accept_advice(store, cfg, id, now))
             .await?,
-    ))
+    )))
 }
 
 /// `POST /v1/advice/{id}/dismiss`.

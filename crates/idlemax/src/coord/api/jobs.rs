@@ -56,7 +56,7 @@ pub async fn list(
     };
     let limit = page_limit(q.limit);
     let jobs = app.with_store(move |store, _| Ok::<_, ApiFailure>(store.list_jobs(status, limit)?));
-    Ok(Json(jobs.await?))
+    Ok(Json(jobs.await?.into_iter().map(operator_job).collect()))
 }
 
 /// `POST /v1/jobs`: 201 with the queued job.
@@ -68,7 +68,7 @@ pub async fn add(
     let job = app
         .with_store(move |store, cfg| add_job(store, cfg, &spec, now))
         .await?;
-    Ok((StatusCode::CREATED, Json(job)))
+    Ok((StatusCode::CREATED, Json(operator_job(job))))
 }
 
 /// `POST /v1/jobs/{id}/cancel`: the job as stored after cancelling.
@@ -91,7 +91,13 @@ pub async fn cancel(
                 .ok_or_else(|| ApiFailure::NotFound(format!("job {id} not found")))
         })
         .await?;
-    Ok(Json(job))
+    Ok(Json(operator_job(job)))
+}
+
+/// Stdin can contain private prompts; only agent leases may carry it.
+pub(super) fn operator_job(mut job: Job) -> Job {
+    job.spec.stdin = None;
+    job
 }
 
 /// `POST /v1/control`: the cluster status after the change.

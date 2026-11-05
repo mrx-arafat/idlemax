@@ -120,6 +120,7 @@ Each agent reads `gh` and the session files on its own device every 15 minutes a
 Its rules engine runs every 15 minutes and on `idlemax advise refresh`.
 It flags parked or failed jobs, offline devices, idle devices with an empty queue, quota about to reset unused, PRs waiting on you for 2+ days, and unfinished sessions.
 An AI pass runs as an ordinary `ai` job through `claude -p` with a strict JSON schema, only when `advisor.ai_account` is spendable under the rules above.
+Its prompt travels on stdin instead of argv; the run disables all hooks and starts none of your MCP servers.
 Suggested jobs can only name templates in `$IDLEMAX_HOME/jobs/`.
 Accepting a recommendation queues its job; nothing runs on the advisor's word alone, except templates listed in `advisor.auto_accept`.
 

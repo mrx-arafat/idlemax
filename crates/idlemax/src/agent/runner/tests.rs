@@ -70,6 +70,22 @@ fn wait_ended(r: &mut Runner, within: Duration) -> JobUpdate {
 }
 
 #[test]
+fn stdin_reaches_the_job() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    let mut job = job(2, &["sh", "-c", "cat"], 64);
+    job.spec.stdin = Some("private prompt sentinel".into());
+    r.start(&job).unwrap();
+
+    let update = wait_ended(&mut r, Duration::from_secs(10));
+    assert_eq!(update.status, JobStatus::Succeeded);
+    assert_eq!(
+        update.output_tail.as_deref(),
+        Some("private prompt sentinel")
+    );
+}
+
+#[test]
 fn pause_freezes_the_group_kill_ends_it_and_the_memory_cap_kills_the_tree() {
     let home = tempfile::tempdir().unwrap();
     let mut r = runner(home.path(), &["sh"]);
