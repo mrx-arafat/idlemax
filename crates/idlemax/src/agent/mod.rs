@@ -11,6 +11,8 @@ mod probes;
 pub mod quota_probe;
 mod ring;
 pub mod runner;
+#[cfg(test)]
+mod tests;
 mod uplink;
 
 use std::future::Future;
@@ -103,6 +105,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         heartbeat_every: Duration::from_secs(config.agent.heartbeat_secs),
         advisor_inputs_every: (config.agent.advisor_inputs_secs > 0)
             .then(|| Duration::from_secs(config.agent.advisor_inputs_secs)),
+        device_refresh_every: Duration::from_secs(3600),
     });
     agent.run(shutdown, ports.control).await;
     tracing::info!("agent stopped");
@@ -122,7 +125,7 @@ async fn open_probes(paths: &Paths, config: &Config) -> Result<(Probes, DeviceIn
     let (paths, agent_cfg, quota) = (paths.clone(), config.agent.clone(), config.quota.clone());
     tokio::task::spawn_blocking(move || {
         let ring = MetricsRing::open(&paths.agent_state_dir(), agent_cfg.sample_secs)?;
-        let mut probes = Probes::new(Sampler::new()?, ring, &paths, quota);
+        let mut probes = Probes::new(Sampler::new()?, ring, &paths, quota, agent_cfg.clone());
         let device = probes.device_info(&agent_cfg);
         Ok::<_, AgentError>((probes, device))
     })

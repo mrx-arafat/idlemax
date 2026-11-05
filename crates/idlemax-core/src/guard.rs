@@ -111,6 +111,7 @@ impl Guard {
         m: &MetricsSnapshot,
         running: &[RunningJob],
         kill_switch: bool,
+        local_pause: bool,
     ) -> GuardDecision {
         let mut found = Findings::default();
         self.check_memory(m, &mut found);
@@ -129,6 +130,10 @@ impl Guard {
         if kill_switch {
             resource = resource.max(GuardAction::Pause);
             reasons.push("pause: kill switch file PAUSE present".into());
+        }
+        if local_pause {
+            resource = resource.max(GuardAction::Pause);
+            reasons.push("pause: local pause active".into());
         }
         let (user_active, user) = self.presence(m, &mut reasons);
         GuardDecision {

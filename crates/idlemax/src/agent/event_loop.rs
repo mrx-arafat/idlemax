@@ -48,6 +48,7 @@ pub struct Wiring {
     pub heartbeat_every: Duration,
     /// How often to send the advisor inputs; None sends nothing.
     pub advisor_inputs_every: Option<Duration>,
+    pub device_refresh_every: Duration,
 }
 
 pub struct Agent {
@@ -61,6 +62,7 @@ pub struct Agent {
     sample_every: Duration,
     heartbeat_every: Duration,
     advisor_inputs_every: Option<Duration>,
+    device_refresh_every: Duration,
     state: AgentState,
     outbox: DurableOutbox,
     reading: Reading,
@@ -85,6 +87,7 @@ impl Agent {
             sample_every: w.sample_every,
             heartbeat_every: w.heartbeat_every,
             advisor_inputs_every: w.advisor_inputs_every,
+            device_refresh_every: w.device_refresh_every,
             state: AgentState::default(),
             outbox: w.outbox,
             reading: Reading::default(),
@@ -106,6 +109,7 @@ impl Agent {
         let mut sample = ticker(self.sample_every, false);
         let mut beat = ticker(self.heartbeat_every, true);
         let mut reap = ticker(REAP_EVERY, false);
+        let mut refresh_device = ticker(self.device_refresh_every, false);
         let mut trip: Option<JoinHandle<Trip>> = None;
         let mut beat_due = false;
         let feed_on = self.advisor_inputs_every.is_some();
@@ -130,6 +134,7 @@ impl Agent {
                     log_feed_end(done);
                 }
                 _ = feed_tick.tick(), if feed_on => feed_due = true,
+                _ = refresh_device.tick() => self.on_refresh_device_info().await,
             }
             if trip.is_none() {
                 trip = self.next_trip(&mut beat_due);
@@ -154,9 +159,12 @@ impl Agent {
         let decision = match blocking(&self.probes, Probes::read).await {
             Ok(reading) => {
                 self.reading = reading;
-                let paused = self.reading.kill_switch || self.state.local_paused();
-                self.guard
-                    .evaluate(&self.reading.metrics, &self.running, paused)
+                self.guard.evaluate(
+                    &self.reading.metrics,
+                    &self.running,
+                    self.reading.kill_switch,
+                    self.state.local_paused(),
+                )
             }
             Err(e) => {
                 error!("sample worker failed: {e}");
@@ -168,6 +176,22 @@ impl Agent {
         }
         self.decision = decision;
         self.reconcile(&[], &[], &[]).await;
+    }
+
+    async fn on_refresh_device_info(&mut self) {
+        match blocking(&self.probes, Probes::refresh_device_info).await {
+            Ok(device) => {
+                if device.capabilities != self.device.capabilities {
+                    info!(
+                        old = ?self.device.capabilities,
+                        new = ?device.capabilities,
+                        "device capabilities refreshed"
+                    );
+                }
+                self.device = device;
+            }
+            Err(e) => error!("refresh device info failed: {e}"),
+        }
     }
 
     async fn on_local_controls(

@@ -27,10 +27,17 @@ pub struct Probes {
     pause_file: PathBuf,
     quota: QuotaConfig,
     quota_dirs: ProbeDirs,
+    agent_cfg: AgentConfig,
 }
 
 impl Probes {
-    pub fn new(sampler: Sampler, ring: MetricsRing, paths: &Paths, quota: QuotaConfig) -> Self {
+    pub fn new(
+        sampler: Sampler,
+        ring: MetricsRing,
+        paths: &Paths,
+        quota: QuotaConfig,
+        agent_cfg: AgentConfig,
+    ) -> Self {
         Self {
             sampler,
             ring,
@@ -38,11 +45,16 @@ impl Probes {
             pause_file: paths.pause_file(),
             quota,
             quota_dirs: ProbeDirs::from_env(paths),
+            agent_cfg,
         }
     }
 
     pub fn device_info(&mut self, cfg: &AgentConfig) -> DeviceInfo {
         self.sampler.device_info(cfg)
+    }
+
+    pub fn refresh_device_info(&mut self) -> DeviceInfo {
+        self.sampler.device_info(&self.agent_cfg)
     }
 
     pub fn read(&mut self) -> Reading {

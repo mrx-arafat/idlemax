@@ -247,10 +247,57 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
         let mut guard = Guard::new(policy);
         let mut m = if laptop { mac() } else { linux() };
         change(&mut m);
-        let first = guard.evaluate(&m, &[], kill_switch).action;
+        let first = guard.evaluate(&m, &[], kill_switch, false).action;
         m.at_ms += 30_000;
         m.swap_used_bytes += swap_growth_mib * MIB;
-        let second = guard.evaluate(&m, &[], kill_switch).action;
+        let second = guard.evaluate(&m, &[], kill_switch, false).action;
         assert_eq!((first, second), (action(want.0), action(want.1)), "{name}");
     }
+}
+
+#[test]
+fn pins_kill_switch_and_local_pause_reasons_distinctly() {
+    let policy = GuardPolicy::macos_laptop();
+    let mut guard = Guard::new(policy.clone());
+    let m = mac();
+
+    let d_none = guard.evaluate(&m, &[], false, false);
+    assert_eq!(
+        d_none.action,
+        GuardAction::Run {
+            slots: policy.max_jobs,
+            mem_mib: policy.ram_budget_mib,
+        }
+    );
+    assert!(!d_none.reasons.iter().any(|r| r.contains("pause")));
+
+    let mut guard = Guard::new(policy.clone());
+    let d_kill = guard.evaluate(&m, &[], true, false);
+    assert_eq!(d_kill.action, GuardAction::Pause);
+    assert!(d_kill
+        .reasons
+        .contains(&"pause: kill switch file PAUSE present".to_string()));
+    assert!(!d_kill
+        .reasons
+        .contains(&"pause: local pause active".to_string()));
+
+    let mut guard = Guard::new(policy.clone());
+    let d_local = guard.evaluate(&m, &[], false, true);
+    assert_eq!(d_local.action, GuardAction::Pause);
+    assert!(d_local
+        .reasons
+        .contains(&"pause: local pause active".to_string()));
+    assert!(!d_local
+        .reasons
+        .contains(&"pause: kill switch file PAUSE present".to_string()));
+
+    let mut guard = Guard::new(policy);
+    let d_both = guard.evaluate(&m, &[], true, true);
+    assert_eq!(d_both.action, GuardAction::Pause);
+    assert!(d_both
+        .reasons
+        .contains(&"pause: kill switch file PAUSE present".to_string()));
+    assert!(d_both
+        .reasons
+        .contains(&"pause: local pause active".to_string()));
 }
