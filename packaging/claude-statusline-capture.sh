@@ -6,9 +6,10 @@
 #
 # ~/.claude/settings.json:
 #   "statusLine": { "type": "command",
-#                   "command": "/path/to/claude-statusline-capture.sh <your statusline command>" }
+#                   "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh <your statusline command>" }
 set -u
-input=$(cat)
+input=$(cat; printf x)
+input=${input%x}
 
 # Unset means ~/.idlemax; set but empty means no capture, never a fallback.
 home=${IDLEMAX_HOME-${HOME:-}/.idlemax}

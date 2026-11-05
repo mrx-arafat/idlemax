@@ -92,27 +92,28 @@ fn claude_statusline_capture_wrapper_proves_transparent_and_fast() {
     let agent_dir = state_dir.join("agent");
     fs::create_dir_all(&agent_dir).unwrap();
 
-    let fixture = serde_json::json!({
-        "cwd": "/tmp/project",
-        "rate_limits": {
-            "five_hour": {
-                "used_percentage": 42.0,
-                "resets_at": 1900000000.0
-            },
-            "seven_day": {
-                "used_percentage": 15.0,
-                "resets_at": 1900500000.0
+    let fixture = format!(
+        "{}\n",
+        serde_json::json!({
+            "cwd": "/tmp/project",
+            "rate_limits": {
+                "five_hour": {
+                    "used_percentage": 42.0,
+                    "resets_at": 1900000000.0
+                },
+                "seven_day": {
+                    "used_percentage": 15.0,
+                    "resets_at": 1900500000.0
+                }
             }
-        }
-    })
-    .to_string();
+        })
+    );
 
     let capture_file = agent_dir.join("claude-statusline.json");
 
-    // 1. Transparent passthrough: visible stdout is byte-identical to wrapped command
+    // 1. Transparent passthrough: visible stdout is byte-identical to wrapped command (wrapping cat)
     let mut child = Command::new(&script)
-        .arg("printf")
-        .arg("CUSTOM_STATUSLINE_OUTPUT")
+        .arg("cat")
         .env("IDLEMAX_HOME", &state_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -128,13 +129,11 @@ fn claude_statusline_capture_wrapper_proves_transparent_and_fast() {
 
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "CUSTOM_STATUSLINE_OUTPUT"
-    );
+    assert_eq!(output.stdout, fixture.as_bytes());
 
-    // Snapshot landed in temp IDLEMAX_HOME and parses correctly
+    // Snapshot landed in temp IDLEMAX_HOME, preserves trailing newline, and parses correctly
     assert!(capture_file.is_file());
+    assert_eq!(fs::read(&capture_file).unwrap(), fixture.as_bytes());
     let snaps = read_claude_statusline(&capture_file, "claude-test").unwrap();
     assert_eq!(snaps.len(), 2);
     let five = snaps.iter().find(|s| s.window == rolling_5h()).unwrap();

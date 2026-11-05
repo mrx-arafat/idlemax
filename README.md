@@ -94,7 +94,7 @@ Prepend the absolute path to `packaging/claude-statusline-capture.sh` in front o
 {
   "statusLine": {
     "type": "command",
-    "command": "/path/to/claude-statusline-capture.sh <your existing statusline command>"
+    "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh <your existing statusline command>"
   }
 }
 ```
@@ -105,7 +105,7 @@ If you do not already run a custom statusline command, pass the wrapper alone:
 {
   "statusLine": {
     "type": "command",
-    "command": "/path/to/claude-statusline-capture.sh"
+    "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh"
   }
 }
 ```
