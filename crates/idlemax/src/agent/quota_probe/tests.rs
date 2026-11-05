@@ -231,3 +231,45 @@ fn claude_statusline_capture_wrapper_proves_transparent_and_fast() {
         "snapshot written with no wrapped args"
     );
 }
+
+#[test]
+fn interactive_use_detects_agy_session_newest_mtime() {
+    let tmp = tempfile::tempdir().unwrap();
+    let agy_root = tmp.path().join("gemini/antigravity-cli");
+    let brain_dir = agy_root.join("brain");
+
+    // Session 1: older session
+    let s1_logs = brain_dir
+        .join("11111111-1111-1111-1111-111111111111")
+        .join(".system_generated/logs");
+    fs::create_dir_all(&s1_logs).unwrap();
+    let s1_file = s1_logs.join("transcript.jsonl");
+    fs::write(&s1_file, "{\"step\": 1}\n").unwrap();
+
+    // Session 2: newer session
+    let s2_logs = brain_dir
+        .join("22222222-2222-2222-2222-222222222222")
+        .join(".system_generated/logs");
+    fs::create_dir_all(&s2_logs).unwrap();
+    let s2_file = s2_logs.join("transcript.jsonl");
+    fs::write(&s2_file, "{\"step\": 2}\n").unwrap();
+
+    let s2_mtime = mtime_ms(&s2_file).unwrap();
+
+    let dirs = ProbeDirs {
+        state_dir: tmp.path().join("state"),
+        claude_dir: None,
+        codex_dir: None,
+        agy_dir: Some(agy_root),
+    };
+
+    let now_ms = s2_mtime + 5000;
+    let active = interactive_use(&dirs, now_ms);
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].0, "agy");
+    assert_eq!(active[0].1, s2_mtime);
+
+    // If now_ms is before file mtime, clamps to now_ms
+    let clamped = interactive_use(&dirs, s2_mtime - 1000);
+    assert_eq!(clamped[0].1, s2_mtime - 1000);
+}

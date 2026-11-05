@@ -66,6 +66,8 @@ pub struct ProbeDirs {
     pub claude_dir: Option<PathBuf>,
     /// `$CODEX_HOME`, else `~/.codex`.
     pub codex_dir: Option<PathBuf>,
+    /// `~/.gemini/antigravity-cli`; no env override is read, none is verified for agy.
+    pub agy_dir: Option<PathBuf>,
 }
 
 impl ProbeDirs {
@@ -75,7 +77,8 @@ impl ProbeDirs {
             state_dir: paths.agent_state_dir(),
             claude_dir: env_dir("CLAUDE_CONFIG_DIR")
                 .or_else(|| home.as_ref().map(|h| h.join(".claude"))),
-            codex_dir: env_dir("CODEX_HOME").or_else(|| home.map(|h| h.join(".codex"))),
+            codex_dir: env_dir("CODEX_HOME").or_else(|| home.as_ref().map(|h| h.join(".codex"))),
+            agy_dir: home.map(|h| h.join(".gemini/antigravity-cli")),
         }
     }
 }
@@ -139,9 +142,8 @@ fn default_path(
     }
 }
 
-/// (cli name, newest session file mtime) for Claude and Codex. idlemax's own AI jobs
+/// (cli name, newest session file mtime) for Claude, Codex and agy. idlemax's own AI jobs
 /// count too, which only lengthens the hold.
-// SHORTCUT: agy is not detected (its session dir is unverified), add it once located.
 pub fn interactive_use(dirs: &ProbeDirs, now_ms: UnixMs) -> Vec<(String, UnixMs)> {
     let sources = [
         (
@@ -149,6 +151,7 @@ pub fn interactive_use(dirs: &ProbeDirs, now_ms: UnixMs) -> Vec<(String, UnixMs)
             dirs.claude_dir.as_ref().map(|d| d.join("projects")),
         ),
         ("codex", dirs.codex_dir.as_ref().map(|d| d.join("sessions"))),
+        ("agy", dirs.agy_dir.as_ref().map(|d| d.join("brain"))),
     ];
     let mut out = Vec::new();
     for (cli, dir) in sources {

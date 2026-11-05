@@ -494,7 +494,6 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 | Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
 | macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap |
 | Claude quota | needs the statusline capture wrapper; until it writes data, Claude accounts are never spendable |
-| `agy` | interactive use is not detected |
 | Advisor | the AI pass has not run end to end, because that spends quota |
 | Web dashboard | not yet checked in a browser |
 | Runtime limit | measured on the wall clock, so a laptop that sleeps past it kills the job on wake |
