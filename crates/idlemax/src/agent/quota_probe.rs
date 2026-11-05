@@ -383,3 +383,6 @@ fn rfc3339_ms(s: &str) -> Option<UnixMs> {
         .ok()
         .map(|d| d.timestamp_millis())
 }
+
+#[cfg(test)]
+mod tests;

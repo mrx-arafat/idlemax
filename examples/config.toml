@@ -19,10 +19,10 @@ heartbeat_secs = 30
 ai_accounts = ["claude-max", "codex-pro"]
 # argv[0] values a job may run. Empty allows nothing.
 command_allowlist = [
-  "/home/you/idlemax/examples/scripts/kb-refresh.sh",
-  "/home/you/idlemax/examples/scripts/index-refresh.sh",
-  "/home/you/idlemax/examples/scripts/repo-health.sh",
-  "/home/you/idlemax/examples/scripts/pr-review-drafts.sh",
+  "/path/to/idlemax/examples/scripts/kb-refresh.sh",
+  "/path/to/idlemax/examples/scripts/index-refresh.sh",
+  "/path/to/idlemax/examples/scripts/repo-health.sh",
+  "/path/to/idlemax/examples/scripts/pr-review-drafts.sh",
 ]
 
 # Overrides on top of the profile preset (docs/PLAN.md "Guard presets"); unknown keys are errors.

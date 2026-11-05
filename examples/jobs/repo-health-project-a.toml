@@ -3,7 +3,7 @@
 # cpu_heavy keeps it off the server; the Mac guard runs it only when idle, on AC and not swapping.
 # Queue it: idlemax job add examples/jobs/repo-health-project-a.toml
 name = "repo-health-project-a"
-command = ["/home/you/idlemax/examples/scripts/repo-health.sh", "/home/you/src/project-a"]
+command = ["/path/to/idlemax/examples/scripts/repo-health.sh", "/path/to/src/project-a"]
 cost = "cpu_heavy"
 requires = ["cargo", "git"]
 devices = ["my-laptop"]

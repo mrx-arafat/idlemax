@@ -1,7 +1,7 @@
 # MVP job 1b: incremental CodeGraph sync of the active repos.
 # Queue it: idlemax job add examples/jobs/index-refresh.toml
 name = "index-refresh"
-command = ["/home/you/idlemax/examples/scripts/index-refresh.sh"]
+command = ["/path/to/idlemax/examples/scripts/index-refresh.sh"]
 cost = "cpu_heavy"
 requires = ["codegraph"]
 devices = ["my-laptop"]
@@ -12,4 +12,4 @@ max_runtime_secs = 1800
 on_user_active = "kill"
 
 [env]
-REPOS = "/home/you/src/project-a /home/you/src/project-b"
+REPOS = "/path/to/src/project-a /path/to/src/project-b"

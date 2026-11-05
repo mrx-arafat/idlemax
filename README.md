@@ -84,11 +84,34 @@ That keeps automated use close to ordinary individual use, but consumer terms st
 Metered API keys (`provider = "api"`) are the path providers designate for automation.
 
 Claude usage comes from the JSON that Claude Code passes to its statusline command.
-Put `packaging/claude-statusline-capture.sh` in front of your statusline in `~/.claude/settings.json`; until it has written `$IDLEMAX_HOME/agent/claude-statusline.json`, Claude accounts are never spendable.
+Put `packaging/claude-statusline-capture.sh` in front of your statusline in `~/.claude/settings.json`.
+Until it has written `$IDLEMAX_HOME/agent/claude-statusline.json`, Claude accounts are never spendable (fail closed).
+
+To install it, add or update the `statusLine` block in `~/.claude/settings.json`.
+Prepend the absolute path to `packaging/claude-statusline-capture.sh` in front of your existing command:
 
 ```json
-"statusLine": { "type": "command", "command": "/path/to/claude-statusline-capture.sh <your statusline command>" }
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/claude-statusline-capture.sh <your existing statusline command>"
+  }
+}
 ```
+
+If you do not already run a custom statusline command, pass the wrapper alone:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/claude-statusline-capture.sh"
+  }
+}
+```
+
+The wrapper saves the snapshot atomically to `$IDLEMAX_HOME/agent/claude-statusline.json` before piping stdin through to your wrapped command.
+The visible output is byte-identical to the wrapped command, and capture errors are ignored so the statusline never breaks.
 
 ## AI advisor
 
@@ -371,7 +394,7 @@ Use `on_user_active = "kill"` for jobs that hold a lock you need (a cargo target
 | `repo-health-project-a.toml` | clippy, tests and `npm audit` for one repo, as an inbox report | `cpu_heavy` |
 | `pr-review-drafts-claude.toml`, `pr-review-drafts-codex.toml` | draft reviews of PRs waiting on you; the AI gets the PR text on stdin, no tools, and posts nothing | `ai` |
 
-Their paths (`/home/you/...`) and device id (`my-laptop`) are placeholders; replace them before use.
+Their paths (`/path/to/...`) and device id (`my-laptop`) are placeholders; replace them before use.
 
 ## Deploying across devices
 

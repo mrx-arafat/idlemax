@@ -5,7 +5,7 @@
 # Drafts land in the inbox; nothing is posted.
 # Queue it: idlemax job add examples/jobs/pr-review-drafts-claude.toml
 name = "pr-review-drafts-claude"
-command = ["/home/you/idlemax/examples/scripts/pr-review-drafts.sh", "claude"]
+command = ["/path/to/idlemax/examples/scripts/pr-review-drafts.sh", "claude"]
 cost = "ai"
 ai_account = "claude-max"
 token_class = "medium"
