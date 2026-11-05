@@ -12,6 +12,28 @@ const COLUMNS: &str =
     "id, at_ms, key, kind, title, why, evidence, suggested_job, confidence, source, status";
 
 impl Store {
+    /// Queues the job and marks open advice accepted in one transaction.
+    pub fn accept_advice(
+        &mut self,
+        id: i64,
+        spec: &idlemax_core::types::JobSpec,
+        now: idlemax_core::types::UnixMs,
+    ) -> StoreResult<idlemax_core::types::Job> {
+        let tx = self.conn.transaction()?;
+        let job = super::jobs::insert_job(&tx, spec, now)?;
+        let changed = tx.execute(
+            "UPDATE recommendations SET status = 'accepted' WHERE id = ?1 AND status = 'open'",
+            [id],
+        )?;
+        if changed != 1 {
+            return Err(super::StoreError::Invalid(format!(
+                "advice {id} is not open"
+            )));
+        }
+        tx.commit()?;
+        Ok(job)
+    }
+
     /// Stores a recommendation under a new id (its `id` field is ignored) and returns the id.
     pub fn insert_recommendation(&mut self, rec: &Recommendation) -> StoreResult<i64> {
         self.conn.execute(

@@ -6,14 +6,6 @@ use rusqlite::{params, Connection, Row};
 use super::{enum_col, enum_text, json_col, json_text, Store, StoreResult};
 
 impl Store {
-    /// Records snapshots; a snapshot already stored (same account, window, at_ms) is skipped.
-    pub fn record_quota(&mut self, snaps: &[QuotaSnapshot]) -> StoreResult<()> {
-        let tx = self.conn.transaction()?;
-        insert_snapshots(&tx, snaps)?;
-        tx.commit()?;
-        Ok(())
-    }
-
     /// Newest snapshot per account window, sorted by account.
     pub fn latest_quota(&self) -> StoreResult<Vec<QuotaSnapshot>> {
         let mut stmt = self.conn.prepare_cached(
@@ -27,11 +19,6 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Remembers the newest usage limit or HTTP 429 seen for an AI account.
-    pub fn record_limit_hit(&mut self, account: &str, at_ms: UnixMs) -> StoreResult<()> {
-        upsert_limit_hit(&self.conn, account, at_ms)
-    }
-
     /// Newest limit hit per account when it is at or after `since_ms`, sorted by account.
     pub fn limit_hits(&self, since_ms: UnixMs) -> StoreResult<Vec<(String, UnixMs)>> {
         let mut stmt = self.conn.prepare_cached(
@@ -42,7 +29,8 @@ impl Store {
     }
 }
 
-/// The write behind `record_limit_hit`, usable inside a caller's transaction.
+/// Remembers the newest usage limit or HTTP 429 seen for an AI account; the caller owns the
+/// transaction.
 pub(super) fn upsert_limit_hit(conn: &Connection, account: &str, at_ms: UnixMs) -> StoreResult<()> {
     conn.execute(
         "INSERT INTO rate_limits (account, at_ms) VALUES (?1, ?2)

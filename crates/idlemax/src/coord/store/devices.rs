@@ -3,33 +3,10 @@
 use std::collections::BTreeMap;
 
 use idlemax_core::protocol::{DeviceView, Heartbeat};
-use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
+use idlemax_core::types::{ControlScope, UnixMs};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
-use super::{
-    json_col, json_text, opt_json_col, u64_from_sql, u64_to_sql, Store, StoreError, StoreResult,
-};
-
-/// One device minute folded from its heartbeats.
-#[derive(Debug, Clone, PartialEq)]
-pub struct MetricsMinute {
-    pub device: DeviceId,
-    pub minute_ms: UnixMs,
-    pub samples: u32,
-    pub cpu_busy_pct_avg: f64,
-    pub load_avg_1m_max: f64,
-    pub mem_free_pct_min: f64,
-    pub mem_available_bytes_min: u64,
-    pub swap_used_bytes_max: u64,
-    pub disk_free_bytes_min: u64,
-    /// Lowest idle reading in the minute: high means idle the whole minute.
-    pub user_idle_secs_min: Option<u64>,
-    /// False when any sample in the minute was on battery.
-    pub on_ac_power: Option<bool>,
-    pub running_jobs_max: u32,
-    /// Worst `GuardAction::severity` in the minute.
-    pub guard_severity_max: u8,
-}
+use super::{json_col, json_text, opt_json_col, u64_to_sql, Store, StoreError, StoreResult};
 
 const MINUTE_MS: i64 = 60_000;
 
@@ -129,23 +106,6 @@ impl Store {
         }
         Ok(newest.into_iter().collect())
     }
-
-    /// Minute rows for one device from `since_ms` on, oldest first.
-    pub fn metrics_minutes(
-        &self,
-        device: &str,
-        since_ms: UnixMs,
-    ) -> StoreResult<Vec<MetricsMinute>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT device, minute_ms, samples, cpu_busy_pct_avg, load_avg_1m_max,
-               mem_free_pct_min, mem_available_bytes_min, swap_used_bytes_max,
-               disk_free_bytes_min, user_idle_secs_min, on_ac_power, running_jobs_max,
-               guard_severity_max
-             FROM metrics_minute WHERE device = ?1 AND minute_ms >= ?2 ORDER BY minute_ms",
-        )?;
-        let rows = stmt.query_map(params![device, since_ms], minute_from_row)?;
-        Ok(rows.collect::<Result<_, _>>()?)
-    }
 }
 
 fn fold_minute(conn: &Connection, hb: &Heartbeat, now: UnixMs) -> StoreResult<()> {
@@ -178,23 +138,5 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
         local_paused: r.get(5)?,
         online: false,
         paused: false,
-    })
-}
-
-fn minute_from_row(r: &Row<'_>) -> rusqlite::Result<MetricsMinute> {
-    Ok(MetricsMinute {
-        device: r.get(0)?,
-        minute_ms: r.get(1)?,
-        samples: r.get(2)?,
-        cpu_busy_pct_avg: r.get(3)?,
-        load_avg_1m_max: r.get(4)?,
-        mem_free_pct_min: r.get(5)?,
-        mem_available_bytes_min: u64_from_sql(r.get(6)?),
-        swap_used_bytes_max: u64_from_sql(r.get(7)?),
-        disk_free_bytes_min: u64_from_sql(r.get(8)?),
-        user_idle_secs_min: r.get::<_, Option<i64>>(9)?.map(u64_from_sql),
-        on_ac_power: r.get(10)?,
-        running_jobs_max: r.get(11)?,
-        guard_severity_max: r.get(12)?,
     })
 }

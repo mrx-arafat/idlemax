@@ -16,25 +16,11 @@ const ACTIVE: &str = "('leased', 'running', 'paused')";
 impl Store {
     /// Queues a validated spec.
     pub fn insert_job(&mut self, spec: &JobSpec, now: UnixMs) -> StoreResult<Job> {
-        spec.validate().map_err(StoreError::InvalidSpec)?;
-        self.conn.execute(
-            "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms)
-             VALUES (?1, ?2, 'queued', ?3, ?4, ?5)",
-            params![
-                json_text(spec)?,
-                spec.name,
-                spec.priority,
-                spec.ai_account,
-                now
-            ],
-        )?;
-        let id = self.conn.last_insert_rowid();
-        self.get_job(id)?.ok_or(StoreError::JobNotFound(id))
+        insert_job(&self.conn, spec, now)
     }
 
     pub fn get_job(&self, id: JobId) -> StoreResult<Option<Job>> {
-        let sql = format!("SELECT {JOB_COLUMNS} FROM jobs WHERE id = ?1");
-        Ok(self.conn.query_row(&sql, [id], job_from_row).optional()?)
+        get_job(&self.conn, id)
     }
 
     /// Newest first; `limit` 0 means all.
@@ -67,15 +53,11 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    pub fn update_job(&mut self, job: &Job) -> StoreResult<()> {
-        self.update_jobs(std::slice::from_ref(job))
-    }
-
     /// Writes every field except `created_ms` as the domain decided it, all or nothing.
     /// Use `lease_job` to assign: this write does not check the job is still queued.
     pub fn update_jobs(&mut self, jobs: &[Job]) -> StoreResult<()> {
         let tx = self.conn.transaction()?;
-        write_jobs(&tx, jobs)?;
+        update_jobs(&tx, jobs)?;
         tx.commit()?;
         Ok(())
     }
@@ -123,29 +105,6 @@ impl Store {
         self.get_job(id)
     }
 
-    /// Extends the leases of active jobs this device still reports. Returns how many.
-    pub fn renew_leases(
-        &mut self,
-        device: &str,
-        ids: &[JobId],
-        expires_ms: UnixMs,
-    ) -> StoreResult<usize> {
-        let tx = self.conn.transaction()?;
-        let mut renewed = 0;
-        {
-            let sql = format!(
-                "UPDATE jobs SET lease_expires_ms = ?3
-                 WHERE id = ?1 AND device = ?2 AND status IN {ACTIVE}"
-            );
-            let mut stmt = tx.prepare_cached(&sql)?;
-            for id in ids {
-                renewed += stmt.execute(params![id, device, expires_ms])?;
-            }
-        }
-        tx.commit()?;
-        Ok(renewed)
-    }
-
     /// AI accounts with an active lease anywhere in the cluster.
     pub fn ai_leased_accounts(&self) -> StoreResult<Vec<String>> {
         let sql = format!(
@@ -172,7 +131,7 @@ impl Store {
 }
 
 /// The writes behind `update_jobs`; the caller owns the transaction.
-pub(super) fn write_jobs(conn: &Connection, jobs: &[Job]) -> StoreResult<()> {
+pub(super) fn update_jobs(conn: &Connection, jobs: &[Job]) -> StoreResult<()> {
     let mut stmt = conn.prepare_cached(
         "UPDATE jobs SET spec = ?2, name = ?3, status = ?4, priority = ?5,
            ai_account = ?6, device = ?7, attempts = ?8, started_ms = ?9,
@@ -241,4 +200,26 @@ fn job_from_row(r: &Row<'_>) -> rusqlite::Result<Job> {
         last_error: r.get(11)?,
         output_path: r.get(12)?,
     })
+}
+
+pub(super) fn insert_job(conn: &Connection, spec: &JobSpec, now: UnixMs) -> StoreResult<Job> {
+    spec.validate().map_err(StoreError::InvalidSpec)?;
+    conn.execute(
+        "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms)
+             VALUES (?1, ?2, 'queued', ?3, ?4, ?5)",
+        params![
+            json_text(spec)?,
+            spec.name,
+            spec.priority,
+            spec.ai_account,
+            now
+        ],
+    )?;
+    let id = conn.last_insert_rowid();
+    get_job(conn, id)?.ok_or(StoreError::JobNotFound(id))
+}
+
+pub(super) fn get_job(conn: &Connection, id: JobId) -> StoreResult<Option<Job>> {
+    let sql = format!("SELECT {JOB_COLUMNS} FROM jobs WHERE id = ?1");
+    Ok(conn.query_row(&sql, [id], job_from_row).optional()?)
 }

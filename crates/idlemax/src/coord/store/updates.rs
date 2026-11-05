@@ -6,7 +6,7 @@ use idlemax_core::types::{DeviceId, EventKind, Job, JobId, UnixMs};
 use rusqlite::params;
 
 use super::events::insert_event;
-use super::jobs::write_jobs;
+use super::jobs::update_jobs;
 use super::quota::upsert_limit_hit;
 use super::{u64_to_sql, Store, StoreResult};
 
@@ -55,7 +55,7 @@ impl Store {
             upsert_limit_hit(&tx, account, now)?;
         }
         if let Some(job) = writes.job {
-            write_jobs(&tx, std::slice::from_ref(job))?;
+            update_jobs(&tx, std::slice::from_ref(job))?;
         }
         for e in writes.events {
             insert_event(&tx, e.kind, e.device.as_ref(), e.job, &e.message, now)?;

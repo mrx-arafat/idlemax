@@ -141,8 +141,7 @@ pub(super) fn add_job(
     Ok(job)
 }
 
-/// Persists a control decision. The pause flag goes first: if the process dies before the
-/// jobs are written, the scope is already held and the jobs only get paused, never lost.
+/// Persists the pause flag and changed job rows atomically.
 pub(super) fn apply_control(
     store: &mut Store,
     req: &ControlRequest,
@@ -155,11 +154,7 @@ pub(super) fn apply_control(
         }
     }
     let plan = plan_control(req, &jobs, now)?;
-    if let Some((scope, paused)) = &plan.pause {
-        store.set_paused(scope, *paused)?;
-    }
-    // SHORTCUT: pause flag and job rows are two transactions, one store method if a crash between them ever matters.
-    store.update_jobs(&plan.jobs)?;
+    store.apply_control(&plan)?;
     let (device, job) = match &req.scope {
         ControlScope::Device(d) => (Some(d), None),
         ControlScope::Job(id) => (None, Some(*id)),

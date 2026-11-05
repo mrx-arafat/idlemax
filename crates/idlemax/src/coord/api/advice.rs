@@ -5,6 +5,7 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use idlemax_core::advice::{self, AdviceError};
+use idlemax_core::control::admit_job;
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::types::{
     ControlAction, ControlScope, EventKind, Job, JobId, JobStatus, Recommendation,
@@ -138,10 +139,11 @@ async fn ingest(
 
 fn accept_advice(store: &mut Store, cfg: &Config, id: i64, now: UnixMs) -> Result<Job, ApiFailure> {
     let rec = store.get_recommendation(id)?.ok_or_else(|| not_found(id))?;
-    let (accepted, spec) = advice::accept(&rec).map_err(advice_failure)?;
-    // SHORTCUT: job insert and advice status are two writes, one transaction if double accepts after a crash ever show up.
-    let job = add_job(store, cfg, &spec, now)?;
-    store.set_recommendation_status(id, accepted.status)?;
+    let (_, spec) = advice::accept(&rec).map_err(advice_failure)?;
+    admit_job(&spec, &cfg.quota)?;
+    let job = store.accept_advice(id, &spec, now)?;
+    let queued = format!("{} queued (priority {})", job.spec.name, job.spec.priority);
+    store.append_event(EventKind::JobQueued, None, Some(job.id), &queued, now)?;
     let msg = format!(
         "accepted advice {id} ({}): job {} queued",
         rec.title, job.id

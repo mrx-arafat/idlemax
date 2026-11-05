@@ -6,15 +6,14 @@ use rusqlite::params;
 use super::{Store, StoreError, StoreResult};
 
 impl Store {
-    /// Pauses or un-pauses one scope. Idempotent.
-    pub fn set_paused(&mut self, scope: &ControlScope, paused: bool) -> StoreResult<()> {
-        let (kind, id) = scope_key(scope);
-        let sql = if paused {
-            "INSERT INTO controls (scope_type, scope_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING"
-        } else {
-            "DELETE FROM controls WHERE scope_type = ?1 AND scope_id = ?2"
-        };
-        self.conn.execute(sql, params![kind, id])?;
+    /// Persists a pause flag and its changed jobs atomically.
+    pub fn apply_control(&mut self, plan: &idlemax_core::control::ControlPlan) -> StoreResult<()> {
+        let tx = self.conn.transaction()?;
+        if let Some((scope, paused)) = &plan.pause {
+            set_paused(&tx, scope, *paused)?;
+        }
+        super::jobs::update_jobs(&tx, &plan.jobs)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -51,4 +50,15 @@ fn scope_from(kind: &str, id: String) -> StoreResult<ControlScope> {
             .map_err(|_| StoreError::Corrupt(format!("job control id {id:?}"))),
         other => Err(StoreError::Corrupt(format!("control scope type {other:?}"))),
     }
+}
+
+fn set_paused(conn: &rusqlite::Connection, scope: &ControlScope, paused: bool) -> StoreResult<()> {
+    let (kind, id) = scope_key(scope);
+    let sql = if paused {
+        "INSERT INTO controls (scope_type, scope_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING"
+    } else {
+        "DELETE FROM controls WHERE scope_type = ?1 AND scope_id = ?2"
+    };
+    conn.execute(sql, params![kind, id])?;
+    Ok(())
 }

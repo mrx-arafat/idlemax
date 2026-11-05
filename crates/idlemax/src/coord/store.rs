@@ -1,8 +1,6 @@
 //! Coordinator persistence adapter: SQLite schema, migrations and repository methods.
 //! The API is synchronous; async callers wrap each call in `spawn_blocking`.
 //! It persists what the domain decided and makes no scheduling decisions itself.
-// SHORTCUT: some methods have no caller until the coordinator wiring lands, remove this allow then.
-#![allow(dead_code)]
 
 mod advice;
 mod controls;
@@ -89,6 +87,7 @@ impl Store {
         Self::init(conn, true)
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> StoreResult<Self> {
         Self::init(Connection::open_in_memory()?, false)
     }
