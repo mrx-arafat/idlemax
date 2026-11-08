@@ -133,6 +133,19 @@ fn logs_fixture_full_and_tail() {
 }
 
 #[test]
+fn logs_preserve_non_utf8_output_including_when_tailed_or_followed() {
+    let env = TempHome::new();
+    let bytes = b"\xffhello\n=== idlemax: succeeded (exit 0) ===\n";
+    fs::write(env.paths.job_log_file(10), bytes).unwrap();
+    for flags in [vec![], vec!["--tail", "2"], vec!["-f"]] {
+        let args = [vec!["logs", "10"], flags].concat();
+        let out = env.run(&args);
+        assert!(out.status.success(), "{:?}", out);
+        assert_eq!(out.stdout, bytes);
+    }
+}
+
+#[test]
 fn inbox_fixture_list_and_show() {
     let env = TempHome::new();
     write_fixture_note(

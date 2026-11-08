@@ -6,7 +6,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use idlemax_core::job_run::inbox::tail as tail_lines;
 use idlemax_core::types::JobId;
 
 use super::out::toon::Node;
@@ -19,12 +18,12 @@ pub async fn run_logs_local(
     path: &Path,
     tail: Option<usize>,
     follow: bool,
-    out: &Out,
+    _out: &Out,
 ) -> Result<()> {
     if follow {
-        follow_log(path, tail, out).await
+        follow_log(path, tail).await
     } else {
-        print_log(path, tail, out)
+        print_log(path, tail)
     }
 }
 
@@ -34,31 +33,45 @@ pub async fn run_logs_remote(client: &ApiClient, id: JobId, out: &Out) -> Result
 }
 
 /// Print the current content of the log file, optionally tailing the last N lines.
-fn print_log(path: &Path, tail: Option<usize>, out: &Out) -> Result<()> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("reading log at {}", path.display()))?;
-    print_text(&content, tail, out)
+fn print_log(path: &Path, tail: Option<usize>) -> Result<()> {
+    let content =
+        std::fs::read(path).with_context(|| format!("reading log at {}", path.display()))?;
+    print_bytes(&content, tail)
 }
 
-/// The text, or its last `tail` lines, as it is; an empty log prints nothing.
-fn print_text(content: &str, tail: Option<usize>, out: &Out) -> Result<()> {
-    let text = tail.map_or(content, |n| tail_lines(content, n));
-    if text.is_empty() {
-        return Ok(());
+/// Preserve job bytes, including non-UTF-8 output and partial final lines.
+fn print_bytes(content: &[u8], tail: Option<usize>) -> Result<()> {
+    let bytes = match tail {
+        Some(0) => &[][..],
+        Some(n) => {
+            let body = content.strip_suffix(b"\n").unwrap_or(content);
+            let start = body
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(_, b)| **b == b'\n')
+                .nth(n - 1)
+                .map_or(0, |(i, _)| i + 1);
+            &content[start..]
+        }
+        None => content,
+    };
+    match write_chunk(bytes) {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => Ok(other?),
     }
-    out.raw(text)
 }
 
 /// Streams new bytes from `path` until the job exit footer is seen or interrupted.
-async fn follow_log(path: &Path, tail: Option<usize>, out: &Out) -> Result<()> {
+async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
     let mut file =
         File::open(path).with_context(|| format!("opening log at {}", path.display()))?;
-    let mut initial_content = String::new();
-    file.read_to_string(&mut initial_content)?;
+    let mut initial_content = Vec::new();
+    file.read_to_end(&mut initial_content)?;
 
-    print_text(&initial_content, tail, out)?;
+    print_bytes(&initial_content, tail)?;
 
-    if initial_content.contains("=== idlemax:") {
+    if String::from_utf8_lossy(&initial_content).contains("=== idlemax:") {
         return Ok(());
     }
 
