@@ -211,6 +211,18 @@ pub enum SpecError {
     EmptyKey,
     #[error("key is longer than 128 characters")]
     KeyTooLong,
+    #[error("{field} is over the limit of {limit} {unit}")]
+    OverLimit {
+        field: &'static str,
+        limit: usize,
+        unit: &'static str,
+    },
+    #[error("{0} contains a control character")]
+    ControlChar(&'static str),
+    #[error("{0} contains a NUL byte")]
+    Nul(&'static str),
+    #[error("env name must be non-empty and have no '=' or NUL byte")]
+    BadEnvName,
 }
 
 impl JobSpec {
@@ -240,10 +252,11 @@ impl JobSpec {
             }
         }
         match (self.cost, &self.ai_account) {
-            (CostClass::Ai, None) => Err(SpecError::AiWithoutAccount),
-            (c, Some(_)) if c != CostClass::Ai => Err(SpecError::AccountWithoutAi),
-            _ => Ok(()),
+            (CostClass::Ai, None) => return Err(SpecError::AiWithoutAccount),
+            (c, Some(_)) if c != CostClass::Ai => return Err(SpecError::AccountWithoutAi),
+            _ => {}
         }
+        crate::spec_limits::check(self)
     }
 
     /// AI jobs never retry automatically.

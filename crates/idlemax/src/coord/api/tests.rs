@@ -653,3 +653,76 @@ async fn a_foreign_host_name_gets_421_on_every_route_and_our_own_names_do_not() 
         "{reply}"
     );
 }
+
+/// A job spec is bounded field by field, so one request cannot carry megabytes into the store;
+/// the 400 names the field and its limit.
+#[tokio::test]
+async fn an_oversized_job_spec_field_is_a_400_that_names_the_limit() {
+    let api = Api::start().await;
+    let base = |f: &dyn Fn(&mut JobSpec)| {
+        let mut spec = JobSpec {
+            name: "limits".into(),
+            command: vec!["/bin/echo".into(), "x".into()],
+            ..JobSpec::default()
+        };
+        f(&mut spec);
+        spec
+    };
+    let cases: Vec<(JobSpec, &str)> = vec![
+        (
+            base(&|s| s.name = "n".repeat(201)),
+            "name is over the limit of 200 characters",
+        ),
+        (
+            base(&|s| s.command[1] = "a".repeat(128 * 1024 + 1)),
+            "command argument is over the limit of 131072 bytes",
+        ),
+        (
+            base(&|s| s.command = vec!["/bin/echo".into(); 1025]),
+            "command is over the limit of 1024 arguments",
+        ),
+        (
+            base(&|s| s.stdin = Some("s".repeat(1024 * 1024 + 1))),
+            "stdin is over the limit of 1048576 bytes",
+        ),
+        (
+            base(&|s| s.cwd = Some("/".repeat(4097))),
+            "cwd is over the limit of 4096 bytes",
+        ),
+        (
+            base(&|s| {
+                for i in 0..257 {
+                    s.env.insert(format!("K{i}"), "v".into());
+                }
+            }),
+            "env is over the limit of 256 variables",
+        ),
+        (
+            base(&|s| {
+                s.env.insert("A=B".into(), "v".into());
+            }),
+            "env name must be non-empty",
+        ),
+        (
+            base(&|s| s.name = "bad\u{1b}name".into()),
+            "name contains a control character",
+        ),
+    ];
+    for (spec, expect) in &cases {
+        let res = api.post("/v1/jobs", spec).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{expect}");
+        let body: serde_json::Value = res.json().await.unwrap();
+        let message = body["error"].as_str().unwrap();
+        assert!(message.contains(expect), "wanted {expect:?} in {message:?}");
+    }
+    // Right at the limits is accepted.
+    let edge = base(&|s| {
+        s.name = "n".repeat(200);
+        s.command[1] = "a".repeat(128 * 1024);
+        s.stdin = Some("s".repeat(1024 * 1024));
+    });
+    assert_eq!(
+        api.post("/v1/jobs", &edge).await.status(),
+        StatusCode::CREATED
+    );
+}

@@ -20,6 +20,7 @@ pub mod quota;
 pub mod reconcile;
 pub mod schedule;
 pub mod scheduler;
+pub mod spec_limits;
 pub mod types;
 
 pub use config::{Config, ConfigError, GuardPolicy};
