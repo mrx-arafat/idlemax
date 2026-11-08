@@ -158,8 +158,13 @@ fn pick_respects_guard_budget_requirements_profile_and_one_ai_lease_per_account(
     }
 }
 
+/// What happens to a job after each way an attempt can end: the job's own results are
+/// final, and only causes that are not its fault are retried, with backoff, up to
+/// `max_attempts`.
 #[test]
-fn failures_back_off_then_park_ai_never_retries_and_owner_stops_are_final() {
+fn only_causes_that_are_not_the_jobs_fault_are_retried() {
+    use CostClass::{Ai, CpuLight};
+    use JobStatus::{Failed, Killed, Parked, Queued, Succeeded};
     let running = |attempts: u32, cost: CostClass| {
         let mut j = active(job(1, 0, cost, 100), JobStatus::Running, "mac");
         j.attempts = attempts;
@@ -167,59 +172,92 @@ fn failures_back_off_then_park_ai_never_retries_and_owner_stops_are_final() {
         j.lease_expires_ms = Some(500);
         j
     };
-    let update = |status: JobStatus, owner_stop: bool| JobUpdate {
+    // (status, owner_stop, retryable)
+    let update = |status: JobStatus, owner_stop: bool, retryable: bool| JobUpdate {
         id: 1,
         device: "mac".into(),
         status,
         at_ms: 900,
+        exit_code: (status == Failed).then_some(1),
         owner_stop,
+        retryable,
         ..Default::default()
     };
-    use CostClass::{Ai, CpuLight};
-    use JobStatus::{Failed, Killed, Parked, Queued};
+    let final_ = |status| Some((status, None));
+    let backoff = |ms| Some((Queued, Some(ms)));
     let cases = [
         (
-            "first failure backs off 2 min",
+            "a non-zero exit is final",
             running(1, CpuLight),
-            update(Failed, false),
-            Some((Queued, Some(120_000))),
+            update(Failed, false, false),
+            final_(Failed),
         ),
         (
-            "second failure backs off 4 min",
-            running(2, CpuLight),
-            update(Failed, false),
-            Some((Queued, Some(240_000))),
-        ),
-        (
-            "max attempts parks",
+            "so is the last attempt's",
             running(3, CpuLight),
-            update(Failed, false),
-            Some((Parked, None)),
+            update(Failed, false, false),
+            final_(Failed),
         ),
         (
-            "AI job parks at once",
+            "an own-limit kill (memory cap, max runtime) is final",
+            running(1, CpuLight),
+            update(Killed, false, false),
+            final_(Killed),
+        ),
+        (
+            "an owner stop is final",
+            running(1, CpuLight),
+            update(Killed, true, false),
+            final_(Killed),
+        ),
+        (
+            "success is final",
+            running(1, CpuLight),
+            update(Succeeded, false, false),
+            final_(Succeeded),
+        ),
+        (
+            "a guard kill backs off 2 min",
+            running(1, CpuLight),
+            update(Killed, false, true),
+            backoff(120_000),
+        ),
+        (
+            "the second backs off 4 min",
+            running(2, CpuLight),
+            update(Killed, false, true),
+            backoff(240_000),
+        ),
+        (
+            "a start failure is retried too",
+            running(1, CpuLight),
+            update(Failed, false, true),
+            backoff(120_000),
+        ),
+        (
+            "retries stop at max attempts",
+            running(3, CpuLight),
+            update(Killed, false, true),
+            final_(Parked),
+        ),
+        (
+            "an AI job's non-zero exit is final",
             running(1, Ai),
-            update(Failed, false),
-            Some((Parked, None)),
+            update(Failed, false, false),
+            final_(Failed),
         ),
         (
-            "guard kill retries",
-            running(1, CpuLight),
-            update(Killed, false),
-            Some((Queued, Some(120_000))),
+            "an AI job is never retried",
+            running(1, Ai),
+            update(Killed, false, true),
+            final_(Parked),
         ),
         (
-            "owner stop is final",
-            running(1, CpuLight),
-            update(Killed, true),
-            Some((Killed, None)),
-        ),
-        (
-            "other device is ignored",
+            "another device is ignored",
             running(1, CpuLight),
             JobUpdate {
                 device: "pi".into(),
-                ..update(Failed, false)
+                ..update(Failed, false, true)
             },
             None,
         ),
@@ -228,14 +266,17 @@ fn failures_back_off_then_park_ai_never_retries_and_owner_stops_are_final() {
         let got = apply_update(&job, &update, 0).map(|j| (j.status, j.not_before_ms));
         assert_eq!(got, want, "{name}");
     }
-    let expired = expire_leases(&[running(1, CpuLight)], 1_000);
-    assert_eq!(
-        expired
-            .iter()
+
+    // A lost lease (agent gone, device offline, coordinator restart) is not the job's fault.
+    let expired = |attempts, cost| expire_leases(&[running(attempts, cost)], 1_000);
+    let outcome = |jobs: Vec<Job>| {
+        jobs.iter()
             .map(|j| (j.status, j.not_before_ms))
-            .collect::<Vec<_>>(),
-        [(Queued, Some(121_000))]
-    );
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(outcome(expired(1, CpuLight)), [(Queued, Some(121_000))]);
+    assert_eq!(outcome(expired(3, CpuLight)), [(Parked, None)]);
+    assert_eq!(outcome(expired(1, Ai)), [(Parked, None)]);
 }
 
 #[test]
@@ -279,7 +320,7 @@ fn a_device_that_reports_an_allowlist_only_gets_commands_on_it() {
 #[test]
 fn a_result_that_arrives_after_the_lease_expired_counts_if_the_job_has_not_run_again() {
     use CostClass::{Ai, CpuLight};
-    use JobStatus::{Failed, Parked, Queued, Running, Succeeded};
+    use JobStatus::{Failed, Killed, Parked, Queued, Running, Succeeded};
     // The agent was away, the lease expired and the job went back to the queue (device
     // None, attempts unchanged); its replayed result names the attempt it belongs to.
     let expired = |cost: CostClass| {
@@ -320,9 +361,18 @@ fn a_result_that_arrives_after_the_lease_expired_counts_if_the_job_has_not_run_a
             ok(Succeeded, Some("mac"), None),
         ),
         (
-            "a late failure follows the retry policy",
+            "a late failure is final like any other",
             expired(CpuLight),
             update(Failed, 1),
+            ok(Failed, Some("mac"), None),
+        ),
+        (
+            "a late guard kill follows the retry policy",
+            expired(CpuLight),
+            JobUpdate {
+                retryable: true,
+                ..update(Killed, 1)
+            },
             ok(Queued, None, Some(121_000)),
         ),
         (

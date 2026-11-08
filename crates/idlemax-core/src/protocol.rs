@@ -83,6 +83,11 @@ pub struct JobUpdate {
     pub output_tail: Option<String>,
     /// A `killed` update caused by the owner (local stop_all): final, never re-queued.
     pub owner_stop: bool,
+    /// The attempt ended for a reason that is not the job's fault (the guard killed it, the
+    /// agent shut down or restarted, or the agent could not start it), so the coordinator
+    /// may run the job again. Every other `failed` or `killed` update is final, and so is
+    /// one from an agent that predates the field.
+    pub retryable: bool,
 }
 
 /// Reply to POST /v1/agent/job-update.

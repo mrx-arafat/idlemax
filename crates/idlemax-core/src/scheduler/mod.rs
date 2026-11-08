@@ -315,8 +315,9 @@ pub fn backoff_ms(attempts: u32) -> i64 {
     (BACKOFF_BASE_MS << exp).min(BACKOFF_MAX_MS)
 }
 
-/// The job after a failure, a guard kill or a lost lease: back to Queued with backoff,
-/// or Parked after `effective_max_attempts` leases. AI jobs always park.
+/// The job after an attempt ended for a reason that is not its fault (a guard kill, an agent
+/// that shut down or could not start it, a lost lease): back to Queued with backoff, or
+/// Parked after `effective_max_attempts` leases. AI jobs always park.
 pub fn retry_or_park(job: &Job, now_ms: UnixMs, cause: &str) -> Job {
     let max = job.spec.effective_max_attempts();
     let mut next = Job {
@@ -360,8 +361,10 @@ pub fn expire_leases(jobs: &[Job], now_ms: UnixMs) -> Vec<Job> {
 
 /// The job after an agent's update, or None when the update must be ignored (job already
 /// terminal, or sent by a device that does not hold the lease). Coordinator stops and cancels
-/// are made terminal when requested, so their later killed update is ignored; a killed
-/// update with `owner_stop` is final, any other killed update is a guard kill and retries.
+/// are made terminal when requested, so their later killed update is ignored.
+/// A job's own result is final: a non-zero exit is `failed`, and a kill for its own limits
+/// (memory cap, max runtime) or by the owner is `killed`. Only an update the agent marks
+/// `retryable` (guard kill, agent shutdown, start failure) goes back in the queue.
 /// A result for an attempt whose lease expired while its agent was away still counts when
 /// the job has not been leased since (see `is_late_result`).
 pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job> {
@@ -397,10 +400,8 @@ pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job
             };
             next.attempts = job.attempts.saturating_sub(1);
         }
-        // An owner stop (local stop-all) is final, like a coordinator stop.
-        JobStatus::Killed if update.owner_stop => finish(&mut next, update),
-        // A guard kill or a failure follows the retry policy.
-        JobStatus::Failed | JobStatus::Killed => {
+        // Not the job's fault: run it again later, up to max_attempts.
+        JobStatus::Failed | JobStatus::Killed if update.retryable && !update.owner_stop => {
             let cause = update
                 .error
                 .clone()

@@ -129,7 +129,7 @@ fn log_action(action: &AgentAction, outcome: &Result<(), String>) {
         (AgentAction::Pause(_), Ok(())) => info!(job, "job paused"),
         (AgentAction::Resume(_), Ok(())) => info!(job, "job resumed"),
         (AgentAction::Kill { order, .. }, Ok(())) => {
-            warn!(job, reason = %order.reason, owner_stop = order.owner_stop, "killing job");
+            warn!(job, reason = %order.reason, owner_stop = order.owner_stop, retryable = order.retryable, "killing job");
         }
         (_, Err(e)) => warn!(job, error = %e, "runner action failed"),
     }

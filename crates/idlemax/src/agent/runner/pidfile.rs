@@ -110,6 +110,8 @@ fn reap_one(
         status: JobStatus::Killed,
         at_ms: now_ms,
         error: StopReason::Orphaned.message(),
+        // The agent restarted under the job; that is not the job's fault.
+        retryable: true,
         ..JobUpdate::default()
     })
 }

@@ -90,7 +90,7 @@ fn tick_pauses_resumes_kills_starts_and_returns_leases() {
     // User active: each job follows its on_user_active policy.
     let mut state = started(&[job(1, 100, Pause), job(2, 100, Continue), job(3, 100, Kill)]);
     let user_active = verdict(GuardAction::Pause, true, GuardAction::Hold);
-    let guard_kill = KillOrder::new("guard: load 9 > 8", false);
+    let guard_kill = KillOrder::retryable("guard: load 9 > 8");
     assert_eq!(
         tick(&mut state, &input(&user_active), 2),
         vec![
@@ -195,7 +195,62 @@ fn tick_pauses_resumes_kills_starts_and_returns_leases() {
         status: JobStatus::Killed,
         ..JobUpdate::default()
     };
-    assert!(state.finished(killed).owner_stop);
+    let owner_stopped = state.finished(killed);
+    assert!(owner_stopped.owner_stop && !owner_stopped.retryable);
+}
+
+/// Of everything that ends a job, only what is not the job's fault is marked `retryable`.
+#[test]
+fn only_an_attempt_the_agent_cut_short_is_marked_retryable() {
+    use ActivePolicy::{Kill, Pause};
+    let killed = |error: Option<&str>| JobUpdate {
+        id: 1,
+        status: JobStatus::Killed,
+        error: error.map(Into::into),
+        ..JobUpdate::default()
+    };
+    let user_active = verdict(GuardAction::Pause, true, GuardAction::Hold);
+
+    // The guard kills a job whose owner came back: not the job's fault.
+    let mut state = started(&[job(1, 100, Kill)]);
+    tick(&mut state, &input(&user_active), 2);
+    let update = state.finished(killed(None));
+    assert!(update.retryable && !update.owner_stop, "{update:?}");
+    assert_eq!(update.error.as_deref(), Some("guard: load 9 > 8"));
+
+    // The agent shutting down is not either.
+    let mut state = started(&[job(1, 100, Pause)]);
+    let g = run(1, 512, 4);
+    tick(
+        &mut state,
+        &TickInput {
+            shutting_down: true,
+            ..input(&g)
+        },
+        3,
+    );
+    assert!(state.finished(killed(None)).retryable);
+
+    // A job that broke its own memory cap or runtime limit is final, even when a guard
+    // kill happened to be pending; so is a kill the coordinator ordered.
+    let mut state = started(&[job(1, 100, Kill)]);
+    tick(&mut state, &input(&user_active), 2);
+    assert!(
+        !state
+            .finished(killed(Some("memory 900 MiB over the 100 MiB cap")))
+            .retryable
+    );
+    let mut state = started(&[job(1, 100, Pause)]);
+    let command = [AgentCommand::KillJob { id: 1 }];
+    tick(
+        &mut state,
+        &TickInput {
+            commands: &command,
+            ..input(&g)
+        },
+        3,
+    );
+    assert!(!state.finished(killed(None)).retryable);
 }
 
 #[test]
@@ -216,4 +271,6 @@ fn updates_carry_the_attempt_they_belong_to() {
         .applied(start, Err("no".into()), &DEV.to_string(), 1)
         .unwrap();
     assert_eq!((refused.status, refused.attempt), (JobStatus::Failed, 2));
+    // The agent could not start it, which says nothing about the job.
+    assert!(refused.retryable);
 }

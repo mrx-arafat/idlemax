@@ -58,18 +58,30 @@ pub struct TrackedJob {
 }
 
 /// Why a job is killed. `owner_stop` marks the owner's local stop-all, which the
-/// coordinator treats as final (no retry).
+/// coordinator treats as final. `retryable` marks a kill that is not the job's fault (the
+/// guard, an agent shutting down), after which the coordinator may run the job again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KillOrder {
     pub reason: String,
     pub owner_stop: bool,
+    pub retryable: bool,
 }
 
 impl KillOrder {
+    /// A final kill: the owner stopped everything, or the coordinator ordered it.
     fn new(reason: impl Into<String>, owner_stop: bool) -> Self {
         Self {
             reason: reason.into(),
             owner_stop,
+            retryable: false,
+        }
+    }
+
+    /// A kill the job did not cause, so the job may run again.
+    fn retryable(reason: impl Into<String>) -> Self {
+        Self {
+            retryable: true,
+            ..Self::new(reason, false)
         }
     }
 }
@@ -146,7 +158,7 @@ impl AgentState {
         self.apply_local_controls(input.local_controls, &mut kills);
         let stop_all = self.apply_commands(input.commands, &mut kills);
         if input.shutting_down {
-            self.kill_all(&KillOrder::new(SHUTDOWN_REASON, false), &mut kills);
+            self.kill_all(&KillOrder::retryable(SHUTDOWN_REASON), &mut kills);
         }
         let local = input.kill_switch || self.local_paused;
         for job in self.jobs.values_mut() {
@@ -155,7 +167,7 @@ impl AgentState {
                 GuardAction::Kill => {
                     kills
                         .entry(job.id)
-                        .or_insert_with(|| KillOrder::new(guard_reason(input.guard), false));
+                        .or_insert_with(|| KillOrder::retryable(guard_reason(input.guard)));
                 }
                 GuardAction::Pause => job.holds.guard = true,
                 GuardAction::Run { .. } => job.holds.guard = false,
@@ -201,8 +213,11 @@ impl AgentState {
                     ..update(job.id, JobStatus::Running, None)
                 })
             }
+            // The agent could not start it (not allowed here, no such binary): another
+            // device or a later try may.
             (AgentAction::Start(job), Err(e)) => Some(JobUpdate {
                 attempt: job.attempts,
+                retryable: true,
                 ..update(job.id, JobStatus::Failed, Some(format!("start: {e}")))
             }),
             (AgentAction::Return { id, reason }, _) => {
@@ -226,7 +241,9 @@ impl AgentState {
     }
 
     /// Takes a runner update; a terminal one stops tracking the job, and a kill the agent
-    /// ordered gets its reason and owner-stop flag.
+    /// ordered gets its reason and whether it was an owner stop or is retryable. A runner
+    /// that already named a reason (memory cap, max runtime) stopped the job for its own
+    /// limits, which stays final even if a guard kill was pending.
     pub fn finished(&mut self, mut update: JobUpdate) -> JobUpdate {
         if !update.status.is_terminal() {
             return update;
@@ -236,6 +253,7 @@ impl AgentState {
             update.owner_stop = order.owner_stop;
             if update.error.is_none() {
                 update.error = Some(order.reason);
+                update.retryable = order.retryable;
             }
         }
         update

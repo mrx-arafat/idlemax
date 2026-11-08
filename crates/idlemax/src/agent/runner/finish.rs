@@ -66,8 +66,10 @@ pub fn finish(
         output_path: output_path.map(|p| p.to_string_lossy().into_owned()),
         rate_limited: job_run::rate_limited(ended.job.spec.cost, &output),
         output_tail: (!output.is_empty()).then_some(output),
-        // The runner never decides owner stops; the agent sets it on local stop_all kills.
+        // The runner never decides owner stops or retries; the agent sets them on the kills
+        // it orders. A non-zero exit and a kill for the job's own limits are final.
         owner_stop: false,
+        retryable: false,
     }
 }
 
