@@ -48,7 +48,8 @@ pub fn control(req: &ControlRequest, s: &ClusterStatus) -> Option<&'static str> 
 /// This device's own pause state, for `idlemax local pause|resume|stop-all`.
 pub fn local(action: ControlAction, s: &LocalStatus) -> Option<LocalNoop> {
     match action {
-        ControlAction::Pause if s.local_paused || s.kill_switch => Some(LocalNoop::State("paused")),
+        // Recorded even under the kill switch, so the pause outlives the PAUSE file.
+        ControlAction::Pause if s.local_paused => Some(LocalNoop::State("paused")),
         // Lifting a local pause is a real change; the kill switch still needs a note after it.
         ControlAction::Resume if s.local_paused => None,
         ControlAction::Resume if s.kill_switch => Some(LocalNoop::KillSwitch),
@@ -191,7 +192,8 @@ mod tests {
         s.kill_switch = true;
         assert_eq!(
             local(ControlAction::Pause, &s),
-            Some(LocalNoop::State("paused"))
+            None,
+            "a local pause must still be recorded, so it outlives the PAUSE file"
         );
         assert_eq!(
             local(ControlAction::Resume, &s),
