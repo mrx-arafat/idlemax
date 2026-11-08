@@ -68,7 +68,8 @@ fn listen_addr(listen: &str) -> Result<SocketAddr, CoordError> {
     let addr: SocketAddr = listen
         .parse()
         .map_err(|_| CoordError::BadListen(listen.into()))?;
-    if addr.ip().is_unspecified() {
+    // `::ffff:0.0.0.0` is the IPv4 wildcard in IPv6 clothes: look through the mapping.
+    if addr.ip().to_canonical().is_unspecified() {
         return Err(CoordError::AllInterfaces(addr));
     }
     Ok(addr)
@@ -91,4 +92,35 @@ fn shutdown_signal() -> Result<impl Future<Output = ()>, CoordError> {
         }
         tracing::info!("shutdown signal received");
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{listen_addr, CoordError};
+
+    #[test]
+    fn every_spelling_of_all_interfaces_is_refused() {
+        for wildcard in ["0.0.0.0:7878", "[::]:7878", "[::ffff:0.0.0.0]:7878"] {
+            assert!(
+                matches!(listen_addr(wildcard), Err(CoordError::AllInterfaces(_))),
+                "{wildcard} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_single_interface_is_accepted() {
+        for one in [
+            "127.0.0.1:7878",
+            "[::1]:7878",
+            "100.64.0.1:7878",
+            "[::ffff:127.0.0.1]:7878",
+        ] {
+            assert!(listen_addr(one).is_ok(), "{one} must be accepted");
+        }
+        assert!(matches!(
+            listen_addr("localhost:7878"),
+            Err(CoordError::BadListen(_))
+        ));
+    }
 }
