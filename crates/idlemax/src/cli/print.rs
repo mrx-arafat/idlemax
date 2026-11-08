@@ -32,6 +32,11 @@ pub fn table(header: &[&str], rows: &[Vec<String>]) -> String {
 
 /// One line: version, pause state, non-zero job counts, open advice.
 pub fn summary(s: &ClusterStatus) -> String {
+    format!("coordinator {} | {}", s.version, status_line(s))
+}
+
+/// `summary` without the version, for screens too narrow to show it.
+pub fn status_line(s: &ClusterStatus) -> String {
     let global = if s.global_paused { "PAUSED" } else { "running" };
     let accounts = match s.paused_accounts.as_slice() {
         [] => String::new(),
@@ -50,8 +55,7 @@ pub fn summary(s: &ClusterStatus) -> String {
         }
     }
     format!(
-        "coordinator {} | global: {global}{accounts} | jobs: {} | advice: {} open",
-        s.version,
+        "global: {global}{accounts} | jobs: {} | advice: {} open",
         jobs.join(", "),
         s.open_advice
     )

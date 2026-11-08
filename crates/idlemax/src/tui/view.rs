@@ -10,18 +10,22 @@ use ratatui::Frame;
 
 use super::app::{App, Tab};
 use super::feed::Snapshot;
-use crate::cli::print::summary;
+use super::layout::{ellipsize, fit_hints, tab_titles, wrapped_lines};
+use crate::cli::print::{status_line, summary};
 use crate::cli::rows::{self, rel};
 
 pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
+    let width = usize::from(f.area().width);
+    let status = status_text(app, width);
+    let status_rows = u16::try_from(wrapped_lines(&status.0, width, 3)).unwrap_or(1);
     let [header, tabs, body, footer] = Layout::vertical([
-        Constraint::Length(2),
+        Constraint::Length(1 + status_rows),
         Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(1),
     ])
     .areas(f.area());
-    render_header(f, header, app, now_ms);
+    render_header(f, header, app, &status, now_ms);
     render_tabs(f, tabs, app);
     match app.data.take() {
         Some(data) => {
@@ -39,7 +43,21 @@ pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
     }
 }
 
-fn render_header(f: &mut Frame, area: Rect, app: &App, now_ms: UnixMs) {
+/// Second header line and whether it is an error: the coordinator error, or the
+/// status summary, which drops the version when the full line would not fit.
+fn status_text(app: &App, width: usize) -> (String, bool) {
+    match (&app.fetch_error, &app.data) {
+        (Some(e), _) => (format!("coordinator unreachable: {e}"), true),
+        (None, Some(d)) => {
+            let full = summary(&d.status);
+            let fits = full.chars().count() <= width;
+            (if fits { full } else { status_line(&d.status) }, false)
+        }
+        (None, None) => (String::new(), false),
+    }
+}
+
+fn render_header(f: &mut Frame, area: Rect, app: &App, status: &(String, bool), now_ms: UnixMs) {
     let state = match app.data.as_ref().map(|d| d.status.global_paused) {
         Some(true) => Span::styled(
             " GLOBAL PAUSED ",
@@ -51,22 +69,32 @@ fn render_header(f: &mut Frame, area: Rect, app: &App, now_ms: UnixMs) {
     let updated = app
         .updated_ms
         .map_or_else(|| "never".into(), |t| rel(t, now_ms));
+    let updated = format!("  updated {updated}");
+    // The state and age matter more than the address, so a long address gives way.
+    let fixed = "idlemax ".len() + state.width() + 2 + updated.chars().count();
+    let source = ellipsize(
+        &app.source,
+        usize::from(area.width).saturating_sub(fixed).max(12),
+    );
     let top = Line::from(vec![
         Span::raw("idlemax ").bold(),
-        Span::raw(format!("{}  ", app.source)),
+        Span::raw(format!("{source}  ")),
         state,
-        Span::raw(format!("  updated {updated}")).dark_gray(),
+        Span::raw(updated).dark_gray(),
     ]);
-    let second = match (&app.fetch_error, &app.data) {
-        (Some(e), _) => Line::from(format!("coordinator unreachable: {e}")).red(),
-        (None, Some(d)) => Line::from(summary(&d.status)),
-        (None, None) => Line::from(""),
+    let second = match status {
+        (text, true) => Line::from(text.clone()).red(),
+        (text, false) => Line::from(text.clone()),
     };
-    f.render_widget(Paragraph::new(vec![top, second]), area);
+    f.render_widget(
+        Paragraph::new(vec![top, second]).wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 fn render_tabs(f: &mut Frame, area: Rect, app: &App) {
-    let titles = Tab::ALL.map(|t| format!("{} {} ({})", t.index() + 1, t.title(), app.rows(t)));
+    let counts = Tab::ALL.map(|t| (t.title(), app.rows(t)));
+    let titles = tab_titles(&counts, usize::from(area.width));
     let tabs = Tabs::new(titles).select(app.tab.index()).highlight_style(
         Style::new()
             .fg(Color::Cyan)
@@ -250,24 +278,36 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App, now_ms: UnixMs) {
     let line = match app.live_flash(now_ms) {
         Some(fl) if fl.error => Line::from(fl.text.clone()).red(),
         Some(fl) => Line::from(fl.text.clone()).green(),
-        None => Line::from(key_hints(app)).dark_gray(),
+        None => Line::from(key_hints(app, usize::from(area.width))).dark_gray(),
     };
     f.render_widget(Paragraph::new(line), area);
 }
 
-fn key_hints(app: &App) -> String {
-    let target = match (app.tab, app.target()) {
-        (Tab::Schedules, _) => "schedule".into(),
-        (_, Some((_, label))) => label,
-        (_, None) => "selection".into(),
+/// What the keys do on this tab, trimmed to `width`: `q quit` stays, `P/R all` goes first.
+fn key_hints(app: &App, width: usize) -> String {
+    // On Advice and Events p/r already act on everything, so P/R would repeat them.
+    let (target, global_keys) = match app.tab {
+        Tab::Advice | Tab::Events => ("all".to_string(), false),
+        Tab::Schedules => ("schedule".to_string(), true),
+        _ => {
+            let label = app.target().map_or_else(|| "selection".into(), |(_, l)| l);
+            (ellipsize(&label, 22), true)
+        }
     };
-    let extra = match app.tab {
-        Tab::Jobs => "  k cancel job",
-        Tab::Advice => "  a accept  d dismiss  f refresh",
-        Tab::Schedules => "  d remove",
-        _ => "",
-    };
-    format!("p/r pause/resume {target}  P/R all  s stop-all{extra}  tab/1-6 switch  q quit")
+    let mut hints = vec![(1, format!("p/r pause/resume {target}"))];
+    match app.tab {
+        Tab::Jobs => hints.push((2, "k cancel job".into())),
+        Tab::Advice => hints.push((2, "a accept  d dismiss  f refresh".into())),
+        Tab::Schedules => hints.push((2, "d remove".into())),
+        _ => {}
+    }
+    if global_keys {
+        hints.push((5, "P/R all".into()));
+    }
+    hints.push((3, "s stop-all".into()));
+    hints.push((4, "tab/1-6 switch".into()));
+    hints.push((0, "q quit".into()));
+    fit_hints(&hints, width)
 }
 
 fn render_confirm(f: &mut Frame, prompt: &str) {

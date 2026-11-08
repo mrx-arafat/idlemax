@@ -2,6 +2,7 @@
 
 mod app;
 mod feed;
+mod layout;
 mod view;
 
 use std::io::IsTerminal;
