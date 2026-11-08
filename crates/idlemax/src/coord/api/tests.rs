@@ -4,7 +4,7 @@
 use idlemax_core::advice::{
     AdvisorInputs, GhItem, GithubSnapshot, GithubStatus, SessionMeta, SessionSignal,
 };
-use idlemax_core::explain::{ExplainState, Explanation, ReasonKind};
+use idlemax_core::explain::{ExplainState, Explanation, ReasonKind, WhySummary};
 use idlemax_core::protocol::{
     AgentCommand, ClusterStatus, Heartbeat, HeartbeatReply, JobUpdate, RunningJob,
 };
@@ -516,4 +516,69 @@ fn an_ai_pass_result_is_ingested_again_on_replay_until_its_advice_is_recorded() 
         on_job_update(&mut store, &update, T0 + 11_000).unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn why_summaries_cover_the_waiting_jobs_newest_first_with_one_headline_each() {
+    let api = Api::start().await;
+    let spec = |name: &str| JobSpec {
+        name: name.into(),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+    let mut ids = Vec::new();
+    for name in ["old", "held", "new"] {
+        let job: Job = api
+            .post("/v1/jobs", &spec(name))
+            .await
+            .json()
+            .await
+            .unwrap();
+        ids.push(job.id);
+    }
+    let finished = JobSpec {
+        name: "done".into(),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+    let done: Job = api.post("/v1/jobs", &finished).await.json().await.unwrap();
+    api.post(&format!("/v1/jobs/{}/cancel", done.id), &json!({}))
+        .await;
+    let pause = json!({"scope": {"type": "job", "id": ids[1]}, "action": "pause"});
+    api.post("/v1/control", &pause).await;
+    let mut hb = mac_heartbeat(Vec::new());
+    hb.guard = GuardDecision {
+        action: GuardAction::Pause,
+        reasons: vec!["pause: on battery".into()],
+        ..GuardDecision::default()
+    };
+    api.post("/v1/agent/heartbeat", &hb).await;
+
+    let get = |path: &str| {
+        api.http
+            .get(format!("{}{path}", api.base))
+            .bearer_auth(TOKEN)
+            .send()
+    };
+    let all: Vec<WhySummary> = get("/v1/why").await.unwrap().json().await.unwrap();
+    // Newest first, the cancelled job left out, the paused one named by its pause.
+    assert_eq!(
+        all.iter().map(|s| s.job).collect::<Vec<_>>(),
+        [ids[2], ids[1], ids[0]]
+    );
+    let kinds: Vec<ReasonKind> = all
+        .iter()
+        .map(|s| s.headline.as_ref().unwrap().reason.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        [ReasonKind::Guard, ReasonKind::JobPause, ReasonKind::Guard]
+    );
+    assert_eq!(
+        all[0].headline.as_ref().unwrap().device.as_deref(),
+        Some("mac")
+    );
+
+    let one: Vec<WhySummary> = get("/v1/why?limit=1").await.unwrap().json().await.unwrap();
+    assert_eq!(one.iter().map(|s| s.job).collect::<Vec<_>>(), [ids[2]]);
 }

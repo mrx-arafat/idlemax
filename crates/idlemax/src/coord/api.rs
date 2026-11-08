@@ -82,6 +82,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/jobs/{id}", get(jobs::get_one))
         .route("/v1/jobs/{id}/cancel", post(jobs::cancel))
         .route("/v1/jobs/{id}/why", get(why::why))
+        .route("/v1/why", get(why::why_all))
         .route("/v1/quota", get(jobs::quota))
         .route("/v1/control", post(jobs::control))
         .route("/v1/events", get(jobs::events))

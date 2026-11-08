@@ -155,6 +155,22 @@ pub fn job_blockers(
     jobs: &[Job],
     job: &Job,
 ) -> Vec<Blocker> {
+    let leased = if job.spec.cost == CostClass::Ai {
+        ai_leased_accounts(jobs)
+    } else {
+        BTreeSet::new()
+    };
+    job_blockers_in(now_ms, quota, paused_accounts, &leased, job)
+}
+
+/// `job_blockers` with the leased AI accounts already known, so `pick` computes them once.
+fn job_blockers_in(
+    now_ms: UnixMs,
+    quota: &[QuotaView],
+    paused_accounts: &[String],
+    leased: &BTreeSet<&str>,
+    job: &Job,
+) -> Vec<Blocker> {
     let mut out = Vec::new();
     if let Some(until_ms) = job.not_before_ms.filter(|t| *t > now_ms) {
         out.push(Blocker::BackingOff { until_ms });
@@ -179,7 +195,7 @@ pub fn job_blockers(
             needs_pct,
         });
     }
-    if ai_leased_accounts(jobs).contains(account) {
+    if leased.contains(account) {
         out.push(Blocker::AccountLeased(owned()));
     }
     out
@@ -236,9 +252,15 @@ pub fn pick(ctx: &SchedContext<'_>, jobs: &[Job]) -> Vec<JobId> {
     let Some((slots, mut mem_left)) = start_budget(ctx, jobs) else {
         return Vec::new();
     };
+    let leased = ai_leased_accounts(jobs);
     let mut cands: Vec<&Job> = jobs
         .iter()
-        .filter(|j| blockers(ctx, jobs, j).is_empty())
+        .filter(|j| {
+            j.status == JobStatus::Queued
+                && job_blockers_in(ctx.now_ms, ctx.quota, ctx.paused_accounts, &leased, j)
+                    .is_empty()
+                && device_blockers(ctx.device, j).is_empty()
+        })
         .collect();
     cands.sort_by(|a, b| start_order(a, b));
     let mut picked = Vec::new();

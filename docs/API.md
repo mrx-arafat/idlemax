@@ -26,6 +26,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | POST | /v1/jobs | `JobSpec` | `Job` |
 | POST | /v1/jobs/{id}/cancel | | `Job` |
 | GET | /v1/jobs/{id}/why | | `Explanation` |
+| GET | /v1/why?limit= | | `[WhySummary]` |
 | GET | /v1/quota | | `[quota::QuotaView]` |
 | POST | /v1/control | `ControlRequest` | `ClusterStatus` |
 | GET | /v1/events?limit= | | `[Event]` |
@@ -176,6 +177,22 @@ The device-side verdicts (guard, running jobs, slot and RAM budget) are as of th
 - `kind` is a stable snake_case code for scripts: `global_pause`, `account_pause`, `job_pause`, `device_pause`, `local_pause`, `backoff`, `parked`, `no_device_online`, `offline`, `device_filter`, `missing_capability`, `cost_class`, `command_not_allowed`, `ai_no_account`, `ai_account_not_on_device`, `ai_quota`, `ai_account_busy`, `guard`, `no_slot`, `ram_budget`, `queue_order`.
   `message` is plain language, `fix` is the command or config key that clears it (null when it clears by itself), `until_ms` is set for `backoff`.
 - A `finished` job has no reasons, and a `parked` job has one `parked` reason carrying its last error.
+
+`GET /v1/why?limit=` is the cheap form for a list of jobs, which the web dashboard polls: one `WhySummary` per queued, leased or paused job, newest first (default 100, at most 1000), computed from one read of the coordinator's state.
+Finished and parked jobs are left out; a waiting job nothing holds back is listed with a null headline.
+
+```json
+{"job": 7, "status": "queued", "state": "blocked", "more": 2,
+ "headline": {"device": "my-laptop",
+              "reason": {"kind": "guard", "message": "on battery (guard pause)",
+                         "fix": "plug in, or set guard.require_ac_power = false", "until_ms": null}}}
+```
+
+- `headline` is the reason worth showing beside the job, `null` when nothing holds it (it is ready, running or finished).
+  A reason that holds on every device comes first, with `device` null.
+  Otherwise it is the first reason of the device closest to running: one that only waits and needs no setting changed, then an online one, then the one with the fewest reasons.
+- `more` counts the other reasons in the full explanation that belong with the headline: those on every device plus those of the headline's device.
+  Fetch `GET /v1/jobs/{id}/why` for the whole list when a user asks for it.
 
 `DeviceInfo.command_allowlist` is the agent's `agent.command_allowlist`, sent with every heartbeat.
 The scheduler leases a job only to a device whose list contains the job's `argv[0]`, because the agent would refuse it otherwise.

@@ -402,3 +402,56 @@ fn calm() -> MetricsSnapshot {
         ..Default::default()
     }
 }
+
+#[test]
+fn the_headline_is_what_holds_everywhere_else_the_reason_of_the_device_closest_to_running() {
+    let headline = |w: &World| {
+        let s = summarize(&w.explain());
+        let h = s.headline.map(|h| (h.device, h.reason.kind));
+        (h, s.more)
+    };
+    // A reason that holds on every device comes first.
+    let mut w = World::new(queued(1));
+    w.paused = vec![ControlScope::Job(1)];
+    assert_eq!(headline(&w), (Some((None, ReasonKind::JobPause)), 0));
+
+    // The server can never take a heavy job; the laptop only waits for the guard.
+    let mut heavy = queued(2);
+    heavy.spec.cost = CostClass::CpuHeavy;
+    let mut server = device("server");
+    server.info.profile = DeviceProfile::LinuxServer;
+    let mut laptop = device("mac");
+    laptop.guard = Some(GuardDecision {
+        action: GuardAction::Pause,
+        reasons: vec![
+            "pause: on battery".into(),
+            "pause: user active 1s ago (< 600s)".into(),
+        ],
+        ..Default::default()
+    });
+    let mut w = World::new(heavy);
+    w.devices = vec![server, laptop];
+    assert_eq!(
+        headline(&w),
+        (Some((Some("mac".into()), ReasonKind::Guard)), 1)
+    );
+
+    // An online device beats an offline one with as many reasons.
+    let mut gone = device("gone");
+    gone.online = false;
+    let mut busy = device("busy");
+    busy.guard = Some(GuardDecision {
+        action: GuardAction::Hold,
+        reasons: vec!["hold: user idle time unknown".into()],
+        ..Default::default()
+    });
+    let mut w = World::new(queued(3));
+    w.devices = vec![gone, busy];
+    assert_eq!(
+        headline(&w),
+        (Some((Some("busy".into()), ReasonKind::Guard)), 0)
+    );
+
+    // Nothing holds a job that is ready.
+    assert_eq!(headline(&World::new(queued(4))), (None, 0));
+}

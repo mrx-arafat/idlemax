@@ -5,12 +5,13 @@
 
 mod guard_text;
 mod reasons;
+mod summary;
 #[cfg(test)]
 mod tests;
 
 use serde::{Deserialize, Serialize};
 
-use crate::control::{is_held, may_assign, paused_accounts};
+use crate::control::{may_assign, paused_accounts};
 use crate::protocol::DeviceView;
 use crate::quota::QuotaView;
 use crate::scheduler::{self, SchedContext};
@@ -20,6 +21,7 @@ use crate::types::{
 };
 
 use self::reasons::{blocker_reason, hold_reasons, span};
+pub use self::summary::{summarize, Headline, WhySummary};
 
 /// The coarse answer: can it start, is it stuck, is it running, is it over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -63,6 +65,22 @@ pub enum ReasonKind {
     QueueOrder,
 }
 
+impl ReasonKind {
+    /// Holds until a job spec or a device's config changes, not by waiting.
+    pub fn is_permanent(self) -> bool {
+        matches!(
+            self,
+            ReasonKind::Parked
+                | ReasonKind::DeviceFilter
+                | ReasonKind::MissingCapability
+                | ReasonKind::CostClass
+                | ReasonKind::CommandNotAllowed
+                | ReasonKind::AiNoAccount
+                | ReasonKind::AiAccountNotOnDevice
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Reason {
     pub kind: ReasonKind,
@@ -104,7 +122,8 @@ pub struct Explanation {
 pub struct ExplainInput<'a> {
     pub now_ms: UnixMs,
     pub job: &'a Job,
-    /// Every active job and every queued job, the scheduler's own input.
+    /// The scheduler's own input: every active job and every queued job that no pause
+    /// holds (`pick` never sees held jobs). The caller builds it once and shares it.
     pub jobs: &'a [Job],
     pub devices: &'a [DeviceView],
     pub paused: &'a [ControlScope],
@@ -134,16 +153,10 @@ pub fn explain(input: &ExplainInput<'_>) -> Explanation {
 
 fn explain_queued(input: &ExplainInput<'_>, out: &mut Explanation) {
     let job = input.job;
-    // What the scheduler sees: queued jobs under a pause are left out of its list.
-    let visible: Vec<Job> = input
-        .jobs
-        .iter()
-        .filter(|j| j.status.is_active() || !is_held(input.paused, j))
-        .cloned()
-        .collect();
+    let visible = input.jobs;
     let mut reasons = hold_reasons(input);
     let accounts = paused_accounts(input.paused);
-    let blockers = scheduler::job_blockers(input.now_ms, input.quota, &accounts, &visible, job);
+    let blockers = scheduler::job_blockers(input.now_ms, input.quota, &accounts, visible, job);
     reasons.extend(
         blockers
             .iter()
@@ -154,7 +167,7 @@ fn explain_queued(input: &ExplainInput<'_>, out: &mut Explanation) {
     let devices: Vec<DeviceExplanation> = input
         .devices
         .iter()
-        .map(|dv| explain_device(input, &visible, dv, &accounts, job_wide))
+        .map(|dv| explain_device(input, visible, dv, &accounts, job_wide))
         .collect();
     let ready: Vec<String> = input
         .devices

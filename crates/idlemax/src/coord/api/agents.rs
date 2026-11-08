@@ -105,6 +105,22 @@ pub(super) fn on_heartbeat(
     })
 }
 
+/// What the scheduler picks from: every active job plus every queued job no pause holds.
+/// `why` explains from the same list, so the two cannot disagree about the queue.
+pub(super) fn scheduler_jobs(
+    store: &Store,
+    paused: &[ControlScope],
+) -> Result<Vec<Job>, StoreError> {
+    let mut jobs = store.active_jobs()?;
+    jobs.extend(
+        store
+            .queued_jobs()?
+            .into_iter()
+            .filter(|j| !is_held(paused, j)),
+    );
+    Ok(jobs)
+}
+
 /// Leases what the scheduler picks; the store's compare-and-set settles any race.
 fn assign_jobs(
     store: &mut Store,
@@ -114,13 +130,7 @@ fn assign_jobs(
     now: UnixMs,
 ) -> Result<Vec<Job>, ApiFailure> {
     let device = &hb.device.id;
-    let mut jobs = store.active_jobs()?;
-    jobs.extend(
-        store
-            .queued_jobs()?
-            .into_iter()
-            .filter(|j| !is_held(paused, j)),
-    );
+    let jobs = scheduler_jobs(store, paused)?;
     let quota = quota_views(store, cfg, now)?;
     let accounts = paused_accounts(paused);
     let ctx = SchedContext {
