@@ -26,7 +26,7 @@ const TABLE: &[(&str, ReasonKind, &str)] = &[
     (
         "user idle time unknown",
         ReasonKind::Guard,
-        "the agent cannot read the idle time on this device; check the agent log",
+        "this device cannot report idle time; set guard.user_idle_min_secs = 0 to start jobs without checking for the user",
     ),
     (
         "kill switch file PAUSE present",
