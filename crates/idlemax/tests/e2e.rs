@@ -133,6 +133,154 @@ impl Api {
     }
 }
 
+/// Runs `idlemax <args>` against the temp state dir, feeding `stdin` when given.
+fn idlemax(home: &Path, state: &Path, args: &[&str], stdin: Option<&str>) -> std::process::Output {
+    use std::io::Write;
+    assert_isolated(state);
+    let mut child = Command::new(BIN)
+        .args(args)
+        .env("HOME", home)
+        .env("IDLEMAX_HOME", state)
+        .env_remove("IDLEMAX_TOKEN")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut pipe = child.stdin.take().unwrap();
+    if let Some(text) = stdin {
+        pipe.write_all(text.as_bytes()).unwrap();
+    }
+    drop(pipe);
+    child.wait_with_output().unwrap()
+}
+
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// `idlemax job add` as an agent uses it: flags, --wait, --key, --timeout and stdin.
+fn job_add_cli(home: &Path, state: &Path) {
+    let run = |args: &[&str], stdin: Option<&str>| {
+        let out = idlemax(home, state, args, stdin);
+        (out.status.code(), text(&out.stdout), text(&out.stderr))
+    };
+
+    let (code, out, err) = run(
+        &[
+            "job",
+            "add",
+            "--wait",
+            "--timeout",
+            "60",
+            "--mem",
+            "64",
+            "--",
+            "/bin/echo",
+            "hi-from-wait",
+        ],
+        None,
+    );
+    assert_eq!(code, Some(0), "echo: {out} {err}");
+    assert!(
+        out.contains("succeeded: echo\nexit code: 0\nran: "),
+        "{out}"
+    );
+    assert!(out.contains("hi-from-wait"), "log end is printed: {out}");
+
+    let (code, out, err) = run(
+        &[
+            "job",
+            "add",
+            "--wait",
+            "--timeout",
+            "60",
+            "--mem",
+            "64",
+            "--",
+            "/usr/bin/false",
+        ],
+        None,
+    );
+    assert_eq!(code, Some(1), "a failing command exits 1: {out} {err}");
+    assert!(out.contains("parked: false\nexit code: 1"), "{out}");
+
+    // Paused, nothing runs: a key queues once, and a short wait times out.
+    assert!(run(&["pause", "--reason", "e2e"], None).0 == Some(0));
+    let queue = [
+        "job",
+        "add",
+        "--key",
+        "e2e-key",
+        "--mem",
+        "64",
+        "--",
+        "/bin/echo",
+        "keyed",
+    ];
+    let (_, first, _) = run(&queue, None);
+    let (code, second, _) = run(&queue, None);
+    assert_eq!(code, Some(0));
+    let first_line = first.lines().next().unwrap();
+    assert!(first_line.contains("queued: echo"), "{first}");
+    assert_eq!(
+        second.lines().next().unwrap(),
+        format!("{first_line} - already queued (no-op)")
+    );
+    let (code, out, _) = run(
+        &[
+            "job",
+            "add",
+            "--wait",
+            "--timeout",
+            "1",
+            "--mem",
+            "64",
+            "--",
+            "/bin/echo",
+            "late",
+        ],
+        None,
+    );
+    assert_eq!(code, Some(124), "timed out waiting: {out}");
+    assert!(out.contains("still queued after waiting"), "{out}");
+    assert!(run(&["resume"], None).0 == Some(0));
+
+    // Waiting on a retried key waits on the job that already holds it.
+    let (code, out, err) = run(
+        &[
+            "job",
+            "add",
+            "--wait",
+            "--key",
+            "e2e-key",
+            "--mem",
+            "64",
+            "--",
+            "/bin/echo",
+            "keyed",
+        ],
+        None,
+    );
+    assert_eq!(code, Some(0), "{out} {err}");
+    assert!(err.contains("already queued (no-op)"), "{err}");
+    assert!(
+        out.contains("succeeded: echo") && out.contains("keyed"),
+        "{out}"
+    );
+
+    let spec = "name = \"from-stdin\"\ncommand = [\"/bin/echo\", \"stdin-ok\"]\nmem_mb = 64\n";
+    let (code, out, err) = run(
+        &["job", "add", "-", "--wait", "--timeout", "60"],
+        Some(spec),
+    );
+    assert_eq!(code, Some(0), "stdin spec: {out} {err}");
+    assert!(
+        out.contains("succeeded: from-stdin") && out.contains("stdin-ok"),
+        "{out}"
+    );
+}
+
 /// Polls `probe` every 200 ms until it returns Some, or panics after `timeout`.
 async fn wait_for<T, F, Fut>(what: &str, timeout: Duration, mut probe: F) -> T
 where
@@ -167,7 +315,7 @@ async fn coord_and_agent_run_a_tiny_job() {
     let config = format!(
         "[coordinator]\nlisten = \"127.0.0.1:{coord_port}\"\nurl = \"{coord}\"\n\n\
          [agent]\ndevice_id = \"{DEVICE}\"\nlisten = \"127.0.0.1:{agent_port}\"\n\
-         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ncommand_allowlist = [\"/bin/echo\"]\n\n\
+         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ncommand_allowlist = [\"/bin/echo\", \"/usr/bin/false\"]\n\n\
          [advisor]\nenabled = false\n\n\
          [guard]\n{PERMISSIVE_GUARD}"
     );
@@ -340,6 +488,8 @@ async fn coord_and_agent_run_a_tiny_job() {
     let show_str = String::from_utf8_lossy(&show_out.stdout);
     assert!(show_str.contains("# e2e-echo: succeeded"));
     assert!(show_str.contains(MARKER));
+
+    job_add_cli(&home, &state);
 
     let agent_api = Api {
         http,

@@ -47,6 +47,19 @@ fn a_result_shows_status_exit_code_run_time_and_the_log_end() {
         "{text}"
     );
 
+    let retried = Job {
+        last_error: Some("exit code 3; attempt 2 of 3 next".into()),
+        ..job(JobStatus::Queued, Some(3))
+    };
+    assert_eq!(
+        progress_text(&retried),
+        "job 12 queued again: exit code 3; attempt 2 of 3 next"
+    );
+    assert_eq!(
+        progress_text(&job(JobStatus::Running, None)),
+        "job 12 running"
+    );
+
     let never = Job {
         started_ms: None,
         device: None,

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use idlemax_core::job_run::inbox::tail;
 use idlemax_core::job_wait::{exit_code, poll_delay, TIMED_OUT_EXIT};
-use idlemax_core::types::Job;
+use idlemax_core::types::{Job, JobStatus};
 use idlemax_core::Paths;
 use serde::Serialize;
 
@@ -110,7 +110,7 @@ async fn poll(c: &ApiClient, mut job: Job, timeout: Option<Duration>) -> Result<
         }
         if job.status != announced {
             announced = job.status;
-            eprintln!("job {} {}", job.id, job.status);
+            eprintln!("{}", progress_text(&job));
         }
     }
     Ok((job, false))
@@ -132,6 +132,14 @@ fn read_end(path: &std::path::Path) -> Option<String> {
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).ok()?;
     Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// A status change while waiting; a retry says why the job is back in the queue.
+fn progress_text(job: &Job) -> String {
+    match (&job.last_error, job.status) {
+        (Some(why), JobStatus::Queued) => format!("job {} queued again: {why}", job.id),
+        _ => format!("job {} {}", job.id, job.status),
+    }
 }
 
 fn result_text(job: &Job, log: &Log) -> String {
