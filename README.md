@@ -501,6 +501,7 @@ The command after `--` is argv: it runs directly, never through a shell, so use 
 With `--wait` the command blocks until the job ends, prints how it went, and exits with a code that mirrors the job.
 The queued line and the progress lines go to stderr, and the result goes to stdout, with the end of the log when it is on this device.
 A coordinator that is down for up to 2 minutes is waited out.
+If every eligible device reports an allowlist that refuses the command, waiting exits 1 immediately with the fix; the job remains queued.
 
 | Exit code | Meaning |
 |---|---|

@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
 use idlemax_core::job_draft::{DraftError, JobDraft};
-use idlemax_core::types::{CostClass, Job, JobSpec};
+use idlemax_core::types::{CostClass, Job, JobSpec, JobStatus};
 use idlemax_core::Paths;
 
 use super::out::{hints, printable, views};
@@ -118,6 +118,16 @@ pub async fn add(c: &ApiClient, paths: &Paths, args: AddArgs, out: &Out) -> Resu
     }
     announce(&job, created, out, wait, warning.as_deref())?;
     if wait {
+        if let (true, Some(warning)) = (job.status == JobStatus::Queued, warning) {
+            return Err(CliError::runtime(
+                format!("job {} is queued but cannot start: {warning}", job.id),
+                format!(
+                    "idlemax why {}; idlemax job cancel {} to remove it",
+                    job.id, job.id
+                ),
+            )
+            .into());
+        }
         job_wait::run(c, paths, job, timeout, out).await
     } else {
         Ok(())

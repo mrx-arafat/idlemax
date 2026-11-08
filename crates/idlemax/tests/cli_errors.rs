@@ -51,3 +51,72 @@ fn token_errors_name_the_actual_problem_and_recovery() {
         .unwrap()
         .contains("unset IDLEMAX_TOKEN"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wait_reports_a_known_allowlist_blocker_on_stdout_without_timing_out() {
+    use axum::routing::{get, post};
+    use axum::{Json, Router};
+    use idlemax_core::protocol::{ClusterStatus, DeviceView};
+    use idlemax_core::types::{DeviceInfo, Job, JobSpec};
+
+    let job = Job {
+        id: 7,
+        spec: JobSpec {
+            name: "sleep".into(),
+            command: vec!["/bin/sleep".into(), "0".into()],
+            ..JobSpec::default()
+        },
+        ..Job::default()
+    };
+    let queued = job.clone();
+    let status = ClusterStatus {
+        devices: vec![DeviceView {
+            info: DeviceInfo {
+                id: "ux-walk".into(),
+                command_allowlist: Some(vec!["/bin/echo".into()]),
+                ..DeviceInfo::default()
+            },
+            ..DeviceView::default()
+        }],
+        ..ClusterStatus::default()
+    };
+    let app = Router::new()
+        .route("/v1/jobs", post(move || async move { Json(queued) }))
+        .route("/v1/jobs/7", get(move || async move { Json(job) }))
+        .route("/v1/status", get(move || async move { Json(status) }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let tmp = tempfile::tempdir().unwrap();
+    let state = tmp.path().join(STATE);
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(
+        state.join("config.toml"),
+        format!("[coordinator]\nurl = 'http://127.0.0.1:{port}'\n"),
+    )
+    .unwrap();
+    for format in ["toon", "json"] {
+        let out = run(
+            tmp.path(),
+            &[
+                "job",
+                "add",
+                "--wait",
+                "--timeout",
+                "1",
+                "--format",
+                format,
+                "--",
+                "/bin/sleep",
+                "0",
+            ],
+            Some("0123456789abcdef0123456789abcdef"),
+        );
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains("no device allows"), "{text}");
+        assert!(text.contains("agent.command_allowlist"), "{text}");
+        assert!(text.contains("job 7"), "{text}");
+    }
+    server.abort();
+}
