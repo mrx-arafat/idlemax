@@ -5,11 +5,12 @@ use std::time::Duration;
 
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::quota::QuotaView;
+use idlemax_core::schedule::{ScheduleId, ScheduleView};
 use idlemax_core::types::{Event, Job, JobId, Recommendation, UnixMs};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::MissedTickBehavior;
 
-use crate::cli::{print, ApiClient};
+use crate::cli::{print, ApiClient, ClientError};
 use crate::state::now_ms;
 
 const REFRESH: Duration = Duration::from_secs(2);
@@ -24,6 +25,7 @@ pub struct Snapshot {
     pub quota: Vec<QuotaView>,
     pub advice: Vec<Recommendation>,
     pub events: Vec<Event>,
+    pub schedules: Vec<ScheduleView>,
 }
 
 /// An action the user confirmed in the dashboard.
@@ -34,6 +36,9 @@ pub enum Request {
     AcceptAdvice(i64),
     DismissAdvice(i64),
     RefreshAdvice,
+    PauseSchedule(ScheduleId),
+    ResumeSchedule(ScheduleId),
+    RemoveSchedule(ScheduleId),
 }
 
 impl Request {
@@ -44,6 +49,9 @@ impl Request {
             Request::AcceptAdvice(id) => format!("accept advice {id}"),
             Request::DismissAdvice(id) => format!("dismiss advice {id}"),
             Request::RefreshAdvice => "refresh advice".into(),
+            Request::PauseSchedule(id) => format!("pause schedule {id}"),
+            Request::ResumeSchedule(id) => format!("resume schedule {id}"),
+            Request::RemoveSchedule(id) => format!("remove schedule {id}"),
         }
     }
 }
@@ -86,20 +94,30 @@ async fn fetch(c: &ApiClient) -> Update {
         c.jobs(None, JOB_LIMIT),
         c.quota(),
         c.advice(),
-        c.events(EVENT_LIMIT)
+        c.events(EVENT_LIMIT),
+        schedules(c)
     );
     match all {
-        Ok((status, jobs, quota, advice, events)) => Update::Snapshot(
+        Ok((status, jobs, quota, advice, events, schedules)) => Update::Snapshot(
             Box::new(Snapshot {
                 status,
                 jobs,
                 quota,
                 advice,
                 events,
+                schedules,
             }),
             now_ms(),
         ),
         Err(e) => Update::FetchFailed(e.describe()),
+    }
+}
+
+/// A coordinator older than schedules answers 404; that is an empty list, not an outage.
+async fn schedules(c: &ApiClient) -> Result<Vec<ScheduleView>, ClientError> {
+    match c.schedules().await {
+        Err(ClientError::Api { status: 404, .. }) => Ok(Vec::new()),
+        other => other,
     }
 }
 
@@ -111,6 +129,9 @@ async fn perform(c: &ApiClient, req: Request) -> Update {
         Request::AcceptAdvice(id) => c.accept_advice(id).await.map(|_| ()),
         Request::DismissAdvice(id) => c.dismiss_advice(id).await.map(|_| ()),
         Request::RefreshAdvice => c.refresh_advice().await.map(|_| ()),
+        Request::PauseSchedule(id) => c.pause_schedule(id).await.map(|_| ()),
+        Request::ResumeSchedule(id) => c.resume_schedule(id).await.map(|_| ()),
+        Request::RemoveSchedule(id) => c.remove_schedule(id).await.map(|_| ()),
     };
     match result {
         Ok(()) => Update::Done(label),

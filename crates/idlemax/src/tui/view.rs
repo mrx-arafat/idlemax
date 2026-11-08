@@ -1,5 +1,6 @@
 //! Delivery: draws the dashboard from `App` state; no decisions, only layout and color.
 
+use idlemax_core::schedule::{Decision, ScheduleView};
 use idlemax_core::types::{EventKind, JobStatus, Recommendation, RecommendationStatus, UnixMs};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
@@ -120,6 +121,29 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
             });
             table(f, area, &rows::EVENT_HEADER, rows.collect(), state);
         }
+        Tab::Schedules => {
+            let rows = d
+                .schedules
+                .iter()
+                .map(|v| (rows::schedule_cells(v, now_ms), schedule_style(v)));
+            table(f, area, &rows::SCHEDULE_HEADER, rows.collect(), state);
+        }
+    }
+}
+
+/// Paused is yellow, a failed last run red, a job in flight green; otherwise plain.
+fn schedule_style(v: &ScheduleView) -> Style {
+    let failed = v.last_result.as_ref().is_some_and(|r| {
+        matches!(
+            r.status,
+            JobStatus::Failed | JobStatus::Killed | JobStatus::Parked
+        )
+    });
+    match (v.schedule.paused, v.decision) {
+        (true, _) => Style::new().yellow(),
+        (false, Decision::Running { .. }) => Style::new().green(),
+        _ if failed => Style::new().red(),
+        _ => Style::new(),
     }
 }
 
@@ -232,15 +256,18 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App, now_ms: UnixMs) {
 }
 
 fn key_hints(app: &App) -> String {
-    let target = app
-        .target()
-        .map_or_else(|| "selection".into(), |(_, label)| label);
+    let target = match (app.tab, app.target()) {
+        (Tab::Schedules, _) => "schedule".into(),
+        (_, Some((_, label))) => label,
+        (_, None) => "selection".into(),
+    };
     let extra = match app.tab {
         Tab::Jobs => "  k cancel job",
         Tab::Advice => "  a accept  d dismiss  f refresh",
+        Tab::Schedules => "  d remove",
         _ => "",
     };
-    format!("p/r pause/resume {target}  P/R all  s stop-all{extra}  tab/1-5 switch  q quit")
+    format!("p/r pause/resume {target}  P/R all  s stop-all{extra}  tab/1-6 switch  q quit")
 }
 
 fn render_confirm(f: &mut Frame, prompt: &str) {

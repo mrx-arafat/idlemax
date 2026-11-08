@@ -1,6 +1,7 @@
 //! Delivery: dashboard state and key handling; turns keys into confirmed requests.
 
 use idlemax_core::protocol::ControlRequest;
+use idlemax_core::schedule::ScheduleId;
 use idlemax_core::types::{ControlAction, ControlScope, RecommendationStatus, UnixMs};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
@@ -16,15 +17,17 @@ pub enum Tab {
     Quota,
     Advice,
     Events,
+    Schedules,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 5] = [
+    pub const ALL: [Tab; 6] = [
         Tab::Devices,
         Tab::Jobs,
         Tab::Quota,
         Tab::Advice,
         Tab::Events,
+        Tab::Schedules,
     ];
 
     pub fn title(self) -> &'static str {
@@ -34,6 +37,7 @@ impl Tab {
             Tab::Quota => "Quota",
             Tab::Advice => "Advice",
             Tab::Events => "Events",
+            Tab::Schedules => "Schedules",
         }
     }
 
@@ -64,7 +68,7 @@ pub struct App {
     pub fetch_error: Option<String>,
     pub flash: Option<Flash>,
     pub confirm: Option<Confirm>,
-    pub tables: [TableState; 5],
+    pub tables: [TableState; 6],
     pub quit: bool,
 }
 
@@ -109,6 +113,7 @@ impl App {
             Tab::Quota => d.quota.len(),
             Tab::Advice => d.advice.len(),
             Tab::Events => d.events.len(),
+            Tab::Schedules => d.schedules.len(),
         })
     }
 
@@ -138,6 +143,7 @@ impl App {
                     format!("account {name}"),
                 )
             }),
+            Tab::Schedules => None,
             Tab::Advice | Tab::Events => Some((ControlScope::Global, "everything".into())),
         }
     }
@@ -159,9 +165,16 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Tab | KeyCode::Right => self.switch(1),
             KeyCode::BackTab | KeyCode::Left => self.switch(Tab::ALL.len() - 1),
-            KeyCode::Char(c @ '1'..='5') => self.tab = Tab::ALL[usize::from(c as u8 - b'1')],
+            KeyCode::Char(c @ '1'..='6') => self.tab = Tab::ALL[usize::from(c as u8 - b'1')],
             KeyCode::Down => self.tables[self.tab.index()].select_next(),
             KeyCode::Up => self.tables[self.tab.index()].select_previous(),
+            KeyCode::Char('p') if self.tab == Tab::Schedules => {
+                return self.schedule_request(Request::PauseSchedule, now_ms)
+            }
+            KeyCode::Char('r') if self.tab == Tab::Schedules => {
+                return self.schedule_request(Request::ResumeSchedule, now_ms)
+            }
+            KeyCode::Char('d') if self.tab == Tab::Schedules => self.ask_remove_schedule(now_ms),
             KeyCode::Char('p') => return self.control_target(ControlAction::Pause, now_ms),
             KeyCode::Char('r') => return self.control_target(ControlAction::Resume, now_ms),
             KeyCode::Char('P') => return Some(control(ControlScope::Global, ControlAction::Pause)),
@@ -205,6 +218,38 @@ impl App {
                 self.flash("select a row first".into(), true, now_ms);
                 None
             }
+        }
+    }
+
+    /// Id and name of the schedule row the cursor is on.
+    fn selected_schedule(&self) -> Option<(ScheduleId, String)> {
+        let view = self
+            .data
+            .as_ref()?
+            .schedules
+            .get(self.selected(Tab::Schedules)?)?;
+        Some((view.schedule.id, view.schedule.spec.name.clone()))
+    }
+
+    fn schedule_request(
+        &mut self,
+        make: fn(ScheduleId) -> Request,
+        now_ms: UnixMs,
+    ) -> Option<Request> {
+        let request = self.selected_schedule().map(|(id, _)| make(id));
+        if request.is_none() {
+            self.flash("select a row first".into(), true, now_ms);
+        }
+        request
+    }
+
+    fn ask_remove_schedule(&mut self, now_ms: UnixMs) {
+        match self.selected_schedule() {
+            Some((id, name)) => self.ask(
+                format!("Remove schedule {id} ({name})? A job it already queued keeps running."),
+                Request::RemoveSchedule(id),
+            ),
+            None => self.flash("select a row first".into(), true, now_ms),
         }
     }
 
@@ -268,4 +313,46 @@ fn control(scope: ControlScope, action: ControlAction) -> Request {
         action,
         reason: Some("tui".into()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn press(app: &mut App, c: char) -> Option<Request> {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE), 0)
+    }
+
+    fn app_with_schedule() -> App {
+        let view = json!({
+            "id": 3, "spec": {"name": "repo-health", "command": ["true"]}, "every": "1d",
+            "created_ms": 0, "last_fired_ms": null, "last_job": null,
+            "decision": {"kind": "fire"}
+        });
+        let mut app = App::new("test");
+        let snap = Snapshot {
+            schedules: vec![serde_json::from_value(view).unwrap()],
+            ..Snapshot::default()
+        };
+        app.apply(Update::Snapshot(Box::new(snap), 0), 0);
+        app
+    }
+
+    #[test]
+    fn schedules_tab_pauses_resumes_and_confirms_removal_of_the_selected_row() {
+        let mut app = app_with_schedule();
+        press(&mut app, '6');
+        assert_eq!(app.tab, Tab::Schedules);
+        assert_eq!(press(&mut app, 'p'), Some(Request::PauseSchedule(3)));
+        assert_eq!(press(&mut app, 'r'), Some(Request::ResumeSchedule(3)));
+
+        assert_eq!(press(&mut app, 'd'), None);
+        let prompt = app.confirm.as_ref().map(|c| c.prompt.as_str());
+        assert_eq!(
+            prompt,
+            Some("Remove schedule 3 (repo-health)? A job it already queued keeps running.")
+        );
+        assert_eq!(press(&mut app, 'y'), Some(Request::RemoveSchedule(3)));
+    }
 }
