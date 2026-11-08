@@ -276,8 +276,10 @@ impl GuardPolicy {
             mem_available_mib_kill: Some(768),
             swap_growth_pause: None,
             swap_growth_kill: None,
-            swap_used_mib_pause: Some(1536),
-            swap_used_mib_kill: Some(2 * GIB_MIB),
+            // Off: Linux keeps cold pages in swap for days, so swap in use is not pressure.
+            // The swap-in rate, PSI and MemAvailable below measure pressure.
+            swap_used_mib_pause: None,
+            swap_used_mib_kill: None,
             swap_in_pages_per_sec_pause: Some(100.0),
             swap_in_sustain_secs: 60,
             psi_mem_some_pause: Some(5.0),

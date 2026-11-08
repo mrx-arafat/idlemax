@@ -193,12 +193,18 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
             (Pause, Kill),
         ),
         (
-            "server swap > 2 GiB",
+            "server with 7.7 GiB of cold swap and no swap-in runs jobs",
             SERVER,
-            |m| m.swap_used_bytes = 2049 * MIB,
+            |m| {
+                m.cpu_count = 6;
+                m.mem_total_bytes = 16 * GIB;
+                m.mem_available_bytes = 10 * GIB;
+                m.swap_total_bytes = 8 * GIB;
+                m.swap_used_bytes = 7707 * MIB;
+            },
             0,
             false,
-            (Pause, Kill),
+            (Run, Run),
         ),
         (
             "server PSI mem some 5.1%",
@@ -290,6 +296,25 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
         let second = guard.evaluate(&m, &[], kill_switch, false).action;
         assert_eq!((first, second), (action(want.0), action(want.1)), "{name}");
     }
+}
+
+#[test]
+fn a_server_pauses_for_sustained_swap_in_however_little_swap_is_used() {
+    let mut guard = Guard::new(GuardPolicy::linux_server());
+    let mut m = linux();
+    m.swap_used_bytes = 100 * MIB;
+    m.swap_in_per_sec = Some(500.0);
+    let mut verdicts = Vec::new();
+    for _ in 0..3 {
+        verdicts.push(guard.evaluate(&m, &[], false, false).action);
+        m.at_ms += 30_000;
+    }
+    assert_eq!(
+        (verdicts[0].may_start(), verdicts[1].may_start()),
+        (true, true),
+        "swap-in must stay high for swap_in_sustain_secs first"
+    );
+    assert_eq!(verdicts[2], GuardAction::Pause);
 }
 
 #[test]

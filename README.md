@@ -611,7 +611,7 @@ Linux and a busy machine have not been measured.
 | Memory free | < 30% | < 20% | | | `mem_free_pct_pause`, `mem_free_pct_kill` |
 | MemAvailable | | | < 1024 MiB | < 768 MiB | `mem_available_mib_pause`, `mem_available_mib_kill` |
 | Swap growth | +256 MiB in 60 s | +1 GiB in 5 min | | | `swap_growth_pause`, `swap_growth_kill` |
-| Swap used | | | > 1536 MiB | > 2048 MiB | `swap_used_mib_pause`, `swap_used_mib_kill` |
+| Swap used (off) | | | | | `swap_used_mib_pause`, `swap_used_mib_kill` |
 | Swap-in rate | | | > 100 pages/s for 60 s | | `swap_in_pages_per_sec_pause`, `swap_in_sustain_secs` |
 | PSI memory | | | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
 | PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
@@ -621,6 +621,8 @@ Linux and a busy machine have not been measured.
 
 Disk is the least free space of `/`, the state dir and the working directory of each running job, because a job fills the filesystem it runs on.
 Below the first disk line nothing new starts and running jobs go on, since pausing a job gives no disk back; below the kill line running jobs are killed.
+Swap in use is off on both presets: Linux keeps cold pages in swap for days, so it says nothing about pressure, and the growth, swap-in and PSI rows measure that.
+Set `swap_used_mib_pause` and `swap_used_mib_kill` to switch it on.
 
 </details>
 
