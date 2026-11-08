@@ -124,10 +124,39 @@ fn commands_per_platform() {
     let e = env();
     let show = |steps: Vec<Step>| steps.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     assert_eq!(
-        show(install_steps(Platform::Launchd, ServiceKind::Agent, &e)),
+        show(install_steps(
+            Platform::Launchd,
+            ServiceKind::Agent,
+            &e,
+            UnitChange::Update
+        )),
         [
             "launchctl bootout gui/501/com.idlemax.agent  # a failure here is fine",
             "launchctl bootstrap gui/501 /home/u/Library/LaunchAgents/com.idlemax.agent.plist",
+        ]
+    );
+    let systemd = |change| {
+        show(install_steps(
+            Platform::SystemdUser,
+            ServiceKind::Agent,
+            &e,
+            change,
+        ))
+    };
+    // A running unit keeps its old ExecStart until it restarts; an unchanged one only starts.
+    assert_eq!(
+        systemd(UnitChange::Update),
+        [
+            "systemctl --user daemon-reload",
+            "systemctl --user enable idlemax-agent.service",
+            "systemctl --user restart idlemax-agent.service",
+        ]
+    );
+    assert_eq!(
+        systemd(UnitChange::Same),
+        [
+            "systemctl --user enable idlemax-agent.service",
+            "systemctl --user start idlemax-agent.service",
         ]
     );
     let r = removal(Platform::SystemdUser, ServiceKind::Coord, &e);

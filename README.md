@@ -253,7 +253,7 @@ idlemax doctor                      # then check the whole setup
 ```
 
 - **macOS** writes `~/Library/LaunchAgents/com.idlemax.agent.plist` and runs `launchctl bootstrap`.
-  **Linux** writes the systemd user unit `~/.config/systemd/user/idlemax-agent.service` and runs `systemctl --user enable --now`.
+  **Linux** writes the systemd user unit `~/.config/systemd/user/idlemax-agent.service` and runs `systemctl --user enable` and `restart` (`start` when the file did not change, so a re-run leaves a running agent alone).
 - `idlemax service install coord` installs the coordinator instead, for a single-machine setup.
 - The service runs the binary you ran the command with, so `cargo install` first.
   From a cargo `target/` directory the command warns, because a rebuild would break the service; `--bin /full/path/idlemax` pins another path.

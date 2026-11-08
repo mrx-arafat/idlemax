@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::quote::{is_plain_text, shell_quote, systemd_env_line, systemd_exec_word, xml_escape};
+use super::setup::UnitChange;
 use crate::types::Os;
 
 const AGENT_PLIST: &str = include_str!("../../../../packaging/macos/com.idlemax.agent.plist");
@@ -258,8 +259,15 @@ fn launchd_target(kind: ServiceKind, env: &ServiceEnv) -> String {
     format!("gui/{}/{}", env.uid, kind.label())
 }
 
-/// Commands that start the service after its file is written. Safe to repeat: they reload it.
-pub fn install_steps(platform: Platform, kind: ServiceKind, env: &ServiceEnv) -> Vec<Step> {
+/// Commands that start the service after its file is written. Safe to repeat. A running
+/// systemd unit keeps its old ExecStart, PATH and IDLEMAX_HOME until it restarts, so a
+/// changed unit is restarted; an unchanged one is only started if it is stopped.
+pub fn install_steps(
+    platform: Platform,
+    kind: ServiceKind,
+    env: &ServiceEnv,
+    change: UnitChange,
+) -> Vec<Step> {
     match platform {
         Platform::Launchd => {
             let file = unit_path(platform, kind, &env.home);
@@ -272,13 +280,21 @@ pub fn install_steps(platform: Platform, kind: ServiceKind, env: &ServiceEnv) ->
                 ),
             ]
         }
-        Platform::SystemdUser => vec![
-            Step::new(&["systemctl", "--user", "daemon-reload"], false),
-            Step::new(
-                &["systemctl", "--user", "enable", "--now", &kind.unit()],
-                false,
-            ),
-        ],
+        Platform::SystemdUser => {
+            let unit = kind.unit();
+            let start = if change == UnitChange::Same {
+                "start"
+            } else {
+                "restart"
+            };
+            let mut steps = Vec::new();
+            if change != UnitChange::Same {
+                steps.push(Step::new(&["systemctl", "--user", "daemon-reload"], false));
+            }
+            steps.push(Step::new(&["systemctl", "--user", "enable", &unit], false));
+            steps.push(Step::new(&["systemctl", "--user", start, &unit], false));
+            steps
+        }
     }
 }
 

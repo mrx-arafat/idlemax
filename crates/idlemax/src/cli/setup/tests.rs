@@ -110,7 +110,7 @@ fn a_dry_run_changes_nothing_and_a_second_run_changes_nothing_again() {
 fn a_failing_service_command_stops_the_run_and_the_rest_is_not_run() {
     let dir = tempfile::tempdir().unwrap();
     let paths = Paths::new(dir.path().join("state"));
-    let runner = fake(Some("enable --now idlemax-coord"));
+    let runner = fake(Some("restart idlemax-coord"));
 
     let steps = execute(&plan_both(&paths), &env(dir.path(), &paths, &runner, false));
     assert_eq!(

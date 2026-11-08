@@ -85,7 +85,8 @@ fn install_status_uninstall_round_trip_under_a_temp_home() {
         *runner.seen.borrow(),
         [
             "systemctl --user daemon-reload",
-            "systemctl --user enable --now idlemax-agent.service"
+            "systemctl --user enable idlemax-agent.service",
+            "systemctl --user restart idlemax-agent.service"
         ]
     );
 
@@ -122,7 +123,7 @@ fn a_failed_step_says_what_failed_and_what_to_do() {
     .unwrap()
     .to_string();
     assert!(
-        err.contains("enable --now")
+        err.contains("systemctl --user enable")
             && err.contains("boom")
             && err.contains("run the command again"),
         "{err}"
@@ -141,4 +142,34 @@ fn install_creates_a_missing_state_dir_and_logs_private() {
         let mode = std::fs::metadata(&made).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "{}", made.display());
     }
+}
+
+#[test]
+fn installing_again_restarts_a_changed_unit_and_only_starts_an_unchanged_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut ctx, paths) = ctx(dir.path());
+    let runner = fake(None);
+    let agent = [ServiceKind::Agent];
+    let ran = |runner: &Fake| std::mem::take(&mut *runner.seen.borrow_mut());
+
+    install(&ctx, &paths, &runner, &agent, false).unwrap();
+    ran(&runner);
+    install(&ctx, &paths, &runner, &agent, false).unwrap();
+    assert_eq!(
+        ran(&runner),
+        [
+            "systemctl --user enable idlemax-agent.service",
+            "systemctl --user start idlemax-agent.service"
+        ],
+        "a running agent with a current unit is left alone"
+    );
+
+    ctx.env.path = Some("/usr/bin:/opt/other/bin".into());
+    install(&ctx, &paths, &runner, &agent, false).unwrap();
+    let steps = ran(&runner);
+    assert_eq!(
+        steps.last().map(String::as_str),
+        Some("systemctl --user restart idlemax-agent.service"),
+        "{steps:?}"
+    );
 }

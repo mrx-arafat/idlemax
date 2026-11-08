@@ -12,6 +12,7 @@ use idlemax_core::install::service::{
     bin_warning, install_steps, parse_status, removal, render, status_step, unit_path, Platform,
     Probe, ServiceEnv, ServiceKind, ServiceStatus, Step, PASSTHROUGH_VARS,
 };
+use idlemax_core::install::setup::{unit_change, UnitChange};
 use idlemax_core::types::Os;
 use idlemax_core::Paths;
 use serde::Serialize;
@@ -29,7 +30,7 @@ pub struct ServiceArgs {
 
 #[derive(Subcommand, Debug)]
 enum ServiceCmd {
-    /// Write the service file for this OS and start it; running it again reloads it
+    /// Write the service file for this OS and start it; running it again restarts it if the file changed
     Install {
         /// Which service [default: agent]
         which: Option<Unit>,
@@ -245,7 +246,9 @@ pub(super) fn install(
     let mut reports = Vec::new();
     for &kind in kinds {
         let unit = render(ctx.platform, kind, &ctx.env)?;
-        let commands = install_steps(ctx.platform, kind, &ctx.env);
+        let existing = std::fs::read_to_string(&unit.path).ok();
+        let change = unit_change(existing.as_deref(), &unit.content);
+        let commands = install_steps(ctx.platform, kind, &ctx.env, change);
         if !dry_run {
             if ctx.platform == Platform::Launchd {
                 // launchd opens the log file before the agent starts and gives up if the dir is missing.
@@ -257,8 +260,10 @@ pub(super) fn install(
                 std::fs::create_dir_all(dir)
                     .with_context(|| format!("creating {}", dir.display()))?;
             }
-            write_atomic(&unit.path, unit.content.as_bytes(), Some(0o644))
-                .with_context(|| format!("writing {}", unit.path.display()))?;
+            if change != UnitChange::Same {
+                write_atomic(&unit.path, unit.content.as_bytes(), Some(0o644))
+                    .with_context(|| format!("writing {}", unit.path.display()))?;
+            }
             run_steps(runner, &commands, &unit.path)?;
         }
         reports.push(InstallReport {
