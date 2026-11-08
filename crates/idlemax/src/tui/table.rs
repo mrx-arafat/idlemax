@@ -25,7 +25,7 @@ pub const DEVICES: Spec = Spec {
     header: &rows::DEVICE_HEADER,
     flex: &[0, 2],
     drop: &[9, 7, 8, 3, 6, 5], // POWER, SWAP, DISK, IDLE, MEM FREE, LOAD
-    min_width: 14,
+    min_width: 20, // the guard reason is the point of this tab, so it outranks the metrics
     empty: "No device has sent a heartbeat yet. Start `idlemax agent` on a device.",
 };
 pub const JOBS: Spec = Spec {

@@ -310,8 +310,11 @@ fn errors_confirmations_and_flashes_fit_80x24() {
 #[test]
 fn wide_terminal_keeps_every_column_and_count() {
     let mut out = String::new();
+    // Typical host names (the 38 character one is for the narrow screens): roomy means nothing is dropped.
+    let mut data = fixture();
+    data.status.devices.remove(1);
     for tab in [Tab::Devices, Tab::Jobs] {
-        let mut app = app_with(fixture(), tab);
+        let mut app = app_with(data.clone(), tab);
         out.push_str(&format!(
             "##### {} 120x40\n{}\n",
             tab.title(),

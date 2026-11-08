@@ -4,10 +4,10 @@ global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  DEVICE           STATE             GUARD            CPU  LOAD  JOBS         │
-│> macbook-pro-ar…  online            run 2: all sig…  23%  2.31  1            │
-│  hetzner-fsn1-b…  local-paused      pause: load 1m…  96%  9.40  1 (1 paused) │
-│  old-mac-mini     offline 2d1h ago  -                -    -     0            │
+│  DEVICE              STATE             GUARD               CPU  JOBS         │
+│> macbook-pro-arafat  online            run 2: all signal…  23%  1            │
+│  hetzner-fsn1-buil…  local-paused      pause: load 1m 9.…  96%  1 (1 paused) │
+│  old-mac-mini        offline 2d1h ago  -                   -    0            │
 │                                                                              │
 │                                                                              │
 │                                                                              │
