@@ -170,6 +170,9 @@ impl Journal {
     fn append(&mut self, line: &str, sync: bool) -> io::Result<()> {
         self.file.write_all(line.as_bytes())?;
         if sync {
+            // On Apple targets std runs fcntl(F_FULLFSYNC) for sync_data and sync_all alike
+            // (Rust 1.95.0, std sys/fs/unix.rs), so this flushes the drive cache: a power
+            // cut keeps the record, not only a `kill -9`. No extra call is needed.
             self.file.sync_data()?;
         }
         Ok(())
