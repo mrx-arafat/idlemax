@@ -178,10 +178,13 @@ pub fn reconcile_heartbeat(
 ) -> HeartbeatPlan {
     let mut plan = HeartbeatPlan::default();
     for r in reported {
-        let held_here = stored
-            .iter()
-            .find(|j| j.id == r.id)
-            .filter(|j| j.status.is_active() && j.device.as_deref() == Some(device));
+        let held_here = stored.iter().find(|j| j.id == r.id).filter(|j| {
+            (j.status.is_active() && j.device.as_deref() == Some(device))
+                || (j.status == JobStatus::Queued
+                    && j.device.is_none()
+                    && j.attempts > 0
+                    && matches!(r.status, JobStatus::Running | JobStatus::Paused))
+        });
         let Some(job) = held_here else {
             // Unknown, finished, cancelled, stopped or re-leased elsewhere.
             plan.commands.push(AgentCommand::KillJob { id: r.id });
@@ -192,7 +195,10 @@ pub fn reconcile_heartbeat(
         } else if r.status == JobStatus::Paused {
             plan.commands.push(AgentCommand::ResumeJob { id: r.id });
         }
-        plan.renewed.push(sync_reported(job, r, now_ms));
+        let mut renewed = sync_reported(job, r, now_ms);
+        renewed.device = Some(device.to_string());
+        renewed.not_before_ms = None;
+        plan.renewed.push(renewed);
     }
     plan
 }
@@ -334,6 +340,9 @@ fn finish(job: &Job, status: JobStatus, note: &str, now_ms: UnixMs) -> Job {
         ..job.clone()
     }
 }
+
+#[cfg(test)]
+mod recovery_tests;
 
 #[cfg(test)]
 mod tests {

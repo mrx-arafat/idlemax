@@ -13,6 +13,9 @@ use crate::types::{Job, JobStatus, UnixMs};
 /// A result for an attempt whose lease expired while its agent was away still counts when
 /// the job has not been leased since (see `is_late_result`).
 pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job> {
+    if update.attempt != 0 && update.attempt != job.attempts {
+        return None;
+    }
     let late = is_late_result(job, update);
     let holds_lease = job.device.as_deref() == Some(update.device.as_str());
     if !late && (job.status.is_terminal() || !holds_lease) {

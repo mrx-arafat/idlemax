@@ -36,6 +36,7 @@ pub fn pick(ctx: &SchedContext<'_>, jobs: &[Job]) -> Vec<JobId> {
         .iter()
         .filter(|j| {
             j.status == JobStatus::Queued
+                && !ctx.running.iter().any(|r| r.id == j.id)
                 && job_blockers_in(ctx.now_ms, ctx.quota, ctx.paused_accounts, &leased, j)
                     .is_empty()
                 && device_blockers(ctx.device, j).is_empty()
