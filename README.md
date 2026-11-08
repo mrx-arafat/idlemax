@@ -626,7 +626,7 @@ Every job runs in its own process group at the lowest priority the OS offers:
 | OS | Wrapper | Memory cap |
 |---|---|---|
 | macOS | `taskpolicy -c background -d throttle -b -m <mem_mb> -P kill nice -n 20 <command>` | the runner kills the job when its process-tree RSS exceeds `mem_mb`, because the `taskpolicy` limit is soft |
-| Linux, as root or with a reachable systemd user manager (its session bus or its private socket) | `systemd-run [--user] --scope --nice=19 -p CPUQuota=100% -p CPUWeight=10 -p IOWeight=10 -p MemoryMax=<mem_mb>M -p MemorySwapMax=0 -- <command>` | cgroup `MemoryMax` with no swap, so a job over its cap is killed and ends as "killed by the N MiB memory cap"; systemd 253 or newer also gets `-p OOMPolicy=kill`, so the whole job dies even when the kernel picks a child of a shell |
+| Linux, as root or with a reachable systemd user manager (its session bus or its private socket) | `systemd-run [--user] --scope --nice=19 -p CPUQuota=100% -p CPUWeight=10 -p IOWeight=10 -p MemoryMax=<mem_mb>M -p MemorySwapMax=0 -- <command>` | cgroup `MemoryMax` with no swap, so a job over its cap is killed and ends as "killed by the N MiB memory cap"; systemd 253 or newer also gets `-p OOMPolicy=kill`, so the whole job dies even when the kernel picks a child of a shell; systemd 254 or newer also gets `--expand-environment=no`, so `${VAR}` and `$$` in the job's argv reach it unchanged (systemd 258 made expansion the default) |
 | Linux, otherwise | `nice -n 19 ionice -c3 <command>` | the runner's RSS check, plus the agent unit's cgroup caps |
 | Windows | idle priority class | the runner's RSS check |
 

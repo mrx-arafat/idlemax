@@ -11,8 +11,8 @@ The agent unit caps itself at 640 MiB and one CPU, which includes the one job th
 
 ## 0. Prerequisites
 
-- systemd 254 or newer. The verification script passes `--expand-environment=no`, the same flag the prepared job-runner change would use, so a green run proves the host accepts it. Check with `systemd-run --version`.
-  The job-runner change itself stays out until this host check passes.
+- systemd 254 or newer for the verification script, which passes `--expand-environment=no` to its own scopes. Check with `systemd-run --version`.
+  idlemax itself adds that flag to job scopes only on 254 or newer, so an older host still runs jobs.
 - cgroup v2 mounted at `/sys/fs/cgroup` (`/sys/fs/cgroup/cgroup.controllers` exists).
 - A normal login user with a systemd user manager (an SSH session is enough) to run the verification script. Do not run it as root and do not run it as the `idlemax` system user.
 - Tailscale (or another private network) on the server and on every device. The coordinator binds only to the private address.
@@ -442,10 +442,10 @@ Confirmed choices, not defects:
 - Lingering stays off for `idlemax`. With no user manager bus, jobs run under `nice` and `ionice` inside the agent cgroup, so the unit caps bound the agent plus its one job.
 - No defect was confirmed, so no unit directive was changed.
 
-The `--expand-environment=no` change belongs in the job runner, not in the units.
-It is prepared but not landed, because it is unverified on this host.
-The verification script passes the same flag to its own scopes, so systemd 254 is a prerequisite for the script.
-On an older systemd the script stops before it creates anything; once the runner change lands, its jobs would fail to start on a host without the flag.
+The job runner passes `--expand-environment=no` to each job scope on systemd 254 or newer, the first release with that flag.
+systemd 258 made `${VAR}` expansion the default for scopes, so without it a job's arguments would be rewritten before the job saw them.
+An older or unknown systemd gets no flag, so its jobs still start.
+The verification script passes the same flag to its own scopes, so systemd 254 is a prerequisite for the script, not for idlemax.
 
 ## 7. Acceptance checklist
 

@@ -13,7 +13,7 @@ pub use usage::{
     could_belong, job_procs, orphan_procs, poll_every, JobKey, JobProcs, ProcFact, Usage,
     POLL_NEAR_CAP, POLL_RELAXED,
 };
-pub use wrap::{scope_unit, supports_scope_oom_policy, Wrapper};
+pub use wrap::{scope_unit, systemd_major, Wrapper};
 
 use crate::types::{CostClass, JobSpec, JobStatus, UnixMs};
 

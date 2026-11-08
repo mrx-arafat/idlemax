@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use idlemax_core::job_run::{supports_scope_oom_policy, Wrapper};
+use idlemax_core::job_run::{systemd_major, Wrapper};
 
 /// Picks the strongest throttle this machine offers.
 pub fn detect_wrapper() -> Wrapper {
@@ -36,7 +36,7 @@ fn linux_wrapper() -> Wrapper {
     let booted = Path::new("/run/systemd/system").is_dir();
     match which("systemd-run") {
         Some(run) if booted && (is_root() || user_bus_exists()) => Wrapper::SystemdScope {
-            oom_kill: scope_oom_policy_supported(&run),
+            systemd: systemd_version(&run),
             systemd_run: path_string(&run),
             user: !is_root(),
         },
@@ -44,14 +44,15 @@ fn linux_wrapper() -> Wrapper {
     }
 }
 
-/// Asks `systemd-run --version`; any failure means no, so the property is never guessed.
-fn scope_oom_policy_supported(systemd_run: &Path) -> bool {
+/// Asks `systemd-run --version`; any failure gives 0, so no version-dependent switch is guessed.
+fn systemd_version(systemd_run: &Path) -> u32 {
     std::process::Command::new(systemd_run)
         .arg("--version")
         .output()
-        .is_ok_and(|out| {
-            out.status.success() && supports_scope_oom_policy(&String::from_utf8_lossy(&out.stdout))
-        })
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| systemd_major(&String::from_utf8_lossy(&out.stdout)))
+        .unwrap_or(0)
 }
 
 fn nice_wrapper() -> Wrapper {

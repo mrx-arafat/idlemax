@@ -57,7 +57,7 @@ The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 
 - **Why:** The Linux path is proven on a development host, not yet on the production server that also serves sites that must never be starved.
 - **Done so far:** On an Ubuntu 24.04 host with systemd 255, `scripts/verify-linux.sh` passed every check: kernel signal comparison, the capped user scopes, a memory hog killed at `MemoryMax` with the cap named in its error, a CPU job held to its quota, and `systemd-analyze verify` on both units.
   The end-to-end test and the full suite pass there and in CI on Linux.
-- **How:** Check the server's systemd version first: `OOMPolicy=kill` is added only on systemd 253 or newer, and an older host runs without it.
+- **How:** Check the server's systemd version first: the verification script needs 254 or newer, `OOMPolicy=kill` is added only on 253 or newer, and `--expand-environment=no` only on 254 or newer.
   Then run `scripts/verify-linux.sh` on the server as the normal deployment user, following `docs/ROLLOUT.md`, with a binary built inside a capped transient scope or taken from a release.
 - **Done when:** The same checks pass on the production server, and its sites show no slowdown during the run.
 
