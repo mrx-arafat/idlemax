@@ -96,11 +96,23 @@ async fn run_doctor(coord: Option<String>, out: &Out) -> Result<()> {
 
 fn token(paths: &Paths) -> Result<String> {
     state::load_token(paths).map_err(|e| {
-        CliError::runtime(
-            format!("no API token ({e})"),
-            "idlemax init (or set IDLEMAX_TOKEN)",
-        )
-        .into()
+        let help = match &e {
+            state::StateError::TokenNotPrivate(path) => format!(
+                "chmod 600 {}",
+                idlemax_core::install::quote::shell_quote(&path.to_string_lossy())
+            ),
+            state::StateError::EmptyTokenEnv | state::StateError::InvalidTokenEnv(_) =>
+                "unset IDLEMAX_TOKEN to use the token file, or set it to the shared coordinator token".into(),
+            state::StateError::Config { path, .. } => format!(
+                "put the shared coordinator token in {} (at least 32 characters)",
+                path.display()
+            ),
+            state::StateError::Io { source, .. }
+                if source.kind() == std::io::ErrorKind::NotFound =>
+                "idlemax init (or set IDLEMAX_TOKEN)".into(),
+            _ => "idlemax doctor (check the token path and permissions)".into(),
+        };
+        CliError::runtime(format!("cannot load API token ({e})"), help).into()
     })
 }
 

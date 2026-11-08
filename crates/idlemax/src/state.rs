@@ -30,6 +30,8 @@ pub enum StateError {
     TokenNotPrivate(PathBuf),
     #[error("{TOKEN_ENV} is set but empty")]
     EmptyTokenEnv,
+    #[error("{TOKEN_ENV}: {0}")]
+    InvalidTokenEnv(#[source] ConfigError),
 }
 
 fn io_err(path: &Path) -> impl FnOnce(std::io::Error) -> StateError + '_ {
@@ -111,7 +113,10 @@ pub fn load_config(paths: &Paths) -> Result<Config, StateError> {
 /// Bearer token: `IDLEMAX_TOKEN` if set, else the 0600 token file.
 pub fn load_token(paths: &Paths) -> Result<String, StateError> {
     if let Some(v) = std::env::var_os(TOKEN_ENV) {
-        return parse_token(&v.to_string_lossy()).map_err(|_| StateError::EmptyTokenEnv);
+        return parse_token(&v.to_string_lossy()).map_err(|source| match source {
+            ConfigError::EmptyToken => StateError::EmptyTokenEnv,
+            other => StateError::InvalidTokenEnv(other),
+        });
     }
     read_token_file(&paths.token_file())
 }
