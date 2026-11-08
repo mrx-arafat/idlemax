@@ -44,6 +44,7 @@ pub fn job_counts(j: &JobCounts) -> Node {
             ("paused", j.paused),
             ("parked", j.parked),
             ("failed", j.failed),
+            ("killed", j.killed),
         ]
         .into_iter()
         .filter(|(_, n)| *n > 0),
@@ -242,11 +243,24 @@ pub fn why(e: &Explanation) -> Node {
     if e.devices.iter().any(|d| d.ready) {
         fields.push(("ready_devices".to_string(), names(&|d| d.ready)));
     }
-    if e.devices.iter().any(|d| !d.ready && d.reasons.is_empty()) {
-        fields.push((
-            "clear_devices".to_string(),
-            names(&|d| !d.ready && d.reasons.is_empty()),
-        ));
+    // Devices that can never take the job until its spec or their config changes.
+    let never: Vec<Node> = e
+        .devices
+        .iter()
+        .filter(|d| !d.ineligible.is_empty())
+        .map(|d| {
+            Node::obj([
+                ("device", Node::str(&d.device)),
+                ("because", Node::Str(d.ineligible.join("; "))),
+            ])
+        })
+        .collect();
+    if !never.is_empty() {
+        fields.push(("ineligible".to_string(), Node::Arr(never)));
+    }
+    let clear = |d: &DeviceExplanation| !d.ready && d.reasons.is_empty() && d.ineligible.is_empty();
+    if e.devices.iter().any(clear) {
+        fields.push(("clear_devices".to_string(), names(&clear)));
     }
     Node::Obj(fields)
 }
@@ -272,6 +286,7 @@ mod tests {
             online: true,
             last_seen_ms: 5,
             ready,
+            ineligible: Vec::new(),
             reasons,
         };
         let e = Explanation {
@@ -285,6 +300,10 @@ mod tests {
                 device("mac", false, vec![reason("disk low", None)]),
                 device("box", true, vec![]),
                 device("pc", false, vec![]),
+                DeviceExplanation {
+                    ineligible: vec!["limited to mac".into(), "no cargo".into()],
+                    ..device("nas", false, vec![])
+                },
             ],
             at_ms: 9,
         };
@@ -293,7 +312,9 @@ mod tests {
             "job: 7\nname: index\nstatus: queued\nstate: blocked\n\
              summary: Job 7 (index) is queued but not starting.\n\
              blockers[2]{device,kind,message,fix}:\n  null,guard,paused globally,idlemax resume\n  \
-             mac,guard,disk low,null\nready_devices[1]: box\nclear_devices[1]: pc"
+             mac,guard,disk low,null\nready_devices[1]: box\n\
+             ineligible[1]{device,because}:\n  nas,limited to mac; no cargo\n\
+             clear_devices[1]: pc"
         );
     }
 

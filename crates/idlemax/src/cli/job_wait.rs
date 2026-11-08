@@ -162,9 +162,7 @@ fn result_text(job: &Job, log: &Log) -> String {
         print::job_line(job),
         ran_text(job)
     );
-    // "exit code N" would only repeat the line above.
-    let repeats_code = |e: &str| job.exit_code.is_some_and(|c| e == format!("exit code {c}"));
-    if let Some(error) = job.last_error.as_deref().filter(|e| !repeats_code(e)) {
+    if let Some(error) = job.last_error.as_deref().filter(|e| !repeats_code(job, e)) {
         text.push_str(&format!("\nerror: {error}"));
     }
     match log {
@@ -194,7 +192,7 @@ fn result_view(job: &Job, log: &Log) -> Node {
         job.exit_code.map_or(Node::Null, |c| Node::Int(c.into())),
     ));
     fields.push(("ran".into(), Node::str(ran_text(job))));
-    if let Some(error) = &job.last_error {
+    if let Some(error) = job.last_error.as_deref().filter(|e| !repeats_code(job, e)) {
         fields.push(("error".into(), Node::str(error)));
     }
     let note = |text: String| ("log".to_string(), Node::Str(text));
@@ -221,6 +219,12 @@ fn result_view(job: &Job, log: &Log) -> Node {
 fn timeout_view(job: &Job, waited: Duration) -> Node {
     let result = format!("still {} after waiting {}s", job.status, waited.as_secs());
     views::job_result(&result, job)
+}
+
+/// "exit code N" would only repeat the exit code the result already shows.
+fn repeats_code(job: &Job, error: &str) -> bool {
+    job.exit_code
+        .is_some_and(|c| error == format!("exit code {c}"))
 }
 
 fn ran_text(job: &Job) -> String {
