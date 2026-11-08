@@ -5,7 +5,7 @@ use idlemax_core::explain::{allowlist_warning, Explanation, Reason};
 use idlemax_core::types::{DeviceInfo, JobSpec};
 
 use super::rows::rel;
-use super::{client, out, print, ApiClient};
+use super::ApiClient;
 
 /// The explanation as text: the summary, what blocks every device, then each device.
 pub fn render(e: &Explanation) -> String {
@@ -48,16 +48,13 @@ fn push_reasons(text: &mut String, reasons: &[Reason]) {
     }
 }
 
-/// Queues the job, then warns on stderr when every device that could run it has reported
-/// an allowlist without its command. The warning is best effort and never fails the add.
-pub async fn add(c: &ApiClient, spec: &JobSpec, json: bool) -> client::Result<()> {
-    let job = c.add_job(spec).await?;
-    out(json, &job, print::job_line);
+/// Warns on stderr when every device that could run `spec` has reported an allowlist
+/// without its command. Best effort: it never fails the add.
+pub async fn warn_if_unrunnable(c: &ApiClient, spec: &JobSpec) {
     if let Ok(status) = c.status().await {
         let devices: Vec<DeviceInfo> = status.devices.into_iter().map(|d| d.info).collect();
         if let Some(warning) = allowlist_warning(spec, &devices) {
             eprintln!("warning: {warning}");
         }
     }
-    Ok(())
 }

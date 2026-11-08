@@ -134,8 +134,14 @@ impl ApiClient {
         }
     }
 
-    pub async fn add_job(&self, spec: &JobSpec) -> Result<Job> {
-        self.post("/v1/jobs", Some(spec)).await
+    /// Queues the spec. The flag is false when the spec's key already named an unfinished
+    /// job (HTTP 200), which is returned instead of a new one.
+    pub async fn add_job(&self, spec: &JobSpec) -> Result<(Job, bool)> {
+        let path = "/v1/jobs";
+        let (status, job) = self
+            .send_with_status(self.http.post(self.url(path)).json(spec), path)
+            .await?;
+        Ok((job, status == 201))
     }
 
     pub async fn cancel_job(&self, id: JobId) -> Result<Job> {
@@ -210,6 +216,15 @@ impl ApiClient {
         req: reqwest::RequestBuilder,
         path: &str,
     ) -> Result<T> {
+        Ok(self.send_with_status(req, path).await?.1)
+    }
+
+    /// Like `send`, with the HTTP status of the successful response.
+    async fn send_with_status<T: DeserializeOwned>(
+        &self,
+        req: reqwest::RequestBuilder,
+        path: &str,
+    ) -> Result<(u16, T)> {
         let resp = req
             .bearer_auth(&self.token)
             .send()
@@ -230,10 +245,11 @@ impl ApiClient {
                 message: error_message(&body),
             });
         }
-        serde_json::from_slice(&body).map_err(|source| ClientError::Decode {
+        let value = serde_json::from_slice(&body).map_err(|source| ClientError::Decode {
             path: path.to_string(),
             source,
-        })
+        })?;
+        Ok((status.as_u16(), value))
     }
 }
 

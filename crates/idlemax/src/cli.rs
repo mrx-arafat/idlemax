@@ -4,6 +4,8 @@ mod client;
 mod files;
 mod inbox;
 mod init;
+mod job;
+mod job_wait;
 mod logs;
 pub mod print;
 pub mod rows;
@@ -13,18 +15,18 @@ mod statusline;
 mod why;
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use idlemax_core::protocol::ControlRequest;
-use idlemax_core::types::{ControlAction, ControlScope, DeviceProfile, JobId, JobSpec, JobStatus};
+use idlemax_core::types::{ControlAction, ControlScope, DeviceProfile, JobId, JobStatus};
 use idlemax_core::Paths;
 use serde::Serialize;
 
 use crate::state::{self, now_ms};
 
 pub use client::{ApiClient, ClientError};
+pub use job::ExitWith;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -146,8 +148,8 @@ impl From<ProfileArg> for DeviceProfile {
 
 #[derive(Subcommand, Debug)]
 enum JobCmd {
-    /// Queue the job described by a TOML spec file
-    Add { spec: PathBuf },
+    /// Queue a job from a spec file, stdin (`-`) or a command after `--`
+    Add(Box<job::AddArgs>),
     /// Cancel a job (kills it if running)
     Cancel { id: JobId },
 }
@@ -251,6 +253,11 @@ pub async fn run() -> Result<()> {
             InboxCmd::List => inbox::run_list(&paths, json),
             InboxCmd::Show { id } => inbox::run_show(&paths, id),
         },
+        Cmd::Job(JobCmd::Add(args)) => {
+            let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
+            let client = ApiClient::new(&url, token(&paths)?)?;
+            job::add(&client, &paths, *args, json).await
+        }
         Cmd::Logs { id, tail, follow } => {
             let log_path = paths.job_log_file(id);
             if log_path.exists() {
@@ -356,7 +363,6 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
             .jobs(status, limit)
             .await
             .map(|j| out(json, &j, |j| print::jobs(j, now))),
-        Cmd::Job(JobCmd::Add { spec }) => why::add(c, &read_spec(&spec)?, json).await,
         Cmd::Why { id } => c.why(id).await.map(|e| out(json, &e, why::render)),
         Cmd::Job(JobCmd::Cancel { id }) => c
             .cancel_job(id)
@@ -373,7 +379,8 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
             .map(|e| out(json, &e, |e| print::events(e))),
         Cmd::Advise { cmd } => advise(c, cmd.unwrap_or(AdviseCmd::List), json, now).await,
         Cmd::Tui => return Ok(crate::tui::run(c.clone()).await?),
-        Cmd::Agent
+        Cmd::Job(JobCmd::Add(_))
+        | Cmd::Agent
         | Cmd::Coord
         | Cmd::Init(_)
         | Cmd::Local(_)
@@ -434,23 +441,6 @@ async fn run_local(cmd: LocalCmd, c: &ApiClient, json: bool) -> client::Result<(
     };
     out(json, &s, |s| print::local_status(s, now_ms()));
     Ok(())
-}
-
-fn read_spec(path: &Path) -> Result<JobSpec> {
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let spec: JobSpec =
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    spec.validate()
-        .with_context(|| format!("invalid job spec {}", path.display()))?;
-    if schedule::sets_every(&text) {
-        eprintln!(
-            "note: `every` is ignored by `job add`, so this queues one run; \
-             to repeat it, use `idlemax schedule add {}`",
-            path.display()
-        );
-    }
-    Ok(spec)
 }
 
 /// Prints `value` as pretty JSON or through `text`.
