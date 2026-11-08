@@ -80,6 +80,11 @@ impl Outbox {
         self.queue.is_empty()
     }
 
+    /// First sequence not yet assigned, retained even when every update is forgotten.
+    pub fn next_seq(&self) -> u64 {
+        self.next_seq
+    }
+
     /// Updates lost to the cap since start.
     pub fn dropped(&self) -> u64 {
         self.dropped

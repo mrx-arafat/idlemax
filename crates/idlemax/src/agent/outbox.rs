@@ -181,8 +181,12 @@ impl Journal {
     /// Replaces the journal with the live queue (temp file, then rename, so a crash leaves
     /// either the old or the new file) and opens it for appending.
     fn rewrite(path: PathBuf, queue: &Outbox) -> io::Result<Self> {
-        let mut text = String::new();
-        for update in queue.pending(usize::MAX) {
+        let pending = queue.pending(usize::MAX);
+        let forgotten = pending
+            .first()
+            .map_or(queue.next_seq() - 1, |u| u.seq.saturating_sub(1));
+        let mut text = reconcile::encode_ack(forgotten).map_err(io::Error::other)?;
+        for update in pending {
             text += &reconcile::encode_update(&update).map_err(io::Error::other)?;
         }
         let tmp = path.with_extension("jsonl.tmp");
@@ -228,6 +232,23 @@ mod tests {
             exit_code: Some(0),
             ..JobUpdate::default()
         }
+    }
+
+    #[test]
+    fn compaction_and_restarts_preserve_sequences_after_clock_rollback() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut outbox = DurableOutbox::open(dir.path(), 10, NOW);
+        for id in 0..COMPACT_MIN_DEAD {
+            outbox.push(finished(id as i64));
+            let seq = outbox.pending(1)[0].seq;
+            outbox.ack(seq);
+        }
+        drop(outbox);
+        // Startup rewrites the journal too; an empty queue must retain its watermark.
+        drop(DurableOutbox::open(dir.path(), 10, NOW - 60_000));
+        let mut reopened = DurableOutbox::open(dir.path(), 10, NOW - 60_000);
+        reopened.push(finished(999));
+        assert!(reopened.pending(1)[0].seq >= NOW as u64 + COMPACT_MIN_DEAD as u64);
     }
 
     #[test]
