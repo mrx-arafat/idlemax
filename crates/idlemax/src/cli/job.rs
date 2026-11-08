@@ -9,14 +9,14 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::error::ErrorKind;
 use clap::{Args, ValueEnum};
-use idlemax_core::job_draft::JobDraft;
+use idlemax_core::job_draft::{DraftError, JobDraft};
 use idlemax_core::types::{CostClass, Job, JobSpec};
 use idlemax_core::Paths;
 
 use super::{job_wait, out, print, schedule, why, ApiClient};
 
 const NOTHING_TO_RUN: &str = "nothing to run: give a spec file (`idlemax job add spec.toml`), \
-    `-` to read the spec from stdin, or a command after `--` (`idlemax job add -- cargo test`)";
+    `-` to read the spec from stdin, or a command after `--` (`idlemax job add -- cargo test`)\n";
 
 #[derive(Args, Debug)]
 pub struct AddArgs {
@@ -126,12 +126,15 @@ impl AddArgs {
         let mut spec = match self.spec.as_deref() {
             Some(p) if p == Path::new("-") => parse_spec(&read_stdin()?, "stdin", "<file>")?,
             Some(p) => read_spec(p)?,
-            None if self.argv.is_empty() => {
-                clap::Error::raw(ErrorKind::MissingRequiredArgument, NOTHING_TO_RUN).exit()
-            }
+            None if self.argv.is_empty() => usage_error(NOTHING_TO_RUN),
             None => {
                 let here = std::env::current_dir().context("cannot read the current directory")?;
-                return Ok(self.draft().into_spec(&here)?);
+                return self.draft().into_spec(&here).map_err(|e| match e {
+                    DraftError::AccountNeedsAiCost | DraftError::AiCostNeedsAccount => {
+                        usage_error(&format!("{e}\n"))
+                    }
+                    other => other.into(),
+                });
             }
         };
         if key.is_some() {
@@ -156,6 +159,11 @@ impl AddArgs {
             key: self.key,
         }
     }
+}
+
+/// Prints `message` as a command line mistake and exits 2, like clap's own errors.
+fn usage_error(message: &str) -> ! {
+    clap::Error::raw(ErrorKind::ArgumentConflict, message).exit()
 }
 
 fn read_spec(path: &Path) -> Result<JobSpec> {
@@ -197,24 +205,31 @@ fn announce(job: &Job, created: bool, json: bool, waiting: bool) {
     if json && !waiting {
         out(true, job, print::job_line);
     }
-    if json || waiting {
+    if waiting {
+        // The result is coming, so the next steps would only be noise.
+        eprintln!("{}", queued_line(job, created));
+    } else if json {
         eprintln!("{}", queued_text(job, created));
     } else {
         println!("{}", queued_text(job, created));
     }
 }
 
-fn queued_text(job: &Job, created: bool) -> String {
-    let id = job.id;
+fn queued_line(job: &Job, created: bool) -> String {
     let note = if created {
         ""
     } else {
         " - already queued (no-op)"
     };
+    format!("{}{note}", print::job_line(job))
+}
+
+fn queued_text(job: &Job, created: bool) -> String {
+    let id = job.id;
     format!(
-        "{}{note}\nnext: `idlemax why {id}` (why it waits), `idlemax logs {id}` (its output), \
+        "{}\nnext: `idlemax why {id}` (why it waits), `idlemax logs {id}` (its output), \
          `idlemax job cancel {id}` (stop it)",
-        print::job_line(job)
+        queued_line(job, created)
     )
 }
 

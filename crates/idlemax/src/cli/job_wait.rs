@@ -108,7 +108,8 @@ async fn poll(c: &ApiClient, mut job: Job, timeout: Option<Duration>) -> Result<
             }
             Err(e) => return Err(super::hint(e, super::COORD_DOWN)),
         }
-        if job.status != announced {
+        // The result follows a finished job, so only the steps before it are reported.
+        if job.status != announced && !job.status.is_terminal() {
             announced = job.status;
             eprintln!("{}", progress_text(&job));
         }
