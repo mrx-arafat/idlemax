@@ -72,6 +72,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Lint shell scripts
         if: runner.os == 'Linux'
-        run: shellcheck scripts/install.sh scripts/test-install.sh
+        run: shellcheck scripts/install.sh scripts/test-install.sh scripts/test-scripts.sh scripts/changelog.sh scripts/verify-linux.sh
       - name: Test scripts/install.sh
         run: sh scripts/test-install.sh
+      - name: Test the maintainer scripts
+        run: sh scripts/test-scripts.sh

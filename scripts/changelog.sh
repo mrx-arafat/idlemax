@@ -66,7 +66,7 @@ versions=()
 if [ "$has_head" -eq 1 ]; then
   while IFS= read -r t; do
     versions+=("$t")
-  done < <(git -C "$root" tag --list 'v[0-9]*' --merged HEAD --sort=-version:refname)
+  done < <(git -c versionsort.suffix=- -C "$root" tag --list 'v[0-9]*' --merged HEAD --sort=-version:refname)
 fi
 count=${#versions[@]}
 
