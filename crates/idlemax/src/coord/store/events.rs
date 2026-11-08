@@ -17,6 +17,14 @@ impl Store {
         insert_event(&self.conn, kind, device, job, message, now)
     }
 
+    /// True when an event of `kind` names `job`.
+    pub fn job_has_event(&self, job: JobId, kind: EventKind) -> StoreResult<bool> {
+        Ok(self
+            .conn
+            .prepare_cached("SELECT EXISTS (SELECT 1 FROM events WHERE job = ?1 AND kind = ?2)")?
+            .query_row(params![job, enum_text(&kind)?], |r| r.get(0))?)
+    }
+
     /// Newest first; `limit` 0 means all.
     pub fn events(&self, limit: u32) -> StoreResult<Vec<Event>> {
         let mut stmt = self.conn.prepare_cached(

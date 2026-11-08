@@ -442,3 +442,44 @@ fn a_result_replayed_after_its_lease_expired_still_finishes_the_job_once() {
         .count();
     assert_eq!(succeeded, 1);
 }
+
+#[test]
+fn an_ai_pass_result_is_ingested_again_on_replay_until_its_advice_is_recorded() {
+    const T0: i64 = 1_800_000_000_000;
+    let mut store = Store::open_in_memory().unwrap();
+    let spec = JobSpec {
+        name: idlemax_core::advice::AI_PASS_JOB_NAME.into(),
+        command: vec!["claude".into()],
+        cost: CostClass::Ai,
+        ai_account: Some("claude-max".into()),
+        ..JobSpec::default()
+    };
+    let job = store.insert_job(&spec, T0).unwrap();
+    store.lease_job(job.id, "mac", T0 + 600_000, T0).unwrap();
+    let update = JobUpdate {
+        seq: 5,
+        id: job.id,
+        device: "mac".into(),
+        status: JobStatus::Succeeded,
+        output_tail: Some("{\"result\":\"advice\"}".into()),
+        at_ms: T0 + 1_000,
+        ..JobUpdate::default()
+    };
+
+    // The coordinator stores the result, then dies before it ingests the output.
+    let first = on_job_update(&mut store, &update, T0 + 2_000).unwrap();
+    assert_eq!(first.as_deref(), update.output_tail.as_deref());
+    // No ack was sent, so the agent replays it: the output must come back for ingest.
+    let replay = on_job_update(&mut store, &update, T0 + 9_000).unwrap();
+    assert_eq!(replay.as_deref(), update.output_tail.as_deref());
+
+    // Once the ingest recorded its outcome for this job, a further replay is a no-op.
+    let msg = "advice AI pass: 2 new, 0 closed, 0 job(s) queued, 0 stale cancelled";
+    store
+        .append_event(EventKind::Advice, None, Some(job.id), msg, T0 + 10_000)
+        .unwrap();
+    assert_eq!(
+        on_job_update(&mut store, &update, T0 + 11_000).unwrap(),
+        None
+    );
+}

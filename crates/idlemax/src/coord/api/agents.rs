@@ -42,12 +42,12 @@ pub async fn job_update(
     JsonBody(update): JsonBody<JobUpdate>,
 ) -> Result<Json<JobUpdateReply>, ApiFailure> {
     let now = now_ms();
-    let seq = update.seq;
+    let (seq, job_id) = (update.seq, update.id);
     let ai_output = app
         .with_store(move |store, _| on_job_update(store, &update, now))
         .await?;
     if let Some(output) = ai_output {
-        advice::ingest_ai_output(&app, output, now).await;
+        advice::ingest_ai_output(&app, job_id, output, now).await;
     }
     Ok(Json(JobUpdateReply {
         acked_seq: (seq != 0).then_some(seq),
@@ -156,7 +156,9 @@ fn assign_jobs(
 
 /// Applies an agent's job update once per (device, seq): the job state, the transition
 /// event and the quota side effects commit together, and a replay changes nothing.
-/// Returns the output of a succeeded advisor AI pass.
+/// Returns the output of a succeeded advisor AI pass to ingest: the first time, and again on
+/// a replay while the pass has recorded no Advice event, which means the coordinator died
+/// between storing the result and ingesting it (the ack is sent only after the ingest).
 pub(super) fn on_job_update(
     store: &mut Store,
     update: &JobUpdate,
@@ -190,7 +192,7 @@ pub(super) fn on_job_update(
     };
     if !store.commit_update(&update.device, update.seq, &writes, now)? {
         tracing::debug!(job = job.id, device = %update.device, seq = update.seq, "replayed job update ignored");
-        return Ok(None);
+        return unfinished_ingest(store, &job, update);
     }
     let Some(next) = next else {
         tracing::debug!(job = job.id, device = %update.device, "stale job update ignored");
@@ -198,6 +200,22 @@ pub(super) fn on_job_update(
     };
     let ai_done = next.status == JobStatus::Succeeded && is_ai_pass(&job.spec);
     Ok(update.output_tail.clone().filter(|_| ai_done))
+}
+
+/// The output of an advisor AI pass stored as succeeded whose advice was never recorded.
+fn unfinished_ingest(
+    store: &Store,
+    job: &Job,
+    update: &JobUpdate,
+) -> Result<Option<String>, ApiFailure> {
+    let ai_done = job.status == JobStatus::Succeeded
+        && update.status == JobStatus::Succeeded
+        && is_ai_pass(&job.spec);
+    let output = update.output_tail.clone().filter(|_| ai_done);
+    if output.is_some() && store.job_has_event(job.id, EventKind::Advice)? {
+        return Ok(None);
+    }
+    Ok(output)
 }
 
 /// One event per stored status change.

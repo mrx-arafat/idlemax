@@ -90,12 +90,14 @@ pub async fn run_refresh(app: &AppState, now: UnixMs) -> Result<(), ApiFailure> 
     let changes = advisor_adapter::refresh(app.paths(), cfg, state, &existing, now)
         .await
         .map_err(|e| ApiFailure::Unavailable(format!("advisor: {e}")))?;
-    app.with_store(move |store, cfg| persist(store, cfg, &changes, "refresh", now))
+    app.with_store(move |store, cfg| persist(store, cfg, &changes, "refresh", None, now))
         .await
 }
 
 /// Turns a finished AI pass into advice. Failures become Advice events; the update succeeds.
-pub async fn ingest_ai_output(app: &AppState, output: String, now: UnixMs) {
+/// Every outcome records an Advice event naming `job`, which is how a replay of the update
+/// knows the ingest finished.
+pub async fn ingest_ai_output(app: &AppState, job: JobId, output: String, now: UnixMs) {
     let gathered = app
         .with_store(move |store, cfg| {
             Ok::<_, ApiFailure>((
@@ -105,14 +107,20 @@ pub async fn ingest_ai_output(app: &AppState, output: String, now: UnixMs) {
         })
         .await;
     let result = match gathered {
-        Ok((status, existing)) => ingest(app, &status, &existing, &output, now).await,
+        Ok((status, existing)) => ingest(app, job, &status, &existing, &output, now).await,
         Err(e) => Err(e),
     };
     if let Err(e) = result {
         let msg = format!("AI advice pass rejected: {e}");
         let logged = app
             .with_store(move |store, _| {
-                Ok::<_, ApiFailure>(store.append_event(EventKind::Advice, None, None, &msg, now)?)
+                Ok::<_, ApiFailure>(store.append_event(
+                    EventKind::Advice,
+                    None,
+                    Some(job),
+                    &msg,
+                    now,
+                )?)
             })
             .await;
         if let Err(log_err) = logged {
@@ -123,6 +131,7 @@ pub async fn ingest_ai_output(app: &AppState, output: String, now: UnixMs) {
 
 async fn ingest(
     app: &AppState,
+    job: JobId,
     status: &ClusterStatus,
     existing: &[Recommendation],
     output: &str,
@@ -133,7 +142,7 @@ async fn ingest(
         advisor_adapter::ingest_ai_output(app.paths(), cfg, status, existing, output, now)
             .await
             .map_err(|e| ApiFailure::BadRequest(e.to_string()))?;
-    app.with_store(move |store, cfg| persist(store, cfg, &changes, "AI pass", now))
+    app.with_store(move |store, cfg| persist(store, cfg, &changes, "AI pass", Some(job), now))
         .await
 }
 
@@ -164,11 +173,13 @@ fn dismiss_advice(store: &mut Store, id: i64, now: UnixMs) -> Result<Recommendat
 }
 
 /// Persists an advisor plan. A queued spec that fails admission is logged, not fatal.
+/// The closing event names `job` (the AI pass) when there is one: it marks the plan as done.
 fn persist(
     store: &mut Store,
     cfg: &Config,
     changes: &AdviceChanges,
     origin: &str,
+    job: Option<JobId>,
     now: UnixMs,
 ) -> Result<(), ApiFailure> {
     for id in &changes.close {
@@ -194,7 +205,7 @@ fn persist(
         changes.insert.len(),
         changes.close.len()
     );
-    store.append_event(EventKind::Advice, None, None, &msg, now)?;
+    store.append_event(EventKind::Advice, None, job, &msg, now)?;
     Ok(())
 }
 
