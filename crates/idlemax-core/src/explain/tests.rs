@@ -295,7 +295,7 @@ fn a_guard_reason_names_the_setting_that_holds_the_job() {
     let mut guard = Guard::new(GuardPolicy::macos_laptop());
     let metrics = MetricsSnapshot {
         memory_pressure: Some(MemoryPressure::Warn),
-        load_avg_1m: 9.0,
+        load_avg_1m: 20.0,
         disk_free_bytes: 512 << 20,
         ..calm()
     };
@@ -314,7 +314,11 @@ fn a_guard_reason_names_the_setting_that_holds_the_job() {
     assert!(!pressure.contains("mem_free_pct"), "{pressure}");
 
     for (what, kill_key, pause_key) in [
-        ("load 1m", "guard.load_1m_kill", "guard.load_1m_pause"),
+        (
+            "load per CPU",
+            "guard.load_per_cpu_kill",
+            "guard.load_per_cpu_pause",
+        ),
         (
             "disk free",
             "guard.disk_free_mib_kill",

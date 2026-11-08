@@ -199,6 +199,11 @@ pub struct GuardPolicy {
     pub psi_mem_full_kill: Option<f64>,
     pub psi_io_full_pause: Option<f64>,
     pub psi_io_full_kill: Option<f64>,
+    /// Load average outside the jobs, per CPU: pause above this.
+    pub load_per_cpu_pause: Option<f64>,
+    pub load_per_cpu_kill: Option<f64>,
+    /// Absolute 1 minute load average, jobs included. Off in the presets: it does not scale
+    /// with the number of CPUs; `load_per_cpu_*` does.
     pub load_1m_pause: Option<f64>,
     pub load_1m_kill: Option<f64>,
     /// Below this, start no new jobs (running ones go on: pausing frees no disk).
@@ -251,8 +256,10 @@ impl GuardPolicy {
             psi_mem_full_kill: None,
             psi_io_full_pause: None,
             psi_io_full_kill: None,
-            load_1m_pause: Some(6.0),
-            load_1m_kill: Some(8.0),
+            load_per_cpu_pause: Some(1.0),
+            load_per_cpu_kill: Some(2.0),
+            load_1m_pause: None,
+            load_1m_kill: None,
             disk_free_mib_pause: Some(2 * GIB_MIB),
             disk_free_mib_kill: Some(GIB_MIB),
         }
@@ -286,8 +293,10 @@ impl GuardPolicy {
             psi_mem_full_kill: Some(1.0),
             psi_io_full_pause: Some(10.0),
             psi_io_full_kill: Some(25.0),
-            load_1m_pause: Some(1.5),
-            load_1m_kill: Some(2.0),
+            load_per_cpu_pause: Some(0.75),
+            load_per_cpu_kill: Some(1.5),
+            load_1m_pause: None,
+            load_1m_kill: None,
             disk_free_mib_pause: Some(2 * GIB_MIB),
             disk_free_mib_kill: Some(GIB_MIB),
         }

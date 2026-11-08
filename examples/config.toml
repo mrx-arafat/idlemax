@@ -27,7 +27,7 @@ command_allowlist = [
 
 # Overrides on top of the profile preset (docs/PLAN.md "Guard presets"); unknown keys are errors.
 [guard]
-# load_1m_pause = 6.0
+# load_per_cpu_pause = 1.0
 # user_idle_min_secs = 600
 # mem_free_pct_pause = 30.0
 

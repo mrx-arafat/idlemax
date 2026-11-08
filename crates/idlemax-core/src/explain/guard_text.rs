@@ -176,6 +176,15 @@ const TABLE: &[(&str, ReasonKind, Fix)] = &[
         ),
     ),
     (
+        "load per CPU",
+        ReasonKind::Guard,
+        keys(
+            "wait for the load outside the jobs to drop",
+            Some("load_per_cpu_pause"),
+            Some("load_per_cpu_kill"),
+        ),
+    ),
+    (
         "load 1m",
         ReasonKind::Guard,
         keys(

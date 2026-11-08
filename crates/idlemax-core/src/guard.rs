@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 
 use crate::config::{GuardPolicy, SwapGrowth};
 use crate::protocol::RunningJob;
-use crate::types::{GuardAction, GuardDecision, MetricsSnapshot, UnixMs};
+use crate::types::{GuardAction, GuardDecision, JobStatus, MetricsSnapshot, UnixMs};
 
 #[cfg(test)]
 mod tests;
@@ -85,6 +85,12 @@ impl Findings {
     }
 }
 
+/// CPUs' worth of load the running jobs add: their measured CPU use, paused jobs excluded.
+fn own_cpus(running: &[RunningJob]) -> f64 {
+    let busy = running.iter().filter(|j| j.status == JobStatus::Running);
+    busy.filter_map(|j| j.cpu_pct).sum::<f64>() / 100.0
+}
+
 fn mib_limits(pause: Option<u64>, kill: Option<u64>) -> (Option<f64>, Option<f64>) {
     (pause.map(|v| v as f64), kill.map(|v| v as f64))
 }
@@ -128,7 +134,7 @@ impl Guard {
         let mut found = Findings::default();
         self.check_memory(m, &mut found);
         self.check_swap(m, &mut found);
-        self.check_load(m, &mut found);
+        self.check_load(m, running, &mut found);
         self.check_environment(m, &mut found);
 
         let mut reasons: Vec<String> = found
@@ -329,8 +335,9 @@ impl Guard {
         }
     }
 
-    fn check_load(&self, m: &MetricsSnapshot, f: &mut Findings) {
+    fn check_load(&self, m: &MetricsSnapshot, running: &[RunningJob], f: &mut Findings) {
         let p = &self.policy;
+        self.check_load_per_cpu(m, running, f);
         if let Some(v) = m.psi_mem_some_avg10 {
             f.above(
                 "PSI memory some avg10",
@@ -356,6 +363,31 @@ impl Guard {
             (p.load_1m_pause, p.load_1m_kill),
             "",
         );
+    }
+
+    /// Load the machine carries outside the jobs, per CPU. The jobs' own use is taken out so a
+    /// busy job never pauses itself, and the limit scales with the number of CPUs.
+    fn check_load_per_cpu(&self, m: &MetricsSnapshot, running: &[RunningJob], f: &mut Findings) {
+        let (pause, kill) = (
+            self.policy.load_per_cpu_pause,
+            self.policy.load_per_cpu_kill,
+        );
+        if pause.is_none() && kill.is_none() {
+            return;
+        }
+        let cpus = m.cpu_count.max(1);
+        let others = (m.load_avg_1m - own_cpus(running)).max(0.0);
+        let per_cpu = others / f64::from(cpus);
+        let reason = |limit: f64| {
+            format!(
+                "load per CPU {per_cpu:.2} > {limit} ({others:.1} outside the jobs, {cpus} CPUs)"
+            )
+        };
+        if let Some(k) = kill.filter(|k| per_cpu > *k) {
+            f.add(Level::Kill, reason(k));
+        } else if let Some(p) = pause.filter(|p| per_cpu > *p) {
+            f.add(Level::Pause, reason(p));
+        }
     }
 
     fn check_environment(&self, m: &MetricsSnapshot, f: &mut Findings) {

@@ -615,12 +615,14 @@ Linux and a busy machine have not been measured.
 | Swap-in rate | | | > 100 pages/s for 60 s | | `swap_in_pages_per_sec_pause`, `swap_in_sustain_secs` |
 | PSI memory | | | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
 | PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
-| Load average, 1 min | > 6 | > 8 | > 1.5 | > 2.0 | `load_1m_pause`, `load_1m_kill` |
+| Load per CPU, outside the jobs | > 1.0 | > 2.0 | > 0.75 | > 1.5 | `load_per_cpu_pause`, `load_per_cpu_kill` |
 | Disk free | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | `disk_free_mib_pause`, `disk_free_mib_kill` |
 | Capacity | 2 jobs, 1 GiB total | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
 
 Disk is the least free space of `/`, the state dir and the working directory of each running job, because a job fills the filesystem it runs on.
 Below the first disk line nothing new starts and running jobs go on, since pausing a job gives no disk back; below the kill line running jobs are killed.
+Load is the 1 minute load average minus what the running jobs use themselves (their measured CPU, so a busy job never pauses itself), divided by the number of CPUs.
+`load_1m_pause` and `load_1m_kill` add an absolute limit on the raw average; they are off in the presets.
 Swap in use is off on both presets: Linux keeps cold pages in swap for days, so it says nothing about pressure, and the growth, swap-in and PSI rows measure that.
 Set `swap_used_mib_pause` and `swap_used_mib_kill` to switch it on.
 
@@ -803,8 +805,8 @@ The last Jobs column, `RESULT / WHY`, says why a waiting job waits.
 │  - all 1 job slots are taken, by job 2 (index-refresh)                                           │
 │                                                                                                  │
 │server (online, heartbeat 3s ago):                                                                │
-│  - load 1m 1.70 > 1.5 (guard hold)                                                               │
-│    fix: wait for the load to drop; threshold is guard.load_1m_pause                              │
+│  - load per CPU 0.85 > 0.75 (guard pause)                                                        │
+│    fix: wait for the load outside the jobs to drop; threshold is guard.load_per_cpu_pause        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 p/r pause/resume job 3  k cancel job  w close  PgUp/PgDn scroll  s stop-all  tab/1-6 switch  q quit
 ```

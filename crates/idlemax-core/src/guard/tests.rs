@@ -1,7 +1,7 @@
 //! Tests: guard pause and kill thresholds for both presets, and the kill switch.
 
 use super::*;
-use crate::types::MemoryPressure;
+use crate::types::{JobStatus, MemoryPressure};
 
 const MIB: u64 = 1024 * 1024;
 const GIB: u64 = 1024 * MIB;
@@ -124,17 +124,25 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
             (Pause, Kill),
         ),
         (
-            "mac load 6.1",
+            "mac load 9.2 on 10 CPUs runs jobs",
             MAC,
-            |m| m.load_avg_1m = 6.1,
+            |m| m.load_avg_1m = 9.2,
+            0,
+            false,
+            (Run, Run),
+        ),
+        (
+            "mac load 10.1 on 10 CPUs",
+            MAC,
+            |m| m.load_avg_1m = 10.1,
             0,
             false,
             (Pause, Pause),
         ),
         (
-            "mac load 8.1",
+            "mac load 20.1 on 10 CPUs",
             MAC,
-            |m| m.load_avg_1m = 8.1,
+            |m| m.load_avg_1m = 20.1,
             0,
             false,
             (Pause, Kill),
@@ -231,7 +239,18 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
             (Pause, Kill),
         ),
         (
-            "server load 1.6",
+            "server load 3.0 on 6 CPUs runs jobs",
+            SERVER,
+            |m| {
+                m.cpu_count = 6;
+                m.load_avg_1m = 3.0;
+            },
+            0,
+            false,
+            (Run, Run),
+        ),
+        (
+            "server load 1.6 on 2 CPUs",
             SERVER,
             |m| m.load_avg_1m = 1.6,
             0,
@@ -239,9 +258,9 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
             (Pause, Pause),
         ),
         (
-            "server load 2.1",
+            "server load 3.1 on 2 CPUs",
             SERVER,
-            |m| m.load_avg_1m = 2.1,
+            |m| m.load_avg_1m = 3.1,
             0,
             false,
             (Pause, Kill),
@@ -315,6 +334,46 @@ fn a_server_pauses_for_sustained_swap_in_however_little_swap_is_used() {
         "swap-in must stay high for swap_in_sustain_secs first"
     );
     assert_eq!(verdicts[2], GuardAction::Pause);
+}
+
+fn busy_job(cpu_pct: f64, status: JobStatus) -> RunningJob {
+    RunningJob {
+        id: 1,
+        status,
+        cpu_pct: Some(cpu_pct),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn load_is_counted_outside_the_running_jobs_and_an_absolute_limit_still_applies() {
+    let mut m = mac();
+    m.load_avg_1m = 12.0; // 10 CPUs
+
+    let alone = Guard::new(GuardPolicy::macos_laptop()).evaluate(&m, &[], false, false);
+    assert_eq!(alone.action, GuardAction::Pause, "{:?}", alone.reasons);
+
+    // Three CPUs of that load are the job's own: 9.0 left over, 0.9 per CPU.
+    let jobs = [busy_job(300.0, JobStatus::Running)];
+    let own = Guard::new(GuardPolicy::macos_laptop()).evaluate(&m, &jobs, false, false);
+    assert!(own.action.may_start(), "{:?}", own.reasons);
+
+    // A paused job adds no load, so nothing is taken out.
+    let jobs = [busy_job(300.0, JobStatus::Paused)];
+    let paused = Guard::new(GuardPolicy::macos_laptop()).evaluate(&m, &jobs, false, false);
+    assert_eq!(paused.action, GuardAction::Pause);
+
+    // `load_1m_pause` from an older config still pauses on the raw load average.
+    let policy = GuardPolicy {
+        load_1m_pause: Some(4.0),
+        ..GuardPolicy::macos_laptop()
+    };
+    m.load_avg_1m = 5.0;
+    let raw = Guard::new(policy).evaluate(&m, &[], false, false);
+    assert!(raw
+        .reasons
+        .iter()
+        .any(|r| r.starts_with("pause: load 1m 5.0 > 4")));
 }
 
 #[test]
