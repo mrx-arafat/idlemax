@@ -247,7 +247,7 @@ function render() {
   section("tiles", [s], "tiles", renderTiles);
   // last_seen_ms is shown only for offline devices; online ones move it on every heartbeat.
   const devs = s && (s.devices || []).map((d) => (d.online ? { ...d, last_seen_ms: 0 } : d));
-  section("devices", [devs, e.status], "devices", renderDevices);
+  section("devices", [devs, s && s.global_paused, e.status], "devices", renderDevices);
   section("schedules", [state.schedules, e.schedules], "schedules", renderSchedules);
   section("jobs", [state.jobs, e.jobs, $("job-filter").value], "jobs", renderJobs);
   section("advice", [state.advice, e.advice, state.showClosed], "advice", renderAdvice);
@@ -307,7 +307,17 @@ function renderDevices() {
   if (!s) { box.replaceChildren(state.errors.status ? h("div", { class: "err" }, state.errors.status) : h("div", { class: "empty" }, "Loading")); return; }
   const devs = (s.devices || []).slice().sort((a, b) => (b.online - a.online) || String(a.info.id).localeCompare(String(b.info.id)));
   if (!devs.length) { box.replaceChildren(h("div", { class: "empty" }, "No device has sent a heartbeat yet. Start `idlemax agent` on a device.")); return; }
-  box.replaceChildren(h("div", { class: "devices" }, devs.map(deviceCard)));
+  box.replaceChildren(h("div", { class: "devices" }, devs.map((d) => deviceCard(d, Boolean(s.global_paused)))));
+}
+
+// Under Pause all every device reads as paused, and the API cannot tell a device's own pause from
+// the global one. Resume on a device lifts only its own pause (resuming global clears no other
+// scope), so under Pause all the button would toast success and change nothing: say why instead.
+function pauseControl(id, paused, byAll) {
+  if (byAll) return h("span", { class: "dev-note" }, "Paused by Pause all");
+  return paused
+    ? h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Resumed ${id}`, () => control(scopes.device(id), "resume")) }, "Resume")
+    : h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Paused ${id}`, () => control(scopes.device(id), "pause")) }, "Pause");
 }
 
 // The label carries "on battery", so the value stays short enough for a four-column card.
@@ -324,14 +334,14 @@ function osAndProfile(info) {
   return profile.startsWith(os) ? profile : [os, profile].filter(Boolean).join(" · ");
 }
 
-function deviceCard(d) {
+function deviceCard(d, byAll) {
   const info = d.info || {};
   const m = d.metrics || null;
   const g = d.guard || null;
   const kind = g && g.action ? g.action.kind : null;
   const badges = [
     d.online ? badge("online", "ok", true) : badge(rel(d.last_seen_ms, "offline, seen ", ""), "bad", true),
-    d.paused ? badge("paused", "warn") : null,
+    d.paused ? badge(byAll ? "paused (all)" : "paused", "warn") : null,
     d.local_paused ? badge("kill switch", "warn") : null,
   ];
   const stats = m ? [
@@ -359,9 +369,7 @@ function deviceCard(d) {
       jobBadge(j.status), h("span", { class: "t" }, `#${j.id} ${j.name}`),
       h("span", { class: "faint num", style: "margin-left:auto" }, j.rss_bytes != null ? fmtBytes(j.rss_bytes) : `${j.mem_mb} MiB cap`)))) : null,
     h("div", { class: "dev-a" },
-      d.paused
-        ? h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Resumed ${id}`, () => control(scopes.device(id), "resume")) }, "Resume")
-        : h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `Paused ${id}`, () => control(scopes.device(id), "pause")) }, "Pause"),
+      pauseControl(id, d.paused, byAll),
       h("button", { class: "btn sm danger", type: "button", onclick: (e) => stopAll(e.currentTarget, scopes.device(id), `on ${id}`) }, "Stop all")),
   );
 }
