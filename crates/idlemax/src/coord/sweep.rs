@@ -1,5 +1,5 @@
-//! Coordinator background sweeps (adapter): lease expiry and offline devices every 15 s,
-//! store pruning hourly, advisor refresh every 15 min. Loops log failures and continue.
+//! Coordinator background sweeps (adapter): lease expiry, offline devices and due schedules
+//! every 15 s, store pruning hourly, advisor refresh every 15 min. Loops log failures and continue.
 
 use std::time::Duration;
 
@@ -10,6 +10,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{interval, interval_at, Instant, MissedTickBehavior};
 
 use super::api::{offline_after_ms, AppState};
+use super::schedule;
 use super::store::{Store, StoreError};
 use crate::state::now_ms;
 
@@ -67,10 +68,14 @@ async fn advise(app: AppState) {
     }
 }
 
-/// One sweep: lease expiry, persisted offline transitions, and periodic pruning.
+/// One sweep: lease expiry, persisted offline transitions, due schedules, and periodic pruning.
 fn sweep_once(store: &mut Store, cfg: &Config, prune: bool, now: UnixMs) -> Result<(), SweepError> {
     expire(store, now)?;
     mark_offline(store, cfg, now)?;
+    // A schedule problem must not stop lease expiry or pruning.
+    if let Err(e) = schedule::fire_due(store, cfg, now) {
+        tracing::warn!(error = %e, "schedule sweep failed");
+    }
     if prune {
         let days = i64::from(cfg.coordinator.metrics_retention_days);
         let report = store.prune(now, days.saturating_mul(DAY_MS))?;

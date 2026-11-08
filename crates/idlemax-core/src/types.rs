@@ -469,6 +469,8 @@ pub enum EventKind {
     Control,
     Quota,
     Advice,
+    /// A schedule queued its next job.
+    ScheduleFired,
     Error,
     #[default]
     Info,

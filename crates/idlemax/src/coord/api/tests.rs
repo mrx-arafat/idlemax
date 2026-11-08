@@ -258,3 +258,87 @@ async fn advisor_rules_fire_from_the_newest_inputs_an_agent_sent() {
     assert!(titles.contains(&"Session 'Fix login' in myproj still has failing tests"));
     assert!(!titles.iter().any(|t| t.contains("#1:")), "old copy kept");
 }
+
+#[tokio::test]
+async fn schedules_queue_their_first_job_and_reject_duplicates_pause_and_remove() {
+    use idlemax_core::schedule::{Decision, NewSchedule, ScheduleView};
+
+    let api = Api::start().await;
+    let spec = JobSpec {
+        name: "nightly".into(),
+        command: vec!["true".into()],
+        stdin: Some("private prompt".into()),
+        ..JobSpec::default()
+    };
+    let new = NewSchedule {
+        spec,
+        every: "1d".parse().unwrap(),
+    };
+
+    let added = api.post("/v1/schedules", &new).await;
+    assert_eq!(added.status(), StatusCode::CREATED);
+    let text = added.text().await.unwrap();
+    assert!(!text.contains("private prompt"), "stdin stays private");
+    let view: ScheduleView = serde_json::from_str(&text).unwrap();
+    assert_eq!(view.schedule.every.to_string(), "1d");
+    let job = view.schedule.last_job.expect("first job queued at once");
+    assert_eq!(
+        view.decision,
+        Decision::Running {
+            job,
+            status: JobStatus::Queued
+        }
+    );
+
+    let again = api.post("/v1/schedules", &new).await;
+    assert_eq!(again.status(), StatusCode::CONFLICT);
+    let body = again.text().await.unwrap();
+    assert!(body.contains("idlemax schedule rm 1"), "{body}");
+    let bad = json!({"spec": new.spec, "every": "soon"});
+    assert_eq!(
+        api.post("/v1/schedules", &bad).await.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    let id = view.schedule.id;
+    let paused: ScheduleView = api
+        .post(&format!("/v1/schedules/{id}/pause"), &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(paused.schedule.paused);
+    let missing = api.post("/v1/schedules/99/resume", &json!({})).await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+    let removed = api
+        .http
+        .delete(format!("{}/v1/schedules/{id}", api.base))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), StatusCode::OK);
+    let listed: Vec<ScheduleView> = api
+        .http
+        .get(format!("{}/v1/schedules", api.base))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(listed.is_empty());
+    let jobs: Vec<Job> = api
+        .http
+        .get(format!("{}/v1/jobs", api.base))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(jobs.len(), 1, "removing a schedule leaves its queued job");
+}

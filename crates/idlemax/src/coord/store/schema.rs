@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -133,4 +133,19 @@ CREATE INDEX applied_updates_age ON applied_updates(at_ms);
 /// Existing devices start offline, so an upgrade never repeats an old offline event.
 const V4: &str = r#"
 ALTER TABLE devices ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
+"#;
+
+/// Recurring jobs. `last_job_id` points at the job the last fire queued; jobs are never
+/// deleted, so it needs no foreign key.
+const V5: &str = r#"
+CREATE TABLE schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  spec TEXT NOT NULL,
+  every_secs INTEGER NOT NULL CHECK (every_secs > 0),
+  paused INTEGER NOT NULL DEFAULT 0,
+  created_ms INTEGER NOT NULL,
+  last_fired_ms INTEGER,
+  last_job_id INTEGER
+) STRICT;
 "#;

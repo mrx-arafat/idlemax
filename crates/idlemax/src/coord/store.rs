@@ -9,6 +9,7 @@ mod events;
 mod inputs;
 mod jobs;
 mod quota;
+mod schedules;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -18,6 +19,7 @@ pub use updates::{NewEvent, UpdateWrites};
 
 use std::path::{Path, PathBuf};
 
+use idlemax_core::schedule::ScheduleId;
 use idlemax_core::types::{JobId, SpecError, UnixMs};
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row};
@@ -60,6 +62,10 @@ pub enum StoreError {
     /// Another AI job already holds a lease on this account.
     #[error("AI account {0} already holds a lease")]
     AccountLeased(String),
+    #[error("schedule {0} not found")]
+    ScheduleNotFound(ScheduleId),
+    #[error("schedule {name:?} already exists (id {id}); remove it first with `idlemax schedule rm {id}`")]
+    ScheduleExists { name: String, id: ScheduleId },
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;

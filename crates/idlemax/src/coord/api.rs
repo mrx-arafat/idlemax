@@ -5,12 +5,13 @@ mod advice;
 mod agents;
 pub mod http;
 mod jobs;
+mod schedules;
 #[cfg(test)]
 mod tests;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{middleware, Router};
 use idlemax_core::control::ControlError;
 use idlemax_core::{Config, Paths};
@@ -85,6 +86,10 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/advice/refresh", post(advice::refresh))
         .route("/v1/advice/{id}/accept", post(advice::accept))
         .route("/v1/advice/{id}/dismiss", post(advice::dismiss))
+        .route("/v1/schedules", get(schedules::list).post(schedules::add))
+        .route("/v1/schedules/{id}", delete(schedules::remove))
+        .route("/v1/schedules/{id}/pause", post(schedules::pause))
+        .route("/v1/schedules/{id}/resume", post(schedules::resume))
         .route_layer(middleware::from_fn_with_state(
             BearerToken::new(token),
             http::require_bearer,
@@ -101,8 +106,12 @@ pub fn router(state: AppState, token: &str) -> Router {
 impl From<StoreError> for ApiFailure {
     fn from(e: StoreError) -> Self {
         match e {
-            StoreError::JobNotFound(_) => ApiFailure::NotFound(e.to_string()),
-            StoreError::AccountLeased(_) => ApiFailure::Conflict(e.to_string()),
+            StoreError::JobNotFound(_) | StoreError::ScheduleNotFound(_) => {
+                ApiFailure::NotFound(e.to_string())
+            }
+            StoreError::AccountLeased(_) | StoreError::ScheduleExists { .. } => {
+                ApiFailure::Conflict(e.to_string())
+            }
             StoreError::Invalid(_) | StoreError::InvalidSpec(_) => {
                 ApiFailure::BadRequest(e.to_string())
             }
