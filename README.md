@@ -36,11 +36,11 @@ AI jobs spend only the quota above a reserve you choose, late in each window.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboard-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/dashboard-light.png">
-  <img alt="The idlemax web dashboard: a MacBook and a server with guard verdicts and metrics, one queued and three running jobs, two pieces of advice, and Claude and Codex quota windows with the reserve marked on each bar" src="docs/assets/dashboard-light.png">
+  <img alt="The idlemax web dashboard: a MacBook and a server with guard verdicts and metrics, two recurring schedules, three queued jobs that each say why they are waiting, three running jobs, two pieces of advice, and Claude and Codex quota windows with the reserve marked on each bar" src="docs/assets/dashboard-light.png">
 </picture>
 
 The web dashboard follows your system theme.
-This capture is a real coordinator fed by scripted demo agents, so no real machine or account appears in it.
+This capture is a real coordinator fed by scripted demo agents, with the job history aged by hand, so no real machine or account appears in it.
 
 ## Quickstart
 
