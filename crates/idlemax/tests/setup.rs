@@ -116,6 +116,30 @@ fn dry_run_lists_every_file_and_command_and_writes_nothing() {
 
     assert!(!h.state.exists(), "a dry run created the state dir");
     assert!(is_empty_dir(&h.home), "a dry run wrote under HOME");
+
+    // Piped, the same plan is TOON: steps as rows, the files and commands as lists.
+    let out = Command::new(BIN)
+        .args(["setup", "--dry-run"])
+        .env("HOME", &h.home)
+        .env("IDLEMAX_HOME", &h.state)
+        .env_remove("IDLEMAX_TOKEN")
+        .env_remove("IDLEMAX_COORD")
+        .output()
+        .unwrap();
+    let toon = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        toon.starts_with("role: both\ndry_run: true\nok: true\n"),
+        "{toon}"
+    );
+    assert!(
+        toon.contains("steps[6]{step,status,detail,by_hand}:"),
+        "{toon}"
+    );
+    assert!(
+        toon.contains("would_write[") && toon.contains("would_run["),
+        "{toon}"
+    );
+    assert!(is_empty_dir(&h.home), "the TOON dry run wrote under HOME");
 }
 
 #[test]

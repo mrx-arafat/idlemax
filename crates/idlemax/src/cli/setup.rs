@@ -100,7 +100,12 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
     let doctor = doctor_step(&plan, &env, &steps, coord).await;
     steps.push(doctor.0);
     let report = finish(&plan, args.dry_run, steps, doctor.1);
-    out.emit(&report, text::render, &[])?;
+    let next: Vec<String> = report
+        .next
+        .iter()
+        .map(|n| format!("Run `{n}` to continue"))
+        .collect();
+    out.emit_with(&report, text::render, || Ok(text::view(&report)), &next)?;
     if report.ok {
         Ok(())
     } else {

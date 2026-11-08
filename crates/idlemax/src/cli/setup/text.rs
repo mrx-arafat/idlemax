@@ -1,8 +1,12 @@
 //! Delivery: the plain-text report of `idlemax setup`: one block per step, then doctor's own
 //! report, then one line saying what happened and what to do next.
 
+use idlemax_core::doctor::Level;
+
 use super::report::{SetupReport, Status, StepReport};
+use crate::cli::out::toon::Node;
 use crate::cli::print;
+use crate::cli::rows::snake;
 
 const STATUS_WIDTH: usize = 12;
 const STEP_WIDTH: usize = 14;
@@ -96,4 +100,90 @@ fn closing(r: &SetupReport) -> String {
     }
     let next: Vec<String> = r.next.iter().map(|n| format!("`{n}`")).collect();
     format!("setup finished as {role}; next: {}", next.join(", "))
+}
+
+/// The TOON report: one row per step, the files and commands touched, then only the doctor
+/// checks that are not ok. `ok` and `changed` come first, since they decide what to do next.
+pub fn view(r: &SetupReport) -> Node {
+    let label = |s: &StepReport| match s.which {
+        Some(which) => format!("{} {which}", s.step),
+        None => s.step.to_string(),
+    };
+    let rows = r.steps.iter().map(|s| {
+        // The by-hand command matters only where the step did not just work.
+        let by_hand = matches!(s.status, Status::Failed | Status::Skipped);
+        Node::obj([
+            ("step", Node::Str(label(s))),
+            ("status", Node::str(snake(&s.status))),
+            ("detail", Node::str(&s.detail)),
+            (
+                "by_hand",
+                if by_hand {
+                    Node::str(&s.command)
+                } else {
+                    Node::Null
+                },
+            ),
+        ])
+    });
+    let mut fields = vec![
+        ("role".to_string(), Node::str(r.role.name())),
+        ("dry_run".to_string(), Node::Bool(r.dry_run)),
+        ("ok".to_string(), Node::Bool(r.ok)),
+        ("changed".to_string(), Node::Bool(r.changed)),
+        ("steps".to_string(), Node::Arr(rows.collect())),
+    ];
+    let (wrote, ran) = if r.dry_run {
+        ("would_write", "would_run")
+    } else {
+        ("wrote", "ran")
+    };
+    let listed = |pick: &dyn Fn(&StepReport) -> Vec<String>| {
+        let all: Vec<Node> = r.steps.iter().flat_map(pick).map(Node::Str).collect();
+        (!all.is_empty()).then_some(Node::Arr(all))
+    };
+    let extras: [(&str, Option<Node>); 3] = [
+        (
+            wrote,
+            listed(&|s| s.files.iter().map(|f| f.display().to_string()).collect()),
+        ),
+        (ran, listed(&|s| s.runs.clone())),
+        (
+            "notes",
+            listed(&|s| {
+                s.notes
+                    .iter()
+                    .map(|n| format!("{}: {n}", label(s)))
+                    .collect()
+            }),
+        ),
+    ];
+    fields.extend(
+        extras
+            .into_iter()
+            .filter_map(|(k, v)| v.map(|v| (k.to_string(), v))),
+    );
+    if let Some(d) = &r.doctor {
+        let problems: Vec<Node> = d
+            .checks
+            .iter()
+            .filter(|c| c.level != Level::Ok)
+            .map(|c| {
+                Node::obj([
+                    ("id", Node::str(&c.id)),
+                    ("level", Node::str(snake(&c.level))),
+                    ("detail", Node::str(&c.detail)),
+                    ("fix", c.fix.as_deref().map_or(Node::Null, Node::str)),
+                ])
+            })
+            .collect();
+        let doctor = if problems.is_empty() {
+            Node::str(format!("{} checks ok", d.counts.ok))
+        } else {
+            Node::Arr(problems)
+        };
+        fields.push(("doctor".to_string(), doctor));
+    }
+    fields.push(("result".to_string(), Node::Str(closing(r))));
+    Node::Obj(fields)
 }
