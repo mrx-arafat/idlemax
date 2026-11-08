@@ -191,6 +191,7 @@ td .t2 { font-size: 12px; color: var(--muted); margin-top: 1px; overflow-wrap: a
 td.acts { white-space: nowrap; text-align: right; }
 td.acts .btn + .btn { margin-left: 4px; }
 .job-name { font-weight: 600; overflow-wrap: anywhere; }
+.sched-table td.c-state > div + div { margin-top: 4px; }
 select {
   height: 28px; padding: 0 8px; border: 1px solid var(--control); border-radius: 6px;
   background: var(--panel); font-size: 12.5px;
@@ -281,6 +282,23 @@ dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14
   .jobs-table td.acts:empty { display: none; }
   .jobs-table td.acts .btn + .btn { margin-left: 0; }
 }
+@media (max-width: 640px) {
+  .sched-table thead { display: none; }
+  .sched-table, .sched-table tbody { display: block; }
+  .sched-table tr {
+    display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+    grid-template-areas: "id name state" ". last last" ". acts acts";
+    gap: 4px 10px; padding: 12px 14px; border-bottom: 1px solid var(--line);
+  }
+  .sched-table tbody tr:last-child { border-bottom: 0; }
+  .sched-table td { display: block; padding: 0; border: 0; text-align: left; }
+  .sched-table td.c-id { grid-area: id; }
+  .sched-table td.c-name { grid-area: name; }
+  .sched-table td.c-state { grid-area: state; text-align: right; }
+  .sched-table td.c-last { grid-area: last; }
+  .sched-table td.acts { grid-area: acts; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; white-space: normal; }
+  .sched-table td.acts .btn + .btn { margin-left: 0; }
+}
 @media (max-width: 560px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tiles .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -333,6 +351,10 @@ dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14
         <section class="card" aria-labelledby="h-devices">
           <div class="card-h"><h2 id="h-devices">Devices</h2></div>
           <div class="card-b" id="devices"></div>
+        </section>
+        <section class="card" aria-labelledby="h-schedules">
+          <div class="card-h"><h2 id="h-schedules">Schedules</h2></div>
+          <div class="card-b flush" id="schedules"></div>
         </section>
         <section class="card" aria-labelledby="h-jobs">
           <div class="card-h">
@@ -501,7 +523,7 @@ const scopes = {
 };
 
 // State and polling.
-const state = { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
+const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
 
 async function refresh() {
   if (state.busy || !tokenStore.get()) return;
@@ -511,6 +533,7 @@ async function refresh() {
   const calls = [
     ["status", api("GET", "/v1/status")],
     ["jobs", api("GET", jobsPath)],
+    ["schedules", api("GET", "/v1/schedules")],
     ["quota", api("GET", "/v1/quota")],
     ["advice", api("GET", "/v1/advice")],
     ["events", api("GET", "/v1/events?limit=60")],
@@ -619,6 +642,7 @@ function render() {
   // last_seen_ms is shown only for offline devices; online ones move it on every heartbeat.
   const devs = s && (s.devices || []).map((d) => (d.online ? { ...d, last_seen_ms: 0 } : d));
   section("devices", [devs, e.status], "devices", renderDevices);
+  section("schedules", [state.schedules, e.schedules], "schedules", renderSchedules);
   section("jobs", [state.jobs, e.jobs, $("job-filter").value], "jobs", renderJobs);
   section("advice", [state.advice, e.advice, state.showClosed], "advice", renderAdvice);
   section("quota", [state.quota, s && s.paused_accounts, e.quota], "quota", renderQuota);
@@ -768,6 +792,58 @@ function renderJobs() {
     h("tbody", null, rows))));
 }
 
+// What a schedule is doing: its running job, when it is next due, and whether it is paused.
+function scheduleState(v) {
+  const d = v.decision || {};
+  const parts = [];
+  if (d.kind === "running") parts.push(badge(`job #${d.job} ${label(d.status)}`, JOB_TONE[d.status]));
+  else if (d.kind === "wait") parts.push(rel(d.until_ms, "due "));
+  else if (d.kind === "fire") parts.push(h("span", { class: "num" }, "due now"));
+  if (v.paused) parts.push(badge("paused", "warn"));
+  return parts.map((p) => h("div", null, p));
+}
+
+function lastResult(r) {
+  if (!r) return h("span", { class: "faint" }, "-");
+  const note = r.error || (r.exit_code ? `exit ${r.exit_code}` : "");
+  return [
+    jobBadge(r.status),
+    r.finished_ms ? h("div", { class: "t2" }, rel(r.finished_ms)) : null,
+    note ? h("div", { class: "t2", style: r.error ? "color:var(--bad)" : null }, note) : null,
+  ];
+}
+
+async function removeSchedule(btn, v) {
+  const name = (v.spec && v.spec.name) || "(unnamed)";
+  const ok = await confirmBox(`Remove schedule #${v.id}?`, `${name} stops repeating. A job it already queued keeps running.`, "Remove", true);
+  if (ok) act(btn, `Removed schedule #${v.id}`, () => api("DELETE", `/v1/schedules/${encodeURIComponent(v.id)}`));
+}
+
+function renderSchedules() {
+  const box = $("schedules");
+  const list = state.schedules;
+  if (state.errors.schedules) { box.replaceChildren(h("div", { class: "err" }, state.errors.schedules)); return; }
+  if (!list) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  if (!list.length) { box.replaceChildren(h("div", { class: "empty" }, "No schedules yet. Repeat a job with `idlemax schedule add <spec.toml> --every 1d`.")); return; }
+  const rows = list.map((v) => {
+    const spec = v.spec || {};
+    const verb = v.paused ? "resume" : "pause";
+    const detail = [`every ${v.every}`, spec.cost ? label(spec.cost) : null, spec.ai_account ? `account ${spec.ai_account}` : null].filter(Boolean).join(" · ");
+    return h("tr", null,
+      h("td", { class: "c-id num mono" }, `#${v.id}`),
+      h("td", { class: "c-name" }, h("div", { class: "job-name" }, spec.name || "(unnamed)"), h("div", { class: "t2" }, detail)),
+      h("td", { class: "c-state" }, scheduleState(v)),
+      h("td", { class: "c-last" }, lastResult(v.last_result)),
+      h("td", { class: "acts" },
+        h("button", { class: "btn sm", type: "button", onclick: (e) => act(e.currentTarget, `${v.paused ? "Resumed" : "Paused"} schedule #${v.id}`, () => api("POST", `/v1/schedules/${encodeURIComponent(v.id)}/${verb}`)) }, v.paused ? "Resume" : "Pause"),
+        h("button", { class: "btn sm danger", type: "button", onclick: (e) => removeSchedule(e.currentTarget, v) }, "Remove")),
+    );
+  });
+  box.replaceChildren(h("div", { class: "scroll" }, h("table", { class: "sched-table" },
+    h("thead", null, h("tr", null, h("th", null, "ID"), h("th", null, "Schedule"), h("th", null, "State"), h("th", null, "Last result"), h("th", { class: "r" }, h("span", { class: "faint" }, "Actions")))),
+    h("tbody", null, rows))));
+}
+
 function renderAdvice() {
   const box = $("advice");
   const recs = state.advice;
@@ -884,7 +960,7 @@ function renderEvents() {
 function logout(msg) {
   tokenStore.set("");
   clearInterval(state.timer);
-  Object.assign(state, { status: null, jobs: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0 });
+  Object.assign(state, { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0 });
   Object.keys(sig).forEach((k) => delete sig[k]);
   $("app").hidden = true;
   $("login").hidden = false;
