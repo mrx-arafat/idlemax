@@ -80,7 +80,8 @@ pub fn guard_summary(g: &GuardDecision) -> String {
         GuardAction::Pause => ("pause", "pause".into()),
         GuardAction::Kill => ("kill", "kill".into()),
     };
-    let Some(reason) = g.reasons.first() else {
+    let at_level = |r: &&String| r.strip_prefix(word).is_some_and(|r| r.starts_with(": "));
+    let Some(reason) = g.reasons.iter().find(at_level).or(g.reasons.first()) else {
         return action;
     };
     match reason.strip_prefix(word).and_then(|r| r.strip_prefix(": ")) {
@@ -227,4 +228,23 @@ pub fn trunc(s: &str, max: usize) -> String {
     let mut out: String = s.chars().take(max.saturating_sub(3)).collect();
     out.push_str("...");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guard_summary_names_the_reason_at_the_action_level() {
+        let g = GuardDecision {
+            action: GuardAction::Kill,
+            reasons: vec![
+                "pause: memory pressure Warn".into(),
+                "kill: disk free 9347.8 MiB < 10240 MiB".into(),
+                "pause: on battery".into(),
+            ],
+            ..GuardDecision::default()
+        };
+        assert_eq!(guard_summary(&g), "kill: disk free 9347.8 MiB < 10240 MiB");
+    }
 }
