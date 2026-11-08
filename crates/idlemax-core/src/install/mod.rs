@@ -8,4 +8,5 @@ pub mod json_edit;
 pub mod opencode;
 pub mod quote;
 pub mod service;
+pub mod setup;
 pub mod statusline;
