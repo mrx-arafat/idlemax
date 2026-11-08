@@ -8,7 +8,7 @@
 //! children hold what `plan` calls: `controls` (local controls and coordinator commands)
 //! and `starts` (which leases fit, and why one is handed back).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod controls;
 mod journal;
@@ -135,6 +135,8 @@ pub struct TickInput<'a> {
 pub struct AgentState {
     jobs: BTreeMap<JobId, TrackedJob>,
     local_paused: bool,
+    sampled_jobs: BTreeSet<JobId>,
+    sample_at_ms: Option<UnixMs>,
 }
 
 impl AgentState {
@@ -152,8 +154,17 @@ impl AgentState {
         self.jobs.get(&id).map(|j| j.name.as_str())
     }
 
+    /// Records which jobs a fresh guard budget already accounts for, even after clock steps.
+    pub fn sampled(&mut self, at_ms: UnixMs) {
+        self.sampled_jobs = self.jobs.keys().copied().collect();
+        self.sample_at_ms = Some(at_ms);
+    }
+
     /// Updates holds and returns this tick's actions. Kills come first, starts last.
     pub fn plan(&mut self, input: &TickInput<'_>) -> Vec<AgentAction> {
+        if self.sample_at_ms != Some(input.guard.at_ms) {
+            self.sampled(input.guard.at_ms);
+        }
         let mut kills = BTreeMap::new();
         self.apply_local_controls(input.local_controls, &mut kills);
         let stop_all = self.apply_commands(input.commands, &mut kills);
@@ -248,6 +259,7 @@ impl AgentState {
         if !update.status.is_terminal() {
             return update;
         }
+        self.sampled_jobs.remove(&update.id);
         let order = self.jobs.remove(&update.id).and_then(|j| j.kill);
         if let (JobStatus::Killed, Some(order)) = (update.status, order) {
             update.owner_stop = order.owner_stop;

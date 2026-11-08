@@ -5,6 +5,29 @@ use crate::types::JobSpec;
 
 const DEV: &str = "mac";
 
+#[test]
+fn starts_after_clock_rollback_still_consume_the_sample_budget() {
+    let mut state = AgentState::default();
+    let guard = run(2, 200, 1_000);
+    tick(
+        &mut state,
+        &TickInput {
+            assign: &[job(1, 100, ActivePolicy::Pause)],
+            ..input(&guard)
+        },
+        500,
+    );
+    let actions = state.plan(&TickInput {
+        assign: &[
+            job(2, 100, ActivePolicy::Pause),
+            job(3, 100, ActivePolicy::Pause),
+        ],
+        ..input(&guard)
+    });
+    assert!(matches!(actions[0], AgentAction::Start(_)));
+    assert!(matches!(actions[1], AgentAction::Return { id: 3, .. }));
+}
+
 fn run(slots: u32, mem_mib: u64, at_ms: UnixMs) -> GuardDecision {
     let action = GuardAction::Run { slots, mem_mib };
     GuardDecision {

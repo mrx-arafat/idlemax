@@ -41,6 +41,7 @@ impl Agent {
             info!(action = ?decision.action, reasons = ?decision.reasons, "guard verdict changed");
         }
         self.decision = decision;
+        self.state.sampled(self.decision.at_ms);
         self.reconcile(&[], &[], &[]).await;
     }
 

@@ -64,6 +64,44 @@ fn an_exited_success_is_not_relabelled_by_kill_or_runtime_enforcement() {
     }
 }
 
+#[test]
+fn clock_steps_do_not_stall_memory_checks_or_skip_the_kill_grace() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    let task = job(
+        88,
+        &[
+            "sh",
+            "-c",
+            "trap '' TERM; echo ready; while :; do sleep 1; done",
+        ],
+        64,
+    );
+    let wall = crate::state::now_ms();
+    r.start_at(&task, wall, 0).unwrap();
+    wait_until("the job to install its signal handler", STARVED, || {
+        std::fs::read_to_string(Paths::new(home.path()).job_log_file(88))
+            .is_ok_and(|s| s.contains("ready"))
+    });
+    r.poll_at(wall, 1_000);
+    assert!(r.slots[&88].usage.is_some());
+    r.slots.get_mut(&88).unwrap().usage = None;
+    r.poll_at(wall - 60_000, 2_000);
+    let refreshed = r.slots[&88].usage.is_some();
+    super::stop::stop(
+        r.slots.get_mut(&88).unwrap(),
+        idlemax_core::job_run::StopReason::Requested,
+        2_000,
+    )
+    .unwrap();
+    r.poll_at(wall + 60_000, 2_001);
+    let killed_early = r
+        .slots
+        .get(&88)
+        .is_none_or(|s| s.stop.as_ref().unwrap().kill_sent);
+    assert_eq!((refreshed, killed_early), (true, false));
+}
+
 fn runner(home: &Path, allow: &[&str]) -> Runner {
     let config = AgentConfig {
         command_allowlist: allow.iter().map(|s| s.to_string()).collect(),

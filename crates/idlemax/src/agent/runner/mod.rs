@@ -61,7 +61,7 @@ pub struct Runner {
     allowlist: Vec<String>,
     wrapper: Wrapper,
     procs: Option<ProcTable>,
-    usage_at_ms: UnixMs,
+    usage_at_awake_ms: i64,
     /// Argv prefix that starts a job supervisor, when this platform has one.
     supervisor: Option<Vec<String>>,
     slots: HashMap<JobId, Slot>,
@@ -105,7 +105,7 @@ impl Runner {
             allowlist: config.command_allowlist,
             wrapper,
             procs,
-            usage_at_ms: 0,
+            usage_at_awake_ms: 0,
             supervisor: supervise::command(),
             slots: HashMap::new(),
             pending,
@@ -215,7 +215,7 @@ impl Runner {
         }
         let awake_ms = self.awake_ms();
         match self.slots.get_mut(&id) {
-            Some(slot) => stop(slot, StopReason::Requested, now_ms(), awake_ms)
+            Some(slot) => stop(slot, StopReason::Requested, awake_ms)
                 .map_err(|source| RunnerError::Signal { id, source }),
             None => Ok(()),
         }
@@ -242,9 +242,9 @@ impl Runner {
 
     fn poll_at(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         self.hold_pauses();
-        self.refresh_usage(now);
+        self.refresh_usage(awake_ms);
         for slot in self.slots.values_mut() {
-            enforce(slot, now, awake_ms);
+            enforce(slot, awake_ms);
         }
         self.poll_exits_at(now, awake_ms)
     }
@@ -302,15 +302,15 @@ impl Runner {
         self.slots.values().filter_map(cwd).collect()
     }
 
-    fn refresh_usage(&mut self, now: UnixMs) {
-        if self.slots.is_empty() || now - self.usage_at_ms < USAGE_REFRESH_MS {
+    fn refresh_usage(&mut self, awake_ms: i64) {
+        if self.slots.is_empty() || awake_ms - self.usage_at_awake_ms < USAGE_REFRESH_MS {
             return;
         }
         let Some(procs) = self.procs.as_mut() else {
             return;
         };
         procs.refresh();
-        self.usage_at_ms = now;
+        self.usage_at_awake_ms = awake_ms;
         let jobs: Vec<JobKey> = self.slots.values().map(Slot::key).collect();
         let mut found = procs.usages(&jobs);
         for slot in self.slots.values_mut() {

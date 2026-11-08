@@ -50,7 +50,7 @@ impl AgentState {
         let since: Vec<&TrackedJob> = self
             .jobs
             .values()
-            .filter(|j| j.started_ms >= guard.at_ms)
+            .filter(|j| !self.sampled_jobs.contains(&j.id))
             .collect();
         let used_mem: u64 = since.iter().map(|j| j.mem_mb).sum();
         let used_slots = u32::try_from(since.len()).unwrap_or(u32::MAX);
