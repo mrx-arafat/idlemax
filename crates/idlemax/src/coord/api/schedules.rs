@@ -6,7 +6,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use idlemax_core::control::admit_job;
-use idlemax_core::schedule::{decide, NewSchedule, Schedule, ScheduleId, ScheduleView};
+use idlemax_core::schedule::{NewSchedule, Schedule, ScheduleId, ScheduleView};
 use idlemax_core::types::{EventKind, UnixMs};
 use idlemax_core::Config;
 
@@ -130,9 +130,8 @@ fn not_found(id: ScheduleId) -> ApiFailure {
 /// The schedule with its decision. Stdin can hold private prompts, so it is dropped here.
 fn view(store: &Store, mut schedule: Schedule, now: UnixMs) -> Result<ScheduleView, ApiFailure> {
     let last = last_job(store, &schedule)?;
-    let decision = decide(&schedule, last.as_ref(), now);
     schedule.spec.stdin = None;
-    Ok(ScheduleView { schedule, decision })
+    Ok(ScheduleView::new(schedule, last.as_ref(), now))
 }
 
 fn log(store: &mut Store, s: &Schedule, what: &str, now: UnixMs) -> Result<(), ApiFailure> {

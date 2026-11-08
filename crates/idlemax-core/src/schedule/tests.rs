@@ -187,3 +187,29 @@ fn a_clock_set_back_waits_one_interval_not_until_the_old_future() {
         }
     );
 }
+
+#[test]
+fn the_view_reports_how_the_last_run_ended_only_once_it_has() {
+    let s = schedule("1d", Some(T0));
+    let mut failed = job(JobStatus::Failed, Some(T0 + 1000));
+    failed.exit_code = Some(2);
+    failed.last_error = Some("exit 2".into());
+    let view = ScheduleView::new(s.clone(), Some(&failed), T0 + 2000);
+    assert_eq!(
+        view.last_result,
+        Some(RunResult {
+            status: JobStatus::Failed,
+            exit_code: Some(2),
+            error: Some("exit 2".into()),
+            finished_ms: Some(T0 + 1000),
+        })
+    );
+    assert_eq!(view.decision, decide(&s, Some(&failed), T0 + 2000));
+
+    let running = job(JobStatus::Running, None);
+    assert_eq!(
+        ScheduleView::new(s.clone(), Some(&running), T0).last_result,
+        None
+    );
+    assert_eq!(ScheduleView::new(s, None, T0).last_result, None);
+}

@@ -214,7 +214,9 @@ Responses write the interval in the largest unit that divides it evenly, so `24h
  "created_ms": 1730000000000, "last_fired_ms": 1730000100000, "last_job": 41,
  "decision": {"kind": "running", "job": 41, "status": "queued"}}
 ```
-`ScheduleView` is the schedule with its current `decision`, which is one of:
+`ScheduleView` is the schedule with its current `decision` and, once the last queued job has ended, `last_result`: `{"status": "failed", "exit_code": 2, "error": "...", "finished_ms": N}`.
+`last_result` is absent while that job is still active or before the first run.
+The `decision` is one of:
 
 | `decision` | Meaning |
 |---|---|

@@ -53,12 +53,47 @@ pub enum Decision {
     Paused,
 }
 
-/// A schedule with its current decision, as `GET /v1/schedules` returns it.
+/// How the last job of a schedule ended.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunResult {
+    pub status: JobStatus,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    pub finished_ms: Option<UnixMs>,
+}
+
+impl RunResult {
+    /// None while the job is still queued, leased, running or paused.
+    pub fn of(job: &Job) -> Option<Self> {
+        job.status.is_terminal().then(|| RunResult {
+            status: job.status,
+            exit_code: job.exit_code,
+            error: job.last_error.clone(),
+            finished_ms: job.finished_ms,
+        })
+    }
+}
+
+/// A schedule with its current decision and last result, as `GET /v1/schedules` returns it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScheduleView {
     #[serde(flatten)]
     pub schedule: Schedule,
     pub decision: Decision,
+    /// How the last queued job ended; absent before the first run ends.
+    #[serde(default)]
+    pub last_result: Option<RunResult>,
+}
+
+impl ScheduleView {
+    /// `last_job` is the job the schedule's last fire queued, if it still exists.
+    pub fn new(schedule: Schedule, last_job: Option<&Job>, now_ms: UnixMs) -> Self {
+        Self {
+            decision: decide(&schedule, last_job, now_ms),
+            last_result: last_job.and_then(RunResult::of),
+            schedule,
+        }
+    }
 }
 
 /// Decides what to do with `schedule`, given the job its last fire queued (if any).
