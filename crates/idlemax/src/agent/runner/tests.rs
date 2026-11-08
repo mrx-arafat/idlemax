@@ -58,6 +58,15 @@ fn job(id: i64, argv: &[&str], mem_mb: u64) -> Job {
     }
 }
 
+/// Polls `cond` until it holds; panics naming `what` after `within`. No fixed sleeps.
+pub(super) fn wait_until(what: &str, within: Duration, mut cond: impl FnMut() -> bool) {
+    let deadline = Instant::now() + within;
+    while !cond() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn wait_ended(r: &mut Runner, within: Duration) -> JobUpdate {
     let deadline = Instant::now() + within;
     loop {

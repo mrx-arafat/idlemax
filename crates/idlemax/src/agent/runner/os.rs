@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 
 pub use idlemax_core::job_run::Usage;
 use idlemax_core::job_run::{
-    could_belong, job_procs, supports_scope_oom_policy, JobKey, JobProcs, ProcFact, Wrapper,
+    could_belong, job_procs, orphan_procs, supports_scope_oom_policy, JobKey, JobProcs, ProcFact,
+    Wrapper,
 };
 use idlemax_core::types::{JobId, UnixMs};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
+use tracing::warn;
 
 use super::launch::JOB_ID_ENV;
 
@@ -71,14 +73,28 @@ fn allow_gone(result: nix::Result<()>) -> io::Result<()> {
     }
 }
 
-/// Signals everything a job runs: its group, plus the members that left the group
-/// (`setsid` daemons). Every target is tried; the first error is returned.
+/// Signals each pid, best effort: a member can exit between the scan and the signal, and
+/// macOS answers EPERM for a process that is exiting. Failures are logged, never fatal.
+#[cfg(unix)]
+pub fn signal_pids(pids: &[u32], sig: Sig) {
+    for &pid in pids {
+        if let Err(e) = signal_pid(pid, sig) {
+            warn!(pid, signal = ?sig, error = %e, "cannot signal job member");
+        }
+    }
+}
+
+/// No-op: Windows kills by tree, which needs a live root.
+#[cfg(windows)]
+pub fn signal_pids(_pids: &[u32], _sig: Sig) {}
+
+/// Signals everything a job runs: its group (the result), then the members that left the
+/// group (`setsid` daemons), which are best effort.
 #[cfg(unix)]
 pub fn signal_job(pgid: u32, outside: &[u32], sig: Sig) -> io::Result<()> {
-    outside.iter().fold(signal_group(pgid, sig), |first, &pid| {
-        let this = signal_pid(pid, sig);
-        first.and(this)
-    })
+    let group = signal_group(pgid, sig);
+    signal_pids(outside, sig);
+    group
 }
 
 /// Windows kills the whole tree with `taskkill /T`, so there is no outside set.
@@ -291,6 +307,21 @@ impl ProcTable {
 
     /// Processes of each live job, keyed by root pid, from the last refresh.
     pub fn usages(&mut self, jobs: &[JobKey]) -> HashMap<u32, JobProcs> {
+        let facts = self.tagged_facts(jobs);
+        jobs.iter()
+            .filter_map(|job| job_procs(job, &facts).map(|found| (job.root, found)))
+            .collect()
+    }
+
+    /// What a job left running after its agent died (see `orphan_procs`). Refreshes first.
+    pub fn orphans(&mut self, job: &JobKey, root_trusted: bool) -> JobProcs {
+        self.refresh();
+        let facts = self.tagged_facts(std::slice::from_ref(job));
+        orphan_procs(job, &facts, root_trusted)
+    }
+
+    /// The process table with each process's job tag filled in.
+    fn tagged_facts(&mut self, jobs: &[JobKey]) -> Vec<ProcFact> {
         let mut facts = self.facts();
         self.read_tags(jobs, &facts);
         for fact in &mut facts {
@@ -299,15 +330,14 @@ impl ProcTable {
                 .get(&fact.pid)
                 .and_then(|&(start, tag)| tag.filter(|_| start == fact.start_secs));
         }
-        jobs.iter()
-            .filter_map(|job| job_procs(job, &facts).map(|found| (job.root, found)))
-            .collect()
+        facts
     }
 
     fn facts(&self) -> Vec<ProcFact> {
         self.sys
             .processes()
             .iter()
+            .filter(|(_, process)| process.status() != ProcessStatus::Zombie)
             .map(|(pid, process)| ProcFact {
                 pid: pid.as_u32(),
                 ppid: process.parent().map(Pid::as_u32),

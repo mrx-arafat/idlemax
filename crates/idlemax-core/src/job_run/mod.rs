@@ -6,8 +6,8 @@ mod usage;
 mod wrap;
 
 pub use usage::{
-    could_belong, job_procs, poll_every, JobKey, JobProcs, ProcFact, Usage, POLL_NEAR_CAP,
-    POLL_RELAXED,
+    could_belong, job_procs, orphan_procs, poll_every, JobKey, JobProcs, ProcFact, Usage,
+    POLL_NEAR_CAP, POLL_RELAXED,
 };
 pub use wrap::{scope_unit, supports_scope_oom_policy, Wrapper};
 

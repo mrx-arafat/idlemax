@@ -3,7 +3,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use idlemax_core::job_run::{same_process, StopReason};
+use idlemax_core::job_run::{same_process, JobKey, StopReason};
 use idlemax_core::protocol::JobUpdate;
 use idlemax_core::types::{DeviceId, JobId, JobStatus, UnixMs};
 use idlemax_core::Paths;
@@ -34,8 +34,9 @@ pub fn remove(paths: &Paths, id: JobId) {
     }
 }
 
-/// Kills job groups left by a previous agent process and returns Killed updates.
-/// Fails closed: a pid is killed only when its OS start time matches the record.
+/// Kills jobs left by a previous agent process (their group, and members that left it)
+/// and returns Killed updates. Fails closed: the group is killed only when the root's OS
+/// start time matches the record; members found by env tag are killed either way.
 pub fn reap_orphans(
     paths: &Paths,
     device: &DeviceId,
@@ -74,19 +75,36 @@ fn reap_one(
     started_ms: UnixMs,
     now_ms: UnixMs,
 ) -> Option<JobUpdate> {
-    let os_start = procs.start_ms(pid)?;
-    if !same_process(started_ms, os_start) {
-        return None;
-    }
-    if let Err(e) = os::signal_group(pid, Sig::Kill) {
+    // The recorded root is ours to kill only while its start time still matches.
+    let root_same = procs
+        .start_ms(pid)
+        .is_some_and(|os_start| same_process(started_ms, os_start));
+    let job = JobKey {
+        id,
+        root: pid,
+        started_ms,
+    };
+    let left = procs.orphans(&job, root_same).outside_group;
+    let killed = if root_same {
+        os::signal_job(pid, &left, Sig::Kill)
+    } else {
+        os::signal_pids(&left, Sig::Kill);
+        Ok(())
+    };
+    if let Err(e) = killed {
         warn!(job = id, pid, error = %e, "cannot kill orphaned job");
         return None;
     }
-    info!(
-        job = id,
-        pid, "killed orphaned job from a previous agent run"
-    );
-    Some(JobUpdate {
+    if root_same || !left.is_empty() {
+        info!(
+            job = id,
+            pid,
+            outside = left.len(),
+            "killed orphaned job from a previous agent run"
+        );
+    }
+    // A job whose root is already gone is settled by its lease; only a live root is reported.
+    root_same.then(|| JobUpdate {
         id,
         device: device.clone(),
         status: JobStatus::Killed,

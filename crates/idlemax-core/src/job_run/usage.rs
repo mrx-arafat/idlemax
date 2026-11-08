@@ -64,9 +64,21 @@ pub fn could_belong(start_secs: u64, job_started_ms: UnixMs) -> bool {
 /// that carries its env tag (a `setsid` daemon leaves the group but keeps its env), and
 /// the descendants of both. `None` while the root is gone.
 pub fn job_procs(job: &JobKey, procs: &[ProcFact]) -> Option<JobProcs> {
-    if !procs.iter().any(|p| p.pid == job.root) {
-        return None;
-    }
+    procs
+        .iter()
+        .any(|p| p.pid == job.root)
+        .then(|| members(job, procs, true))
+}
+
+/// What a job left behind after its agent died. The group counts only when the recorded
+/// root is still the same process (`root_trusted`): a reused pid would name a stranger's
+/// group. Env-tagged processes and their descendants always count, and `outside_group`
+/// then lists every member to signal by pid.
+pub fn orphan_procs(job: &JobKey, procs: &[ProcFact], root_trusted: bool) -> JobProcs {
+    members(job, procs, root_trusted)
+}
+
+fn members(job: &JobKey, procs: &[ProcFact], by_group: bool) -> JobProcs {
     let mut children: HashMap<u32, Vec<usize>> = HashMap::new();
     for (i, p) in procs.iter().enumerate() {
         if let Some(parent) = p.ppid {
@@ -74,7 +86,7 @@ pub fn job_procs(job: &JobKey, procs: &[ProcFact]) -> Option<JobProcs> {
         }
     }
     let mut stack: Vec<usize> = (0..procs.len())
-        .filter(|&i| is_seed(job, &procs[i]))
+        .filter(|&i| is_seed(job, &procs[i], by_group))
         .collect();
     let mut seen = vec![false; procs.len()];
     let (mut usage, mut outside_group) = (Usage::default(), Vec::new());
@@ -85,20 +97,19 @@ pub fn job_procs(job: &JobKey, procs: &[ProcFact]) -> Option<JobProcs> {
         let p = &procs[i];
         usage.rss_bytes = usage.rss_bytes.saturating_add(p.rss_bytes);
         usage.cpu_pct += p.cpu_pct;
-        if p.pgid != Some(job.root) {
+        if !(by_group && p.pgid == Some(job.root)) {
             outside_group.push(p.pid);
         }
         stack.extend(children.get(&p.pid).into_iter().flatten());
     }
-    Some(JobProcs {
+    JobProcs {
         usage,
         outside_group,
-    })
+    }
 }
 
-fn is_seed(job: &JobKey, p: &ProcFact) -> bool {
-    p.pid == job.root
-        || p.pgid == Some(job.root)
+fn is_seed(job: &JobKey, p: &ProcFact, by_group: bool) -> bool {
+    (by_group && (p.pid == job.root || p.pgid == Some(job.root)))
         || (p.tag == Some(job.id) && could_belong(p.start_secs, job.started_ms))
 }
 
@@ -169,6 +180,22 @@ mod tests {
         outside.sort_unstable();
         assert_eq!(outside, [103, 104, 105]);
         assert_eq!(job_procs(&JOB, &procs[1..]), None, "root gone");
+    }
+
+    #[test]
+    fn orphan_procs_trust_the_group_only_while_the_root_is_the_same_process() {
+        let procs = [
+            fact(102, 1, 100, 4),
+            tagged(fact(104, 1, 104, 16), 7, STARTED_SECS),
+            fact(108, 1, 108, 1 << 20),
+        ];
+        // Root died and its pid may be reused: only the tagged daemon is ours.
+        let gone = orphan_procs(&JOB, &procs, false);
+        assert_eq!(gone.outside_group, [104]);
+        // Root still the same process: the group is ours too, signalled as a group.
+        let alive = orphan_procs(&JOB, &procs, true);
+        assert_eq!(alive.outside_group, [104]);
+        assert_eq!(alive.usage.rss_bytes, 4 + 16);
     }
 
     #[test]
