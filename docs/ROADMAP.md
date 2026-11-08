@@ -142,11 +142,11 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - **How:** Time it first with 10,000 queued jobs and 2 devices; if slow, snapshot under the lock, explain outside it, and pick once per device.
 - **Done when:** `/v1/why?limit=1000` on that queue holds the lock for under 50 ms.
 
-### 27. Small CLI and setup leftovers
+### 27. Give setup its own usage help
 
-- **Why (audit, round 3):** list hints suggest `--limit` values above the server's clamp of 1000, so an agent following them loops; `idlemax setup --coord-url <bad>` prints `help: idlemax job add --help` because setup reuses the job usage helper.
-- **How:** Cap suggested limits at 1000 and say when more exist; give setup its own help line.
-- **Done when:** Both have a focused test.
+- **Why (audit, round 3):** `idlemax setup --coord-url <bad>` prints `help: idlemax job add --help`, because setup reuses the job command's usage helper.
+- **How:** Give setup its own help line (`idlemax setup --help` or an example URL).
+- **Done when:** A focused test pins the setup help line.
 
 ### 28. Confirm two platform claims from the audit
 
