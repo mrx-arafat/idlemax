@@ -148,6 +148,24 @@ impl GuardPolicy {
         }
     }
 
+    /// Raises the job slots and RAM budget to what a bigger machine can take: half its CPUs
+    /// and a quarter of its RAM. The preset is the floor, and a key set in `overrides` wins.
+    pub fn sized_for(
+        mut self,
+        cpu_count: u32,
+        mem_total_bytes: u64,
+        overrides: &toml::Table,
+    ) -> Self {
+        if !overrides.contains_key("max_jobs") {
+            self.max_jobs = self.max_jobs.max(cpu_count / 2);
+        }
+        if !overrides.contains_key("ram_budget_mib") {
+            let quarter = mem_total_bytes / 4 / (1024 * 1024);
+            self.ram_budget_mib = self.ram_budget_mib.max(quarter);
+        }
+        self
+    }
+
     /// Overlays `[guard]` keys; unknown keys or wrong types are errors.
     pub fn with_overrides(&self, overrides: &toml::Table) -> Result<Self, ConfigError> {
         if overrides.is_empty() {

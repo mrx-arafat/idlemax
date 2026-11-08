@@ -66,13 +66,14 @@ pub enum AgentError {
 pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
     state::ensure_dirs(&paths)?;
     let token = state::load_token(&paths)?;
-    let guard = Guard::new(config.guard_policy(Os::current())?);
     let addr = loopback_addr(&config.agent.listen)?;
     let client = CoordClient::new(&config.coordinator.url, &token)?;
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|source| AgentError::Bind { addr, source })?;
     let (probes, device) = open_probes(&paths, &config).await?;
+    let policy = config.guard_policy_for(Os::current(), device.cpu_count, device.mem_total_bytes);
+    let guard = Guard::new(policy?);
     let runner = open_runner(&paths, &device, &config).await?;
     let outbox = DurableOutbox::open(&paths.agent_state_dir(), OUTBOX_CAP, now_ms());
     let shutdown = shutdown_signal()?;

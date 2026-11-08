@@ -161,6 +161,21 @@ impl Config {
         let preset = GuardPolicy::for_profile(self.agent.profile_or_default(os));
         preset.with_overrides(&self.guard)
     }
+
+    /// `guard_policy` with the laptop's job slots and RAM budget sized to this machine. The
+    /// server stays at its preset: the packaged systemd unit caps the agent and its job.
+    pub fn guard_policy_for(
+        &self,
+        os: Os,
+        cpu_count: u32,
+        mem_total_bytes: u64,
+    ) -> Result<GuardPolicy, ConfigError> {
+        let policy = self.guard_policy(os)?;
+        Ok(match self.agent.profile_or_default(os) {
+            DeviceProfile::MacosLaptop => policy.sized_for(cpu_count, mem_total_bytes, &self.guard),
+            DeviceProfile::LinuxServer => policy,
+        })
+    }
 }
 
 /// Token text from the env var or the token file, trimmed; empty or shorter than
@@ -207,6 +222,24 @@ mod tests {
         assert_eq!(parse_token(&format!("  {enough}\n")).unwrap(), enough);
         // What `idlemax init` generates is accepted.
         assert!(parse_token(&encode_token(&[0xab; 32])).is_ok());
+    }
+
+    #[test]
+    fn a_laptop_takes_half_the_cpus_and_a_quarter_of_the_ram_unless_the_config_sets_them() {
+        const GIB: u64 = 1 << 30;
+        let slots_and_ram = |text: &str, cpus: u32, ram: u64| {
+            let config = Config::parse(text).unwrap();
+            let p = config.guard_policy_for(Os::Macos, cpus, ram).unwrap();
+            (p.max_jobs, p.ram_budget_mib)
+        };
+        let laptop = "[agent]\nprofile = \"macos_laptop\"\n";
+        assert_eq!(slots_and_ram(laptop, 10, 16 * GIB), (5, 4096));
+        // A small machine keeps the preset: 2 jobs, 1 GiB.
+        assert_eq!(slots_and_ram(laptop, 2, 2 * GIB), (2, 1024));
+        let pinned = format!("{laptop}[guard]\nmax_jobs = 1\nram_budget_mib = 256\n");
+        assert_eq!(slots_and_ram(&pinned, 10, 16 * GIB), (1, 256));
+        let server = "[agent]\nprofile = \"linux_server\"\n";
+        assert_eq!(slots_and_ram(server, 6, 16 * GIB), (1, 512));
     }
 
     #[test]

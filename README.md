@@ -617,8 +617,10 @@ Linux and a busy machine have not been measured.
 | PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
 | Load per CPU, outside the jobs | > 1.0 | > 2.0 | > 0.75 | > 1.5 | `load_per_cpu_pause`, `load_per_cpu_kill` |
 | Disk free | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | `disk_free_mib_pause`, `disk_free_mib_kill` |
-| Capacity | 2 jobs, 1 GiB total | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
+| Capacity | half the CPUs, a quarter of the RAM (at least 2 jobs, 1 GiB) | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
 
+The laptop sizes its capacity to the machine when the agent starts: a 10 core Mac with 16 GiB runs up to 5 jobs and 4 GiB of job memory, and setting `max_jobs` or `ram_budget_mib` pins that value.
+The server keeps one job and 512 MiB because the packaged systemd unit caps the agent and its job; raise the unit's limits together with these keys.
 Disk is the least free space of `/`, the state dir and the working directory of each running job, because a job fills the filesystem it runs on.
 Below the first disk line nothing new starts and running jobs go on, since pausing a job gives no disk back; below the kill line running jobs are killed.
 Load is the 1 minute load average minus what the running jobs use themselves (their measured CPU, so a busy job never pauses itself), divided by the number of CPUs.
