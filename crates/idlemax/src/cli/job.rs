@@ -13,7 +13,7 @@ use idlemax_core::job_draft::{DraftError, JobDraft};
 use idlemax_core::types::{CostClass, Job, JobSpec};
 use idlemax_core::Paths;
 
-use super::{job_wait, out, print, schedule, why, ApiClient};
+use super::{job_wait, print, schedule, why, ApiClient, Format, Out};
 
 const NOTHING_TO_RUN: &str = "nothing to run: give a spec file (`idlemax job add spec.toml`), \
     `-` to read the spec from stdin, or a command after `--` (`idlemax job add -- cargo test`)\n";
@@ -104,17 +104,17 @@ impl fmt::Display for ExitWith {
 impl std::error::Error for ExitWith {}
 
 /// `idlemax job add`: queue the job, then wait for it when asked.
-pub async fn add(c: &ApiClient, paths: &Paths, args: AddArgs, json: bool) -> Result<()> {
+pub async fn add(c: &ApiClient, paths: &Paths, args: AddArgs, out: &Out) -> Result<()> {
     let (wait, timeout) = (args.wait, args.timeout.map(Duration::from_secs));
     let spec = args.into_spec()?;
     let (job, created) = c
         .add_job(&spec)
         .await
         .map_err(|e| super::hint(e, super::COORD_DOWN))?;
-    announce(&job, created, json, wait);
+    announce(&job, created, out, wait)?;
     why::warn_if_unrunnable(c, &spec).await;
     if wait {
-        job_wait::run(c, paths, job, timeout, json).await
+        job_wait::run(c, paths, job, timeout, out).await
     } else {
         Ok(())
     }
@@ -201,18 +201,16 @@ fn parse_spec(text: &str, origin: &str, schedule_arg: &str) -> Result<JobSpec> {
 
 /// Says the coordinator has the job and what to run next. Stdout carries it unless the
 /// result owns stdout (`--wait`, or `--json` which prints the job).
-fn announce(job: &Job, created: bool, json: bool, waiting: bool) {
-    if json && !waiting {
-        out(true, job, print::job_line);
-    }
+fn announce(job: &Job, created: bool, out: &Out, waiting: bool) -> Result<()> {
     if waiting {
         // The result is coming, so the next steps would only be noise.
         eprintln!("{}", queued_line(job, created));
-    } else if json {
-        eprintln!("{}", queued_text(job, created));
-    } else {
-        println!("{}", queued_text(job, created));
+        return Ok(());
     }
+    if out.format() == Format::Json {
+        eprintln!("{}", queued_text(job, created));
+    }
+    out.emit(job, |j| queued_text(j, created), &[])
 }
 
 fn queued_line(job: &Job, created: bool) -> String {

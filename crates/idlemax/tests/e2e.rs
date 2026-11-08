@@ -133,11 +133,13 @@ impl Api {
     }
 }
 
-/// Runs `idlemax <args>` against the temp state dir, feeding `stdin` when given.
+/// Runs `idlemax <args>` against the temp state dir, feeding `stdin` when given. The checks
+/// below pin the human tables, which a pipe would otherwise replace with TOON.
 fn idlemax(home: &Path, state: &Path, args: &[&str], stdin: Option<&str>) -> std::process::Output {
     use std::io::Write;
     assert_isolated(state);
     let mut child = Command::new(BIN)
+        .args(["--format", "table"])
         .args(args)
         .env("HOME", home)
         .env("IDLEMAX_HOME", state)

@@ -8,7 +8,7 @@ use idlemax_core::job_run::inbox::{parse_note, sort_entries, InboxEntry};
 use idlemax_core::types::JobId;
 use idlemax_core::Paths;
 
-use super::print;
+use super::{print, Out};
 
 /// Reads all notes from `$IDLEMAX_HOME/inbox`, returning them sorted newest first.
 pub fn load_notes(inbox_dir: &Path) -> Result<Vec<InboxEntry>> {
@@ -43,27 +43,32 @@ pub fn load_notes(inbox_dir: &Path) -> Result<Vec<InboxEntry>> {
 }
 
 /// Runs `idlemax inbox [list]`.
-pub fn run_list(paths: &Paths, json: bool) -> Result<()> {
+pub fn run_list(paths: &Paths, out: &Out) -> Result<()> {
     let entries = load_notes(&paths.inbox_dir())?;
-    if json {
-        let json_str =
-            serde_json::to_string_pretty(&entries).context("serializing inbox entries to JSON")?;
-        println!("{json_str}");
-    } else if entries.is_empty() {
-        println!("(inbox is empty)");
-    } else {
-        let header = ["TIME", "JOB", "NAME", "RESULT"];
-        let rows: Vec<Vec<String>> = entries
-            .into_iter()
-            .map(|e| vec![e.time, e.job_id.to_string(), e.name, e.result])
-            .collect();
-        println!("{}", print::table(&header, &rows));
+    out.emit(&entries, |entries| table_text(entries), &[])
+}
+
+fn table_text(entries: &[InboxEntry]) -> String {
+    if entries.is_empty() {
+        return "(inbox is empty)".into();
     }
-    Ok(())
+    let header = ["TIME", "JOB", "NAME", "RESULT"];
+    let rows: Vec<Vec<String>> = entries
+        .iter()
+        .map(|e| {
+            vec![
+                e.time.clone(),
+                e.job_id.to_string(),
+                e.name.clone(),
+                e.result.clone(),
+            ]
+        })
+        .collect();
+    print::table(&header, &rows)
 }
 
 /// Runs `idlemax inbox show <job-id>`.
-pub fn run_show(paths: &Paths, job_id: JobId) -> Result<()> {
+pub fn run_show(paths: &Paths, job_id: JobId, out: &Out) -> Result<()> {
     let entries = load_notes(&paths.inbox_dir())?;
     let matching = entries.into_iter().find(|e| e.job_id == job_id);
     let Some(entry) = matching else {
@@ -72,9 +77,5 @@ pub fn run_show(paths: &Paths, job_id: JobId) -> Result<()> {
     let note_path = paths.inbox_dir().join(&entry.file_name);
     let content = fs::read_to_string(&note_path)
         .with_context(|| format!("reading note at {}", note_path.display()))?;
-    print!("{content}");
-    if !content.ends_with('\n') {
-        println!();
-    }
-    Ok(())
+    out.raw(&content)
 }

@@ -16,7 +16,7 @@ use idlemax_core::types::Os;
 use idlemax_core::{Config, Paths};
 
 use super::service::{self, Ctx, SystemRunner};
-use super::{job::usage_error, statusline, ExitWith};
+use super::{job::usage_error, statusline, ExitWith, Out};
 use crate::state;
 use report::{finish, Status, StepReport};
 use steps::{execute, Env};
@@ -72,7 +72,7 @@ impl From<RoleArg> for Role {
     }
 }
 
-pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, json: bool) -> Result<()> {
+pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Out) -> Result<()> {
     let token = args.token_stdin.then(super::read_token_stdin).transpose()?;
     let request = Request {
         role: args.role.into(),
@@ -97,7 +97,7 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, json: bo
     let doctor = doctor_step(&plan, &env, &steps, coord).await;
     steps.push(doctor.0);
     let report = finish(&plan, args.dry_run, steps, doctor.1);
-    super::out(json, &report, text::render);
+    out.emit(&report, text::render, &[])?;
     if report.ok {
         Ok(())
     } else {

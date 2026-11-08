@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use super::print::table;
 use super::rows;
-use super::{hint, out, ApiClient, COORD_DOWN};
+use super::{hint, ApiClient, Out, COORD_DOWN};
 
 #[derive(Subcommand, Debug)]
 pub enum ScheduleCmd {
@@ -36,25 +36,25 @@ pub enum ScheduleCmd {
     },
 }
 
-pub async fn run(cmd: ScheduleCmd, c: &ApiClient, json: bool, now: UnixMs) -> Result<()> {
-    let result = match cmd {
-        ScheduleCmd::Add { spec, every } => {
-            let new = read_new_schedule(&spec, every)?;
-            c.add_schedule(&new)
-                .await
-                .map(|v| out(json, &v, |v| added(v, now)))
+pub async fn run(cmd: ScheduleCmd, c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
+    let result: Result<()> = async {
+        match cmd {
+            ScheduleCmd::Add { spec, every } => {
+                let new = read_new_schedule(&spec, every)?;
+                let v = c.add_schedule(&new).await?;
+                out.emit(&v, |v| added(v, now), &[])
+            }
+            ScheduleCmd::List => out.emit(&c.schedules().await?, |v| list(v, now), &[]),
+            ScheduleCmd::Rm { id } => out.emit(&c.remove_schedule(id).await?, removed, &[]),
+            ScheduleCmd::Pause { id } => {
+                out.emit(&c.pause_schedule(id).await?, |v| line(v, "paused"), &[])
+            }
+            ScheduleCmd::Resume { id } => {
+                out.emit(&c.resume_schedule(id).await?, |v| line(v, "resumed"), &[])
+            }
         }
-        ScheduleCmd::List => c.schedules().await.map(|v| out(json, &v, |v| list(v, now))),
-        ScheduleCmd::Rm { id } => c.remove_schedule(id).await.map(|v| out(json, &v, removed)),
-        ScheduleCmd::Pause { id } => c
-            .pause_schedule(id)
-            .await
-            .map(|v| out(json, &v, |v| line(v, "paused"))),
-        ScheduleCmd::Resume { id } => c
-            .resume_schedule(id)
-            .await
-            .map(|v| out(json, &v, |v| line(v, "resumed"))),
-    };
+    }
+    .await;
     result.map_err(|e| hint(e, COORD_DOWN))
 }
 

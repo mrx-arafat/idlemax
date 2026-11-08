@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use super::client::ClientError;
 use super::job::ExitWith;
-use super::{out, print, rows, ApiClient};
+use super::{print, rows, ApiClient, Out};
 
 /// Log lines printed with the result.
 const LOG_LINES: usize = 20;
@@ -46,7 +46,7 @@ pub async fn run(
     paths: &Paths,
     job: Job,
     timeout: Option<Duration>,
-    json: bool,
+    out: &Out,
 ) -> Result<()> {
     let started = Instant::now();
     let (job, timed_out) = poll(c, job, timeout).await?;
@@ -57,7 +57,7 @@ pub async fn run(
             log_tail: None,
             timed_out,
         };
-        out(json, &report, |_| timeout_text(&job, waited));
+        out.emit(&report, |_| timeout_text(&job, waited), &[])?;
         return Err(ExitWith(TIMED_OUT_EXIT).into());
     }
     let log = log_of(paths, &job);
@@ -70,7 +70,7 @@ pub async fn run(
         log_tail: lines,
         timed_out,
     };
-    out(json, &report, |_| result_text(&job, &log));
+    out.emit(&report, |_| result_text(&job, &log), &[])?;
     match exit_code(job.status) {
         0 => Ok(()),
         code => Err(ExitWith(code).into()),

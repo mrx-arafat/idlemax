@@ -1,3 +1,135 @@
-//! Delivery: output boundary shared by every command.
+//! Delivery: the output boundary every command prints through.
+//!
+//! A command hands [`Out::emit`] the typed API value, a table renderer and its next-step
+//! hints. The active [`Format`] decides what is printed:
+//! - `table`: the human table (default when stdout is a terminal), hints omitted;
+//! - `toon`: TOON for agents (default when stdout is piped), long text cut unless `--full`,
+//!   hints as a trailing `help[N]:` list;
+//! - `json`: the API value as pretty JSON, untouched.
+//!
+//! Keep decisions out of here: callers pass finished values and finished hint strings.
 
+mod shape;
 pub mod toon;
+
+use std::io::{ErrorKind, Write};
+
+use anyhow::{Context, Result};
+use clap::ValueEnum;
+use serde::Serialize;
+
+use toon::Node;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Format {
+    Table,
+    Toon,
+    Json,
+}
+
+impl Format {
+    /// `--format` wins, then `--json`, then the terminal check: tables for people, TOON for
+    /// whatever reads a pipe.
+    pub fn resolve(explicit: Option<Format>, json_flag: bool, stdout_is_terminal: bool) -> Format {
+        match (explicit, json_flag, stdout_is_terminal) {
+            (Some(f), _, _) => f,
+            (None, true, _) => Format::Json,
+            (None, false, true) => Format::Table,
+            (None, false, false) => Format::Toon,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Out {
+    format: Format,
+    full: bool,
+}
+
+impl Out {
+    pub fn new(format: Format, full: bool) -> Self {
+        Self { format, full }
+    }
+
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
+    /// Prints `value` in the active format. `hints` are complete next-step sentences such
+    /// as ``Run `idlemax why <id>` to see why it waits``; only TOON shows them.
+    pub fn emit<T: Serialize>(
+        &self,
+        value: &T,
+        table: impl FnOnce(&T) -> String,
+        hints: &[String],
+    ) -> Result<()> {
+        self.emit_with(value, table, || Ok(Node::of(value)?), hints)
+    }
+
+    /// Like [`Out::emit`], with a curated TOON `view` in place of the raw value.
+    pub fn emit_with<T: Serialize>(
+        &self,
+        value: &T,
+        table: impl FnOnce(&T) -> String,
+        view: impl FnOnce() -> Result<Node>,
+        hints: &[String],
+    ) -> Result<()> {
+        let text = match self.format {
+            Format::Json => serde_json::to_string_pretty(value).context("encoding JSON")?,
+            Format::Table => table(value),
+            Format::Toon => self.toon(view()?, hints),
+        };
+        print_line(&text)
+    }
+
+    /// Prints content the caller asked for verbatim (a log, a note), whatever the format.
+    pub fn raw(&self, text: &str) -> Result<()> {
+        print_line(text.strip_suffix('\n').unwrap_or(text))
+    }
+
+    fn toon(&self, view: Node, hints: &[String]) -> String {
+        let (view, cut) = if self.full {
+            (view, 0)
+        } else {
+            shape::truncate(view, shape::TEXT_LIMIT)
+        };
+        let mut hints = hints.to_vec();
+        if cut > 0 {
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            hints.push(format!(
+                "Run `{}` to see the complete text of {cut} cut field(s)",
+                shape::with_full(&args)
+            ));
+        }
+        let mut text = toon::encode(&view);
+        if !hints.is_empty() {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&toon::list("help", &hints));
+        }
+        text
+    }
+}
+
+/// One line to stdout; a closed pipe (`| head`) ends output quietly instead of panicking.
+fn print_line(text: &str) -> Result<()> {
+    match writeln!(std::io::stdout().lock(), "{text}") {
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
+        other => other.context("writing to stdout"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_prefers_the_flag_then_json_then_the_terminal() {
+        let r = Format::resolve;
+        assert_eq!(r(Some(Format::Toon), true, true), Format::Toon);
+        assert_eq!(r(None, true, true), Format::Json);
+        assert_eq!(r(None, false, true), Format::Table);
+        assert_eq!(r(None, false, false), Format::Toon);
+    }
+}

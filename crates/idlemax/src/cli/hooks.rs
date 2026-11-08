@@ -13,6 +13,7 @@ use clap::{Args, Subcommand};
 use serde::Serialize;
 
 use super::home::{self, collapse_home, Mode};
+use super::{ExitWith, Out};
 
 #[derive(Args, Debug)]
 pub struct HooksArgs {
@@ -104,16 +105,16 @@ pub struct Report {
     pub skipped: Vec<&'static str>,
 }
 
-pub async fn run(coord: Option<String>, args: HooksArgs, json: bool) -> Result<()> {
+pub async fn run(coord: Option<String>, args: HooksArgs, out: &Out) -> Result<()> {
     let report = match args.cmd {
-        HooksCmd::Summary => return home::run(coord, false, Mode::Hook).await,
+        HooksCmd::Summary => return home::run(coord, out, Mode::Hook).await,
         HooksCmd::Install(c) => agents::install(&c.which, c.dry_run)?,
         HooksCmd::Uninstall(c) => agents::uninstall(&c.which, c.dry_run)?,
         HooksCmd::Status(which) => status::run(&which)?,
     };
-    super::out(json, &report, text);
+    out.emit(&report, text, &[])?;
     if report.agents.iter().any(|a| a.outcome == Outcome::Refused) {
-        std::process::exit(1);
+        return Err(ExitWith(1).into());
     }
     Ok(())
 }

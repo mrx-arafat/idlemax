@@ -17,6 +17,7 @@ use idlemax_core::Paths;
 use serde::Serialize;
 
 use super::files::write_atomic;
+use super::Out;
 use text::{install_text, status_text, uninstall_text};
 
 #[derive(Args, Debug)]
@@ -120,7 +121,7 @@ struct UninstallReport {
     commands: Vec<Step>,
 }
 
-pub fn run(paths: &Paths, args: ServiceArgs, json: bool) -> Result<()> {
+pub fn run(paths: &Paths, args: ServiceArgs, out: &Out) -> Result<()> {
     let platform = Platform::for_os(Os::current())
         .context("`idlemax service` supports macOS and Linux only")?;
     let bin = match &args.cmd {
@@ -135,9 +136,11 @@ pub fn run(paths: &Paths, args: ServiceArgs, json: bool) -> Result<()> {
         ServiceCmd::Install { which, dry_run, .. } => {
             let kinds = kinds(which, &[ServiceKind::Agent]);
             let reports = install(&ctx, paths, &SystemRunner, &kinds, dry_run)?;
-            super::out(json, &reports, |r| {
-                r.iter().map(install_text).collect::<Vec<_>>().join("\n")
-            });
+            out.emit(
+                &reports,
+                |r| r.iter().map(install_text).collect::<Vec<_>>().join("\n"),
+                &[],
+            )?;
         }
         ServiceCmd::Uninstall { which, dry_run } => {
             let reports = uninstall(
@@ -146,13 +149,15 @@ pub fn run(paths: &Paths, args: ServiceArgs, json: bool) -> Result<()> {
                 &kinds(which, &ServiceKind::ALL),
                 dry_run,
             )?;
-            super::out(json, &reports, |r| {
-                r.iter().map(uninstall_text).collect::<Vec<_>>().join("\n")
-            });
+            out.emit(
+                &reports,
+                |r| r.iter().map(uninstall_text).collect::<Vec<_>>().join("\n"),
+                &[],
+            )?;
         }
         ServiceCmd::Status { which } => {
             let all = status(&ctx, &SystemRunner, &kinds(which, &ServiceKind::ALL));
-            super::out(json, &all, |s| status_text(s));
+            out.emit(&all, |s| status_text(s), &[])?;
         }
     }
     Ok(())

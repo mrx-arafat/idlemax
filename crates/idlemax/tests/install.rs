@@ -37,7 +37,10 @@ fn statusline_round_trips_and_service_dry_run_writes_nothing() {
 
     let (ok, text) = idlemax(&home, &["--json", "service", "status"]);
     assert!(ok && text.contains("\"installed\": false"), "{text}");
-    let (ok, text) = idlemax(&home, &["service", "install", "--dry-run"]);
+    let (ok, text) = idlemax(
+        &home,
+        &["--format", "table", "service", "install", "--dry-run"],
+    );
     assert!(ok && text.contains("dry run"), "{text}");
     assert!(!home.join("Library").exists() && !home.join(".config").exists());
 }

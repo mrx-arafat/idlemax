@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::Result;
 use idlemax_core::DEFAULT_COORD_URL;
 
-use super::{ApiClient, ClientError};
+use super::{ApiClient, ClientError, Format, Out};
 use crate::state::{self, StateError};
 pub use render::{collapse_home, Mode, COMMANDS, DESCRIPTION};
 use render::{Home, Reason, State};
@@ -18,13 +18,13 @@ use render::{Home, Reason, State};
 /// A session start must not wait on a coordinator that does not answer.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Prints the home view. `json` applies to the full view only; the hook summary is always text.
-pub async fn run(coord: Option<String>, json: bool, mode: Mode) -> Result<()> {
+/// Prints the home view or, in hook mode, the compact session summary.
+pub async fn run(coord: Option<String>, out: &Out, mode: Mode) -> Result<()> {
     let home = gather(coord).await;
-    super::out(json && mode == Mode::Full, &home, |h| {
-        render::render(h, mode)
-    });
-    Ok(())
+    if out.format() == Format::Json && mode == Mode::Full {
+        return out.emit(&home, |h| render::render(h, mode), &[]);
+    }
+    out.raw(&render::render(&home, mode))
 }
 
 async fn gather(coord: Option<String>) -> Home {

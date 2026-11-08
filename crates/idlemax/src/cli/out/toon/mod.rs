@@ -3,8 +3,6 @@
 //! arrays, tables for uniform objects (with nested field groups), keyed tables for objects
 //! of uniform objects, and list form for everything else.
 
-#![allow(dead_code)] // wired into the output boundary in the next commit
-
 mod scalar;
 #[cfg(test)]
 mod tests;
@@ -21,6 +19,16 @@ type Lines = Vec<(usize, String)>;
 struct Col {
     name: String,
     sub: Vec<Col>,
+}
+
+/// A string array in list form, `name[N]:` then one `- item` per line: valid TOON that reads
+/// better than a comma run for sentences such as next-step hints.
+pub fn list(name: &str, items: &[String]) -> String {
+    let mut text = format!("{}[{}]:", key(name), items.len());
+    for item in items {
+        text.push_str(&format!("\n  - {}", scalar::string(item)));
+    }
+    text
 }
 
 pub fn encode(root: &Node) -> String {

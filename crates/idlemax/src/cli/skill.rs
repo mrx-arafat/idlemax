@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use super::files::read_optional;
 use super::home::{COMMANDS, DESCRIPTION};
+use super::{ExitWith, Format, Out};
 
 /// Where the skill is committed, relative to the repository root.
 pub const DEFAULT_PATH: &str = "skills/idlemax/SKILL.md";
@@ -58,11 +59,10 @@ pub fn generate() -> String {
     out
 }
 
-pub fn run(args: SkillArgs, json: bool) -> Result<()> {
+pub fn run(args: SkillArgs, out: &Out) -> Result<()> {
     let generated = generate();
     let Some(path) = args.check else {
-        print!("{generated}");
-        return Ok(());
+        return out.raw(&generated);
     };
     let committed = read_optional(&path)?;
     let current = committed.as_deref() == Some(generated.as_str());
@@ -70,21 +70,31 @@ pub fn run(args: SkillArgs, json: bool) -> Result<()> {
         path: path.clone(),
         current,
     };
-    super::out(json, &verdict, |v| {
-        let shown = v.path.display();
-        match (&committed, v.current) {
-            (_, true) => format!("skill: {shown} is current"),
-            (None, _) => format!("error: {shown} does not exist\nhelp: Run `idlemax skill > {shown}` to create it"),
-            (Some(old), _) => format!(
-                "error: {shown} is out of date\n{}\nhelp: Run `idlemax skill > {shown}` to regenerate it",
-                line_diff(old, &generated, 2).trim_end()
-            ),
-        }
-    });
+    let text = check_text(&path, committed.as_deref(), &generated);
+    if out.format() == Format::Json {
+        out.emit(&verdict, |_| text.clone(), &[])?;
+    } else {
+        out.raw(&text)?;
+    }
     if !current {
-        std::process::exit(1);
+        return Err(ExitWith(1).into());
     }
     Ok(())
+}
+
+/// The verdict as lines: `skill: ... is current`, or `error:` with the diff and the fix.
+fn check_text(path: &std::path::Path, committed: Option<&str>, generated: &str) -> String {
+    let shown = path.display();
+    match committed {
+        Some(old) if old == generated => format!("skill: {shown} is current"),
+        None => format!(
+            "error: {shown} does not exist\nhelp: Run `idlemax skill > {shown}` to create it"
+        ),
+        Some(old) => format!(
+            "error: {shown} is out of date\n{}\nhelp: Run `idlemax skill > {shown}` to regenerate it",
+            line_diff(old, generated, 2).trim_end()
+        ),
+    }
 }
 
 #[cfg(test)]

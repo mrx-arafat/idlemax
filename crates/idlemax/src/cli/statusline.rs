@@ -16,6 +16,7 @@ use idlemax_core::Paths;
 use serde::Serialize;
 
 use super::files::{backup_path, read_optional, save, write_atomic};
+use super::Out;
 
 #[derive(Args, Debug)]
 pub struct StatuslineArgs {
@@ -110,18 +111,17 @@ struct StatusReport {
     capture_age_secs: Option<u64>,
 }
 
-pub fn run(paths: &Paths, args: StatuslineArgs, json: bool) -> Result<()> {
+pub fn run(paths: &Paths, args: StatuslineArgs, out: &Out) -> Result<()> {
     let places = places(paths)?;
     match args.cmd {
         StatuslineCmd::Install { dry_run } => {
-            super::out(json, &install(&places, dry_run)?, change_text)
+            out.emit(&install(&places, dry_run)?, change_text, &[])
         }
         StatuslineCmd::Uninstall { dry_run } => {
-            super::out(json, &uninstall(&places, dry_run)?, change_text)
+            out.emit(&uninstall(&places, dry_run)?, change_text, &[])
         }
-        StatuslineCmd::Status => super::out(json, &status(&places)?, status_text),
+        StatuslineCmd::Status => out.emit(&status(&places)?, status_text, &[]),
     }
-    Ok(())
 }
 
 pub(super) fn install(p: &Places, dry_run: bool) -> Result<ChangeReport> {

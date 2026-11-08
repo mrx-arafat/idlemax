@@ -31,7 +31,14 @@ impl Home {
     }
 
     fn setup(&self, args: &[&str]) -> Output {
+        // The tests pin the human report unless they ask for JSON.
+        let format: &[&str] = if args.contains(&"--json") {
+            &[]
+        } else {
+            &["--format", "table"]
+        };
         Command::new(BIN)
+            .args(format)
             .arg("setup")
             .args(args)
             .env("HOME", &self.home)

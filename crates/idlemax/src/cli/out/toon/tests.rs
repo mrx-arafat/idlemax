@@ -208,3 +208,15 @@ fn no_trailing_newline_or_spaces() {
     assert!(!out.ends_with('\n'));
     assert!(out.lines().all(|l| l == l.trim_end()), "{out:?}");
 }
+
+#[test]
+fn a_string_list_keeps_one_item_per_line() {
+    let items = [
+        "Run `idlemax why <id>` to see why".to_string(),
+        "a, \"b\"".to_string(),
+    ];
+    assert_eq!(
+        super::list("help", &items),
+        "help[2]:\n  - Run `idlemax why <id>` to see why\n  - \"a, \\\"b\\\"\""
+    );
+}

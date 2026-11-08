@@ -394,7 +394,7 @@ async fn doctor_reports_healthy_and_every_broken_case() {
 
     // The text report prints one line per check and the fix under the broken one.
     let out = Command::new(BIN)
-        .arg("doctor")
+        .args(["--format", "table", "doctor"])
         .env("HOME", &home)
         .env("IDLEMAX_HOME", &state)
         .env_remove("IDLEMAX_TOKEN")
