@@ -44,7 +44,7 @@ pub(super) fn stop(
     now: UnixMs,
     awake_ms: i64,
 ) -> io::Result<()> {
-    if slot.stop.is_some() {
+    if slot.stop.is_some() || slot.child.try_wait()?.is_some() {
         return Ok(());
     }
     os::signal_job(slot.pid, &slot.outside, Sig::Term)?;

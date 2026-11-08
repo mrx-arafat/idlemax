@@ -36,6 +36,34 @@ fn sleeping_past_runtime_survives_until_awake_limit() {
     );
 }
 
+#[test]
+fn an_exited_success_is_not_relabelled_by_kill_or_runtime_enforcement() {
+    for request_kill in [false, true] {
+        let home = tempfile::tempdir().unwrap();
+        let mut r = runner(home.path(), &["sh"]);
+        let mut task = job(85, &["sh", "-c", "exit 0"], 64);
+        task.spec.max_runtime_secs = 1;
+        let wall = crate::state::now_ms();
+        r.start_at(&task, wall, 0).unwrap();
+        wait_until("the job to exit before the stop request", STARVED, || {
+            r.slots
+                .get_mut(&85)
+                .unwrap()
+                .child
+                .try_wait()
+                .unwrap()
+                .is_some()
+        });
+        if request_kill {
+            r.kill(85).unwrap();
+        }
+        let updates = r.poll_at(wall + 2_000, 2_000);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].status, JobStatus::Succeeded);
+        assert_eq!(updates[0].exit_code, Some(0));
+    }
+}
+
 fn runner(home: &Path, allow: &[&str]) -> Runner {
     let config = AgentConfig {
         command_allowlist: allow.iter().map(|s| s.to_string()).collect(),
