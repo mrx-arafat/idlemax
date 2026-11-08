@@ -39,6 +39,15 @@ fn role_entry() {
         }
         // A job that just stays alive.
         "idle" => std::thread::sleep(Duration::from_secs(60)),
+        "escape" => spawn("detached", true),
+        "detached" => {
+            std::fs::write(
+                std::env::var(HOG_PID_FILE).unwrap(),
+                std::process::id().to_string(),
+            )
+            .unwrap();
+            std::thread::sleep(Duration::from_secs(60));
+        }
         // The helper starts the hog and exits, so the hog is reparented to init.
         "helper" => spawn("hog", std::env::var(NEW_GROUP).is_ok()),
         _ => {
@@ -284,4 +293,48 @@ fn a_runner_leaves_the_processes_of_another_agents_job_with_the_same_id_alone() 
     assert!(os::alive(a_root), "B signalled A's job {a_root}");
     a.kill(SHARED_ID).unwrap();
     wait_ended(&mut a, STARVED);
+}
+
+#[test]
+fn a_detached_child_is_collected_when_the_root_exits_before_the_first_scan() {
+    let exe = std::env::current_exe()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let home = tempfile::tempdir().unwrap();
+    let pid_file = home.path().join("detached.pid");
+    let env = [
+        (ROLE, "escape".to_string()),
+        (HOG_PID_FILE, pid_file.to_string_lossy().into_owned()),
+    ];
+    let mut r = runner(home.path(), &exe);
+    r.start(&job(54, &exe, home.path(), &env, 4096)).unwrap();
+    wait_until(
+        "the detached child to start and root to exit",
+        STARVED,
+        || {
+            read_pid(&pid_file).is_some()
+                && r.slots
+                    .get_mut(&54)
+                    .unwrap()
+                    .child
+                    .try_wait()
+                    .unwrap()
+                    .is_some()
+        },
+    );
+    let pid = read_pid(&pid_file).unwrap();
+    assert!(r.slots[&54].outside.is_empty());
+    let updates = r.poll_exits();
+    assert_eq!(updates[0].status, JobStatus::Succeeded);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while os::alive(pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let survived = os::alive(pid);
+    os::signal_pids(&[pid], os::Sig::Kill);
+    assert!(
+        !survived,
+        "detached child {pid} escaped after its root exited"
+    );
 }

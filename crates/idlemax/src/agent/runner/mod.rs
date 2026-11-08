@@ -351,7 +351,20 @@ impl Runner {
             .then_some(job.spec.mem_mb)
     }
 
-    fn close(&self, slot: Slot, status: ExitStatus, now: UnixMs, awake_ms: i64) -> JobUpdate {
+    fn close(
+        &mut self,
+        mut slot: Slot,
+        status: ExitStatus,
+        now: UnixMs,
+        awake_ms: i64,
+    ) -> JobUpdate {
+        if let Some(procs) = self.procs.as_mut() {
+            // The root may have exited before any usage scan saw its detached children.
+            slot.outside
+                .extend(procs.orphans(&slot.key(), false).outside_group);
+            slot.outside.sort_unstable();
+            slot.outside.dedup();
+        }
         if let Err(e) = os::kill_leftovers(slot.pid, &slot.outside) {
             warn!(job = slot.job.id, error = %e, "cannot kill leftover job processes");
         }
