@@ -5,11 +5,6 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::types::{CostClass, JobSpec, SpecError};
 
-/// Attempts for a job built from flags. A command that fails (a red test suite) has
-/// produced its answer; the coordinator would otherwise run it again after 2 and 4 minutes.
-/// A spec file keeps its own `max_attempts` for jobs that should be retried.
-const RUN_ONCE: u32 = 1;
-
 /// The flags of `job add`, before defaults. `None` and empty mean "not given".
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JobDraft {
@@ -70,7 +65,6 @@ impl JobDraft {
             mem_mb: self.mem_mb.unwrap_or(defaults.mem_mb),
             max_runtime_secs: self.max_runtime_secs.unwrap_or(defaults.max_runtime_secs),
             ai_account: self.ai_account,
-            max_attempts: RUN_ONCE,
             ..defaults
         };
         spec.validate()?;

@@ -18,13 +18,11 @@ fn build(d: JobDraft) -> Result<JobSpec, DraftError> {
 }
 
 #[test]
-fn a_bare_command_runs_once_and_is_named_after_its_file() {
+fn a_bare_command_gets_the_spec_defaults_and_its_file_name_as_the_name() {
     let spec = build(draft(&["/usr/bin/cargo", "test", "-q"])).unwrap();
     let expected = JobSpec {
         name: "cargo".into(),
         command: vec!["/usr/bin/cargo".into(), "test".into(), "-q".into()],
-        // A failing command is a result to report, not something to run twice more.
-        max_attempts: 1,
         ..JobSpec::default()
     };
     assert_eq!(spec, expected);
