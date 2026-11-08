@@ -12,7 +12,7 @@ pub enum ConfigError {
     Parse(#[from] toml::de::Error),
     #[error("serialize: {0}")]
     Serialize(#[from] toml::ser::Error),
-    #[error("[guard]: {0}")]
+    #[error("{0}")]
     Guard(String),
     #[error("[quota]: {0}")]
     Quota(#[from] QuotaConfigError),
@@ -288,14 +288,25 @@ impl GuardPolicy {
             return Ok(self.clone());
         }
         let mut table =
-            toml::Table::try_from(self).map_err(|e| ConfigError::Guard(e.to_string()))?;
+            toml::Table::try_from(self).map_err(|e| ConfigError::Guard(format!("[guard]: {e}")))?;
         for (k, v) in overrides {
             table.insert(k.clone(), v.clone());
         }
         toml::Value::Table(table)
             .try_into()
-            .map_err(|e: toml::de::Error| ConfigError::Guard(e.to_string()))
+            .map_err(|e: toml::de::Error| guard_error(&e))
     }
+}
+
+/// toml words a bad value as "<message>\nin `<key>`\n"; this writes it on one line as
+/// "guard.<key>: <message>" so the key path leads.
+fn guard_error(e: &toml::de::Error) -> ConfigError {
+    let shown = e.to_string();
+    let shown = shown.trim_end();
+    ConfigError::Guard(match shown.rsplit_once("\nin `") {
+        Some((message, key)) => format!("guard.{}: {message}", key.trim_end_matches('`')),
+        None => format!("[guard]: {shown}"),
+    })
 }
 
 /// Token text from the env var or the token file, trimmed; empty is an error.
@@ -328,5 +339,16 @@ mod tests {
 
         let custom_cfg: Config = toml::from_str("[agent]\nnotify = true\n").unwrap();
         assert!(custom_cfg.agent.notify);
+    }
+
+    #[test]
+    fn a_bad_guard_value_is_one_line_naming_its_key() {
+        let err = Config::parse("[guard]\nswap_growth_kill = 100000000000\n").unwrap_err();
+        let msg = err.to_string();
+        assert_eq!(msg.lines().count(), 1, "{msg:?}");
+        assert!(
+            msg.starts_with("guard.swap_growth_kill: invalid type"),
+            "{msg:?}"
+        );
     }
 }

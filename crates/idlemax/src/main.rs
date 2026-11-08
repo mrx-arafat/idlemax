@@ -6,6 +6,7 @@ mod agent;
 mod cli;
 mod coord;
 mod doctor;
+mod error_text;
 mod state;
 mod tui;
 
@@ -19,7 +20,7 @@ async fn main() -> ExitCode {
             // The command already printed its result; the code is the message.
             Some(cli::ExitWith(code)) => ExitCode::from(*code),
             None => {
-                eprintln!("idlemax: {e:#}");
+                eprintln!("idlemax: {}", error_text::render(&e));
                 ExitCode::FAILURE
             }
         },
