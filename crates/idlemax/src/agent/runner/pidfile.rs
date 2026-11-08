@@ -9,6 +9,7 @@ use idlemax_core::job_run::{
     orphan_verdict, same_process, ExitMarker, JobKey, OrphanVerdict, RunClock, StopReason,
 };
 use idlemax_core::protocol::JobUpdate;
+use idlemax_core::reconcile::KillOrder;
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Paths;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ use super::os::{self, ProcTable, Sig};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Saved {
     pub job: Job,
+    #[serde(default)]
+    pub stop: Option<KillOrder>,
     /// The attempt tag in the env of the job's processes; 0 in a file an older agent wrote.
     #[serde(default)]
     pub tag: u64,
@@ -70,7 +73,19 @@ pub fn write(
         .truncate(true)
         .open(&tmp)?;
     out.write_all(format!("{pid} {started_ms}\n{json}\n").as_bytes())?;
+    out.sync_all()?;
     std::fs::rename(tmp, path)
+}
+
+/// Persist the stop intent before signalling, so recovery retains its retry policy.
+pub fn write_stop(paths: &Paths, id: JobId, order: &KillOrder) -> io::Result<()> {
+    let record = parse(&file(paths, id))
+        .ok_or_else(|| io::Error::other("cannot read job recovery record"))?;
+    let mut saved = record
+        .saved
+        .ok_or_else(|| io::Error::other("job recovery record has no saved job"))?;
+    saved.stop = Some(order.clone());
+    write(paths, id, record.pid, record.started_ms, saved)
 }
 
 /// Forgets a job's files. A missing file is fine.
@@ -196,30 +211,45 @@ fn recovered(
     let ended = Ended {
         job: saved.job.clone(),
         exit: marker.exit(),
-        stop: None,
+        stop: saved.stop.as_ref().map(|_| StopReason::Requested),
         clock: RunClock::start(record.started_ms, 0),
         active_ms: (marker.ended_ms - record.started_ms).max(0),
         log_path: paths.job_log_file(record.id),
         log_offset: saved.log_offset,
         memory_cap_mib: saved.memory_cap_mib,
     };
-    let update = finish::finish(paths, device, &saved.wrapper, ended, marker.ended_ms);
+    let update = apply_stop(
+        finish::finish(paths, device, &saved.wrapper, ended, marker.ended_ms),
+        record,
+    );
     info!(job = record.id, status = %update.status, "reporting a job that ended while the agent was down");
     Some(update)
 }
 
 fn orphaned(device: &DeviceId, record: &Record, now_ms: UnixMs) -> JobUpdate {
-    JobUpdate {
-        id: record.id,
-        device: device.clone(),
-        attempt: record.saved.as_ref().map_or(0, |s| s.job.attempts),
-        status: JobStatus::Killed,
-        at_ms: now_ms,
-        error: StopReason::Orphaned.message(),
-        // The agent restarted under the job; that is not the job's fault.
-        retryable: true,
-        ..JobUpdate::default()
+    apply_stop(
+        JobUpdate {
+            id: record.id,
+            device: device.clone(),
+            attempt: record.saved.as_ref().map_or(0, |s| s.job.attempts),
+            status: JobStatus::Killed,
+            at_ms: now_ms,
+            error: StopReason::Orphaned.message(),
+            // The agent restarted under the job; that is not the job's fault.
+            retryable: true,
+            ..JobUpdate::default()
+        },
+        record,
+    )
+}
+
+fn apply_stop(mut update: JobUpdate, record: &Record) -> JobUpdate {
+    if let Some(order) = record.saved.as_ref().and_then(|s| s.stop.as_ref()) {
+        update.error = Some(order.reason.clone());
+        update.retryable = order.retryable;
+        update.owner_stop = order.owner_stop;
     }
+    update
 }
 
 fn parse(path: &Path) -> Option<Record> {

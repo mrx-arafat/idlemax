@@ -60,7 +60,7 @@ pub struct TrackedJob {
 /// Why a job is killed. `owner_stop` marks the owner's local stop-all, which the
 /// coordinator treats as final. `retryable` marks a kill that is not the job's fault (the
 /// guard, an agent shutting down), after which the coordinator may run the job again.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct KillOrder {
     pub reason: String,
     pub owner_stop: bool,

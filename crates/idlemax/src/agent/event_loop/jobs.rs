@@ -116,7 +116,7 @@ fn execute(runner: &mut Runner, action: &AgentAction) -> Result<(), String> {
         AgentAction::Start(job) => runner.start(job),
         AgentAction::Pause(id) => runner.pause(*id),
         AgentAction::Resume(id) => runner.resume(*id),
-        AgentAction::Kill { id, .. } => runner.kill(*id),
+        AgentAction::Kill { id, order } => runner.kill_ordered(*id, order),
         AgentAction::Return { .. } => return Ok(()),
     };
     done.map_err(|e| e.to_string())

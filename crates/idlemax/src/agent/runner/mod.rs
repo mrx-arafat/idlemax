@@ -22,6 +22,7 @@ use std::time::Instant;
 use idlemax_core::config::AgentConfig;
 use idlemax_core::job_run::{self, ExitInfo, JobKey, RunClock, StopReason, Wrapper};
 use idlemax_core::protocol::{JobUpdate, RunningJob};
+use idlemax_core::reconcile::KillOrder;
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Paths;
 use tracing::{info, warn};
@@ -138,6 +139,7 @@ impl Runner {
             launch::launch(&self.paths, &self.wrapper, supervisor, job, started_ms, tag)?;
         let saved = Saved {
             job: job.clone(),
+            stop: None,
             tag,
             log_offset: launched.log_offset,
             wrapper: self.wrapper.name().to_string(),
@@ -195,13 +197,40 @@ impl Runner {
 
     /// SIGTERM the group (SIGCONT too if paused); `poll` sends SIGKILL after 15 s.
     /// The Killed update carries `error: None` so the caller can add its reason.
-    pub fn kill(&mut self, id: JobId) -> Result<(), RunnerError> {
+    pub fn kill_ordered(&mut self, id: JobId, order: &KillOrder) -> Result<(), RunnerError> {
+        let Some(slot) = self.slots.get_mut(&id) else {
+            return Ok(());
+        };
+        if slot.stop.is_some()
+            || slot
+                .child
+                .try_wait()
+                .map_err(|source| RunnerError::Signal { id, source })?
+                .is_some()
+        {
+            return Ok(());
+        }
+        if let Err(e) = pidfile::write_stop(&self.paths, id, order) {
+            warn!(job = id, error = %e, "cannot persist job stop; recovery may lose its reason");
+        }
         let awake_ms = self.awake_ms();
         match self.slots.get_mut(&id) {
             Some(slot) => stop(slot, StopReason::Requested, now_ms(), awake_ms)
                 .map_err(|source| RunnerError::Signal { id, source }),
             None => Ok(()),
         }
+    }
+
+    #[cfg(test)]
+    pub fn kill(&mut self, id: JobId) -> Result<(), RunnerError> {
+        self.kill_ordered(
+            id,
+            &KillOrder {
+                reason: "killed by agent".into(),
+                owner_stop: false,
+                retryable: false,
+            },
+        )
     }
 
     /// Enforces max runtime and the memory cap, escalates kills, reaps exits.

@@ -434,6 +434,65 @@ fn a_job_that_ended_while_the_agent_was_down_is_reported_with_its_real_exit() {
 }
 
 #[test]
+fn a_requested_stop_does_not_become_a_plain_signal_failure_after_restart() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    let mut first = runner(home.path(), &["sh"]);
+    supervised(&mut first);
+    first
+        .start(&job(86, &["sh", "-c", "echo ready; sleep 60"], 64))
+        .unwrap();
+    wait_until("the supervised job to start", STARVED, || {
+        std::fs::read_to_string(paths.job_log_file(86)).is_ok_and(|s| s.contains("ready"))
+    });
+    let pid = first.running()[0].pid.unwrap();
+    first
+        .kill_ordered(
+            86,
+            &idlemax_core::reconcile::KillOrder {
+                reason: "agent shutting down".into(),
+                owner_stop: false,
+                retryable: true,
+            },
+        )
+        .unwrap();
+    let update = wait_ended(&mut first, STARVED);
+    assert_eq!(update.status, JobStatus::Killed);
+    // libtest has extra threads that receive SIGTERM; emulate the single-threaded
+    // production supervisor's exit record after observing the real stopped job.
+    let marker = idlemax_core::job_run::ExitMarker::new(
+        pid,
+        crate::state::now_ms(),
+        idlemax_core::job_run::ExitInfo {
+            code: None,
+            signal: Some(15),
+        },
+    );
+    std::fs::write(super::pidfile::marker_path(&paths, 86), marker.encode()).unwrap();
+    // Crash after reaping, before the next poll removes the recovery files.
+    drop(first);
+    let mut restarted = runner(home.path(), &["sh"]);
+    let updates = restarted.poll();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].status, JobStatus::Killed);
+    assert!(updates[0].retryable);
+    assert_eq!(updates[0].error.as_deref(), Some("agent shutting down"));
+}
+
+#[test]
+fn a_stop_still_protects_the_machine_when_its_record_cannot_be_written() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    r.start(&job(87, &["sh", "-c", "sleep 60"], 64)).unwrap();
+    let tmp = Paths::new(home.path())
+        .agent_state_dir()
+        .join("jobs/87.pid.tmp");
+    std::fs::create_dir(tmp).unwrap();
+    r.kill(87).unwrap();
+    assert_eq!(wait_ended(&mut r, STARVED).status, JobStatus::Killed);
+}
+
+#[test]
 fn a_pause_the_job_did_not_honour_is_applied_again_on_the_next_poll() {
     use nix::sys::signal::{killpg, Signal};
     let home = tempfile::tempdir().unwrap();

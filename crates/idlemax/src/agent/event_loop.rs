@@ -199,6 +199,7 @@ impl Agent {
             tokio::time::sleep(Duration::from_millis(500)).await;
             self.reap().await;
         }
+        self.reap().await;
         let left = self.state.jobs().count();
         if left > 0 {
             warn!(left, "jobs still exiting at shutdown");
