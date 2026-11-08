@@ -20,6 +20,23 @@ pub fn wrapped_lines(text: &str, width: usize, max: usize) -> usize {
         .clamp(1, max.max(1))
 }
 
+/// `parts` joined by " | ", as one line when it fits `width`, else as several lines
+/// that break only between parts.
+pub fn join_parts(parts: &[String], width: usize) -> Vec<String> {
+    const SEP: &str = " | ";
+    let mut lines: Vec<String> = Vec::new();
+    for part in parts {
+        match lines.last_mut() {
+            Some(line) if line.chars().count() + SEP.len() + part.chars().count() <= width => {
+                line.push_str(SEP);
+                line.push_str(part);
+            }
+            _ => lines.push(part.clone()),
+        }
+    }
+    lines
+}
+
 /// Tab labels as "1 Devices (3)" when they all fit in `width`, else "1 Devices".
 /// The widget adds one space of padding on each side and a one character divider.
 pub fn tab_titles(tabs: &[(&str, usize)], width: usize) -> Vec<String> {
@@ -55,4 +72,74 @@ pub fn fit_hints(hints: &[(u8, String)], width: usize) -> String {
         .map(|h| h.1.as_str())
         .collect::<Vec<_>>()
         .join("  ")
+}
+
+/// Space between table columns.
+const GAP: usize = 2;
+
+/// Which columns a table shows and how wide each one is.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Fit {
+    /// Column indexes that survive, in order.
+    pub keep: Vec<usize>,
+    /// Width of each kept column.
+    pub widths: Vec<usize>,
+}
+
+/// Fits columns with natural widths `natural` into `avail` characters.
+///
+/// Only `flex` columns (free text) shrink, evenly; every other column keeps its
+/// natural width so numbers and states are never cut. When a flex column would end
+/// up narrower than `min_width`, the next column of `drop_order` is removed instead.
+pub fn fit_columns(
+    natural: &[usize],
+    flex: &[usize],
+    drop_order: &[usize],
+    min_width: usize,
+    avail: usize,
+) -> Fit {
+    let mut keep: Vec<usize> = (0..natural.len()).collect();
+    let mut drops = drop_order.iter();
+    loop {
+        let widths = shrink(&keep, natural, flex, avail);
+        let squeezed = keep
+            .iter()
+            .zip(&widths)
+            .any(|(c, w)| flex.contains(c) && *w < natural[*c] && *w < min_width);
+        let Some(next) = squeezed.then(|| drops.next()).flatten() else {
+            return Fit { keep, widths };
+        };
+        keep.retain(|c| c != next);
+    }
+}
+
+/// Widths for `keep`: flex columns share what the fixed ones and the gaps leave.
+fn shrink(keep: &[usize], natural: &[usize], flex: &[usize], avail: usize) -> Vec<usize> {
+    let fixed: usize = keep
+        .iter()
+        .filter(|c| !flex.contains(c))
+        .map(|c| natural[*c])
+        .sum();
+    let room = avail.saturating_sub(GAP * keep.len().saturating_sub(1) + fixed);
+    let wants: Vec<usize> = keep
+        .iter()
+        .filter(|c| flex.contains(c))
+        .map(|c| natural[*c])
+        .collect();
+    let mut level = wants.iter().copied().max().unwrap_or(0);
+    while level > 1 && wants.iter().map(|w| (*w).min(level)).sum::<usize>() > room {
+        level -= 1;
+    }
+    // Hand out what the even cut left over, one character at a time.
+    let mut spare = room.saturating_sub(wants.iter().map(|w| (*w).min(level)).sum());
+    keep.iter()
+        .map(|c| {
+            if !flex.contains(c) {
+                return natural[*c];
+            }
+            let extra = usize::from(natural[*c] > level && spare > 0);
+            spare -= extra;
+            natural[*c].min(level) + extra
+        })
+        .collect()
 }

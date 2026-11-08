@@ -32,16 +32,12 @@ pub fn table(header: &[&str], rows: &[Vec<String>]) -> String {
 
 /// One line: version, pause state, non-zero job counts, open advice.
 pub fn summary(s: &ClusterStatus) -> String {
-    format!("coordinator {} | {}", s.version, status_line(s))
+    summary_parts(s).join(" | ")
 }
 
-/// `summary` without the version, for screens too narrow to show it.
-pub fn status_line(s: &ClusterStatus) -> String {
+/// The pieces of `summary`, so a narrow screen can drop or wrap them whole.
+pub fn summary_parts(s: &ClusterStatus) -> Vec<String> {
     let global = if s.global_paused { "PAUSED" } else { "running" };
-    let accounts = match s.paused_accounts.as_slice() {
-        [] => String::new(),
-        list => format!(" | paused accounts: {}", list.join(", ")),
-    };
     let j = &s.jobs;
     let mut jobs = vec![format!("{} running", j.running + j.leased)];
     for (n, word) in [
@@ -54,11 +50,16 @@ pub fn status_line(s: &ClusterStatus) -> String {
             jobs.push(format!("{n} {word}"));
         }
     }
-    format!(
-        "global: {global}{accounts} | jobs: {} | advice: {} open",
-        jobs.join(", "),
-        s.open_advice
-    )
+    let mut parts = vec![
+        format!("coordinator {}", s.version),
+        format!("global: {global}"),
+    ];
+    if !s.paused_accounts.is_empty() {
+        parts.push(format!("paused accounts: {}", s.paused_accounts.join(", ")));
+    }
+    parts.push(format!("jobs: {}", jobs.join(", ")));
+    parts.push(format!("advice: {} open", s.open_advice));
+    parts
 }
 
 /// "pause device mac", "stop_all global".

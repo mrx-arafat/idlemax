@@ -5,19 +5,25 @@ use idlemax_core::types::{EventKind, JobStatus, Recommendation, RecommendationSt
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Tabs, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, TableState, Tabs, Wrap};
 use ratatui::Frame;
 
 use super::app::{App, Tab};
 use super::feed::Snapshot;
-use super::layout::{ellipsize, fit_hints, tab_titles, wrapped_lines};
-use crate::cli::print::{status_line, summary};
+use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, wrapped_lines};
+use super::table::{self, empty_state, table};
+use crate::cli::print::summary_parts;
 use crate::cli::rows::{self, rel};
 
 pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
     let width = usize::from(f.area().width);
     let status = status_text(app, width);
-    let status_rows = u16::try_from(wrapped_lines(&status.0, width, 3)).unwrap_or(1);
+    let status_rows = status
+        .0
+        .iter()
+        .map(|l| wrapped_lines(l, width, 3))
+        .sum::<usize>();
+    let status_rows = u16::try_from(status_rows.clamp(1, 3)).unwrap_or(1);
     let [header, tabs, body, footer] = Layout::vertical([
         Constraint::Length(1 + status_rows),
         Constraint::Length(1),
@@ -43,21 +49,30 @@ pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
     }
 }
 
-/// Second header line and whether it is an error: the coordinator error, or the
-/// status summary, which drops the version when the full line would not fit.
-fn status_text(app: &App, width: usize) -> (String, bool) {
+/// Header lines under the title and whether they are an error: the coordinator
+/// error, or the status summary, which drops the version and then wraps between
+/// its parts when it is too wide.
+fn status_text(app: &App, width: usize) -> (Vec<String>, bool) {
     match (&app.fetch_error, &app.data) {
-        (Some(e), _) => (format!("coordinator unreachable: {e}"), true),
+        (Some(e), _) => (vec![format!("coordinator unreachable: {e}")], true),
         (None, Some(d)) => {
-            let full = summary(&d.status);
-            let fits = full.chars().count() <= width;
-            (if fits { full } else { status_line(&d.status) }, false)
+            let mut parts = summary_parts(&d.status);
+            if parts.join(" | ").chars().count() > width {
+                parts.remove(0);
+            }
+            (join_parts(&parts, width), false)
         }
-        (None, None) => (String::new(), false),
+        (None, None) => (vec![String::new()], false),
     }
 }
 
-fn render_header(f: &mut Frame, area: Rect, app: &App, status: &(String, bool), now_ms: UnixMs) {
+fn render_header(
+    f: &mut Frame,
+    area: Rect,
+    app: &App,
+    status: &(Vec<String>, bool),
+    now_ms: UnixMs,
+) {
     let state = match app.data.as_ref().map(|d| d.status.global_paused) {
         Some(true) => Span::styled(
             " GLOBAL PAUSED ",
@@ -82,14 +97,13 @@ fn render_header(f: &mut Frame, area: Rect, app: &App, status: &(String, bool), 
         state,
         Span::raw(updated).dark_gray(),
     ]);
-    let second = match status {
-        (text, true) => Line::from(text.clone()).red(),
-        (text, false) => Line::from(text.clone()),
-    };
-    f.render_widget(
-        Paragraph::new(vec![top, second]).wrap(Wrap { trim: true }),
-        area,
-    );
+    let (lines, is_error) = status;
+    let mut text = vec![top];
+    text.extend(lines.iter().map(|l| match is_error {
+        true => Line::from(l.clone()).red(),
+        false => Line::from(l.clone()),
+    }));
+    f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), area);
 }
 
 fn render_tabs(f: &mut Frame, area: Rect, app: &App) {
@@ -116,14 +130,14 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
                 };
                 (rows::device_cells(v, now_ms), style)
             });
-            table(f, area, &rows::DEVICE_HEADER, rows.collect(), state);
+            table(f, area, &table::DEVICES, rows.collect(), state);
         }
         Tab::Jobs => {
             let rows = d
                 .jobs
                 .iter()
                 .map(|j| (rows::job_cells(j, now_ms), job_style(j.status)));
-            table(f, area, &rows::JOB_HEADER, rows.collect(), state);
+            table(f, area, &table::JOBS, rows.collect(), state);
         }
         Tab::Quota => {
             let rows = d.quota.iter().map(|q| {
@@ -135,7 +149,7 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
                 };
                 (rows::quota_cells(q, paused, now_ms), style)
             });
-            table(f, area, &rows::QUOTA_HEADER, rows.collect(), state);
+            table(f, area, &table::QUOTA, rows.collect(), state);
         }
         Tab::Advice => render_advice(f, area, d, state, now_ms),
         Tab::Events => {
@@ -147,14 +161,14 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
                 };
                 (rows::event_cells(e), style)
             });
-            table(f, area, &rows::EVENT_HEADER, rows.collect(), state);
+            table(f, area, &table::EVENTS, rows.collect(), state);
         }
         Tab::Schedules => {
             let rows = d
                 .schedules
                 .iter()
                 .map(|v| (rows::schedule_cells(v, now_ms), schedule_style(v)));
-            table(f, area, &rows::SCHEDULE_HEADER, rows.collect(), state);
+            table(f, area, &table::SCHEDULES, rows.collect(), state);
         }
     }
 }
@@ -185,53 +199,15 @@ fn job_style(s: JobStatus) -> Style {
     }
 }
 
-/// Column widths fit the content; the last column takes the rest.
-fn table(
-    f: &mut Frame,
-    area: Rect,
-    header: &[&str],
-    rows: Vec<(Vec<String>, Style)>,
-    state: &mut TableState,
-) {
-    let mut widths: Vec<usize> = header.iter().map(|h| h.len()).collect();
-    for (cells, _) in &rows {
-        for (w, c) in widths.iter_mut().zip(cells) {
-            *w = (*w).max(c.chars().count());
-        }
-    }
-    let last = widths.len().saturating_sub(1);
-    let constraints: Vec<Constraint> = widths
-        .iter()
-        .enumerate()
-        .map(|(i, w)| {
-            if i == last {
-                Constraint::Fill(1)
-            } else {
-                Constraint::Length(clamp_u16(*w))
-            }
-        })
-        .collect();
-    let head =
-        Row::new(header.iter().map(|h| Cell::from(*h))).style(Style::new().bold().underlined());
-    let body = rows
-        .into_iter()
-        .map(|(cells, style)| Row::new(cells).style(style));
-    let t = Table::new(body, constraints)
-        .header(head)
-        .block(Block::bordered())
-        .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
-        .column_spacing(2)
-        .highlight_symbol("> ");
-    f.render_stateful_widget(t, area, state);
-}
-
-fn clamp_u16(n: usize) -> u16 {
-    u16::try_from(n).unwrap_or(u16::MAX)
-}
-
 fn render_advice(f: &mut Frame, area: Rect, d: &Snapshot, state: &mut TableState, now_ms: UnixMs) {
+    if d.advice.is_empty() {
+        return empty_state(f, area, table::ADVICE.empty);
+    }
+    // The list takes what its rows need (at most 55%); the details get the rest.
+    let wanted = u16::try_from(d.advice.len() + 3).unwrap_or(u16::MAX);
+    let list_height = wanted.min(area.height * 55 / 100);
     let [list, detail] =
-        Layout::vertical([Constraint::Percentage(55), Constraint::Min(5)]).areas(area);
+        Layout::vertical([Constraint::Length(list_height), Constraint::Min(5)]).areas(area);
     let rows = d.advice.iter().map(|r| {
         let style = match r.status {
             RecommendationStatus::Open => Style::new(),
@@ -239,7 +215,7 @@ fn render_advice(f: &mut Frame, area: Rect, d: &Snapshot, state: &mut TableState
         };
         (rows::advice_cells(r, now_ms), style)
     });
-    table(f, list, &rows::ADVICE_HEADER, rows.collect(), state);
+    table(f, list, &table::ADVICE, rows.collect(), state);
     let selected = state.selected().and_then(|i| d.advice.get(i));
     let text = selected.map_or_else(|| vec![Line::from("no advice")], advice_detail);
     let p = Paragraph::new(text)
@@ -260,7 +236,7 @@ fn advice_detail(r: &Recommendation) -> Vec<Line<'static>> {
         ))
         .dark_gray(),
     ];
-    lines.extend(r.evidence.iter().map(|e| Line::from(format!("- {e}"))));
+    // What accepting does comes before the evidence: a long list must not push it off screen.
     if let Some(job) = &r.suggested_job {
         lines.push(
             Line::from(format!(
@@ -271,6 +247,7 @@ fn advice_detail(r: &Recommendation) -> Vec<Line<'static>> {
             .cyan(),
         );
     }
+    lines.extend(r.evidence.iter().map(|e| Line::from(format!("- {e}"))));
     lines
 }
 
