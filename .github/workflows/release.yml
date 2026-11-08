@@ -1,0 +1,136 @@
+name: Release
+
+# Push a tag such as v0.2.0 to build the binaries and publish the GitHub release.
+# The tag must match the workspace version in Cargo.toml. Nothing here creates a tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: check tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH (optionally -suffix)"
+            exit 1
+          fi
+          crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$version" != "$crate" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $crate in Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin, smoke: true }
+          # Cross-built on the arm64 runner; it may not run there, so it is only inspected.
+          - { os: macos-latest, target: x86_64-apple-darwin, smoke: false }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, smoke: true }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, smoke: true }
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      COPYFILE_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked -p idlemax --target "$TARGET"
+      - name: Package
+        run: |
+          set -euo pipefail
+          name="idlemax-${VERSION}-${TARGET}"
+          mkdir -p "dist/stage/$name"
+          cp "target/${TARGET}/release/idlemax" "dist/stage/$name/"
+          cp -R LICENSE README.md CHANGELOG.md packaging "dist/stage/$name/"
+          tar -czf "dist/${name}.tar.gz" -C dist/stage "$name"
+          rm -rf dist/stage
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
+          cat "${name}.tar.gz.sha256"
+      - name: Smoke test the archive
+        if: matrix.smoke
+        run: |
+          set -euo pipefail
+          name="idlemax-${VERSION}-${TARGET}"
+          tmp=$(mktemp -d)
+          tar -xzf "dist/${name}.tar.gz" -C "$tmp"
+          test "$("$tmp/$name/idlemax" --version)" = "idlemax ${VERSION}"
+      - name: Inspect the cross-built binary
+        if: ${{ !matrix.smoke }}
+        run: |
+          set -euo pipefail
+          file "target/${TARGET}/release/idlemax" | grep -q x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - run: ls -l dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  install-check:
+    name: install check (${{ matrix.os }})
+    needs: [preflight, publish]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the published release
+        env:
+          IDLEMAX_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -eu
+          export IDLEMAX_INSTALL_DIR="$RUNNER_TEMP/bin"
+          sh scripts/install.sh
+          test "$("$IDLEMAX_INSTALL_DIR/idlemax" --version)" = "idlemax ${IDLEMAX_VERSION}"
