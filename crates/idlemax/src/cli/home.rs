@@ -12,8 +12,8 @@ use idlemax_core::DEFAULT_COORD_URL;
 
 use super::{ApiClient, ClientError};
 use crate::state::{self, StateError};
-pub use render::{collapse_home, Mode};
-use render::{Home, Reason, State, DESCRIPTION};
+pub use render::{collapse_home, Mode, COMMANDS, DESCRIPTION};
+use render::{Home, Reason, State};
 
 /// A session start must not wait on a coordinator that does not answer.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(3);

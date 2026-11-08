@@ -39,7 +39,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("idlemax advise", "review the advisor's recommendations"),
     (
         "idlemax pause",
-        "hold jobs everywhere, or on one --device, --account or --job",
+        "hold jobs everywhere, or on one `--device`, `--account` or `--job`",
     ),
     ("idlemax stop-all", "kill running jobs and hold new ones"),
     (

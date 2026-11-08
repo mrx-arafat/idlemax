@@ -13,6 +13,7 @@ pub mod print;
 pub mod rows;
 mod schedule;
 mod service;
+mod skill;
 mod statusline;
 pub mod why;
 
@@ -121,6 +122,8 @@ enum Cmd {
     Local(LocalCmd),
     /// Session hooks for coding agents
     Hooks(hooks::HooksArgs),
+    /// Print the agent skill, or check the committed copy is current
+    Skill(skill::SkillArgs),
 }
 
 #[derive(Args, Debug)]
@@ -233,6 +236,7 @@ pub async fn run() -> Result<()> {
     let cmd = match cmd {
         Cmd::Doctor => return run_doctor(coord, json).await,
         Cmd::Hooks(args) => return hooks::run(coord, args, json).await,
+        Cmd::Skill(args) => return skill::run(args, json),
         other => other,
     };
     let paths = state::paths_from_env()?;
@@ -399,7 +403,8 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
         | Cmd::Logs { .. }
         | Cmd::Inbox { .. }
         | Cmd::Doctor
-        | Cmd::Hooks(_) => {
+        | Cmd::Hooks(_)
+        | Cmd::Skill(_) => {
             bail!("not a coordinator command")
         }
     };
