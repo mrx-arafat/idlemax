@@ -197,3 +197,23 @@ fn tick_pauses_resumes_kills_starts_and_returns_leases() {
     };
     assert!(state.finished(killed).owner_stop);
 }
+
+#[test]
+fn updates_carry_the_attempt_they_belong_to() {
+    let mut leased = job(1, 100, ActivePolicy::Pause);
+    leased.attempts = 2;
+    let g = run(9, 9999, 0);
+    let mut state = AgentState::default();
+    let plan = state.plan(&TickInput {
+        assign: std::slice::from_ref(&leased),
+        ..input(&g)
+    });
+    let start = &plan[0];
+    let running = state.applied(start, Ok(()), &DEV.to_string(), 1).unwrap();
+    assert_eq!(running.attempt, 2);
+
+    let refused = AgentState::default()
+        .applied(start, Err("no".into()), &DEV.to_string(), 1)
+        .unwrap();
+    assert_eq!((refused.status, refused.attempt), (JobStatus::Failed, 2));
+}

@@ -188,13 +188,15 @@ impl AgentState {
         match (action, outcome) {
             (AgentAction::Start(job), Ok(())) => {
                 self.jobs.insert(job.id, tracked(job, now_ms));
-                Some(update(job.id, JobStatus::Running, None))
+                Some(JobUpdate {
+                    attempt: job.attempts,
+                    ..update(job.id, JobStatus::Running, None)
+                })
             }
-            (AgentAction::Start(job), Err(e)) => Some(update(
-                job.id,
-                JobStatus::Failed,
-                Some(format!("start: {e}")),
-            )),
+            (AgentAction::Start(job), Err(e)) => Some(JobUpdate {
+                attempt: job.attempts,
+                ..update(job.id, JobStatus::Failed, Some(format!("start: {e}")))
+            }),
             (AgentAction::Return { id, reason }, _) => {
                 Some(update(*id, JobStatus::Queued, Some(reason.clone())))
             }

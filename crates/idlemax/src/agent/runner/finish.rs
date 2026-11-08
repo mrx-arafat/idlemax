@@ -56,6 +56,7 @@ pub fn finish(
         seq: 0,
         id: ended.job.id,
         device: device.clone(),
+        attempt: ended.job.attempts,
         status: outcome.status,
         at_ms: now_ms,
         exit_code: outcome.exit_code,

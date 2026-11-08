@@ -129,6 +129,9 @@ Terminal updates carry `exit_code`, `output_path` (inbox file on the device) and
 `owner_stop = true` marks a `killed` update caused by the owner's local `stop_all`.
 An owner stop (coordinator or local `stop_all`) is final: the job ends `killed` and is not retried, while a guard kill is re-queued like any failed attempt.
 An update never moves a terminal job out of its terminal status, and an update from a device that does not hold the lease is ignored.
+The one exception is a late result: if the agent was away past the lease, the sweep put the job back in the queue (or parked it), and the agent then delivers the terminal update of that attempt, the coordinator applies it as if it had arrived in time.
+That needs `attempt`, the lease count of the attempt the update belongs to (`Job.attempts` when it was leased), to equal the stored job's `attempts` while the job has no device.
+A job leased again has more attempts or a device, so a stale result never overwrites a newer run, and an old agent sends no `attempt` (0), so its late results stay ignored as before.
 
 Delivery is at least once and application is exactly once.
 The agent appends each update to `agent/outbox.jsonl` (fsynced) before it sends it, in order, and drops it once the coordinator acks its `seq`.

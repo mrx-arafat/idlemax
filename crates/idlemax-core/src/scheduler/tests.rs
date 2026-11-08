@@ -275,3 +275,87 @@ fn a_device_that_reports_an_allowlist_only_gets_commands_on_it() {
     // An agent that predates the field reports nothing, so nothing is filtered.
     assert_eq!(pick_on(None), [1, 2]);
 }
+
+#[test]
+fn a_result_that_arrives_after_the_lease_expired_counts_if_the_job_has_not_run_again() {
+    use CostClass::{Ai, CpuLight};
+    use JobStatus::{Failed, Parked, Queued, Running, Succeeded};
+    // The agent was away, the lease expired and the job went back to the queue (device
+    // None, attempts unchanged); its replayed result names the attempt it belongs to.
+    let expired = |cost: CostClass| {
+        let mut j = active(job(1, 0, cost, 100), Running, "mac");
+        j.attempts = 1;
+        j.lease_expires_ms = Some(500);
+        expire_leases(&[j], 1_000).remove(0)
+    };
+    let update = |status: JobStatus, attempt: u32| JobUpdate {
+        id: 1,
+        device: "mac".into(),
+        status,
+        attempt,
+        at_ms: 2_000,
+        exit_code: Some(0),
+        ..Default::default()
+    };
+    assert_eq!(expired(Ai).status, Parked);
+    let mut leased_again = expired(CpuLight);
+    leased_again.status = JobStatus::Leased;
+    leased_again.device = Some("pi".into());
+    leased_again.attempts = 2;
+    let mut finished = expired(CpuLight);
+    finished.status = Succeeded;
+    // (name, stored job, update, wanted (status, device, not_before_ms)).
+    let ok = |status, device: Option<&'static str>, not_before| Some((status, device, not_before));
+    let cases = [
+        (
+            "queued job, same attempt",
+            expired(CpuLight),
+            update(Succeeded, 1),
+            ok(Succeeded, Some("mac"), None),
+        ),
+        (
+            "parked AI job, same attempt",
+            expired(Ai),
+            update(Succeeded, 1),
+            ok(Succeeded, Some("mac"), None),
+        ),
+        (
+            "a late failure follows the retry policy",
+            expired(CpuLight),
+            update(Failed, 1),
+            ok(Queued, None, Some(121_000)),
+        ),
+        (
+            "an old agent sends no attempt",
+            expired(CpuLight),
+            update(Succeeded, 0),
+            None,
+        ),
+        (
+            "another attempt",
+            expired(CpuLight),
+            update(Succeeded, 2),
+            None,
+        ),
+        (
+            "leased to another device since",
+            leased_again,
+            update(Succeeded, 1),
+            None,
+        ),
+        ("already finished", finished, update(Succeeded, 1), None),
+        ("not a result", expired(CpuLight), update(Running, 1), None),
+    ];
+    for (name, job, update, want) in cases {
+        let got = apply_update(&job, &update, 1_000).map(|j| {
+            (
+                j.status,
+                j.device
+                    .as_deref()
+                    .map(|d| if d == "mac" { "mac" } else { "other" }),
+                j.not_before_ms,
+            )
+        });
+        assert_eq!(got, want, "{name}");
+    }
+}

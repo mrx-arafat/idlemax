@@ -68,6 +68,10 @@ pub struct JobUpdate {
     pub seq: u64,
     pub id: JobId,
     pub device: DeviceId,
+    /// The lease count of the attempt this update belongs to (`Job.attempts` when it was
+    /// leased). With it the coordinator can still apply a result that arrives after the
+    /// lease expired; 0 (an old agent, or an orphan reaped after a restart) never matches.
+    pub attempt: u32,
     pub status: JobStatus,
     pub at_ms: UnixMs,
     pub exit_code: Option<i32>,

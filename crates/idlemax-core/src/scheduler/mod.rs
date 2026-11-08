@@ -340,11 +340,20 @@ pub fn expire_leases(jobs: &[Job], now_ms: UnixMs) -> Vec<Job> {
 /// terminal, or sent by a device that does not hold the lease). Coordinator stops and cancels
 /// are made terminal when requested, so their later killed update is ignored; a killed
 /// update with `owner_stop` is final, any other killed update is a guard kill and retries.
+/// A result for an attempt whose lease expired while its agent was away still counts when
+/// the job has not been leased since (see `is_late_result`).
 pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job> {
-    if job.status.is_terminal() || job.device.as_deref() != Some(update.device.as_str()) {
+    let late = is_late_result(job, update);
+    let holds_lease = job.device.as_deref() == Some(update.device.as_str());
+    if !late && (job.status.is_terminal() || !holds_lease) {
         return None;
     }
     let mut next = job.clone();
+    if late {
+        // It ran on the reporting device, so its output lives there.
+        next.device = Some(update.device.clone());
+        next.not_before_ms = None;
+    }
     next.exit_code = update.exit_code.or(job.exit_code);
     next.output_path = update
         .output_path
@@ -379,6 +388,22 @@ pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job
         _ => finish(&mut next, update),
     }
     Some(next)
+}
+
+/// A terminal update for an attempt whose lease expired while its agent was away. Expiry
+/// put the job back in the queue, or parked it, with `attempts` unchanged and no device; a
+/// result that names that same attempt belongs to a run nothing has replaced. A job leased
+/// again has more attempts or a device, and an old agent sends no attempt (0), so neither
+/// matches and they stay ignored.
+fn is_late_result(job: &Job, update: &JobUpdate) -> bool {
+    matches!(job.status, JobStatus::Queued | JobStatus::Parked)
+        && job.device.is_none()
+        && update.attempt != 0
+        && update.attempt == job.attempts
+        && matches!(
+            update.status,
+            JobStatus::Succeeded | JobStatus::Failed | JobStatus::Killed
+        )
 }
 
 /// Terminal state reported by the agent: no retry, no park.

@@ -388,3 +388,57 @@ async fn why_names_the_guard_reason_of_a_queued_job_and_404s_for_an_unknown_job(
     let missing = get("/v1/jobs/999/why".into()).await.unwrap();
     assert_eq!(missing.status(), StatusCode::NOT_FOUND);
 }
+
+#[test]
+fn a_result_replayed_after_its_lease_expired_still_finishes_the_job_once() {
+    const T0: i64 = 1_800_000_000_000;
+    let mut store = Store::open_in_memory().unwrap();
+    let spec = JobSpec {
+        name: "nightly".into(),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+    let job = store.insert_job(&spec, T0).unwrap();
+    let leased = store
+        .lease_job(job.id, "mac", T0 + 600_000, T0)
+        .unwrap()
+        .unwrap();
+    // The agent is down past the lease: the sweep puts the job back in the queue.
+    let late = T0 + 700_000;
+    let expired = idlemax_core::scheduler::expire_leases(&store.active_jobs().unwrap(), late);
+    store.update_jobs(&expired).unwrap();
+    assert_eq!(
+        store.get_job(job.id).unwrap().unwrap().status,
+        JobStatus::Queued
+    );
+
+    let update = JobUpdate {
+        seq: 7,
+        id: job.id,
+        device: "mac".into(),
+        attempt: leased.attempts,
+        status: JobStatus::Succeeded,
+        exit_code: Some(0),
+        at_ms: T0 + 1_000,
+        ..JobUpdate::default()
+    };
+    on_job_update(&mut store, &update, late + 1_000).unwrap();
+    on_job_update(&mut store, &update, late + 2_000).unwrap();
+
+    let done = store.get_job(job.id).unwrap().unwrap();
+    assert_eq!(
+        (done.status, done.device.as_deref(), done.exit_code),
+        (JobStatus::Succeeded, Some("mac"), Some(0))
+    );
+    assert!(
+        store.queued_jobs().unwrap().is_empty(),
+        "it must not run again"
+    );
+    let succeeded = store
+        .events(0)
+        .unwrap()
+        .iter()
+        .filter(|e| e.kind == EventKind::JobSucceeded)
+        .count();
+    assert_eq!(succeeded, 1);
+}
