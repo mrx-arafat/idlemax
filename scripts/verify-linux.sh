@@ -114,10 +114,10 @@ cleanup() {
     systemctl --user stop "$unit" >/dev/null 2>&1
   done
   if [[ -n $AGENT_UNIT ]]; then
-    systemctl --user stop "$AGENT_UNIT" >/dev/null 2>&1
+    systemctl --user stop "$(scope_name "$AGENT_UNIT")" >/dev/null 2>&1
   fi
   if [[ -n $COORD_UNIT ]]; then
-    systemctl --user stop "$COORD_UNIT" >/dev/null 2>&1
+    systemctl --user stop "$(scope_name "$COORD_UNIT")" >/dev/null 2>&1
   fi
   if [[ -n $AGENT_PID ]]; then
     kill "$AGENT_PID" >/dev/null 2>&1
@@ -230,7 +230,7 @@ def parse_psi(text):
 
 
 def read_psi(root, resource):
-    path = os.path.join(root.rstrip("/"), "proc/pressure", resource)
+    path = os.path.join(root, "proc/pressure", resource)
     if not os.path.exists(path):
         return {"some": None, "full": None}
     return parse_psi(read_text(path))
@@ -265,7 +265,7 @@ def parse_df(text):
 
 
 def parse_power(root):
-    base = os.path.join(root.rstrip("/"), "sys/class/power_supply")
+    base = os.path.join(root, "sys/class/power_supply")
     try:
         entries = sorted(os.listdir(base))
     except OSError:
@@ -318,7 +318,7 @@ def parse_power(root):
 
 
 def read_thermal(root):
-    base = os.path.join(root.rstrip("/"), "sys/class/thermal")
+    base = os.path.join(root, "sys/class/thermal")
     try:
         entries = sorted(os.listdir(base))
     except OSError:
@@ -377,7 +377,7 @@ def parse_logind(text, now_us):
 
 
 def logind_expected(root, now_us):
-    seat = os.path.join(root.rstrip("/"), "run/systemd/seats/seat0")
+    seat = os.path.join(root, "run/systemd/seats/seat0")
     if not os.path.exists(seat):
         return None
     try:
@@ -392,7 +392,7 @@ def logind_expected(root, now_us):
 
 
 def read_pswpin(root="/"):
-    path = os.path.join(root.rstrip("/"), "proc/vmstat")
+    path = os.path.join(root, "proc/vmstat")
     try:
         return parse_vmstat_pswpin(read_text(path))
     except OSError:
@@ -445,8 +445,8 @@ def check_metrics(args):
         "reported %s kernel %s" % (cm.get("cpu_count"), cpu_count))
 
     try:
-        stat_now = read_text(os.path.join(root.rstrip("/"), "proc/stat"))
-        load_now = parse_loadavg(read_text(os.path.join(root.rstrip("/"), "proc/loadavg")))
+        stat_now = read_text(os.path.join(root, "proc/stat"))
+        load_now = parse_loadavg(read_text(os.path.join(root, "proc/loadavg")))
     except OSError as exc:
         add(False, "metrics.kernel_proc", "cannot read /proc: %s" % exc)
         rows(checks)
@@ -471,7 +471,7 @@ def check_metrics(args):
                 "agent %.2f%% kernel %.2f%% tol 25" % (actual_cpu or 0.0, expected_cpu))
 
     try:
-        mem = parse_meminfo(read_text(os.path.join(root.rstrip("/"), "proc/meminfo")))
+        mem = parse_meminfo(read_text(os.path.join(root, "proc/meminfo")))
     except OSError as exc:
         add(False, "metrics.kernel_meminfo", "cannot read /proc/meminfo: %s" % exc)
         rows(checks)
@@ -546,12 +546,11 @@ def check_metrics(args):
             add(close_enough(actual, expected, 0.5), name,
                 "agent %s kernel %.2f tol 0.5" % (actual, expected))
 
-    prev_rate = pm.get("swap_in_per_sec")
     cur_rate = cm.get("swap_in_per_sec")
     elapsed = (int(cm.get("at_ms", 0)) - int(pm.get("at_ms", 0))) / 1000.0
     p0 = args.prev_pswpin
     p1 = args.cur_pswpin
-    if prev_rate is None or cur_rate is None or elapsed <= 0 or p0 is None or p1 is None or p1 < p0:
+    if cur_rate is None or elapsed <= 0 or p0 is None or p1 is None or p1 < p0:
         add(False, "metrics.swap_in_per_sec", "rate was not computed across two samples")
     else:
         expected_rate = (p1 - p0) / elapsed
@@ -569,12 +568,34 @@ def has_metrics():
     return 0 if metrics and int(metrics.get("at_ms", 0)) > 0 else 1
 
 
-def has_swap_rate(prev_path, cur_path):
-    prev = json.loads(read_text(prev_path))
-    cur = json.loads(read_text(cur_path))
-    pm = prev.get("metrics") or {}
-    cm = cur.get("metrics") or {}
-    return 0 if pm.get("swap_in_per_sec") is not None and cm.get("swap_in_per_sec") is not None else 1
+def sync_sample(binary, out, prev_at):
+    """Waits for the agent to publish a sample newer than prev_at, then reads the kernel
+    counters at once, so they cover the same window as the sample. Swap-in is bursty:
+    counters read at any other moment can differ from the agent's rate by a whole window.
+    Writes <out>.json and <out>.stat, prints "<at_ms> <pswpin>"."""
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        result = subprocess.run([binary, "local", "status", "--json"],
+                                capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            try:
+                at = int((json.loads(result.stdout).get("metrics") or {}).get("at_ms", 0))
+            except ValueError:
+                at = 0
+            if at and at != prev_at:
+                pswpin = read_pswpin("/")
+                if pswpin is None:
+                    print("cannot read /proc/vmstat", file=sys.stderr)
+                    return 1
+                with open(out + ".json", "w") as fh:
+                    fh.write(result.stdout)
+                with open(out + ".stat", "w") as fh:
+                    fh.write(read_text("/proc/stat"))
+                print("%d %d" % (at, pswpin))
+                return 0
+        time.sleep(0.05)
+    print("the agent published no new metrics sample within 8 s", file=sys.stderr)
+    return 1
 
 
 def job_info(path, job_id=None):
@@ -656,6 +677,16 @@ def scope_check(base, mem_mb, high_mb, cpu_us):
     return 0
 
 
+def parse_memory_events(text):
+    """memory.events lines are "<name> <count>"."""
+    counts = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            counts[parts[0]] = int(parts[1])
+    return counts
+
+
 def watch_cgroup(base, out_path, timeout=90.0):
     end = time.monotonic() + timeout
     samples = 0
@@ -663,6 +694,7 @@ def watch_cgroup(base, out_path, timeout=90.0):
     max_current = 0
     peak = 0
     oom_kill = 0
+    high = 0
     memory_max = None
     swap_max = None
     max_swap = 0
@@ -684,13 +716,9 @@ def watch_cgroup(base, out_path, timeout=90.0):
         except OSError:
             pass
         if events:
-            for line in events.splitlines():
-                parts = line.split()
-                if len(parts) == 2 and parts[0] == "oom_kill":
-                    try:
-                        oom_kill = max(oom_kill, int(parts[1]))
-                    except ValueError:
-                        pass
+            counts = parse_memory_events(events)
+            oom_kill = max(oom_kill, counts.get("oom_kill", 0))
+            high = max(high, counts.get("high", 0))
         peak_value = read_int(os.path.join(base, "memory.peak"))
         if peak_value is not None:
             peak = max(peak, peak_value)
@@ -705,6 +733,7 @@ def watch_cgroup(base, out_path, timeout=90.0):
         "max_current": max_current,
         "peak": max(peak, max_current),
         "oom_kill": oom_kill,
+        "high": high,
         "memory_max": memory_max,
         "swap_max": swap_max,
         "max_swap": max_swap,
@@ -721,6 +750,7 @@ def watch_info(path):
         str(data.get("max_current", 0)),
         str(data.get("peak", 0)),
         str(data.get("oom_kill", 0)),
+        str(data.get("high", 0)),
         str(data.get("memory_max")),
         str(data.get("swap_max")),
         str(data.get("max_swap", 0)),
@@ -808,6 +838,19 @@ def selftest():
         add(parse_vmstat_pswpin("nr_free_pages 100\npswpout 40\npswpin 123456\n") == 123456,
             "parse_vmstat_pswpin", "123456")
 
+        # Root "/" must read the absolute /proc, never a proc/ under the current directory.
+        decoy = os.path.join(tmp, "decoy")
+        os.makedirs(os.path.join(decoy, "proc"))
+        with open(os.path.join(decoy, "proc/vmstat"), "w") as fh:
+            fh.write("pswpin 987654321987\n")
+        here = os.getcwd()
+        os.chdir(decoy)
+        try:
+            from_root = read_pswpin("/")
+        finally:
+            os.chdir(here)
+        add(from_root != 987654321987, "read_pswpin.root_slash", repr(from_root))
+
         df = parse_df("Filesystem 1024-blocks Used Available Capacity Mounted on\n"
                       "/dev/sda1 100000 20000 80000 20% /\n")
         add(df == (80000 * 1024, 100000 * 1024), "parse_df", repr(df))
@@ -883,11 +926,15 @@ def selftest():
         add(read_int(os.path.join(cgroup, "memory.max")) == 64 * MIB,
             "read_cgroup.memory_max", "64 MiB")
 
+        with open(os.path.join(cgroup, "memory.events"), "w") as fh:
+            fh.write("low 0\nhigh 7\nmax 2\noom 1\noom_kill 1\noom_group_kill 0\n")
         watch = os.path.join(tmp, "watch.json")
         watch_cgroup(cgroup, watch, timeout=0.05)
         info = json.loads(read_text(watch))
         add(info["memory_max"] == 64 * MIB and info["samples"] > 0,
             "watch_cgroup", "samples=%s max=%s" % (info["samples"], info["memory_max"]))
+        add((info.get("high"), info.get("oom_kill")) == (7, 1),
+            "watch_cgroup.events", "high=%s oom_kill=%s" % (info.get("high"), info.get("oom_kill")))
 
         add(close_enough(cpu_value(1000, 2000, 1_000_000_000), 0.1, 0.001),
             "cpu_percent", "0.1")
@@ -945,8 +992,8 @@ def main(argv):
         return selftest()
     if cmd == "has-metrics":
         return has_metrics()
-    if cmd == "has-swap-rate":
-        return has_swap_rate(rest[0], rest[1])
+    if cmd == "sync-sample":
+        return sync_sample(rest[0], rest[1], int(rest[2]))
     if cmd == "job-info":
         return job_info(rest[0], rest[1] if len(rest) > 1 else None)
     if cmd == "cluster-check":
@@ -965,12 +1012,6 @@ def main(argv):
         return cpu_percent(int(rest[0]), int(rest[1]), int(rest[2]))
     if cmd == "monotonic-ns":
         return monotonic_ns()
-    if cmd == "read-pswpin":
-        value = read_pswpin(rest[0] if rest else "/")
-        if value is None:
-            return 1
-        print(value)
-        return 0
     if cmd == "http-ok":
         return http_ok(rest[0])
     if cmd == "pick-ports":
@@ -1051,8 +1092,18 @@ start_scope() {
   printf '%s' "$!"
 }
 
+# systemctl reads a bare name as a .service, but these units are scopes.
+scope_name() {
+  if [[ $1 == *.scope ]]; then
+    printf '%s' "$1"
+  else
+    printf '%s.scope' "$1"
+  fi
+}
+
 scope_cgroup() {
-  local unit=$1
+  local unit
+  unit=$(scope_name "$1")
   local cg
   cg=$(systemctl --user show -p ControlGroup --value "$unit" 2>/dev/null) || return 1
   cg=${cg//$'\n'/}
@@ -1185,7 +1236,7 @@ for _ in range(4096):
 print("unexpected: memory hog reached the end", flush=True)
 sys.exit(0)
 PY
-  write_job_spec "$spec" "verify-memory-hog" "$hog" 128 60
+  write_job_spec "$spec" "verify-memory-hog" "$hog" 128 20
   if ! add_job "$spec"; then
     record FAIL "job.memory.add" "$(tail -n 2 "$TMP/job.add.err" 2>/dev/null)"
     return
@@ -1212,8 +1263,8 @@ PY
   local watch="$TMP/mem_watch.json"
   python3 "$HELPER" watch-cgroup "$base" "$watch" 90 &
   local watcher=$!
-  if ! wait_job_terminal "$id" 90; then
-    record FAIL "job.memory.end" "job did not finish within 90 s"
+  if ! wait_job_terminal "$id" 60; then
+    record FAIL "job.memory.end" "job did not finish within 60 s"
     kill "$watcher" >/dev/null 2>&1 || true
     wait "$watcher" 2>/dev/null || true
     return
@@ -1228,28 +1279,24 @@ PY
   if [[ ! -s $watch ]]; then
     record FAIL "job.memory.watch" "the cgroup watcher produced no data"
   else
-    local samples current peak oom memmax swapmax maxswap
-    IFS=$'\t' read -r samples current peak oom memmax swapmax maxswap \
+    local samples current peak oom high memmax swapmax maxswap
+    IFS=$'\t' read -r samples current peak oom high memmax swapmax maxswap \
       < <(python3 "$HELPER" watch-info "$watch")
     local expected=$((128 * 1024 * 1024))
+    local throttle=$((expected * 3 / 4))
     record "$([[ $memmax == "$expected" ]] && printf PASS || printf FAIL)" \
       "job.memory.max" "memory.max=$memmax expected=$expected"
-    local near=0
-    if (( peak >= expected * 9 / 10 )); then
-      near=1
-    fi
-    record "$([[ $near == 1 ]] && printf PASS || printf FAIL)" \
-      "job.memory.peak" "peak=$peak current=$current of $expected (90% required, samples=$samples, swap=$maxswap/$swapmax)"
-    record "$([[ $oom -ge 1 ]] && printf PASS || printf FAIL)" \
-      "job.memory.oom" "cgroup oom_kill=$oom"
-    local killed=0
-    if [[ $JOB_STATUS == killed ]]; then
-      killed=1
-    elif [[ $JOB_STATUS == failed && $JOB_ERROR == *SIGKILL* ]]; then
-      killed=1
-    fi
-    record "$([[ $killed == 1 ]] && printf PASS || printf FAIL)" \
-      "job.memory.killed" "status=$JOB_STATUS exit=${JOB_EXIT:-none} error=${JOB_ERROR:-none}"
+    # MemoryHigh sits at 75% of the cap and swap is off, so a hog is throttled there by the
+    # kernel and never reaches MemoryMax. What protects the host is that it stays under the
+    # cap, was throttled or killed by the cgroup, and did not finish.
+    record "$([[ $peak -le $expected ]] && printf PASS || printf FAIL)" \
+      "job.memory.contained" "peak=$peak never above memory.max=$expected (samples=$samples, swap=$maxswap/$swapmax)"
+    record "$([[ $peak -ge $((throttle * 9 / 10)) ]] && printf PASS || printf FAIL)" \
+      "job.memory.peak" "peak=$peak current=$current, the hog grew into MemoryHigh=$throttle (90% required)"
+    record "$([[ $high -ge 1 || $oom -ge 1 ]] && printf PASS || printf FAIL)" \
+      "job.memory.enforced" "cgroup memory.events high=$high oom_kill=$oom (either one means the kernel acted)"
+    record "$([[ $JOB_STATUS == killed || $JOB_STATUS == failed || $JOB_STATUS == parked ]] && printf PASS || printf FAIL)" \
+      "job.memory.stopped" "status=$JOB_STATUS exit=${JOB_EXIT:-none} error=${JOB_ERROR:-none}"
   fi
 }
 
@@ -1388,62 +1435,61 @@ run_self_test() {
   else
     record FAIL "selftest.ports" "got '${COORD_PORT:-}' and '${AGENT_PORT:-}'"
   fi
+  if [[ $(scope_name idlemax-verify-1-coord) == idlemax-verify-1-coord.scope \
+      && $(scope_name idlemax-job-2-3.scope) == idlemax-job-2-3.scope ]]; then
+    record PASS "selftest.scope_name" "scope units are always addressed with the .scope suffix"
+  else
+    record FAIL "selftest.scope_name" "got '$(scope_name idlemax-verify-1-coord)'"
+  fi
 }
 
-main() {
-  if [[ ${1:-} == --help || ${1:-} == -h ]]; then
-    usage
+# Waits for the agent's next sample and reads the kernel counters right after it (see
+# sync_sample in the helper). Prints "<at_ms> <pswpin>". Runs with the agent's environment.
+sync_sample() {
+  env -u IDLEMAX_COORD -u IDLEMAX_TOKEN IDLEMAX_HOME="$STATE" HOME="$FAKE_HOME" \
+    python3 "$HELPER" sync-sample "$IDLEMAX_BIN" "$1" "$2"
+}
+
+check_signals() {
+  local status_dir="$TMP/metrics"
+  mkdir -p "$status_dir"
+  # Two samples one period apart, each read in step with the agent. The first call only
+  # learns the current sample; it may be old, so the pair starts at the next one.
+  local line at0 psw0 psw1
+  if ! line=$(sync_sample "$status_dir/warm" 0 2>"$status_dir/status.err"); then
+    record FAIL "metrics.status" "$(tail -n 2 "$status_dir/status.err" | tr '\n' ' ')"
     return 0
   fi
-  if [[ ${1:-} == --self-test ]]; then
-    (( $# == 1 )) || die "--self-test takes no other arguments"
-    run_self_test
+  IFS=' ' read -r at0 _ <<< "$line"
+  if ! line=$(sync_sample "$status_dir/prev" "$at0" 2>"$status_dir/status.err"); then
+    record FAIL "metrics.samples" "$(tail -n 2 "$status_dir/status.err" | tr '\n' ' ')"
     return 0
   fi
-  (( $# == 0 )) || die "unexpected arguments; use --help"
-
-  [[ ${EUID:-$(id -u)} -ne 0 ]] || die "run as the normal user that will own the agent, not root"
-  [[ -n ${IDLEMAX_BIN:-} ]] || die "set IDLEMAX_BIN to the idlemax binary to test"
-  [[ -x $IDLEMAX_BIN ]] || die "IDLEMAX_BIN is not executable: $IDLEMAX_BIN"
-  IDLEMAX_BIN=$(cd -- "$(dirname -- "$IDLEMAX_BIN")" && pwd)/$(basename -- "$IDLEMAX_BIN")
-  [[ -f /proc/meminfo && -f /sys/fs/cgroup/cgroup.controllers ]] \
-    || die "this is not a Linux system with cgroup v2"
-
-  need python3
-  need systemd-run
-  need systemctl
-  need systemd-analyze
-  need awk
-  need sed
-  need find
-  need df
-  need nproc
-  need mktemp
-
-  local version_line major
-  version_line=$(systemd-run --version 2>/dev/null | head -n 1) || die "cannot run systemd-run --version"
-  major=${version_line#systemd }
-  major=${major%% *}
-  [[ $major =~ ^[0-9]+$ ]] || die "cannot parse systemd version: $version_line"
-  if (( major < 254 )); then
-    die "systemd $major is too old: the verification scopes need 254+ for --expand-environment=no"
+  IFS=' ' read -r at0 psw0 <<< "$line"
+  if ! line=$(sync_sample "$status_dir/cur" "$at0" 2>"$status_dir/status.err"); then
+    record FAIL "metrics.samples" "$(tail -n 2 "$status_dir/status.err" | tr '\n' ' ')"
+    return 0
   fi
-  record PASS "systemd.version" "$version_line"
+  IFS=" " read -r _ psw1 <<< "$line"
 
-  TMP=$(mktemp -d "${TMPDIR:-/tmp}/idlemax-verify.XXXXXX")
-  STATE="$TMP/state"
-  FAKE_HOME="$TMP/home"
-  mkdir -p "$STATE" "$FAKE_HOME"
-  write_helper
-  PYTHON_BIN=$(command -v python3)
-
-  if [[ $TMP == /var/lib/idlemax* || $STATE == /var/lib/idlemax* || $FAKE_HOME == /var/lib/idlemax* ]]; then
-    die "refusing a temp path under /var/lib/idlemax"
+  local metrics_out="$TMP/metrics.tsv"
+  if python3 "$HELPER" check-metrics \
+      --prev "$status_dir/prev.json" --cur "$status_dir/cur.json" \
+      --prev-pswpin "$psw0" --cur-pswpin "$psw1" \
+      --prev-stat "$status_dir/prev.stat" --cur-stat "$status_dir/cur.stat" \
+      --root / > "$metrics_out"; then
+    local ok name detail
+    while IFS=$'\t' read -r ok name detail; do
+      record "$ok" "signal.$name" "$detail"
+    done < "$metrics_out"
+  else
+    record FAIL "metrics.check" "the metrics helper failed"
   fi
-  if [[ -n ${HOME:-} && $FAKE_HOME == "${HOME:-}/"* ]]; then
-    die "refusing to place the fake home inside the real home"
-  fi
+}
 
+# Everything that needs the coordinator and agent running. A failed step records FAIL and
+# stops this function only, so main still runs verify_units.
+live_checks() {
   local probe_unit="idlemax-verify-$$-probe"
   if ! systemd-run --user --scope --quiet --collect --expand-environment=no \
       --unit="$probe_unit" --property=MemoryMax=64M -- /bin/true >"$TMP/probe.log" 2>&1; then
@@ -1552,52 +1598,66 @@ EOF
     record FAIL "cluster.device" "device $device_id did not register: $(tail -n 2 "$TMP/status.err" | tr '\n' ' ')"
   fi
 
-  local status_dir="$TMP/metrics"
-  mkdir -p "$status_dir"
-  for _ in $(seq 1 20); do
-    if [[ -f $status_dir/status.cur ]]; then
-      mv "$status_dir/status.cur" "$status_dir/status.prev"
-      mv "$status_dir/psw.cur" "$status_dir/psw.prev" 2>/dev/null || true
-      mv "$status_dir/stat.cur" "$status_dir/stat.prev" 2>/dev/null || true
-    fi
-    if ! local_status_json > "$status_dir/status.cur" 2>"$status_dir/status.err"; then
-      record FAIL "metrics.status" "$(tail -n 2 "$status_dir/status.err" | tr '\n' ' ')"
-      return 0
-    fi
-    if ! python3 "$HELPER" read-pswpin / > "$status_dir/psw.cur"; then
-      record FAIL "metrics.pswpin" "cannot read /proc/vmstat"
-      return 0
-    fi
-    cp /proc/stat "$status_dir/stat.cur"
-    if [[ -f $status_dir/status.prev && -f $status_dir/stat.prev ]] \
-        && python3 "$HELPER" has-swap-rate "$status_dir/status.prev" "$status_dir/status.cur"; then
-      break
-    fi
-    sleep 1.0
-  done
-  if [[ ! -f $status_dir/status.prev || ! -f $status_dir/stat.prev ]]; then
-    record FAIL "metrics.samples" "could not collect two samples with a swap-in rate"
-    return 0
-  fi
-
-  local metrics_out="$TMP/metrics.tsv"
-  if python3 "$HELPER" check-metrics \
-      --prev "$status_dir/status.prev" --cur "$status_dir/status.cur" \
-      --prev-pswpin "$(cat "$status_dir/psw.prev")" \
-      --cur-pswpin "$(cat "$status_dir/psw.cur")" \
-      --prev-stat "$status_dir/stat.prev" --cur-stat "$status_dir/stat.cur" \
-      --root / > "$metrics_out"; then
-    local ok name detail
-    while IFS=$'\t' read -r ok name detail; do
-      record "$ok" "signal.$name" "$detail"
-    done < "$metrics_out"
-  else
-    record FAIL "metrics.check" "the metrics helper failed"
-  fi
-
+  check_signals
   check_memory_job
   check_cpu_job
+}
 
+main() {
+  if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+    usage
+    return 0
+  fi
+  if [[ ${1:-} == --self-test ]]; then
+    (( $# == 1 )) || die "--self-test takes no other arguments"
+    run_self_test
+    return 0
+  fi
+  (( $# == 0 )) || die "unexpected arguments; use --help"
+
+  [[ ${EUID:-$(id -u)} -ne 0 ]] || die "run as the normal user that will own the agent, not root"
+  [[ -n ${IDLEMAX_BIN:-} ]] || die "set IDLEMAX_BIN to the idlemax binary to test"
+  [[ -x $IDLEMAX_BIN ]] || die "IDLEMAX_BIN is not executable: $IDLEMAX_BIN"
+  IDLEMAX_BIN=$(cd -- "$(dirname -- "$IDLEMAX_BIN")" && pwd)/$(basename -- "$IDLEMAX_BIN")
+  [[ -f /proc/meminfo && -f /sys/fs/cgroup/cgroup.controllers ]] \
+    || die "this is not a Linux system with cgroup v2"
+
+  need python3
+  need systemd-run
+  need systemctl
+  need systemd-analyze
+  need awk
+  need sed
+  need find
+  need df
+  need nproc
+  need mktemp
+
+  local version_line major
+  version_line=$(systemd-run --version 2>/dev/null | head -n 1) || die "cannot run systemd-run --version"
+  major=${version_line#systemd }
+  major=${major%% *}
+  [[ $major =~ ^[0-9]+$ ]] || die "cannot parse systemd version: $version_line"
+  if (( major < 254 )); then
+    die "systemd $major is too old: the verification scopes need 254+ for --expand-environment=no"
+  fi
+  record PASS "systemd.version" "$version_line"
+
+  TMP=$(mktemp -d "${TMPDIR:-/tmp}/idlemax-verify.XXXXXX")
+  STATE="$TMP/state"
+  FAKE_HOME="$TMP/home"
+  mkdir -p "$STATE" "$FAKE_HOME"
+  write_helper
+  PYTHON_BIN=$(command -v python3)
+
+  if [[ $TMP == /var/lib/idlemax* || $STATE == /var/lib/idlemax* || $FAKE_HOME == /var/lib/idlemax* ]]; then
+    die "refusing a temp path under /var/lib/idlemax"
+  fi
+  if [[ -n ${HOME:-} && $FAKE_HOME == "${HOME:-}/"* ]]; then
+    die "refusing to place the fake home inside the real home"
+  fi
+
+  live_checks
   verify_units
 }
 

@@ -49,7 +49,7 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
   First check that the server's `systemd-run --help` lists `--expand-environment`, because the prepared change makes the scope wrapper pass `--expand-environment=no` and an unknown option would fail every job there.
   Then run the script on the server as the normal deployment user, in a temporary `IDLEMAX_HOME` against a loopback coordinator, with a binary built inside a capped transient scope.
 - **Done when:** Every Linux signal matches the kernel's own numbers.
-  The memory hog is killed at `MemoryMax` and the CPU job stays within its quota.
+  The memory hog stays under `MemoryMax` (throttled by `MemoryHigh`, then stopped at its runtime limit) and the CPU job stays within its quota.
   `systemd-analyze verify` is clean for the coordinator and agent units.
 
 ### 2. Deploy the coordinator on the tailnet
