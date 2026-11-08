@@ -22,6 +22,7 @@ pub(super) enum Cmd {
         /// queued, leased, running, paused, succeeded, failed, killed, cancelled, parked
         #[arg(long)]
         status: Option<JobStatus>,
+        /// Rows to ask for; the coordinator answers at most 1000
         #[arg(long, default_value_t = 50)]
         limit: u32,
     },
@@ -43,6 +44,7 @@ pub(super) enum Cmd {
     Quota,
     /// Recent events
     Events {
+        /// Rows to ask for; the coordinator answers at most 1000
         #[arg(long, default_value_t = 50)]
         limit: u32,
     },

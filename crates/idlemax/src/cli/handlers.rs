@@ -123,6 +123,8 @@ pub async fn quota(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
 }
 
 pub async fn events(c: &ApiClient, out: &Out, limit: u32, zone: Zone) -> Result<()> {
+    // Ask for what the coordinator will return, so the count and the hint agree with it.
+    let limit = limit.clamp(1, hints::PAGE_LIMIT_MAX);
     let list = c.events(limit).await?;
     out.emit_with(
         &list,

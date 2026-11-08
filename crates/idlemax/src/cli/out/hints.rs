@@ -4,6 +4,10 @@
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
+/// The coordinator answers a list request with at most this many rows
+/// (`page_limit` in `coord/api.rs`), so a hint may not ask for more.
+pub const PAGE_LIMIT_MAX: u32 = 1000;
+
 fn run(cmd: &str, to: &str) -> String {
     format!("Run `{cmd}` to {to}")
 }
@@ -35,10 +39,19 @@ pub fn jobs(shown: usize, total: Option<u64>, filter: Option<JobStatus>) -> Vec<
     ];
     if let Some(total) = total.filter(|t| *t > shown as u64) {
         let status = filter.map_or_else(String::new, |s| format!(" --status {s}"));
-        hints.push(run(
-            &format!("idlemax jobs{status} --limit {total}"),
-            &format!("list all {total}"),
-        ));
+        let limit = u32::try_from(total).unwrap_or(u32::MAX).min(PAGE_LIMIT_MAX);
+        // Asking for more than the coordinator returns would repeat the same page forever.
+        let to = if u64::from(limit) < total {
+            match filter {
+                None => format!("list the newest {limit} of {total}, then narrow it with --status"),
+                Some(_) => format!(
+                    "list the newest {limit} of {total}; the coordinator answers at most {PAGE_LIMIT_MAX}"
+                ),
+            }
+        } else {
+            format!("list all {total}")
+        };
+        hints.push(run(&format!("idlemax jobs{status} --limit {limit}"), &to));
     }
     hints
 }
@@ -108,9 +121,17 @@ pub fn quota(accounts: usize) -> Vec<String> {
 
 pub fn events(shown: usize, limit: u32) -> Vec<String> {
     if shown as u32 >= limit {
+        let next = limit.saturating_mul(4).min(PAGE_LIMIT_MAX);
+        if next > limit {
+            return vec![run(
+                &format!("idlemax events --limit {next}"),
+                "see older events",
+            )];
+        }
+        // At the cap there is no wider page; say so instead of repeating the request.
         return vec![run(
-            &format!("idlemax events --limit {}", limit * 4),
-            "see older events",
+            &format!("idlemax events --limit {PAGE_LIMIT_MAX}"),
+            &format!("see the newest {PAGE_LIMIT_MAX} only: the coordinator answers at most {PAGE_LIMIT_MAX}"),
         )];
     }
     Vec::new()
@@ -210,5 +231,34 @@ mod tests {
             jobs(0, Some(0), None),
             ["Run `idlemax job add <spec.toml>` to queue a job"]
         );
+    }
+
+    #[test]
+    fn a_hint_never_asks_for_more_than_the_coordinator_returns() {
+        // Past 1000 the server cuts the page, so `--limit 1500` would answer the same
+        // 1000 rows and the same hint forever.
+        assert!(jobs(1000, Some(1500), None).contains(&format!(
+            "Run `idlemax jobs --limit {PAGE_LIMIT_MAX}` to list the newest {PAGE_LIMIT_MAX} of 1500, then narrow it with --status"
+        )));
+        assert!(jobs(1000, Some(1200), Some(JobStatus::Failed)).contains(&format!(
+            "Run `idlemax jobs --status failed --limit {PAGE_LIMIT_MAX}` to list the newest {PAGE_LIMIT_MAX} of 1200; the coordinator answers at most {PAGE_LIMIT_MAX}"
+        )));
+        assert_eq!(
+            events(50, 50),
+            ["Run `idlemax events --limit 200` to see older events"]
+        );
+        assert_eq!(
+            events(800, 800),
+            [format!(
+                "Run `idlemax events --limit {PAGE_LIMIT_MAX}` to see older events"
+            )]
+        );
+        assert_eq!(
+            events(1000, 1000),
+            [format!(
+                "Run `idlemax events --limit {PAGE_LIMIT_MAX}` to see the newest {PAGE_LIMIT_MAX} only: the coordinator answers at most {PAGE_LIMIT_MAX}"
+            )]
+        );
+        assert!(events(49, 50).is_empty());
     }
 }
