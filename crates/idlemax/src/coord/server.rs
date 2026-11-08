@@ -1,4 +1,5 @@
-//! Coordinator HTTP server adapter: HTTP/1 connections, explicit timeouts and graceful stop.
+//! Coordinator HTTP server adapter: HTTP/1 connections, explicit timeouts, graceful stop, and an
+//! accept loop that survives errors (a flood must not stop the control plane).
 
 use std::future::Future;
 use std::io;
@@ -16,6 +17,8 @@ use tower_http::timeout::TimeoutLayer;
 
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// Pause after a failed `accept`, so a descriptor shortage is retried without a busy loop.
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -59,10 +62,20 @@ where
     loop {
         tokio::select! {
             _ = &mut shutdown => break,
-            accepted = listener.accept() => {
-                let (stream, _) = accepted?;
-                connections.spawn(connection(stream, app.clone(), close_rx.clone(), limits));
-            }
+            accepted = listener.accept() => match accepted {
+                Ok((stream, _)) => {
+                    connections.spawn(connection(stream, app.clone(), close_rx.clone(), limits));
+                }
+                // Out of descriptors, an aborted handshake: the peer must not be able to stop the
+                // server this way. Back off so a failing accept cannot spin, then try again.
+                Err(e) => {
+                    tracing::warn!(error = %e, "accept failed; retrying");
+                    tokio::select! {
+                        _ = &mut shutdown => break,
+                        _ = tokio::time::sleep(ACCEPT_RETRY) => {}
+                    }
+                }
+            },
             Some(joined) = connections.join_next() => {
                 if let Err(e) = joined {
                     tracing::warn!(error = %e, "connection task failed");
