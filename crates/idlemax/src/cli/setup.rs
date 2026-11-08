@@ -73,7 +73,10 @@ impl From<RoleArg> for Role {
 }
 
 pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Out) -> Result<()> {
-    let token = args.token_stdin.then(super::read_token_stdin).transpose()?;
+    let token = args
+        .token_stdin
+        .then(super::init_cmd::read_token_stdin)
+        .transpose()?;
     let request = Request {
         role: args.role.into(),
         os: Os::current(),

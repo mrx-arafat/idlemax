@@ -3,7 +3,8 @@
 use clap::Parser;
 use idlemax_core::types::JobStatus;
 
-use super::super::{Cli, Cmd, JobCmd};
+use super::super::commands::JobCmd;
+use super::super::{Cli, Cmd};
 use super::*;
 
 fn parse(args: &[&str]) -> Result<AddArgs, clap::Error> {
