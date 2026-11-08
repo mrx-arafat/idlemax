@@ -26,8 +26,8 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
 
 ### Written and tested locally, not reviewed or landed yet
 
-- Item 14 (daemonizing job children): the design, the pure accounting and two live tests exist.
-  The new test failed 3 of 6 early runs under heavy load, so it must be made reliable before landing (see item 14).
+- Item 14 (daemonizing job children): the accounting, the runner change, the restart reap and the reliable tests are committed.
+  The runner tests passed 15 of 15 runs under four busy-loop processes on macOS; the Linux scope path was not run (see item 14).
 - Items 1 and 2 (Linux verification and tailnet rollout): `scripts/verify-linux.sh` with a fixture self-test, `docs/ROLLOUT.md`, a battery parser fix and four Linux parser tests exist.
   It also adds `--expand-environment=no` to the systemd scope wrapper, which must be checked on the server before landing (see item 1).
 
@@ -97,8 +97,9 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
   On macOS this poll-based check is the only real cap, because `taskpolicy -m` is a soft limit there.
 - **How:** Land the local work: a process belongs to a job if it is the root, in the root's process group, carries the job's `IDLEMAX_JOB_ID` environment tag, or descends from one of those, and members outside the group are signalled by pid.
   The poll runs every second while a job is at half its cap or not yet measured.
-  Before landing, make the daemon test reliable under load: its early failures show the job's resident size never reaching the cap in 30 seconds, and the unproven guess is that macOS compresses idle pages out of the resident size.
-  Also make `pidfile::reap_orphans` kill members outside the group after an agent restart.
+  The daemon test failed under load because macOS compresses or swaps idle pages out of the resident size, which the runner measured correctly; the test hog now holds random data and touches every page.
+  `pidfile::reap_orphans` kills members outside the group after an agent restart, trusting the recorded group only while the root's start time still matches.
+  A kill that finds only unreaped zombies in the group is not an error on macOS, where `kill` and `killpg` answer `EPERM` there.
 - **Done when:** A test job that daemonizes a memory hog is killed at its cap on macOS and Linux, and the test passes repeatedly under load.
   The parent-tree SHORTCUT is replaced by one narrower SHORTCUT: a daemon started from an Apple-signed binary hides its environment tag on macOS, and catching it needs kqueue `NOTE_TRACK` or Endpoint Security.
 
