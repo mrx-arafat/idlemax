@@ -234,7 +234,7 @@ On the Mac, point the agent at the server and start it:
 url = "http://100.x.y.z:7878"
 ```
 
-Render and load the LaunchAgent with the mac instructions in the README, then check:
+Install and start the LaunchAgent with `idlemax service install` (see "Keep it running" in the README), then check:
 
 ```sh
 idlemax status
