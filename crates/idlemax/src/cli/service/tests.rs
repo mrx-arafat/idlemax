@@ -128,3 +128,17 @@ fn a_failed_step_says_what_failed_and_what_to_do() {
         "{err}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn install_creates_a_missing_state_dir_and_logs_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (mut ctx, paths) = ctx(dir.path());
+    ctx.platform = Platform::Launchd;
+    install(&ctx, &paths, &fake(None), &[ServiceKind::Agent], false).unwrap();
+    for made in [paths.root().to_path_buf(), paths.logs_dir()] {
+        let mode = std::fs::metadata(&made).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{}", made.display());
+    }
+}

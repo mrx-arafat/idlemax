@@ -192,7 +192,9 @@ fn install_wrapper(path: &Path) -> Result<()> {
         return Ok(());
     }
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        // `$IDLEMAX_HOME/bin`, so a missing state dir is created too: owner only.
+        crate::state::create_private_dir(dir)
+            .with_context(|| format!("creating {}", dir.display()))?;
     }
     write_atomic(path, WRAPPER_SCRIPT.as_bytes(), Some(0o755))
         .with_context(|| format!("writing {}", path.display()))

@@ -70,3 +70,16 @@ fn an_unexpected_shape_is_refused_and_the_file_is_untouched() {
     );
     assert!(!p.wrapper.exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn install_creates_a_missing_state_dir_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = places(dir.path());
+    install(&p, false).unwrap();
+    for made in [p.state.clone(), p.wrapper.parent().unwrap().to_path_buf()] {
+        let mode = std::fs::metadata(&made).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{}", made.display());
+    }
+}

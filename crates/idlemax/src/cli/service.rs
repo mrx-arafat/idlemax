@@ -249,7 +249,8 @@ pub(super) fn install(
         if !dry_run {
             if ctx.platform == Platform::Launchd {
                 // launchd opens the log file before the agent starts and gives up if the dir is missing.
-                std::fs::create_dir_all(paths.logs_dir())
+                // It may also create the state dir, which holds the token: owner only.
+                crate::state::create_private_dir(&paths.logs_dir())
                     .with_context(|| format!("creating {}", paths.logs_dir().display()))?;
             }
             if let Some(dir) = unit.path.parent() {
