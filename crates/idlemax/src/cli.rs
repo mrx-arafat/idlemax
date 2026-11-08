@@ -393,20 +393,24 @@ fn run_init(paths: &Paths, args: InitArgs, out: &Out) -> Result<()> {
             "kept"
         }
     };
-    let written = Written {
-        config: Entry::new(word(report.config), paths.config_file()),
-        token: Entry::new(word(report.token), paths.token_file()),
-    };
-    out.emit(
-        &written,
-        |w| {
-            format!(
-                "{} {}\n{} {}",
-                w.config.action,
-                w.config.path.display(),
-                w.token.action,
-                w.token.path.display()
-            )
+    let files = [
+        Entry::new("config", word(report.config), paths.config_file()),
+        Entry::new("token", word(report.token), paths.token_file()),
+    ];
+    out.emit_with(
+        &files,
+        |files| {
+            let lines: Vec<String> = files
+                .iter()
+                .map(|f| format!("{} {}", f.action, f.path.display()))
+                .collect();
+            lines.join("\n")
+        },
+        || {
+            Ok(out::toon::Node::obj([(
+                "files",
+                out::toon::Node::of(&files)?,
+            )]))
         },
         &out::hints::init(),
     )
@@ -415,20 +419,15 @@ fn run_init(paths: &Paths, args: InitArgs, out: &Out) -> Result<()> {
 /// What `init` did to one file.
 #[derive(Serialize)]
 struct Entry {
+    file: &'static str,
     action: &'static str,
     path: std::path::PathBuf,
 }
 
 impl Entry {
-    fn new(action: &'static str, path: std::path::PathBuf) -> Self {
-        Self { action, path }
+    fn new(file: &'static str, action: &'static str, path: std::path::PathBuf) -> Self {
+        Self { file, action, path }
     }
-}
-
-#[derive(Serialize)]
-struct Written {
-    config: Entry,
-    token: Entry,
 }
 
 fn read_token_stdin() -> Result<String> {

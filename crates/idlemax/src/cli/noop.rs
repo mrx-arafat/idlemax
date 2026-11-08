@@ -16,21 +16,26 @@ pub fn already(state: impl std::fmt::Display) -> String {
 /// The state a pause, resume or stop-all would only repeat. Scopes whose state the status
 /// does not show (one job, or the jobs under a device or account) are never no-ops.
 pub fn control(req: &ControlRequest, s: &ClusterStatus) -> Option<&'static str> {
-    let device_paused = |id: &str| s.devices.iter().find(|d| d.info.id == id).map(|d| d.paused);
+    let device = |id: &str| s.devices.iter().find(|d| d.info.id == id);
     let active = s.jobs.running + s.jobs.leased + s.jobs.paused;
     match (req.action, &req.scope) {
         (ControlAction::Pause, ControlScope::Global) if s.global_paused => Some("paused"),
         (ControlAction::Pause, ControlScope::Account(a)) if s.paused_accounts.contains(a) => {
             Some("paused")
         }
-        (ControlAction::Pause, ControlScope::Device(d)) if device_paused(d) == Some(true) => {
+        // `paused` also covers a global or local pause; only this one proves the scope is set.
+        (ControlAction::Pause, ControlScope::Device(d))
+            if device(d).is_some_and(|v| v.paused && !v.local_paused && !s.global_paused) =>
+        {
             Some("paused")
         }
         (ControlAction::Resume, ControlScope::Global) if !s.global_paused => Some("running"),
         (ControlAction::Resume, ControlScope::Account(a)) if !s.paused_accounts.contains(a) => {
             Some("running")
         }
-        (ControlAction::Resume, ControlScope::Device(d)) if device_paused(d) == Some(false) => {
+        (ControlAction::Resume, ControlScope::Device(d))
+            if device(d).is_some_and(|v| !v.paused) =>
+        {
             Some("running")
         }
         (ControlAction::StopAll, ControlScope::Global) if s.global_paused && active == 0 => {
@@ -114,6 +119,11 @@ mod tests {
             );
         }
         s.global_paused = true;
+        assert_eq!(
+            control(&req(Pause, Device("mac".into())), &s),
+            None,
+            "a global pause does not prove the device scope is set"
+        );
         assert_eq!(control(&req(Pause, Global), &s), Some("paused"));
         assert_eq!(control(&req(Resume, Global), &s), None);
         assert_eq!(control(&req(StopAll, Global), &s), Some("stopped"));

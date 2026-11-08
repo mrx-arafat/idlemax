@@ -51,7 +51,7 @@ pub fn summary(s: &ClusterStatus) -> Vec<(String, Node)> {
     let paused_devices: Vec<&str> = s
         .devices
         .iter()
-        .filter(|d| d.paused)
+        .filter(|d| d.paused && !s.global_paused)
         .map(|d| d.info.id.as_str())
         .collect();
     let mut fields = vec![
@@ -230,7 +230,6 @@ mod tests {
         mac.paused = true;
         let mut s = ClusterStatus {
             version: "0.1.0".into(),
-            global_paused: true,
             paused_accounts: vec!["claude".into()],
             devices: vec![mac],
             open_advice: 2,
@@ -247,7 +246,7 @@ mod tests {
         assert_eq!(done(&req), "paused device mac");
         assert_eq!(
             encode(&control(&done(&req), &s)),
-            "result: paused device mac\ncoordinator: 0.1.0\nglobal: paused\n\
+            "result: paused device mac\ncoordinator: 0.1.0\nglobal: running\n\
              paused_accounts[1]: claude\npaused_devices[1]: mac\n\
              jobs:\n  running: 1\n  queued: 3\n  failed: 1\nadvice_open: 2"
         );
