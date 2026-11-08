@@ -55,7 +55,7 @@ pub fn generate() -> String {
     out.push_str("- `idlemax local status` still works when the coordinator is down.\n");
     out.push_str("- To see live state at the start of every session, ask the user before running `idlemax hooks install`.\n");
     out.push_str(&format!(
-        "\n## Not installed?\n\nInstall the binary with `{INSTALL}`, then run `idlemax init`.\n"
+        "\n## Not installed?\n\nInstall the binary with `{INSTALL}`, then run `idlemax setup`.\n"
     ));
     out
 }

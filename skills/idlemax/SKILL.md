@@ -30,4 +30,4 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 
 ## Not installed?
 
-Install the binary with `curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh`, then run `idlemax init`.
+Install the binary with `curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh`, then run `idlemax setup`.

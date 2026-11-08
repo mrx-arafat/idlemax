@@ -208,7 +208,7 @@ main() {
       printf '  export PATH="%s:%s"\n' "$dir" "\$PATH"
       ;;
   esac
-  printf '\nNext: idlemax init, then idlemax --help\n'
+  printf '\nNext: idlemax setup, then idlemax --help\n'
 }
 
 main "$@"

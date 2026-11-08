@@ -37,7 +37,7 @@ fn home_view_and_hook_summary_explain_a_missing_setup_and_a_missing_coordinator(
     assert!(out.status.success(), "{text}");
     assert!(text.contains("description: "), "{text}");
     assert!(text.contains("status: not_set_up"), "{text}");
-    assert!(text.contains("`idlemax init`"), "{text}");
+    assert!(text.contains("`idlemax setup`"), "{text}");
     let (out, text) = run(&home, &state, &["hooks", "summary"]);
     assert!(out.status.success(), "{text}");
     assert_eq!(text.lines().count(), 1, "{text}");

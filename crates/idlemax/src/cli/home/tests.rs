@@ -229,7 +229,7 @@ fn the_toon_notes_for_a_missing_setup_or_coordinator_are_short() {
     });
     assert_eq!(
         encode(&of(&fresh, Mode::Hook).0),
-        "idlemax: not set up on this device (run `idlemax init`)"
+        "idlemax: not set up on this device (run `idlemax setup`)"
     );
 
     let empty = home(State::Up(live(&ClusterStatus::default(), &[])));
@@ -262,7 +262,7 @@ fn a_down_coordinator_is_one_short_note_with_the_next_step() {
     });
     assert_eq!(
         render(&fresh, Mode::Hook),
-        "idlemax: not set up on this device (run `idlemax init`)"
+        "idlemax: not set up on this device (run `idlemax setup`)"
     );
 }
 

@@ -29,7 +29,7 @@ pub fn of(h: &Home, mode: Mode) -> (Node, Vec<String>) {
         }
         (State::Down { reason, detail }, Mode::Hook) => {
             let fix = if *reason == Reason::NotSetUp {
-                "init"
+                "setup"
             } else {
                 "doctor"
             };

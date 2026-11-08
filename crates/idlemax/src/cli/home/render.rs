@@ -75,7 +75,7 @@ pub enum State {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
-    /// No API token yet: `idlemax init` has not run on this device.
+    /// No API token yet: `idlemax setup` has not run on this device.
     NotSetUp,
     Unreachable,
     Failed,
@@ -180,7 +180,7 @@ pub fn render(h: &Home, mode: Mode) -> String {
         }
         (State::Down { reason, detail }, Mode::Hook) => {
             let fix = if *reason == Reason::NotSetUp {
-                "init"
+                "setup"
             } else {
                 "doctor"
             };
@@ -285,7 +285,9 @@ pub(super) fn up_steps(live: &Live) -> Vec<String> {
 
 pub(super) fn down_steps(reason: Reason) -> Vec<String> {
     let first = match reason {
-        Reason::NotSetUp => "Run `idlemax init` to create the config and the API token",
+        Reason::NotSetUp => {
+            "Run `idlemax setup` to create the config and token and install the service"
+        }
         Reason::Unreachable => "Run `idlemax coord` to start a coordinator on this machine",
         Reason::Failed => "Run `idlemax doctor` to find what is wrong",
     };
