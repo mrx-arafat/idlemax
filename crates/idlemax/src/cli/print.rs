@@ -45,6 +45,7 @@ pub fn summary_parts(s: &ClusterStatus) -> Vec<String> {
         (j.queued, "queued"),
         (j.parked, "parked"),
         (j.failed, "failed"),
+        (j.killed, "killed"),
     ] {
         if n > 0 || word == "queued" {
             jobs.push(format!("{n} {word}"));
@@ -208,3 +209,6 @@ fn yes_no(b: bool) -> &'static str {
         "no"
     }
 }
+
+#[cfg(test)]
+mod tests;
