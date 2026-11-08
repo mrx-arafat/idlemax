@@ -197,10 +197,12 @@ impl Guard {
         }
     }
 
-    /// User presence: (user_active, verdict). Unknown idle time holds new work.
+    /// User presence: (user_active, verdict). Unknown idle time holds new work, unless the
+    /// minimum is 0: then nothing needs waiting for, which is how a host that cannot measure
+    /// idle time (a headless Linux box) opts out of the check.
     fn presence(&self, m: &MetricsSnapshot, reasons: &mut Vec<String>) -> (bool, GuardAction) {
         match (self.policy.user_idle_min_secs, m.user_idle_secs) {
-            (Some(_), None) => {
+            (Some(min), None) if min > 0 => {
                 reasons.push("hold: user idle time unknown".into());
                 (false, GuardAction::Hold)
             }

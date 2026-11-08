@@ -301,3 +301,29 @@ fn pins_kill_switch_and_local_pause_reasons_distinctly() {
         .reasons
         .contains(&"pause: local pause active".to_string()));
 }
+
+#[test]
+fn unknown_idle_time_holds_only_when_an_idle_minimum_is_required() {
+    let mut m = mac();
+    m.user_idle_secs = None;
+
+    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let held = guard.evaluate(&m, &[], false, false);
+    assert_eq!(held.action, GuardAction::Hold);
+    assert!(held
+        .reasons
+        .contains(&"hold: user idle time unknown".to_string()));
+
+    // 0 means "start whatever the user is doing", so there is nothing to wait for.
+    let policy = GuardPolicy {
+        user_idle_min_secs: Some(0),
+        ..GuardPolicy::macos_laptop()
+    };
+    let run = GuardAction::Run {
+        slots: policy.max_jobs,
+        mem_mib: policy.ram_budget_mib,
+    };
+    let free = Guard::new(policy).evaluate(&m, &[], false, false);
+    assert_eq!(free.action, run);
+    assert!(free.reasons.is_empty(), "{:?}", free.reasons);
+}
