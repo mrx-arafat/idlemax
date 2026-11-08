@@ -28,7 +28,11 @@ pub fn notify_job_finish(
         .arg(&notif.title)
         .spawn()
     {
-        Ok(_) => {}
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
         Err(e) => warn!(error = %e, "cannot spawn osascript notification"),
     }
 }
