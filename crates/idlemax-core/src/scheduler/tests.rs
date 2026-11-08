@@ -1,7 +1,12 @@
 //! Tests: scheduler job picking, and the retry / park policy.
 
 use super::*;
-use crate::types::JobSpec;
+use crate::protocol::JobUpdate;
+use crate::quota::QuotaView;
+use crate::types::{
+    CostClass, DeviceInfo, DeviceProfile, GuardAction, GuardDecision, Job, JobId, JobSpec,
+    JobStatus, TokenClass,
+};
 
 fn job(id: JobId, priority: i32, cost: CostClass, mem_mb: u64) -> Job {
     let ai_account = (cost == CostClass::Ai).then(|| "claude-max".to_string());
