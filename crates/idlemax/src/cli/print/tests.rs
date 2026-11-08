@@ -1,8 +1,21 @@
 //! Tests: the one-line cluster summary names every kind of finished-badly job.
 
-use idlemax_core::protocol::{ClusterStatus, JobCounts};
+use idlemax_core::protocol::{ClusterStatus, JobCounts, LocalStatus};
 
-use super::summary;
+use super::{local_status, summary};
+
+#[test]
+fn local_status_prints_the_control_result_before_the_state() {
+    let s = LocalStatus {
+        device: "mac".into(),
+        version: "0.2.0".into(),
+        coordinator_reachable: true,
+        ..LocalStatus::default()
+    };
+    assert!(local_status(Some("resumed this device"), &s, 0)
+        .starts_with("ok: resumed this device\ndevice mac agent 0.2.0\n"));
+    assert!(local_status(None, &s, 0).starts_with("device mac agent 0.2.0\n"));
+}
 
 fn line(jobs: JobCounts) -> String {
     summary(&ClusterStatus {

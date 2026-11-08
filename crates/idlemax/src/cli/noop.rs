@@ -46,14 +46,32 @@ pub fn control(req: &ControlRequest, s: &ClusterStatus) -> Option<&'static str> 
 }
 
 /// This device's own pause state, for `idlemax local pause|resume|stop-all`.
-pub fn local(action: ControlAction, s: &LocalStatus) -> Option<&'static str> {
+pub fn local(action: ControlAction, s: &LocalStatus) -> Option<LocalNoop> {
     match action {
-        ControlAction::Pause if s.local_paused => Some("paused"),
-        ControlAction::Resume if !s.local_paused => Some("running"),
-        ControlAction::StopAll if s.local_paused && s.running.is_empty() => Some("stopped"),
+        ControlAction::Pause if s.local_paused || s.kill_switch => Some(LocalNoop::State("paused")),
+        // Lifting a local pause is a real change; the kill switch still needs a note after it.
+        ControlAction::Resume if s.local_paused => None,
+        ControlAction::Resume if s.kill_switch => Some(LocalNoop::KillSwitch),
+        ControlAction::Resume => Some(LocalNoop::State("running")),
+        ControlAction::StopAll if s.local_paused && s.running.is_empty() => {
+            Some(LocalNoop::State("stopped"))
+        }
         _ => None,
     }
 }
+
+/// What a local control request would only repeat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalNoop {
+    /// Already in the state the request asks for.
+    State(&'static str),
+    /// Held by the kill switch file, which no control request can remove.
+    KillSwitch,
+}
+
+/// What still holds every job after a control: the kill switch file.
+pub const KILL_SWITCH_HOLDS: &str =
+    "$IDLEMAX_HOME/PAUSE is present, so every job stays held: delete that file to run";
 
 /// Cancelling a job that already ended: the status it ended in.
 pub fn cancel(job: &Job) -> Option<JobStatus> {
@@ -159,15 +177,37 @@ mod tests {
         assert!(!dismiss(&rec(RecommendationStatus::Open)));
         assert!(!dismiss(&rec(RecommendationStatus::Accepted)));
         assert_eq!(already("paused"), "already paused (no-op)");
+    }
 
-        let mut local_status = LocalStatus::default();
-        assert_eq!(local(ControlAction::Resume, &local_status), Some("running"));
-        assert_eq!(local(ControlAction::Pause, &local_status), None);
-        local_status.local_paused = true;
-        assert_eq!(local(ControlAction::Pause, &local_status), Some("paused"));
+    #[test]
+    fn a_local_control_never_claims_a_resume_the_kill_switch_still_holds() {
+        let mut s = LocalStatus::default();
         assert_eq!(
-            local(ControlAction::StopAll, &local_status),
-            Some("stopped")
+            local(ControlAction::Resume, &s),
+            Some(LocalNoop::State("running"))
+        );
+        assert_eq!(local(ControlAction::Pause, &s), None);
+        // The kill switch file holds every job and no request removes it.
+        s.kill_switch = true;
+        assert_eq!(
+            local(ControlAction::Pause, &s),
+            Some(LocalNoop::State("paused"))
+        );
+        assert_eq!(
+            local(ControlAction::Resume, &s),
+            Some(LocalNoop::KillSwitch),
+            "resume cannot lift the kill switch, so it must not say running"
+        );
+        // A local pause is still worth lifting, and then the note says what remains.
+        s.local_paused = true;
+        assert_eq!(local(ControlAction::Resume, &s), None);
+        assert_eq!(
+            local(ControlAction::Pause, &s),
+            Some(LocalNoop::State("paused"))
+        );
+        assert_eq!(
+            local(ControlAction::StopAll, &s),
+            Some(LocalNoop::State("stopped"))
         );
     }
 }

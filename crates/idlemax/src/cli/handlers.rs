@@ -187,22 +187,33 @@ pub async fn local(cmd: LocalCmd, c: &ApiClient, out: &Out) -> Result<()> {
     let (s, result) = match action {
         None => (before, None),
         Some(action) => match noop::local(action, &before) {
-            Some(state) => (before, Some(noop::already(state))),
+            Some(noop::LocalNoop::State(state)) => (before, Some(noop::already(state))),
+            Some(noop::LocalNoop::KillSwitch) => (
+                before,
+                Some(format!(
+                    "already paused by the kill switch (no-op); {}",
+                    noop::KILL_SWITCH_HOLDS
+                )),
+            ),
             None => {
                 let req = ControlRequest {
                     scope: ControlScope::Global,
                     action,
                     reason: None,
                 };
-                let done = format!("{} this device", views::verb(action));
-                (c.local_control(&req).await?, Some(done))
+                let mut done = format!("{} this device", views::verb(action));
+                let s = c.local_control(&req).await?;
+                if s.kill_switch {
+                    done.push_str(&format!("; {}", noop::KILL_SWITCH_HOLDS));
+                }
+                (s, Some(done))
             }
         },
     };
     let now = now_ms();
     out.emit_with(
         &s,
-        |s| print::local_status(s, now),
+        |s| print::local_status(result.as_deref(), s, now),
         || Ok(views::local(result.as_deref(), &s, now)),
         &[],
     )

@@ -172,20 +172,21 @@ pub fn doctor(r: &Report) -> String {
     out
 }
 
-pub fn local_status(s: &LocalStatus, now_ms: UnixMs) -> String {
+pub fn local_status(result: Option<&str>, s: &LocalStatus, now_ms: UnixMs) -> String {
     let coord = match (s.coordinator_reachable, s.last_heartbeat_ms) {
         (true, _) => "reachable".to_string(),
         (false, Some(t)) => format!("UNREACHABLE (last heartbeat {})", rel(t, now_ms)),
         (false, None) => "UNREACHABLE (no heartbeat yet)".to_string(),
     };
-    let mut out = format!(
+    let mut out = result.map(|r| format!("ok: {r}\n")).unwrap_or_default();
+    out.push_str(&format!(
         "device {} agent {}\ncoordinator: {coord}\nlocal pause: {}\nkill switch file: {}\nguard: {}",
         s.device,
         s.version,
         yes_no(s.local_paused),
         yes_no(s.kill_switch),
         guard_summary(&s.guard),
-    );
+    ));
     for reason in s.guard.reasons.iter().skip(1) {
         out.push_str(&format!("\n  {reason}"));
     }
