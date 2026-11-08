@@ -31,8 +31,38 @@ use serde_json::Value;
 const DAY_MS: i64 = 86_400_000;
 /// Events, closed advice and applied-update records are kept this long.
 const HISTORY_RETENTION_MS: i64 = 30 * DAY_MS;
+/// Finished jobs are kept this long, except parked ones (they need a human) and the last job
+/// of a schedule (its result is shown).
+const JOB_RETENTION_MS: i64 = 90 * DAY_MS;
+/// Longest event message stored; a hostile device id or error text cannot make rows large.
+pub(crate) const MAX_EVENT_MESSAGE_CHARS: usize = 500;
 const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const WAL_SIZE_LIMIT_BYTES: i64 = 8 * 1024 * 1024;
+
+/// What the store accepts, checked on insert, so a token holder cannot grow it without bound.
+/// The limits are far above any real use.
+#[derive(Debug, Clone, Copy)]
+struct Caps {
+    /// Newest events kept (older ones are dropped as new ones arrive).
+    events: i64,
+    /// Devices, counting only ones that heartbeat; silent ones are pruned after 30 days.
+    devices: i64,
+    /// Queued, leased, running and paused jobs together.
+    live_jobs: i64,
+    /// Pause flags (`pause` scopes) set at once.
+    controls: i64,
+}
+
+impl Default for Caps {
+    fn default() -> Self {
+        Self {
+            events: 100_000,
+            devices: 256,
+            live_jobs: 10_000,
+            controls: 1_024,
+        }
+    }
+}
 
 /// Errors from the coordinator store.
 #[derive(Debug, thiserror::Error)]
@@ -63,6 +93,13 @@ pub enum StoreError {
     /// Another AI job already holds a lease on this account.
     #[error("AI account {0} already holds a lease")]
     AccountLeased(String),
+    /// A cap of [`Caps`] is reached; the caller turns it into a 409.
+    #[error("too many {what}: the limit is {limit}; {hint}")]
+    LimitReached {
+        what: &'static str,
+        limit: i64,
+        hint: &'static str,
+    },
     #[error("schedule {0} not found")]
     ScheduleNotFound(ScheduleId),
     #[error("schedule {name:?} already exists (id {id}); remove it first with `idlemax schedule rm {id}`")]
@@ -79,11 +116,14 @@ pub struct PruneReport {
     pub events: usize,
     pub advice: usize,
     pub updates: usize,
+    pub devices: usize,
+    pub jobs: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
 pub struct Store {
     conn: Connection,
+    caps: Caps,
 }
 
 impl Store {
@@ -109,9 +149,18 @@ impl Store {
         }
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", true)?;
-        let mut store = Store { conn };
+        let mut store = Store {
+            conn,
+            caps: Caps::default(),
+        };
         store.migrate()?;
         Ok(store)
+    }
+
+    #[cfg(test)]
+    fn with_caps(mut self, caps: Caps) -> Self {
+        self.caps = caps;
+        self
     }
 
     fn migrate(&mut self) -> StoreResult<()> {
@@ -134,12 +183,13 @@ impl Store {
     }
 
     /// Drops metrics and quota history older than `metrics_retention_ms` (the newest
-    /// quota snapshot per account window always stays), plus events and closed advice
-    /// older than 30 days (and applied-update records of that age), then returns freed pages
-    /// to the OS.
+    /// quota snapshot per account window always stays), plus events, closed advice and devices
+    /// silent for 30 days (and applied-update records of that age), and finished jobs older
+    /// than 90 days, then returns freed pages to the OS.
     pub fn prune(&mut self, now: UnixMs, metrics_retention_ms: i64) -> StoreResult<PruneReport> {
         let metrics_cutoff = now.saturating_sub(metrics_retention_ms);
         let history_cutoff = now.saturating_sub(HISTORY_RETENTION_MS);
+        let jobs_cutoff = now.saturating_sub(JOB_RETENTION_MS);
         let tx = self.conn.transaction()?;
         let report = PruneReport {
             metrics: tx.execute(
@@ -160,6 +210,17 @@ impl Store {
             updates: tx.execute(
                 "DELETE FROM applied_updates WHERE at_ms < ?1",
                 [history_cutoff],
+            )?,
+            devices: tx.execute(
+                "DELETE FROM devices WHERE last_seen_ms < ?1",
+                [history_cutoff],
+            )?,
+            jobs: tx.execute(
+                "DELETE FROM jobs
+                 WHERE status IN ('succeeded', 'failed', 'killed', 'cancelled')
+                   AND COALESCE(finished_ms, created_ms) < ?1
+                   AND id NOT IN (SELECT last_job_id FROM schedules WHERE last_job_id IS NOT NULL)",
+                [jobs_cutoff],
             )?,
         };
         tx.commit()?;

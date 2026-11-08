@@ -5,7 +5,9 @@
 //! Commands are level-triggered: every heartbeat re-derives them from stored state, so a lost
 //! reply heals on the next heartbeat. Stop-all and cancel take effect in the store at once.
 
-use crate::protocol::{AgentCommand, ControlRequest, RunningJob};
+use crate::protocol::{
+    name_problem, AgentCommand, ControlRequest, RunningJob, MAX_DEVICE_ID_CHARS,
+};
 use crate::quota::QuotaConfig;
 use crate::scheduler::lease_deadline;
 use crate::types::{
@@ -26,6 +28,8 @@ pub enum ControlError {
     InvalidJob(#[from] SpecError),
     #[error("ai_account {0:?} is not in [[quota.accounts]]")]
     UnknownAccount(String),
+    #[error("{0}")]
+    InvalidDevice(String),
 }
 
 /// What one control request changes. The adapter persists it and logs `summary`.
@@ -104,6 +108,12 @@ pub fn plan_control(
     jobs: &[Job],
     now_ms: UnixMs,
 ) -> Result<ControlPlan, ControlError> {
+    // A pause flag is stored per name, so its name is checked; taking one away never is.
+    if let (ControlScope::Device(id), false) = (&req.scope, req.action == ControlAction::Resume) {
+        if let Some(why) = name_problem("device id", id, MAX_DEVICE_ID_CHARS) {
+            return Err(ControlError::InvalidDevice(why));
+        }
+    }
     let note = format!("{}: {}", action_label(req.action), reason(req));
     match (req.action, &req.scope) {
         (ControlAction::Cancel, ControlScope::Job(id)) => {

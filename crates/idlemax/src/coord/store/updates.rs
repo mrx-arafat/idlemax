@@ -40,6 +40,7 @@ impl Store {
         writes: &UpdateWrites<'_>,
         now: UnixMs,
     ) -> StoreResult<bool> {
+        let keep_events = self.caps.events;
         let tx = self.conn.transaction()?;
         if seq != 0 {
             let fresh = tx.execute(
@@ -58,7 +59,15 @@ impl Store {
             update_jobs(&tx, std::slice::from_ref(job))?;
         }
         for e in writes.events {
-            insert_event(&tx, e.kind, e.device.as_ref(), e.job, &e.message, now)?;
+            insert_event(
+                &tx,
+                keep_events,
+                e.kind,
+                e.device.as_ref(),
+                e.job,
+                &e.message,
+                now,
+            )?;
         }
         tx.commit()?;
         Ok(true)

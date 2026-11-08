@@ -19,8 +19,9 @@ impl Store {
         spec: &idlemax_core::types::JobSpec,
         now: idlemax_core::types::UnixMs,
     ) -> StoreResult<idlemax_core::types::Job> {
+        let live_jobs = self.caps.live_jobs;
         let tx = self.conn.transaction()?;
-        let job = super::jobs::insert_job(&tx, spec, now)?;
+        let job = super::jobs::insert_job(&tx, live_jobs, spec, now)?;
         let changed = tx.execute(
             "UPDATE recommendations SET status = 'accepted' WHERE id = ?1 AND status = 'open'",
             [id],

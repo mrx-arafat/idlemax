@@ -52,6 +52,7 @@ impl Store {
         if id.trim().is_empty() {
             return Err(StoreError::Invalid("heartbeat device id is empty".into()));
         }
+        let max_devices = self.caps.devices;
         let tx = self.conn.transaction()?;
         let previous = tx
             .query_row(
@@ -60,6 +61,16 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
+        if previous.is_none() {
+            let known: i64 = tx.query_row("SELECT count(*) FROM devices", [], |r| r.get(0))?;
+            if known >= max_devices {
+                return Err(StoreError::LimitReached {
+                    what: "devices",
+                    limit: max_devices,
+                    hint: "a device silent for 30 days is forgotten",
+                });
+            }
+        }
         tx.prepare_cached(UPSERT_DEVICE)?.execute(params![
             id,
             json_text(&hb.device)?,

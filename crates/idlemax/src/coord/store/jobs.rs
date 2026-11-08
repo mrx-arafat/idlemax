@@ -37,19 +37,20 @@ impl Store {
     /// `insert_job_once`.
     #[cfg(test)]
     pub fn insert_job(&mut self, spec: &JobSpec, now: UnixMs) -> StoreResult<Job> {
-        insert_job(&self.conn, spec, now)
+        insert_job(&self.conn, self.caps.live_jobs, spec, now)
     }
 
     /// Queues a validated spec unless its key already names an unfinished job, in which
     /// case that job is returned. Check and insert share one transaction.
     pub fn insert_job_once(&mut self, spec: &JobSpec, now: UnixMs) -> StoreResult<Added> {
+        let live_jobs = self.caps.live_jobs;
         let tx = self.conn.transaction()?;
         if let Some(key) = &spec.key {
             if let Some(job) = unfinished_with_key(&tx, key)? {
                 return Ok(Added::Existing(job));
             }
         }
-        let job = insert_job(&tx, spec, now)?;
+        let job = insert_job(&tx, live_jobs, spec, now)?;
         tx.commit()?;
         Ok(Added::New(job))
     }
@@ -237,8 +238,26 @@ fn job_from_row(r: &Row<'_>) -> rusqlite::Result<Job> {
     })
 }
 
-pub(super) fn insert_job(conn: &Connection, spec: &JobSpec, now: UnixMs) -> StoreResult<Job> {
+/// Queues `spec`, unless `max_live` jobs are already unfinished.
+pub(super) fn insert_job(
+    conn: &Connection,
+    max_live: i64,
+    spec: &JobSpec,
+    now: UnixMs,
+) -> StoreResult<Job> {
     spec.validate().map_err(StoreError::InvalidSpec)?;
+    let live: i64 = conn.query_row(
+        &format!("SELECT count(*) FROM jobs WHERE status IN {LIVE}"),
+        [],
+        |r| r.get(0),
+    )?;
+    if live >= max_live {
+        return Err(StoreError::LimitReached {
+            what: "queued jobs",
+            limit: max_live,
+            hint: "wait for some to finish, or cancel them",
+        });
+    }
     conn.execute(
         "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key)
              VALUES (?1, ?2, 'queued', ?3, ?4, ?5, ?6)",

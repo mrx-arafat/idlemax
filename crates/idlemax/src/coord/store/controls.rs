@@ -8,9 +8,10 @@ use super::{Store, StoreError, StoreResult};
 impl Store {
     /// Persists a pause flag and its changed jobs atomically.
     pub fn apply_control(&mut self, plan: &idlemax_core::control::ControlPlan) -> StoreResult<()> {
+        let max_flags = self.caps.controls;
         let tx = self.conn.transaction()?;
         if let Some((scope, paused)) = &plan.pause {
-            set_paused(&tx, scope, *paused)?;
+            set_paused(&tx, max_flags, scope, *paused)?;
         }
         super::jobs::update_jobs(&tx, &plan.jobs)?;
         tx.commit()?;
@@ -52,8 +53,28 @@ fn scope_from(kind: &str, id: String) -> StoreResult<ControlScope> {
     }
 }
 
-fn set_paused(conn: &rusqlite::Connection, scope: &ControlScope, paused: bool) -> StoreResult<()> {
+fn set_paused(
+    conn: &rusqlite::Connection,
+    max_flags: i64,
+    scope: &ControlScope,
+    paused: bool,
+) -> StoreResult<()> {
     let (kind, id) = scope_key(scope);
+    if paused {
+        let known: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM controls WHERE scope_type = ?1 AND scope_id = ?2)",
+            params![kind, id],
+            |r| r.get(0),
+        )?;
+        let flags: i64 = conn.query_row("SELECT count(*) FROM controls", [], |r| r.get(0))?;
+        if !known && flags >= max_flags {
+            return Err(StoreError::LimitReached {
+                what: "pause flags",
+                limit: max_flags,
+                hint: "resume one first",
+            });
+        }
+    }
     let sql = if paused {
         "INSERT INTO controls (scope_type, scope_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING"
     } else {

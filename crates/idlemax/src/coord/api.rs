@@ -127,9 +127,9 @@ impl From<StoreError> for ApiFailure {
             StoreError::JobNotFound(_) | StoreError::ScheduleNotFound(_) => {
                 ApiFailure::NotFound(e.to_string())
             }
-            StoreError::AccountLeased(_) | StoreError::ScheduleExists { .. } => {
-                ApiFailure::Conflict(e.to_string())
-            }
+            StoreError::AccountLeased(_)
+            | StoreError::ScheduleExists { .. }
+            | StoreError::LimitReached { .. } => ApiFailure::Conflict(e.to_string()),
             StoreError::Invalid(_) | StoreError::InvalidSpec(_) => {
                 ApiFailure::BadRequest(e.to_string())
             }
@@ -146,6 +146,7 @@ impl From<ControlError> for ApiFailure {
             ControlError::CancelNeedsJob
             | ControlError::NotLocal
             | ControlError::InvalidJob(_)
+            | ControlError::InvalidDevice(_)
             | ControlError::UnknownAccount(_) => ApiFailure::BadRequest(e.to_string()),
         }
     }

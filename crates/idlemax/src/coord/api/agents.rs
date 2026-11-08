@@ -7,7 +7,9 @@ use idlemax_core::advice::{is_ai_pass, AdvisorInputs};
 use idlemax_core::control::{
     came_online, is_held, may_assign, paused_accounts, reconcile_heartbeat, transition_event,
 };
-use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply};
+use idlemax_core::protocol::{
+    name_problem, Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply, MAX_DEVICE_ID_CHARS,
+};
 use idlemax_core::scheduler::{apply_update, lease_deadline, pick, SchedContext};
 use idlemax_core::types::{ControlScope, EventKind, Job, JobStatus, UnixMs};
 use idlemax_core::Config;
@@ -28,6 +30,7 @@ pub async fn heartbeat(
     if hb.device.id.trim().is_empty() {
         return Err(ApiFailure::BadRequest("device.id is empty".into()));
     }
+    hb.check().map_err(ApiFailure::BadRequest)?;
     let now = now_ms();
     let reply = app
         .with_store(move |store, cfg| on_heartbeat(store, cfg, &hb, now))
@@ -61,6 +64,9 @@ pub async fn advisor_inputs(
 ) -> Result<Json<Value>, ApiFailure> {
     if inputs.device.trim().is_empty() {
         return Err(ApiFailure::BadRequest("device is empty".into()));
+    }
+    if let Some(why) = name_problem("device", &inputs.device, MAX_DEVICE_ID_CHARS) {
+        return Err(ApiFailure::BadRequest(why));
     }
     let now = now_ms();
     app.with_store(move |store, _| {

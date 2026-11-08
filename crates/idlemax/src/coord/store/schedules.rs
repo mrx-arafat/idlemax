@@ -79,8 +79,9 @@ impl Store {
     /// Queues the schedule's job, links it as the last one and logs both events, atomically,
     /// so a crash can never leave a job the schedule does not know about.
     pub fn fire_schedule(&mut self, schedule: &Schedule, now: UnixMs) -> StoreResult<Job> {
+        let (keep_events, live_jobs) = (self.caps.events, self.caps.live_jobs);
         let tx = self.conn.transaction()?;
-        let job = super::jobs::insert_job(&tx, &schedule.spec, now)?;
+        let job = super::jobs::insert_job(&tx, live_jobs, &schedule.spec, now)?;
         let changed = tx.execute(
             "UPDATE schedules SET last_fired_ms = ?2, last_job_id = ?3 WHERE id = ?1",
             params![schedule.id, now, job.id],
@@ -89,13 +90,22 @@ impl Store {
             return Err(StoreError::ScheduleNotFound(schedule.id));
         }
         let queued = format!("{} queued (priority {})", job.spec.name, job.spec.priority);
-        insert_event(&tx, EventKind::JobQueued, None, Some(job.id), &queued, now)?;
+        insert_event(
+            &tx,
+            keep_events,
+            EventKind::JobQueued,
+            None,
+            Some(job.id),
+            &queued,
+            now,
+        )?;
         let fired = format!(
             "schedule {} ({}) queued job {}, repeats every {}",
             schedule.id, job.spec.name, job.id, schedule.every
         );
         insert_event(
             &tx,
+            keep_events,
             EventKind::ScheduleFired,
             None,
             Some(job.id),
@@ -114,6 +124,7 @@ impl Store {
         reason: &str,
         now: UnixMs,
     ) -> StoreResult<()> {
+        let keep_events = self.caps.events;
         let tx = self.conn.transaction()?;
         tx.execute(
             "UPDATE schedules SET last_fired_ms = ?2 WHERE id = ?1",
@@ -123,7 +134,7 @@ impl Store {
             "schedule {} ({}) could not queue a job: {reason}; trying again in {}",
             schedule.id, schedule.spec.name, schedule.every
         );
-        insert_event(&tx, EventKind::Error, None, None, &msg, now)?;
+        insert_event(&tx, keep_events, EventKind::Error, None, None, &msg, now)?;
         tx.commit()?;
         Ok(())
     }

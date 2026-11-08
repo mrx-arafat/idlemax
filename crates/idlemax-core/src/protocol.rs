@@ -40,6 +40,59 @@ pub struct Heartbeat {
     pub local_paused: bool,
 }
 
+/// Longest device id and host name an agent may report.
+pub const MAX_DEVICE_ID_CHARS: usize = 128;
+pub const MAX_HOSTNAME_CHARS: usize = 253;
+/// Entries in a device's capability and AI account lists, the length of each, and the entries
+/// of its reported command allowlist.
+const MAX_TAGS: usize = 64;
+const MAX_TAG_CHARS: usize = 128;
+const MAX_ALLOWLIST_ENTRIES: usize = 256;
+
+/// Why `value` cannot be a `field` (control characters, or over `max` characters), or None.
+/// Names reach events, the CLI tables and the AI prompt, so they stay plain and short.
+pub fn name_problem(field: &str, value: &str, max: usize) -> Option<String> {
+    if value.chars().any(char::is_control) {
+        return Some(format!("{field} contains a control character"));
+    }
+    (value.chars().count() > max).then(|| format!("{field} is longer than {max} characters"))
+}
+
+impl Heartbeat {
+    /// The first reason this heartbeat must be refused for its size or characters, if any.
+    pub fn check(&self) -> Result<(), String> {
+        let d = &self.device;
+        let checks = [
+            name_problem("device.id", &d.id, MAX_DEVICE_ID_CHARS),
+            name_problem("device.hostname", &d.hostname, MAX_HOSTNAME_CHARS),
+            name_problem("device.agent_version", &d.agent_version, MAX_TAG_CHARS),
+        ];
+        if let Some(problem) = checks.into_iter().flatten().next() {
+            return Err(problem);
+        }
+        for (field, list) in [
+            ("device.capabilities", &d.capabilities),
+            ("device.ai_accounts", &d.ai_accounts),
+        ] {
+            if list.len() > MAX_TAGS {
+                return Err(format!("{field} has more than {MAX_TAGS} entries"));
+            }
+            if let Some(problem) = list
+                .iter()
+                .find_map(|t| name_problem(field, t, MAX_TAG_CHARS))
+            {
+                return Err(problem);
+            }
+        }
+        match &d.command_allowlist {
+            Some(list) if list.len() > MAX_ALLOWLIST_ENTRIES => Err(format!(
+                "device.command_allowlist has more than {MAX_ALLOWLIST_ENTRIES} entries"
+            )),
+            _ => Ok(()),
+        }
+    }
+}
+
 /// JSON: {"cmd":"pause_job","id":7}, {"cmd":"stop_all"}.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]

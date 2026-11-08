@@ -3,7 +3,7 @@
 use idlemax_core::types::{CostClass, Job, JobSpec, JobStatus};
 
 use super::jobs::{Added, LIVE};
-use super::{schema, Store, StoreError};
+use super::{schema, Caps, Store, StoreError, MAX_EVENT_MESSAGE_CHARS};
 
 const T0: i64 = 1_800_000_000_000;
 
@@ -195,4 +195,155 @@ fn lease_is_compare_and_set_with_one_ai_lease_per_account() {
         .is_some());
     assert_eq!(s.job_counts().unwrap().succeeded, 1);
     assert_eq!(s.job_counts().unwrap().leased, 1);
+}
+
+fn capped(caps: Caps) -> Store {
+    Store::open_in_memory().unwrap().with_caps(caps)
+}
+
+fn beat(id: &str) -> idlemax_core::protocol::Heartbeat {
+    idlemax_core::protocol::Heartbeat {
+        device: idlemax_core::types::DeviceInfo {
+            id: id.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+fn limit_hit(result: Result<impl std::fmt::Debug, StoreError>, what: &str) {
+    match result {
+        Err(StoreError::LimitReached { what: got, .. }) => assert_eq!(got, what),
+        other => panic!("wanted the {what} limit, got {other:?}"),
+    }
+}
+
+#[test]
+fn events_are_clipped_and_only_the_newest_are_kept() {
+    use idlemax_core::types::EventKind;
+    let mut s = capped(Caps {
+        events: 3,
+        ..Caps::default()
+    });
+    for i in 0..5 {
+        s.append_event(
+            EventKind::Control,
+            None,
+            None,
+            &format!("event {i}"),
+            T0 + i,
+        )
+        .unwrap();
+    }
+    let long = s
+        .append_event(EventKind::Control, None, None, &"x".repeat(2000), T0 + 9)
+        .unwrap();
+    assert_eq!(long.message.chars().count(), MAX_EVENT_MESSAGE_CHARS);
+    let kept = s.events(0).unwrap();
+    assert_eq!(kept.len(), 3, "only the newest 3 remain");
+    assert_eq!(kept[0].message.chars().count(), MAX_EVENT_MESSAGE_CHARS);
+    assert_eq!(kept[1].message, "event 4");
+}
+
+#[test]
+fn a_new_device_over_the_cap_is_refused_and_a_known_one_still_reports() {
+    let mut s = capped(Caps {
+        devices: 2,
+        ..Caps::default()
+    });
+    s.record_heartbeat(&beat("a"), T0).unwrap();
+    s.record_heartbeat(&beat("b"), T0).unwrap();
+    limit_hit(s.record_heartbeat(&beat("c"), T0), "devices");
+    s.record_heartbeat(&beat("a"), T0 + 1).unwrap();
+}
+
+#[test]
+fn unfinished_jobs_over_the_cap_are_refused_and_finished_ones_do_not_count() {
+    let mut s = capped(Caps {
+        live_jobs: 2,
+        ..Caps::default()
+    });
+    let first = s.insert_job(&spec("one", None), T0).unwrap();
+    s.insert_job(&spec("two", None), T0).unwrap();
+    limit_hit(s.insert_job(&spec("three", None), T0), "queued jobs");
+    limit_hit(s.insert_job_once(&spec("four", None), T0), "queued jobs");
+    s.update_jobs(&[Job {
+        status: JobStatus::Cancelled,
+        finished_ms: Some(T0),
+        ..first
+    }])
+    .unwrap();
+    s.insert_job(&spec("three", None), T0).unwrap();
+}
+
+#[test]
+fn pause_flags_over_the_cap_are_refused_and_resuming_still_works() {
+    use idlemax_core::control::ControlPlan;
+    use idlemax_core::types::ControlScope;
+    let mut s = capped(Caps {
+        controls: 2,
+        ..Caps::default()
+    });
+    let plan = |scope: &str, paused| ControlPlan {
+        pause: Some((ControlScope::Device(scope.into()), paused)),
+        jobs: Vec::new(),
+        summary: String::new(),
+    };
+    s.apply_control(&plan("a", true)).unwrap();
+    s.apply_control(&plan("b", true)).unwrap();
+    limit_hit(s.apply_control(&plan("c", true)), "pause flags");
+    s.apply_control(&plan("a", true)).unwrap();
+    s.apply_control(&plan("a", false)).unwrap();
+    s.apply_control(&plan("c", true)).unwrap();
+}
+
+#[test]
+fn prune_forgets_silent_devices_and_old_finished_jobs_but_keeps_parked_and_scheduled_ones() {
+    const DAY: i64 = 86_400_000;
+    let mut s = Store::open_in_memory().unwrap();
+    let now = T0 + 100 * DAY;
+    s.record_heartbeat(&beat("gone"), now - 31 * DAY).unwrap();
+    s.record_heartbeat(&beat("here"), now - DAY).unwrap();
+
+    let finish = |s: &mut Store, name: &str, status: JobStatus, ended: i64| {
+        let job = s.insert_job(&spec(name, None), T0).unwrap();
+        let ended = Job {
+            status,
+            finished_ms: Some(ended),
+            ..job
+        };
+        s.update_jobs(std::slice::from_ref(&ended)).unwrap();
+        ended.id
+    };
+    let old = finish(&mut s, "old", JobStatus::Succeeded, now - 91 * DAY);
+    let recent = finish(&mut s, "recent", JobStatus::Succeeded, now - 10 * DAY);
+    let parked = finish(&mut s, "parked", JobStatus::Parked, now - 200 * DAY);
+    let sched: idlemax_core::schedule::Every = "1d".parse().unwrap();
+    let schedule = s
+        .insert_schedule(&spec("nightly", None), sched, T0)
+        .unwrap();
+    let fired = s.fire_schedule(&schedule, T0).unwrap();
+    s.update_jobs(&[Job {
+        status: JobStatus::Succeeded,
+        finished_ms: Some(now - 200 * DAY),
+        ..fired.clone()
+    }])
+    .unwrap();
+
+    let report = s.prune(now, 7 * DAY).unwrap();
+    assert_eq!((report.devices, report.jobs), (1, 1), "{report:?}");
+    let exists = |s: &Store, id| s.get_job(id).unwrap().is_some();
+    assert!(!exists(&s, old), "a finished job past 90 days goes");
+    assert!(
+        exists(&s, recent) && exists(&s, parked),
+        "recent and parked stay"
+    );
+    assert!(exists(&s, fired.id), "a schedule's last job stays");
+    let names: Vec<_> = s
+        .devices(now, 1)
+        .unwrap()
+        .into_iter()
+        .map(|d| d.info.id)
+        .collect();
+    assert_eq!(names, ["here"]);
 }

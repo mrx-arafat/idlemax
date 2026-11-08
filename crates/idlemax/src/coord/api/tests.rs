@@ -726,3 +726,92 @@ async fn an_oversized_job_spec_field_is_a_400_that_names_the_limit() {
         StatusCode::CREATED
     );
 }
+
+/// Device ids, host names, pause scopes and advisor inputs end up in events, the CLI and the
+/// AI prompt, so what a token holder sends for them is bounded and free of control characters.
+#[tokio::test]
+async fn names_and_payloads_that_enter_the_store_are_bounded() {
+    let api = Api::start().await;
+    let beat = |f: &dyn Fn(&mut Heartbeat)| {
+        let mut hb = mac_heartbeat(Vec::new());
+        f(&mut hb);
+        hb
+    };
+    let heartbeats: Vec<(Heartbeat, &str)> = vec![
+        (
+            beat(&|h| h.device.id = "d".repeat(129)),
+            "device.id is longer than 128 characters",
+        ),
+        (
+            beat(&|h| h.device.id = "m\u{1b}ac".into()),
+            "device.id contains a control character",
+        ),
+        (
+            beat(&|h| h.device.hostname = "h\nost".into()),
+            "device.hostname contains a control character",
+        ),
+        (
+            beat(&|h| h.device.hostname = "h".repeat(254)),
+            "device.hostname is longer than 253 characters",
+        ),
+        (
+            beat(&|h| h.device.capabilities = vec!["git".into(); 65]),
+            "device.capabilities has more than 64 entries",
+        ),
+    ];
+    for (hb, expect) in &heartbeats {
+        let res = api.post("/v1/agent/heartbeat", hb).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{expect}");
+        let body: serde_json::Value = res.json().await.unwrap();
+        let message = body["error"].as_str().unwrap();
+        assert!(message.contains(expect), "wanted {expect:?} in {message:?}");
+    }
+
+    let pause =
+        |id: &str, action: &str| json!({"scope": {"type": "device", "id": id}, "action": action});
+    let res = api
+        .post("/v1/control", &pause("bad\u{1b}name", "pause"))
+        .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("device id contains a control character"));
+    // Taking a flag away is always allowed, whatever it is called.
+    let res = api
+        .post("/v1/control", &pause("bad\u{1b}name", "resume"))
+        .await;
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let big = AdvisorInputs {
+        device: "mac".into(),
+        sessions: vec![SessionMeta {
+            title: Some("t".repeat(300_000)),
+            ..SessionMeta::default()
+        }],
+        ..AdvisorInputs::default()
+    };
+    let res = api.post("/v1/agent/advisor-inputs", &big).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("over 262144 bytes"),
+        "{body}"
+    );
+}
+
+#[test]
+fn a_store_limit_is_a_409_not_a_500() {
+    use crate::coord::store::StoreError;
+    let failure = super::http::ApiFailure::from(StoreError::LimitReached {
+        what: "devices",
+        limit: 256,
+        hint: "a device silent for 30 days is forgotten",
+    });
+    assert_eq!(failure.status(), StatusCode::CONFLICT);
+    assert!(failure.to_string().contains("too many devices"));
+}

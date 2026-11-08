@@ -6,6 +6,9 @@ use rusqlite::params;
 
 use super::{json_col, json_text, Store, StoreError, StoreResult, HISTORY_RETENTION_MS};
 
+/// Largest advisor-inputs document kept per device (a real one is a few KiB).
+const MAX_INPUT_BYTES: usize = 256 * 1024;
+
 impl Store {
     /// Replaces the device's copy and drops copies of devices silent for 30 days.
     pub fn put_advisor_inputs(&mut self, inputs: &AdvisorInputs, now: UnixMs) -> StoreResult<()> {
@@ -13,6 +16,11 @@ impl Store {
             return Err(StoreError::Invalid("advisor inputs device is empty".into()));
         }
         let payload = json_text(inputs)?;
+        if payload.len() > MAX_INPUT_BYTES {
+            return Err(StoreError::Invalid(format!(
+                "advisor inputs are over {MAX_INPUT_BYTES} bytes"
+            )));
+        }
         let tx = self.conn.transaction()?;
         tx.execute(
             "INSERT INTO advisor_inputs (device, received_ms, payload) VALUES (?1, ?2, ?3)
