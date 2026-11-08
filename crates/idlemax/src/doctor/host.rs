@@ -12,8 +12,10 @@ use crate::cli::rows;
 
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Check 5: every allowlisted program can be found and started.
-pub fn allowlist(report: &mut Report, cfg: &Config) {
+/// Check 5: every allowlisted program can be found and started. `service_path` is the PATH
+/// frozen into the agent's service unit, which is the PATH the agent resolves programs on;
+/// None means no unit says, so this process's PATH stands in.
+pub fn allowlist(report: &mut Report, cfg: &Config, service_path: Option<&str>) {
     let entries = &cfg.agent.command_allowlist;
     if entries.is_empty() {
         report.push(Check::warn(
@@ -26,7 +28,7 @@ pub fn allowlist(report: &mut Report, cfg: &Config) {
     let mut problems = Vec::new();
     let mut steps = Vec::new();
     for entry in entries {
-        if let Some((problem, step)) = entry_problem(entry) {
+        if let Some((problem, step)) = entry_problem(entry, service_path) {
             problems.push(problem);
             steps.push(step);
         }
@@ -34,7 +36,16 @@ pub fn allowlist(report: &mut Report, cfg: &Config) {
     if problems.is_empty() {
         report.push(Check::ok(
             "allowlist",
-            format!("{} of {} programs resolve", entries.len(), entries.len()),
+            format!(
+                "{} of {} programs resolve{}",
+                entries.len(),
+                entries.len(),
+                if service_path.is_some() {
+                    " on the service's PATH"
+                } else {
+                    ""
+                }
+            ),
         ));
         return;
     }
@@ -54,7 +65,7 @@ pub fn allowlist(report: &mut Report, cfg: &Config) {
 }
 
 /// What is wrong with one allowlist entry, and the step that fixes it.
-fn entry_problem(entry: &str) -> Option<(String, String)> {
+fn entry_problem(entry: &str, service_path: Option<&str>) -> Option<(String, String)> {
     let path = Path::new(entry);
     if path.is_absolute() {
         return match (path.is_file(), facts::is_executable(path)) {
@@ -72,12 +83,27 @@ fn entry_problem(entry: &str) -> Option<(String, String)> {
             format!("write {entry} as an absolute path"),
         ));
     }
-    match facts::which(entry) {
-        Some(_) => None,
-        None => Some((
-            format!("{entry} (not on PATH)"),
-            format!("install {entry} on the agent's PATH"),
-        )),
+    match service_path {
+        Some(path) => facts::which_in(entry, path.as_ref()).map_or_else(
+            || {
+                Some((
+                    format!("{entry} (not on the service's PATH)"),
+                    format!(
+                        "install {entry} in a directory on that PATH, or run `idlemax service install` from a shell whose PATH has it (the service keeps the PATH it was installed with)"
+                    ),
+                ))
+            },
+            |_| None,
+        ),
+        None => facts::which(entry).map_or_else(
+            || {
+                Some((
+                    format!("{entry} (not on PATH)"),
+                    format!("install {entry} on the agent's PATH"),
+                ))
+            },
+            |_| None,
+        ),
     }
 }
 

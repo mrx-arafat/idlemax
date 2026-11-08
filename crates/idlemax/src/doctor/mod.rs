@@ -31,7 +31,7 @@ pub async fn run(coord_url: Option<String>) -> Report {
         agent_unit,
     )
     .await;
-    host::allowlist(&mut report, &config);
+    host::allowlist(&mut report, &config, service::agent_path(&units).as_deref());
     host::disk(&mut report, &config, paths.as_ref()).await;
     ai::accounts(&mut report, &config, paths.as_ref()).await;
     host::github(&mut report, &config).await;

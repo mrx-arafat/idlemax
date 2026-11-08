@@ -38,14 +38,18 @@ pub fn read_text(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// Resolves a bare program name the way the job runner does: on this PATH.
-pub fn which(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).find_map(|dir| {
+/// Resolves a bare program name on `path`, a PATH-style list of directories.
+pub fn which_in(name: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path).find_map(|dir| {
         candidates(&dir, name)
             .into_iter()
             .find(|p| is_executable(p))
     })
+}
+
+/// Resolves a bare program name on this process's PATH.
+pub fn which(name: &str) -> Option<PathBuf> {
+    which_in(name, &std::env::var_os("PATH")?)
 }
 
 #[cfg(windows)]

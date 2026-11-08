@@ -61,6 +61,12 @@ pub fn agent_installed(units: &[Found]) -> bool {
     units.iter().any(|u| u.kind == "agent")
 }
 
+/// The PATH the agent service starts with, from its unit.
+pub fn agent_path(units: &[Found]) -> Option<String> {
+    let agent = units.iter().find(|u| u.kind == "agent")?;
+    read_unit(platform(), &agent.text).path
+}
+
 fn platform() -> Platform {
     if cfg!(target_os = "macos") {
         Platform::Launchd

@@ -148,7 +148,7 @@ fn allowlist_finds_each_broken_entry() {
     let mut cfg = Config::default();
     cfg.agent.command_allowlist = vec![good.to_string_lossy().into_owned(), "sh".into()];
     let mut report = Report::new("t", None);
-    host::allowlist(&mut report, &cfg);
+    host::allowlist(&mut report, &cfg, None);
     assert_eq!(one(&report, "allowlist").level, Level::Ok);
 
     cfg.agent.command_allowlist = vec![
@@ -158,7 +158,7 @@ fn allowlist_finds_each_broken_entry() {
         "idlemax-no-such-binary".into(),
     ];
     let mut report = Report::new("t", None);
-    host::allowlist(&mut report, &cfg);
+    host::allowlist(&mut report, &cfg, None);
     let check = one(&report, "allowlist");
     assert_eq!(check.level, Level::Fail);
     assert_eq!(check.detail.matches("will not run").count(), 1);
@@ -182,7 +182,7 @@ fn allowlist_finds_each_broken_entry() {
 
     cfg.agent.command_allowlist = Vec::new();
     let mut report = Report::new("t", None);
-    host::allowlist(&mut report, &cfg);
+    host::allowlist(&mut report, &cfg, None);
     let check = one(&report, "allowlist");
     assert_eq!(check.level, Level::Warn);
     assert!(check.detail.contains("no job can start"));
@@ -462,4 +462,28 @@ fn a_misdirected_coordinator_reply_tells_how_to_allow_the_name() {
         fix.contains("allowed_hosts") && fix.contains("IP address"),
         "{fix}"
     );
+}
+
+#[test]
+fn allowlist_resolves_bare_names_on_the_path_the_service_was_installed_with() {
+    let mut cfg = Config::default();
+    cfg.agent.command_allowlist = vec!["sh".into()];
+    let check = |path: Option<&str>| {
+        let mut report = Report::new("t", None);
+        host::allowlist(&mut report, &cfg, path);
+        one(&report, "allowlist")
+    };
+    // `sh` is on this process's PATH, but not on a PATH the unit froze without it.
+    assert_eq!(check(None).level, Level::Ok);
+    let broken = check(Some("/nonexistent-dir"));
+    assert_eq!(broken.level, Level::Fail);
+    assert!(
+        broken.detail.contains("not on the service's PATH"),
+        "{}",
+        broken.detail
+    );
+    assert!(broken.fix.unwrap().contains("idlemax service install"));
+    let ok = check(Some("/bin:/usr/bin"));
+    assert_eq!(ok.level, Level::Ok);
+    assert!(ok.detail.contains("on the service's PATH"), "{}", ok.detail);
 }
