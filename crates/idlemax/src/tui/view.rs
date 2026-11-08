@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use super::app::{App, Tab};
 use super::feed::Snapshot;
-use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, wrapped_lines};
+use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, wrap_words};
 use super::table::{self, empty_state, table};
 use crate::cli::print::summary_parts;
 use crate::cli::rows::{self, rel};
@@ -18,17 +18,12 @@ use crate::cli::rows::{self, rel};
 pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
     let width = usize::from(f.area().width);
     let status = status_text(app, width);
-    let status_rows = status
-        .0
-        .iter()
-        .map(|l| wrapped_lines(l, width, 3))
-        .sum::<usize>();
-    let status_rows = u16::try_from(status_rows.clamp(1, 3)).unwrap_or(1);
+    let footer_text = footer_text(app, width, now_ms);
     let [header, tabs, body, footer] = Layout::vertical([
-        Constraint::Length(1 + status_rows),
+        Constraint::Length(1 + rows_for(&status.0)),
         Constraint::Length(1),
         Constraint::Min(3),
-        Constraint::Length(1),
+        Constraint::Length(rows_for(&footer_text.0)),
     ])
     .areas(f.area());
     render_header(f, header, app, &status, now_ms);
@@ -43,10 +38,15 @@ pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
             body,
         ),
     }
-    render_footer(f, footer, app, now_ms);
+    render_footer(f, footer, footer_text);
     if let Some(c) = &app.confirm {
         render_confirm(f, &c.prompt);
     }
+}
+
+/// Screen rows for wrapped `lines`: at least one, at most three.
+fn rows_for(lines: &[String]) -> u16 {
+    u16::try_from(lines.len().clamp(1, 3)).unwrap_or(1)
 }
 
 /// Header lines under the title and whether they are an error: the coordinator
@@ -54,7 +54,10 @@ pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
 /// its parts when it is too wide.
 fn status_text(app: &App, width: usize) -> (Vec<String>, bool) {
     match (&app.fetch_error, &app.data) {
-        (Some(e), _) => (vec![format!("coordinator unreachable: {e}")], true),
+        (Some(e), _) => (
+            wrap_words(&format!("coordinator unreachable: {e}"), width, 3),
+            true,
+        ),
         (None, Some(d)) => {
             let mut parts = summary_parts(&d.status);
             if parts.join(" | ").chars().count() > width {
@@ -79,6 +82,10 @@ fn render_header(
             Style::new().fg(Color::Black).bg(Color::Yellow).bold(),
         ),
         Some(false) => Span::styled(" running ", Style::new().fg(Color::Black).bg(Color::Green)),
+        None if app.fetch_error.is_some() => Span::styled(
+            " unreachable ",
+            Style::new().fg(Color::Black).bg(Color::Red),
+        ),
         None => Span::raw(" connecting "),
     };
     let updated = app
@@ -103,7 +110,7 @@ fn render_header(
         true => Line::from(l.clone()).red(),
         false => Line::from(l.clone()),
     }));
-    f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), area);
+    f.render_widget(Paragraph::new(text), area);
 }
 
 fn render_tabs(f: &mut Frame, area: Rect, app: &App) {
@@ -251,13 +258,25 @@ fn advice_detail(r: &Recommendation) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_footer(f: &mut Frame, area: Rect, app: &App, now_ms: UnixMs) {
-    let line = match app.live_flash(now_ms) {
-        Some(fl) if fl.error => Line::from(fl.text.clone()).red(),
-        Some(fl) => Line::from(fl.text.clone()).green(),
-        None => Line::from(key_hints(app, usize::from(area.width))).dark_gray(),
-    };
-    f.render_widget(Paragraph::new(line), area);
+/// Footer lines and their style: a flash message (wrapped, so an error is not cut
+/// short) while one is live, else the key hints.
+fn footer_text(app: &App, width: usize, now_ms: UnixMs) -> (Vec<String>, Style) {
+    match app.live_flash(now_ms) {
+        Some(fl) => {
+            let style = if fl.error {
+                Style::new().red()
+            } else {
+                Style::new().green()
+            };
+            (wrap_words(&fl.text, width, 3), style)
+        }
+        None => (vec![key_hints(app, width)], Style::new().dark_gray()),
+    }
+}
+
+fn render_footer(f: &mut Frame, area: Rect, (lines, style): (Vec<String>, Style)) {
+    let text: Vec<Line> = lines.into_iter().map(Line::from).collect();
+    f.render_widget(Paragraph::new(text).style(style), area);
 }
 
 /// What the keys do on this tab, trimmed to `width`: `q quit` stays, `P/R all` goes first.
@@ -288,20 +307,22 @@ fn key_hints(app: &App, width: usize) -> String {
 }
 
 fn render_confirm(f: &mut Frame, prompt: &str) {
+    let width = f.area().width.min(64);
+    let prompt_lines = wrap_words(prompt, usize::from(width).saturating_sub(2), 4);
+    // Borders, the prompt, a blank line and the hint: the hint must never be cut off.
+    let height = u16::try_from(prompt_lines.len() + 4).unwrap_or(u16::MAX);
     let area = f
         .area()
-        .centered(Constraint::Length(64), Constraint::Length(5));
-    let text = vec![
-        Line::from(prompt.to_string()).bold(),
-        Line::from(""),
-        Line::from("y confirm, any other key cancels"),
-    ];
+        .centered(Constraint::Length(width), Constraint::Length(height));
+    let mut text: Vec<Line> = prompt_lines
+        .into_iter()
+        .map(|l| Line::from(l).bold())
+        .collect();
+    text.push(Line::from(""));
+    text.push(Line::from("y confirm, any other key cancels"));
     let block = Block::bordered()
         .title(" confirm ")
         .border_style(Style::new().red());
     f.render_widget(Clear, area);
-    f.render_widget(
-        Paragraph::new(text).wrap(Wrap { trim: true }).block(block),
-        area,
-    );
+    f.render_widget(Paragraph::new(text).block(block), area);
 }

@@ -12,12 +12,39 @@ pub fn ellipsize(s: &str, max: usize) -> String {
     out
 }
 
-/// Rows `text` needs at `width`, between 1 and `max`.
-pub fn wrapped_lines(text: &str, width: usize, max: usize) -> usize {
-    text.chars()
-        .count()
-        .div_ceil(width.max(1))
-        .clamp(1, max.max(1))
+/// `text` broken into lines of at most `width` characters at word boundaries (a word
+/// longer than a line is split). Past `max_lines` the rest is cut and the last line
+/// ends with an ellipsis, so the cause at the end of a long error is the only loss.
+pub fn wrap_words(text: &str, width: usize, max_lines: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let mut word = word.to_string();
+        while word.chars().count() > width {
+            lines.extend((!line.is_empty()).then(|| std::mem::take(&mut line)));
+            lines.push(word.chars().take(width).collect());
+            word = word.chars().skip(width).collect();
+        }
+        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > width {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(&word);
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    if lines.len() > max_lines.max(1) {
+        lines.truncate(max_lines.max(1));
+        if let Some(last) = lines.last_mut() {
+            let head: String = last.chars().take(width.saturating_sub(1)).collect();
+            *last = head + "\u{2026}";
+        }
+    }
+    lines
 }
 
 /// `parts` joined by " | ", as one line when it fits `width`, else as several lines
