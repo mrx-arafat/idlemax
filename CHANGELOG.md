@@ -137,6 +137,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **core:** Bound every field of a job spec
 - **coord:** Bound what a token holder can make the store keep
 - **web:** Serve the dashboard script as a file and forbid inline script
+- **release:** Expect the bare version from idlemax --version
 
 ### Documentation
 
