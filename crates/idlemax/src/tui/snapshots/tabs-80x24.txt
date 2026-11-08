@@ -105,10 +105,10 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  TIME            KIND            JOB  MESSAGE                                │
-│> 01-15 13:59:00  error           44   job 44 failed: repo-health-project-a … │
-│  01-15 13:57:00  schedule_fired  46   schedule 1 (index-refresh) queued job… │
-│  01-15 13:48:00  job_started     41   started                                │
-│  01-13 13:00:00  device_offline  -    no heartbeat for 90s                   │
+│> 01-15 07:59:00  error           44   job 44 failed: repo-health-project-a … │
+│  01-15 07:57:00  schedule_fired  46   schedule 1 (index-refresh) queued job… │
+│  01-15 07:48:00  job_started     41   started                                │
+│  01-13 07:00:00  device_offline  -    no heartbeat for 90s                   │
 │                                                                              │
 │                                                                              │
 │                                                                              │

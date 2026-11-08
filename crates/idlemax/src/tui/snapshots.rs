@@ -12,6 +12,7 @@ use unicode_width::UnicodeWidthStr;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::app::{App, Tab};
+use crate::cli::rows::Zone;
 use idlemax_core::explain::Explanation;
 
 use super::feed::{Snapshot, Update};
@@ -236,6 +237,8 @@ fn fixture() -> Snapshot {
 
 fn app_with(data: Snapshot, tab: Tab) -> App {
     let mut app = App::new("http://127.0.0.1:7878");
+    // UTC, so a snapshot reads the same wherever the test runs (CI is in UTC).
+    app.zone = Zone::Utc;
     app.apply(Update::Snapshot(Box::new(data), NOW - 2_000), NOW);
     app.tab = tab;
     app

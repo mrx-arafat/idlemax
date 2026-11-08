@@ -54,8 +54,8 @@ global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  TIME            KIND         JOB  MESSAGE                                   │
-│> 01-15 13:59:00  error        51   🔥 job 51 failed: ビルドに失敗しました。… │
-│  01-15 13:58:00  job_started  52   🚀 started                                │
+│> 01-15 07:59:00  error        51   🔥 job 51 failed: ビルドに失敗しました。… │
+│  01-15 07:58:00  job_started  52   🚀 started                                │
 │                                                                              │
 │                                                                              │
 │                                                                              │

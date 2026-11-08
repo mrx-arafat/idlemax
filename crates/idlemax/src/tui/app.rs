@@ -79,6 +79,8 @@ pub struct App {
     pub why: Option<WhyState>,
     /// The job and batch headline the last explanation request was made for.
     why_basis: Option<(JobId, Option<WhySummary>)>,
+    /// The zone event times are shown in.
+    pub zone: crate::cli::rows::Zone,
 }
 
 impl App {
@@ -96,6 +98,7 @@ impl App {
             why_open: false,
             why: None,
             why_basis: None,
+            zone: crate::cli::rows::Zone::Local,
         }
     }
 

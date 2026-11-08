@@ -123,11 +123,11 @@ pub fn advice_line(r: &Recommendation) -> String {
     format!("advice {} {}: {}", r.id, rows::snake(&r.status), r.title)
 }
 
-pub fn events(list: &[Event]) -> String {
+pub fn events(list: &[Event], zone: rows::Zone) -> String {
     if list.is_empty() {
         return "no events".into();
     }
-    let rows: Vec<_> = list.iter().map(rows::event_cells).collect();
+    let rows: Vec<_> = list.iter().map(|e| rows::event_cells(e, zone)).collect();
     table(&rows::EVENT_HEADER, &rows)
 }
 

@@ -44,6 +44,9 @@ struct Cli {
     /// Print JSON instead of tables
     #[arg(long, global = true)]
     json: bool,
+    /// Show event times in UTC instead of this machine's local time
+    #[arg(long, global = true)]
+    utc: bool,
     /// Without a command, print the live home view
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -228,7 +231,17 @@ impl Target {
 }
 
 pub async fn run() -> Result<()> {
-    let Cli { coord, json, cmd } = Cli::parse();
+    let Cli {
+        coord,
+        json,
+        utc,
+        cmd,
+    } = Cli::parse();
+    let zone = if utc {
+        rows::Zone::Utc
+    } else {
+        rows::Zone::Local
+    };
     let Some(cmd) = cmd else {
         return home::run(coord, json, home::Mode::Full).await;
     };
@@ -285,7 +298,7 @@ pub async fn run() -> Result<()> {
         cmd => {
             let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
             let client = ApiClient::new(&url, token(&paths)?)?;
-            run_coord(cmd, &client, json).await
+            run_coord(cmd, &client, json, zone).await
         }
     }
 }
@@ -366,7 +379,7 @@ fn hint(e: ClientError, msg: &'static str) -> anyhow::Error {
     }
 }
 
-async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
+async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool, zone: rows::Zone) -> Result<()> {
     let now = now_ms();
     let r = match cmd {
         Cmd::Status => c
@@ -390,9 +403,9 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
         Cmd::Events { limit } => c
             .events(limit)
             .await
-            .map(|e| out(json, &e, |e| print::events(e))),
+            .map(|e| out(json, &e, |e| print::events(e, zone))),
         Cmd::Advise { cmd } => advise(c, cmd.unwrap_or(AdviseCmd::List), json, now).await,
-        Cmd::Tui => return Ok(crate::tui::run(c.clone()).await?),
+        Cmd::Tui => return Ok(crate::tui::run(c.clone(), zone).await?),
         Cmd::Job(JobCmd::Add(_))
         | Cmd::Agent
         | Cmd::Coord

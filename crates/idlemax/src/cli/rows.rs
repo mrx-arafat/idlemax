@@ -159,9 +159,9 @@ pub fn advice_cells(r: &Recommendation, now_ms: UnixMs) -> Vec<String> {
     ]
 }
 
-pub fn event_cells(e: &Event) -> Vec<String> {
+pub fn event_cells(e: &Event, zone: Zone) -> Vec<String> {
     vec![
-        clock(e.at_ms),
+        clock(e.at_ms, zone),
         snake(&e.kind),
         e.device.clone().unwrap_or_else(|| "-".into()),
         e.job.map_or_else(|| "-".into(), |j| j.to_string()),
@@ -234,14 +234,23 @@ pub fn rel(at_ms: UnixMs, now_ms: UnixMs) -> String {
     }
 }
 
-/// Local wall-clock time, "11-05 03:12:09".
-pub fn clock(at_ms: UnixMs) -> String {
+/// The zone wall-clock times are shown in: the machine's own, or UTC for output that
+/// must not depend on where it is rendered (snapshot tests).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Zone {
+    #[default]
+    Local,
+    Utc,
+}
+
+/// Wall-clock time in `zone`, "11-05 03:12:09".
+pub fn clock(at_ms: UnixMs, zone: Zone) -> String {
+    const FORMAT: &str = "%m-%d %H:%M:%S";
     chrono::DateTime::from_timestamp_millis(at_ms).map_or_else(
         || "-".into(),
-        |t| {
-            t.with_timezone(&chrono::Local)
-                .format("%m-%d %H:%M:%S")
-                .to_string()
+        |t| match zone {
+            Zone::Local => t.with_timezone(&chrono::Local).format(FORMAT).to_string(),
+            Zone::Utc => t.format(FORMAT).to_string(),
         },
     )
 }

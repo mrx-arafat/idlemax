@@ -37,27 +37,28 @@ pub enum TuiError {
     FeedStopped,
 }
 
-pub async fn run(client: ApiClient) -> Result<(), TuiError> {
+pub async fn run(client: ApiClient, zone: crate::cli::rows::Zone) -> Result<(), TuiError> {
     if !std::io::stdout().is_terminal() {
         return Err(TuiError::NotATerminal);
     }
-    let source = client.base().to_string();
+    let mut app = App::new(client.base().to_string());
+    app.zone = zone;
     let (req_tx, req_rx) = tokio::sync::mpsc::unbounded_channel();
     let (upd_tx, upd_rx) = mpsc::channel();
     let feed = tokio::spawn(feed::run(client, req_rx, upd_tx));
     // Terminal I/O blocks, so the UI loop lives on a blocking thread.
-    let ui = tokio::task::spawn_blocking(move || ui_thread(source, &req_tx, &upd_rx)).await;
+    let ui = tokio::task::spawn_blocking(move || ui_thread(app, &req_tx, &upd_rx)).await;
     feed.abort();
     ui?
 }
 
 fn ui_thread(
-    source: String,
+    app: App,
     requests: &UnboundedSender<Request>,
     updates: &mpsc::Receiver<Update>,
 ) -> Result<(), TuiError> {
     let mut terminal = ratatui::try_init()?;
-    let result = event_loop(&mut terminal, App::new(source), requests, updates);
+    let result = event_loop(&mut terminal, app, requests, updates);
     ratatui::restore();
     result
 }

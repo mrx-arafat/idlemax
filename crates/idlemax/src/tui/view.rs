@@ -135,6 +135,7 @@ fn render_tabs(f: &mut Frame, area: Rect, app: &App) {
 
 fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: UnixMs) {
     let tab = app.tab;
+    let zone = app.zone;
     let state = &mut app.tables[tab.index()];
     let why = app.why_open.then_some(&mut app.why);
     match tab {
@@ -170,7 +171,7 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
                 } else {
                     Style::new()
                 };
-                (rows::event_cells(e), style)
+                (rows::event_cells(e, zone), style)
             });
             table(f, area, &table::EVENTS, rows.collect(), state);
         }
