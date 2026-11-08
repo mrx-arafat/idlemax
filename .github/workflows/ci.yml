@@ -39,10 +39,11 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
     env:
-      # No user D-Bus session on a runner. Without one the Linux runner picks the plain
-      # `nice` throttle, so job tests do not depend on `systemd-run --user` working here.
-      # The systemd scope argv is pinned by unit tests; its live caps are checked by
-      # scripts/verify-linux.sh on a real server.
+      # Hide the systemd user manager. Without it the Linux agent picks the plain `nice`
+      # throttle, so the job tests behave the same on every host. Under a systemd scope,
+      # MemoryHigh throttles a memory hog before idlemax's own RSS cap sees it, and the
+      # memory-cap test would wait for a kill that never comes. The scope argv is pinned by
+      # unit tests; its live caps are checked by scripts/verify-linux.sh on a real host.
       XDG_RUNTIME_DIR: /nonexistent/no-user-bus
     steps:
       - uses: actions/checkout@v4
