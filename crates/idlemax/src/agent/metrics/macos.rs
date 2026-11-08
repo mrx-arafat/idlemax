@@ -84,7 +84,13 @@ pub struct MacReadings {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 pub fn read() -> MacReadings {
+    read_with_cache(None)
+}
+
+#[cfg(target_os = "macos")]
+pub fn read_with_cache(cached_therm: Option<Option<bool>>) -> MacReadings {
     use super::cmd::{run, PROBE_TIMEOUT};
     let idle = run(
         "/usr/sbin/ioreg",
@@ -92,7 +98,12 @@ pub fn read() -> MacReadings {
         PROBE_TIMEOUT,
     );
     let batt = run("/usr/bin/pmset", &["-g", "batt"], PROBE_TIMEOUT);
-    let therm = run("/usr/bin/pmset", &["-g", "therm"], PROBE_TIMEOUT);
+    let therm = match cached_therm {
+        Some(cached) => cached,
+        None => run("/usr/bin/pmset", &["-g", "therm"], PROBE_TIMEOUT)
+            .as_deref()
+            .and_then(parse_pmset_therm),
+    };
     let sysctl = run(
         "/usr/sbin/sysctl",
         &[
@@ -105,11 +116,53 @@ pub fn read() -> MacReadings {
     MacReadings {
         user_idle_secs: idle.as_deref().and_then(parse_hid_idle_secs),
         power: batt.as_deref().map(parse_pmset_batt).unwrap_or_default(),
-        thermal_limited: therm.as_deref().and_then(parse_pmset_therm),
+        thermal_limited: therm,
         mem_free_pct: parse_sysctl(&sysctl, "kern.memorystatus_level")
             .and_then(|v| v.parse::<f64>().ok())
             .filter(|v| (0.0..=100.0).contains(v)),
         vm_pressure_level: parse_sysctl(&sysctl, "kern.memorystatus_vm_pressure_level")
             .and_then(|v| v.parse().ok()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_hid_idle_nanoseconds() {
+        let output = "      \"HIDIdleTime\" = 12345678900\n";
+        assert_eq!(parse_hid_idle_secs(output), Some(12));
+    }
+
+    #[test]
+    fn parses_pmset_batt_ac_and_battery() {
+        let output = "Now drawing from 'AC Power'\n\
+                      -InternalBattery-0 (id=123) 85%; charging; 1:30 remaining present: true\n";
+        let power = parse_pmset_batt(output);
+        assert_eq!(power.on_ac, Some(true));
+        assert_eq!(power.battery_pct, Some(85.0));
+    }
+
+    #[test]
+    fn parses_pmset_therm_limits() {
+        let clean = "Note: No thermal warning level has been recorded\n\
+                     Note: No performance warning level has been recorded\n";
+        assert_eq!(parse_pmset_therm(clean), Some(false));
+
+        let throttled = "CPU_Speed_Limit = 80\n";
+        assert_eq!(parse_pmset_therm(throttled), Some(true));
+    }
+
+    #[test]
+    fn parses_sysctl_values() {
+        let sample = "kern.memorystatus_level: 42\n\
+                      kern.memorystatus_vm_pressure_level: 1\n";
+        assert_eq!(parse_sysctl(sample, "kern.memorystatus_level"), Some("42"));
+        assert_eq!(
+            parse_sysctl(sample, "kern.memorystatus_vm_pressure_level"),
+            Some("1")
+        );
+        assert_eq!(parse_sysctl(sample, "nonexistent"), None);
     }
 }

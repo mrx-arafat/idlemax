@@ -37,8 +37,11 @@ type SwapInMark = Option<(u64, Instant)>;
 
 pub struct Sampler {
     sys: System,
+    cpu_count: u32,
     #[cfg(target_os = "linux")]
     prev_pswpin: SwapInMark,
+    #[cfg(target_os = "macos")]
+    prev_therm: Option<(Option<bool>, Instant)>,
 }
 
 impl Sampler {
@@ -47,10 +50,14 @@ impl Sampler {
         let mut sys = System::new().map_err(MetricsError::Init)?;
         sys.refresh_cpu_usage();
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        let cpu_count = sys.cpus().len() as u32;
         Ok(Self {
             sys,
+            cpu_count,
             #[cfg(target_os = "linux")]
             prev_pswpin: None,
+            #[cfg(target_os = "macos")]
+            prev_therm: None,
         })
     }
 
@@ -63,7 +70,7 @@ impl Sampler {
         let (disk_free, disk_total) = disk::read_root().unwrap_or((0, 0));
         let mut s = MetricsSnapshot {
             at_ms: now_ms(),
-            cpu_count: self.sys.cpus().len() as u32,
+            cpu_count: self.cpu_count,
             cpu_busy_pct: f64::from(self.sys.global_cpu_usage()).clamp(0.0, 100.0),
             load_avg_1m: System::load_average().map(|l| l.one).unwrap_or(0.0),
             mem_total_bytes: mem_total,
@@ -81,7 +88,14 @@ impl Sampler {
 
     #[cfg(target_os = "macos")]
     fn fill_os_signals(&mut self, s: &mut MetricsSnapshot) {
-        let m = macos::read();
+        let now = Instant::now();
+        let cached_therm = self.prev_therm.and_then(|(v, at)| {
+            (now.duration_since(at) < std::time::Duration::from_secs(60)).then_some(v)
+        });
+        let m = macos::read_with_cache(cached_therm);
+        if cached_therm.is_none() {
+            self.prev_therm = Some((m.thermal_limited, now));
+        }
         s.user_idle_secs = m.user_idle_secs;
         s.on_ac_power = m.power.on_ac;
         s.battery_pct = m.power.battery_pct;
