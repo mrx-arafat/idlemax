@@ -55,11 +55,11 @@ request for url (http://127.0.0.1:7878/v1/status): client error (Connect): tcp
 connect error: Connection refused (os error 61)
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  ID  NAME                       STATUS     AGE      RESULT                   │
-│> 46  index-refresh              queued     46m ago  -                        │
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
 │  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
 │  44  repo-health-project-a      failed     44m ago  exit 2                   │
-│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
 │  41  index-refresh              running    41m ago  running 12m              │
 │  40  nightly-audit              succeeded  40m ago  exit 0                   │
 │                                                                              │
@@ -72,18 +72,18 @@ connect error: Connection refused (os error 61)
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 46  k cancel job  w why  s stop-all  tab/1-6 switch  q quit
 ##### confirm stop all
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  ID  NAME                       STATUS     AGE      RESULT                   │
-│> 46  index-refresh              queued     46m ago  -                        │
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
 │  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
 │  44  repo-health-project-a      failed     44m ago  exit 2                   │
-│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
 │  41  i┌ confirm ─────────────────────────────────────────────────────┐       │
 │  40  n│Stop ALL jobs on every device and hold new ones?              │       │
 │       │                                                              │       │
@@ -97,7 +97,7 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 46  k cancel job  w why  s stop-all  tab/1-6 switch  q quit
 ##### confirm remove a schedule with a long name
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
@@ -129,11 +129,11 @@ global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  ID  NAME                       STATUS     AGE      RESULT                   │
-│> 46  index-refresh              queued     46m ago  -                        │
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
 │  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
 │  44  repo-health-project-a      failed     44m ago  exit 2                   │
-│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
 │  41  index-refresh              running    41m ago  running 12m              │
 │  40  nightly-audit              succeeded  40m ago  exit 0                   │
 │                                                                              │
@@ -154,11 +154,11 @@ global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  ID  NAME                       STATUS     AGE      RESULT                   │
-│> 46  index-refresh              queued     46m ago  -                        │
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
 │  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
 │  44  repo-health-project-a      failed     44m ago  exit 2                   │
-│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
 │  41  index-refresh              running    41m ago  running 12m              │
 │  40  nightly-audit              succeeded  40m ago  exit 0                   │
 │                                                                              │

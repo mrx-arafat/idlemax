@@ -12,6 +12,8 @@ use unicode_width::UnicodeWidthStr;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::app::{App, Tab};
+use idlemax_core::explain::Explanation;
+
 use super::feed::{Snapshot, Update};
 use super::view;
 
@@ -173,6 +175,48 @@ fn schedules() -> Value {
     ])
 }
 
+fn reason(kind: &str, message: &str, fix: Option<&str>) -> Value {
+    json!({"kind": kind, "message": message, "fix": fix, "until_ms": null})
+}
+
+/// What GET /v1/why answers for the fixture's waiting jobs: 46 is queued, 43 is paused.
+fn why_summaries() -> Value {
+    json!([
+        {"job": 46, "status": "queued", "state": "blocked", "more": 1, "headline": {
+            "device": "macbook-pro-arafat",
+            "reason": reason("guard", "battery is at 28%, below the 40% minimum (guard pause)",
+                             Some("plug in, or lower guard.battery_min_pct"))}},
+        {"job": 43, "status": "paused", "state": "active", "more": 0, "headline": {
+            "device": "hetzner-fsn1-build-server-eu-central-01",
+            "reason": reason("guard", "load 1m 9.40 is above 8.00 (guard pause)", None)}},
+    ])
+}
+
+/// GET /v1/jobs/46/why: three devices, none can take the job.
+fn explanation_of_job_46() -> Explanation {
+    parse(json!({
+        "job": 46, "name": "index-refresh", "status": "queued", "state": "blocked", "at_ms": NOW,
+        "summary": "Job 46 (index-refresh) is queued but not starting.",
+        "reasons": [],
+        "devices": [
+            {"device": "macbook-pro-arafat", "online": true, "last_seen_ms": NOW - 2_000, "ready": false,
+             "reasons": [
+                reason("guard", "battery is at 28%, below the 40% minimum (guard pause)",
+                       Some("plug in, or lower guard.battery_min_pct in config.toml")),
+                reason("no_slot", "all 1 job slots are taken, by job 41 (index-refresh)", None)]},
+            {"device": "hetzner-fsn1-build-server-eu-central-01", "online": true, "last_seen_ms": NOW - 5_000,
+             "ready": false, "reasons": [
+                reason("local_pause", "paused on the device itself (kill switch)",
+                       Some("run `idlemax local resume` on that device")),
+                reason("guard", "load 1m 9.40 is above 8.00 (guard pause)",
+                       Some("wait for the load to drop, or raise guard.load_1m_pause"))]},
+            {"device": "old-mac-mini", "online": false, "last_seen_ms": NOW - 49 * HOUR, "ready": false,
+             "reasons": [reason("offline", "no heartbeat for 2d1h",
+                                Some("start `idlemax agent` on old-mac-mini"))]}
+        ]
+    }))
+}
+
 fn fixture() -> Snapshot {
     let status = json!({
         "version": "0.1.0", "paused_accounts": ["claude-work"], "open_advice": 1,
@@ -186,6 +230,7 @@ fn fixture() -> Snapshot {
         advice: parse(advice()),
         events: parse(events()),
         schedules: parse(schedules()),
+        why: parse(why_summaries()),
     }
 }
 
@@ -227,6 +272,49 @@ Connection refused (os error 61)";
 
 fn press(app: &mut App, c: char) {
     app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE), NOW);
+}
+
+fn press_key(app: &mut App, code: KeyCode) {
+    app.on_key(KeyEvent::new(code, KeyModifiers::NONE), NOW);
+}
+
+/// The Jobs tab with the reasons pane open on job 46 (the first row), before any answer.
+fn why_pane() -> App {
+    let mut app = app_with(fixture(), Tab::Jobs);
+    press(&mut app, 'w');
+    app
+}
+
+/// The reasons screens: the answer, scrolled, still loading, failed, and a job with nothing to explain.
+fn why_screens(width: u16, height: u16, all: bool) -> String {
+    let mut out = String::new();
+    let mut shot = |title: &str, app: &mut App| {
+        out.push_str(&format!("##### {title}\n{}\n", screen(app, width, height)));
+    };
+    let mut app = why_pane();
+    app.apply(Update::Why(46, Ok(explanation_of_job_46())), NOW);
+    shot("reasons for a queued job", &mut app);
+    if !all {
+        return out;
+    }
+    press_key(&mut app, KeyCode::PageDown);
+    shot("scrolled with PgDn", &mut app);
+    press_key(&mut app, KeyCode::PageDown);
+    press_key(&mut app, KeyCode::PageDown);
+    shot("scrolled to the end", &mut app);
+    shot("loading", &mut why_pane());
+    let mut app = why_pane();
+    app.apply(
+        Update::Why(46, Err("/v1/jobs/46/why: HTTP 500: store is busy".into())),
+        NOW,
+    );
+    shot("could not load", &mut app);
+    let mut app = why_pane();
+    for _ in 0..4 {
+        press_key(&mut app, KeyCode::Down);
+    }
+    shot("a running job is selected", &mut app);
+    out
 }
 
 /// Every tab on its own screen, one after the other.
@@ -393,4 +481,14 @@ fn wide_characters_stay_inside_their_columns_at_80x24() {
         "wide-characters-80x24",
         &tabs_of(wide_characters, &tabs, 80, 24),
     );
+}
+
+#[test]
+fn reasons_pane_fits_80x24() {
+    check("why-80x24", &why_screens(80, 24, true));
+}
+
+#[test]
+fn reasons_pane_fits_120x40() {
+    check("why-120x40", &why_screens(120, 40, false));
 }

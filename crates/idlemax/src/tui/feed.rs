@@ -1,8 +1,10 @@
 //! Delivery: background task that polls the coordinator and performs dashboard actions.
 
+use std::future::Future;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
+use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::quota::QuotaView;
 use idlemax_core::schedule::{ScheduleId, ScheduleView};
@@ -26,6 +28,8 @@ pub struct Snapshot {
     pub advice: Vec<Recommendation>,
     pub events: Vec<Event>,
     pub schedules: Vec<ScheduleView>,
+    /// A headline reason for each waiting job (empty from a coordinator without `/v1/why`).
+    pub why: Vec<WhySummary>,
 }
 
 /// An action the user confirmed in the dashboard.
@@ -39,6 +43,8 @@ pub enum Request {
     PauseSchedule(ScheduleId),
     ResumeSchedule(ScheduleId),
     RemoveSchedule(ScheduleId),
+    /// The full explanation of one job, for the detail pane.
+    Why(JobId),
 }
 
 impl Request {
@@ -52,6 +58,7 @@ impl Request {
             Request::PauseSchedule(id) => format!("pause schedule {id}"),
             Request::ResumeSchedule(id) => format!("resume schedule {id}"),
             Request::RemoveSchedule(id) => format!("remove schedule {id}"),
+            Request::Why(id) => format!("explain job {id}"),
         }
     }
 }
@@ -62,6 +69,8 @@ pub enum Update {
     FetchFailed(String),
     Done(String),
     Failed(String),
+    /// The answer to `Request::Why`, or why it could not be had.
+    Why(JobId, Result<Explanation, String>),
 }
 
 /// Runs until the dashboard drops either channel end.
@@ -77,8 +86,13 @@ pub async fn run(
             _ = tick.tick() => {}
             req = requests.recv() => {
                 let Some(req) = req else { return };
+                // An explanation changes nothing, so it needs no refresh of everything else.
+                let only_reads = matches!(req, Request::Why(_));
                 if updates.send(perform(&client, req).await).is_err() {
                     return;
+                }
+                if only_reads {
+                    continue;
                 }
             }
         }
@@ -95,10 +109,11 @@ async fn fetch(c: &ApiClient) -> Update {
         c.quota(),
         c.advice(),
         c.events(EVENT_LIMIT),
-        schedules(c)
+        or_empty(c.schedules()),
+        or_empty(c.why_summaries(JOB_LIMIT))
     );
     match all {
-        Ok((status, jobs, quota, advice, events, schedules)) => Update::Snapshot(
+        Ok((status, jobs, quota, advice, events, schedules, why)) => Update::Snapshot(
             Box::new(Snapshot {
                 status,
                 jobs,
@@ -106,6 +121,7 @@ async fn fetch(c: &ApiClient) -> Update {
                 advice,
                 events,
                 schedules,
+                why,
             }),
             now_ms(),
         ),
@@ -113,9 +129,12 @@ async fn fetch(c: &ApiClient) -> Update {
     }
 }
 
-/// A coordinator older than schedules answers 404; that is an empty list, not an outage.
-async fn schedules(c: &ApiClient) -> Result<Vec<ScheduleView>, ClientError> {
-    match c.schedules().await {
+/// A coordinator older than schedules or `/v1/why` answers 404; that is an empty list,
+/// not an outage.
+async fn or_empty<T>(
+    call: impl Future<Output = Result<Vec<T>, ClientError>>,
+) -> Result<Vec<T>, ClientError> {
+    match call.await {
         Err(ClientError::Api { status: 404, .. }) => Ok(Vec::new()),
         other => other,
     }
@@ -132,6 +151,7 @@ async fn perform(c: &ApiClient, req: Request) -> Update {
         Request::PauseSchedule(id) => c.pause_schedule(id).await.map(|_| ()),
         Request::ResumeSchedule(id) => c.resume_schedule(id).await.map(|_| ()),
         Request::RemoveSchedule(id) => c.remove_schedule(id).await.map(|_| ()),
+        Request::Why(id) => return Update::Why(id, c.why(id).await.map_err(|e| e.describe())),
     };
     match result {
         Ok(()) => Update::Done(label),

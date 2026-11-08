@@ -36,10 +36,10 @@ pub fn ellipsize(s: &str, max: usize) -> String {
     out
 }
 
-/// One logical line broken at word boundaries into lines of at most `width` cells.
+/// One logical line (no newline) broken at word boundaries into lines of at most `width` cells.
 /// Continuation lines keep the line's leading indent, plus two cells under a "- " bullet;
 /// a word wider than a whole line is split.
-fn wrap_line(line: &str, width: usize) -> Vec<String> {
+pub fn wrap_indented(line: &str, width: usize) -> Vec<String> {
     let body = line.trim_start();
     if body.is_empty() {
         return vec![String::new()];
@@ -87,7 +87,7 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 /// ellipsis, so the cause at the end of a long error is the only loss.
 pub fn wrap_words(text: &str, width: usize, max_lines: usize) -> Vec<String> {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut lines = wrap_line(&flat, width);
+    let mut lines = wrap_indented(&flat, width);
     if lines.len() > max_lines.max(1) {
         lines.truncate(max_lines.max(1));
         if let Some(last) = lines.last_mut() {

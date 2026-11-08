@@ -1,7 +1,12 @@
 //! Delivery: draws the dashboard from `App` state; no decisions, only layout and color.
 
+use std::collections::HashMap;
+
+use idlemax_core::explain::WhySummary;
 use idlemax_core::schedule::{Decision, ScheduleView};
-use idlemax_core::types::{EventKind, JobStatus, Recommendation, RecommendationStatus, UnixMs};
+use idlemax_core::types::{
+    EventKind, JobId, JobStatus, Recommendation, RecommendationStatus, UnixMs,
+};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
@@ -12,8 +17,12 @@ use super::app::{App, Tab};
 use super::feed::Snapshot;
 use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, text_width, wrap_words};
 use super::table::{self, empty_state, table};
+use super::why::{headline, render_pane, WhyState};
 use crate::cli::print::summary_parts;
 use crate::cli::rows::{self, rel};
+
+/// The Jobs tab needs at least this many rows to share its space with the reasons pane.
+const MIN_PANE_SCREEN: u16 = 12;
 
 pub fn render(f: &mut Frame, app: &mut App, now_ms: UnixMs) {
     let width = usize::from(f.area().width);
@@ -127,6 +136,7 @@ fn render_tabs(f: &mut Frame, area: Rect, app: &App) {
 fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: UnixMs) {
     let tab = app.tab;
     let state = &mut app.tables[tab.index()];
+    let why = app.why_open.then_some(&mut app.why);
     match tab {
         Tab::Devices => {
             let rows = d.status.devices.iter().map(|v| {
@@ -139,13 +149,7 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
             });
             table(f, area, &table::DEVICES, rows.collect(), state);
         }
-        Tab::Jobs => {
-            let rows = d
-                .jobs
-                .iter()
-                .map(|j| (rows::job_cells(j, now_ms), job_style(j.status)));
-            table(f, area, &table::JOBS, rows.collect(), state);
-        }
+        Tab::Jobs => render_jobs(f, area, d, state, why, now_ms),
         Tab::Quota => {
             let rows = d.quota.iter().map(|q| {
                 let paused = d.status.paused_accounts.contains(&q.account);
@@ -194,6 +198,39 @@ fn schedule_style(v: &ScheduleView) -> Style {
         _ if failed => Style::new().red(),
         _ => Style::new(),
     }
+}
+
+/// The Jobs table. A waiting job's RESULT says why it waits; with the pane open, the
+/// selected job's full reasons fill the lower part of the screen.
+fn render_jobs(
+    f: &mut Frame,
+    area: Rect,
+    d: &Snapshot,
+    state: &mut TableState,
+    why: Option<&mut Option<WhyState>>,
+    now_ms: UnixMs,
+) {
+    let summaries: HashMap<JobId, &WhySummary> = d.why.iter().map(|w| (w.job, w)).collect();
+    let rows = d.jobs.iter().map(|j| {
+        let mut cells = rows::job_cells(j, now_ms);
+        let line = summaries.get(&j.id).and_then(|w| headline(w));
+        if let (Some(line), Some(result)) = (line, cells.last_mut()) {
+            *result = line;
+        }
+        (cells, job_style(j.status))
+    });
+    let Some(why) = why.filter(|_| area.height >= MIN_PANE_SCREEN) else {
+        return table(f, area, &table::JOBS, rows.collect(), state);
+    };
+    let wanted = u16::try_from(d.jobs.len() + 3).unwrap_or(u16::MAX);
+    let [list, pane] = Layout::vertical([
+        Constraint::Length(wanted.min(area.height / 2)),
+        Constraint::Min(5),
+    ])
+    .areas(area);
+    table(f, list, &table::JOBS, rows.collect(), state);
+    let job = state.selected().and_then(|i| d.jobs.get(i));
+    render_pane(f, pane, job, why);
 }
 
 fn job_style(s: JobStatus) -> Style {
@@ -292,7 +329,13 @@ fn key_hints(app: &App, width: usize) -> String {
     };
     let mut hints = vec![(1, format!("p/r pause/resume {target}"))];
     match app.tab {
-        Tab::Jobs => hints.push((2, "k cancel job".into())),
+        Tab::Jobs => {
+            hints.push((2, "k cancel job".into()));
+            hints.push((2, if app.why_open { "w close" } else { "w why" }.into()));
+            if app.why_open {
+                hints.push((4, "PgUp/PgDn scroll".into()));
+            }
+        }
         Tab::Advice => hints.push((2, "a accept  d dismiss  f refresh".into())),
         Tab::Schedules => hints.push((2, "d remove".into())),
         _ => {}

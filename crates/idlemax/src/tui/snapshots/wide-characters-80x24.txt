@@ -28,7 +28,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  ID  NAME               STATUS   DEVICE            AGE      RESULT           │
+│  ID  NAME               STATUS   DEVICE            AGE      RESULT / WHY     │
 │> 53  日本語のレポート…  queued   -                 53m ago  -                │
 │  52  🚀 deploy-previe…  running  ビルドサーバー-…  52m ago  running 5m       │
 │  51  ascii-control      failed   mac-🚀-dev        51m ago  ビルドに失敗し…  │
@@ -47,7 +47,7 @@ global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 53  k cancel job  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 53  k cancel job  w why  s stop-all  tab/1-6 switch  q quit
 ##### Events 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open

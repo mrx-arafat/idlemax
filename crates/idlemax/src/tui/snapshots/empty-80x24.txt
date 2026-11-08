@@ -47,7 +47,7 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume selection  k cancel job  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume selection  k cancel job  w why  s stop-all  q quit
 ##### Quota 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open

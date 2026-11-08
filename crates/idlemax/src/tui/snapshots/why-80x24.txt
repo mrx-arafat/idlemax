@@ -1,0 +1,150 @@
+##### reasons for a queued job
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ why job 46 (index-refresh) - 1-8 of 16, PgUp/PgDn ───────────────────────────┐
+│Job 46 (index-refresh) is queued but not starting.                            │
+│                                                                              │
+│macbook-pro-arafat (online, heartbeat 2s ago):                                │
+│  - battery is at 28%, below the 40% minimum (guard pause)                    │
+│    fix: plug in, or lower guard.battery_min_pct in config.toml               │
+│  - all 1 job slots are taken, by job 41 (index-refresh)                      │
+│                                                                              │
+│hetzner-fsn1-build-server-eu-central-01 (online, heartbeat 5s ago):           │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+##### scrolled with PgDn
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ why job 46 (index-refresh) - 6-13 of 16, PgUp/PgDn ──────────────────────────┐
+│  - all 1 job slots are taken, by job 41 (index-refresh)                      │
+│                                                                              │
+│hetzner-fsn1-build-server-eu-central-01 (online, heartbeat 5s ago):           │
+│  - paused on the device itself (kill switch)                                 │
+│    fix: run `idlemax local resume` on that device                            │
+│  - load 1m 9.40 is above 8.00 (guard pause)                                  │
+│    fix: wait for the load to drop, or raise guard.load_1m_pause              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+##### scrolled to the end
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ why job 46 (index-refresh) - 9-16 of 16, PgUp/PgDn ──────────────────────────┐
+│  - paused on the device itself (kill switch)                                 │
+│    fix: run `idlemax local resume` on that device                            │
+│  - load 1m 9.40 is above 8.00 (guard pause)                                  │
+│    fix: wait for the load to drop, or raise guard.load_1m_pause              │
+│                                                                              │
+│old-mac-mini (offline, heartbeat 2d1h ago):                                   │
+│  - no heartbeat for 2d1h                                                     │
+│    fix: start `idlemax agent` on old-mac-mini                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+##### loading
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ why job 46 (index-refresh) ──────────────────────────────────────────────────┐
+│loading...                                                                    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+##### could not load
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ why job 46 (index-refresh) ──────────────────────────────────────────────────┐
+│could not load the explanation: /v1/jobs/46/why: HTTP 500: store is busy      │
+│It tries again on the next refresh.                                           │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+##### a running job is selected
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│  46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│> 41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ why job 41 (index-refresh) ──────────────────────────────────────────────────┐
+│Job 41 is running. w explains jobs that are queued, leased, paused or parked. │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 41  k cancel job  w close  s stop-all  q quit

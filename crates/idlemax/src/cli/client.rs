@@ -4,7 +4,7 @@ mod schedules;
 
 use std::time::Duration;
 
-use idlemax_core::explain::Explanation;
+use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::quota::QuotaView;
 use idlemax_core::types::{Event, Job, JobId, JobSpec, JobStatus, Recommendation};
@@ -151,6 +151,11 @@ impl ApiClient {
 
     pub async fn why(&self, id: JobId) -> Result<Explanation> {
         self.get(&format!("/v1/jobs/{id}/why")).await
+    }
+
+    /// One headline reason per queued, leased or paused job, newest first.
+    pub async fn why_summaries(&self, limit: u32) -> Result<Vec<WhySummary>> {
+        self.get(&format!("/v1/why?limit={limit}")).await
     }
 
     pub async fn quota(&self) -> Result<Vec<QuotaView>> {

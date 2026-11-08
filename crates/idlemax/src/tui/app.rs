@@ -1,14 +1,18 @@
 //! Delivery: dashboard state and key handling; turns keys into confirmed requests.
 
+use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::schedule::ScheduleId;
-use idlemax_core::types::{ControlAction, ControlScope, RecommendationStatus, UnixMs};
+use idlemax_core::types::{ControlAction, ControlScope, Job, JobId, RecommendationStatus, UnixMs};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
 
 use super::feed::{Request, Snapshot, Update};
+use super::why::{explainable, WhyState};
 
 const FLASH_MS: UnixMs = 6_000;
+/// Lines PgUp and PgDn move the explanation.
+const WHY_SCROLL: isize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -70,6 +74,11 @@ pub struct App {
     pub confirm: Option<Confirm>,
     pub tables: [TableState; 6],
     pub quit: bool,
+    /// The Jobs tab shows the reasons for the selected job.
+    pub why_open: bool,
+    pub why: Option<WhyState>,
+    /// The job and batch headline the last explanation request was made for.
+    why_basis: Option<(JobId, Option<WhySummary>)>,
 }
 
 impl App {
@@ -84,21 +93,28 @@ impl App {
             confirm: None,
             tables: Default::default(),
             quit: false,
+            why_open: false,
+            why: None,
+            why_basis: None,
         }
     }
 
-    pub fn apply(&mut self, update: Update, now_ms: UnixMs) {
+    /// Takes in what the feed fetched. A new snapshot may ask for a fresh explanation.
+    pub fn apply(&mut self, update: Update, now_ms: UnixMs) -> Option<Request> {
         match update {
             Update::Snapshot(snap, at) => {
                 self.data = Some(*snap);
                 self.updated_ms = Some(at);
                 self.fetch_error = None;
                 self.clamp_selections();
+                return self.request_why();
             }
             Update::FetchFailed(e) => self.fetch_error = Some(e),
             Update::Done(text) => self.flash(format!("ok: {text}"), false, now_ms),
             Update::Failed(text) => self.flash(text, true, now_ms),
+            Update::Why(job, result) => self.store_why(job, result),
         }
+        None
     }
 
     /// Flash text still worth showing at `now_ms`.
@@ -186,13 +202,16 @@ impl App {
                 control(ControlScope::Global, ControlAction::StopAll),
             ),
             KeyCode::Char('k') => self.ask_cancel_job(now_ms),
+            KeyCode::Char('w') => self.toggle_why(now_ms),
+            KeyCode::PageDown => self.scroll_why(WHY_SCROLL),
+            KeyCode::PageUp => self.scroll_why(-WHY_SCROLL),
             KeyCode::Char('a') => return self.advice_action(true, now_ms),
             KeyCode::Char('d') => return self.advice_action(false, now_ms),
             KeyCode::Char('f') if self.tab == Tab::Advice => return Some(Request::RefreshAdvice),
             _ => {}
         }
         self.clamp_selections();
-        None
+        self.request_why()
     }
 
     fn switch(&mut self, step: usize) {
@@ -219,6 +238,72 @@ impl App {
                 None
             }
         }
+    }
+
+    /// The job row the cursor is on.
+    pub fn selected_job(&self) -> Option<&Job> {
+        self.data.as_ref()?.jobs.get(self.selected(Tab::Jobs)?)
+    }
+
+    fn toggle_why(&mut self, now_ms: UnixMs) {
+        if self.tab != Tab::Jobs || self.selected_job().is_none() {
+            self.flash("w: select a job on the Jobs tab".into(), true, now_ms);
+            return;
+        }
+        self.why_open = !self.why_open;
+        // Reopening asks again, so the reasons are never older than the keypress.
+        self.why_basis = None;
+    }
+
+    fn scroll_why(&mut self, delta: isize) {
+        if let Some(w) = self.why.as_mut().filter(|_| self.why_open) {
+            w.scroll = w.scroll.saturating_add_signed(delta);
+        }
+    }
+
+    /// Asks for the selected job's explanation when the pane is open and either the job
+    /// or its batch headline changed since the last ask; browsing back to a job whose
+    /// reasons are unchanged costs nothing.
+    fn request_why(&mut self) -> Option<Request> {
+        if !self.why_open || self.tab != Tab::Jobs {
+            return None;
+        }
+        let job = self.selected_job().filter(|j| explainable(j.status))?;
+        let summary = self
+            .data
+            .as_ref()?
+            .why
+            .iter()
+            .find(|w| w.job == job.id)
+            .cloned();
+        let basis = Some((job.id, summary));
+        if self.why_basis == basis {
+            return None;
+        }
+        let id = job.id;
+        self.why_basis = basis;
+        Some(Request::Why(id))
+    }
+
+    fn store_why(&mut self, job: JobId, result: Result<Explanation, String>) {
+        // Answers to a job the cursor already left are not worth showing.
+        if self.why_basis.as_ref().map(|b| b.0) != Some(job) {
+            return;
+        }
+        if result.is_err() {
+            // Ask again on the next refresh.
+            self.why_basis = None;
+        }
+        let scroll = self
+            .why
+            .as_ref()
+            .filter(|w| w.job == job)
+            .map_or(0, |w| w.scroll);
+        self.why = Some(WhyState {
+            job,
+            result,
+            scroll,
+        });
     }
 
     /// Id and name of the schedule row the cursor is on.
@@ -354,5 +439,52 @@ mod tests {
             Some("Remove schedule 3 (repo-health)? A job it already queued keeps running.")
         );
         assert_eq!(press(&mut app, 'y'), Some(Request::RemoveSchedule(3)));
+    }
+
+    fn jobs_with_headline(message: &str) -> Snapshot {
+        let job = |id: i64, status: &str| json!({"id": id, "spec": {"name": format!("job-{id}"), "command": ["true"]}, "status": status});
+        let summary = json!({"job": 1, "status": "queued", "state": "blocked", "more": 0, "headline": {
+            "device": null,
+            "reason": {"kind": "guard", "message": message, "fix": null, "until_ms": null}}});
+        Snapshot {
+            jobs: serde_json::from_value(json!([job(1, "queued"), job(2, "running")])).unwrap(),
+            why: serde_json::from_value(json!([summary])).unwrap(),
+            ..Snapshot::default()
+        }
+    }
+
+    fn explanation(job: i64) -> Explanation {
+        serde_json::from_value(json!({"job": job, "name": "job", "status": "queued", "state": "blocked",
+            "summary": "Job 1 is queued but not starting.", "reasons": [], "devices": [], "at_ms": 0}))
+        .unwrap()
+    }
+
+    #[test]
+    fn why_pane_asks_for_the_selected_waiting_job_only_when_its_reasons_changed() {
+        let mut app = App::new("test");
+        app.apply(
+            Update::Snapshot(Box::new(jobs_with_headline("on battery")), 0),
+            0,
+        );
+        app.tab = Tab::Jobs;
+        assert_eq!(press(&mut app, 'w'), Some(Request::Why(1)));
+        app.apply(Update::Why(1, Ok(explanation(1))), 0);
+        assert_eq!(app.why.as_ref().map(|w| w.job), Some(1));
+
+        // A running job has nothing to explain; coming back to job 1 is free.
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.on_key(down, 0), None);
+        assert_eq!(app.on_key(up, 0), None);
+
+        // The same reasons on the next refresh cost nothing; changed reasons are fetched again.
+        let same = Update::Snapshot(Box::new(jobs_with_headline("on battery")), 0);
+        assert_eq!(app.apply(same, 0), None);
+        let changed = Update::Snapshot(Box::new(jobs_with_headline("load is high")), 0);
+        assert_eq!(app.apply(changed, 0), Some(Request::Why(1)));
+
+        // Closing and reopening asks again.
+        assert_eq!(press(&mut app, 'w'), None);
+        assert_eq!(press(&mut app, 'w'), Some(Request::Why(1)));
     }
 }

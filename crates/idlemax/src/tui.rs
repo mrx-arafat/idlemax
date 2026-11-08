@@ -7,6 +7,7 @@ mod layout;
 mod snapshots;
 mod table;
 mod view;
+mod why;
 
 use std::io::IsTerminal;
 use std::sync::mpsc;
@@ -70,7 +71,11 @@ fn event_loop(
     loop {
         loop {
             match updates.try_recv() {
-                Ok(u) => app.apply(u, now_ms()),
+                Ok(u) => {
+                    if let Some(req) = app.apply(u, now_ms()) {
+                        requests.send(req).map_err(|_| TuiError::FeedStopped)?;
+                    }
+                }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => return Err(TuiError::FeedStopped),
             }

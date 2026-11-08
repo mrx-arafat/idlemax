@@ -12,7 +12,7 @@ pub mod rows;
 mod schedule;
 mod service;
 mod statusline;
-mod why;
+pub mod why;
 
 use std::io::Read;
 

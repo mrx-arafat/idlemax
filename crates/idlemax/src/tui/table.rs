@@ -28,8 +28,21 @@ pub const DEVICES: Spec = Spec {
     min_width: 20, // the guard reason is the point of this tab, so it outranks the metrics
     empty: "No device has sent a heartbeat yet. Start `idlemax agent` on a device.",
 };
+/// `rows::JOB_HEADER` with the last column renamed: a waiting job shows why instead of a result.
+const JOB_COLUMNS: [&str; 9] = [
+    "ID",
+    "NAME",
+    "STATUS",
+    "DEVICE",
+    "COST",
+    "PRIO",
+    "TRIES",
+    "AGE",
+    "RESULT / WHY",
+];
+
 pub const JOBS: Spec = Spec {
-    header: &rows::JOB_HEADER,
+    header: &JOB_COLUMNS,
     flex: &[1, 3, 8],
     drop: &[5, 4, 6, 3], // PRIO, COST, TRIES, DEVICE
     min_width: 16,
