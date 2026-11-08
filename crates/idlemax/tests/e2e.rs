@@ -194,7 +194,7 @@ fn job_add_cli(home: &Path, state: &Path) {
             "add",
             "--wait",
             "--timeout",
-            "60",
+            "30",
             "--mem",
             "64",
             "--",
@@ -202,8 +202,11 @@ fn job_add_cli(home: &Path, state: &Path) {
         ],
         None,
     );
+    // A non-zero exit is the job's own result: `failed` after one run, never re-queued
+    // (a retry would back off 2 minutes and outlast the timeout).
     assert_eq!(code, Some(1), "a failing command exits 1: {out} {err}");
-    assert!(out.contains("parked: false\nexit code: 1"), "{out}");
+    assert!(out.contains("failed: false\nexit code: 1"), "{out}");
+    assert!(!err.contains("queued again"), "{err}");
 
     // Paused, nothing runs: a key queues once, and a short wait times out.
     assert!(run(&["pause", "--reason", "e2e"], None).0 == Some(0));
@@ -281,6 +284,57 @@ fn job_add_cli(home: &Path, state: &Path) {
     );
 }
 
+/// A job whose agent dies mid-run is not at fault: the restarted agent reaps the orphan and
+/// the coordinator re-queues the job with a backoff instead of failing it.
+async fn agent_death_is_retried(home: &Path, state: &Path, agent: &mut Proc, api: &Api) {
+    let out = idlemax(
+        home,
+        state,
+        &[
+            "job",
+            "add",
+            "--name",
+            "dies",
+            "--mem",
+            "64",
+            "--",
+            "/bin/sleep",
+            "60",
+        ],
+        None,
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let job_named = |status: Option<JobStatus>| async move {
+        let jobs: Vec<Job> = api.get("/v1/jobs?limit=50").await?;
+        jobs.into_iter()
+            .find(|j| j.spec.name == "dies" && status.is_none_or(|s| j.status == s))
+    };
+    let running = wait_for("the sleeping job to run", Duration::from_secs(30), || {
+        job_named(Some(JobStatus::Running))
+    })
+    .await;
+
+    agent.child.kill().unwrap();
+    agent.child.wait().unwrap();
+    *agent = spawn("agent", home, state);
+
+    let queued = wait_for("the job to be re-queued", Duration::from_secs(60), || {
+        job_named(Some(JobStatus::Queued))
+    })
+    .await;
+    assert_eq!((queued.id, queued.attempts), (running.id, 1));
+    let why = queued.last_error.as_deref().unwrap_or_default();
+    assert!(
+        why.contains("orphaned") && why.contains("attempt 2 of 3 next"),
+        "{why}"
+    );
+    assert!(queued.not_before_ms.is_some(), "retried with a backoff");
+    let id = running.id.to_string();
+    assert!(idlemax(home, state, &["job", "cancel", &id], None)
+        .status
+        .success());
+}
+
 /// Polls `probe` every 200 ms until it returns Some, or panics after `timeout`.
 async fn wait_for<T, F, Fut>(what: &str, timeout: Duration, mut probe: F) -> T
 where
@@ -315,7 +369,7 @@ async fn coord_and_agent_run_a_tiny_job() {
     let config = format!(
         "[coordinator]\nlisten = \"127.0.0.1:{coord_port}\"\nurl = \"{coord}\"\n\n\
          [agent]\ndevice_id = \"{DEVICE}\"\nlisten = \"127.0.0.1:{agent_port}\"\n\
-         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ncommand_allowlist = [\"/bin/echo\", \"/usr/bin/false\"]\n\n\
+         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ncommand_allowlist = [\"/bin/echo\", \"/usr/bin/false\", \"/bin/sleep\"]\n\n\
          [advisor]\nenabled = false\n\n\
          [guard]\n{PERMISSIVE_GUARD}"
     );
@@ -381,7 +435,7 @@ async fn coord_and_agent_run_a_tiny_job() {
     let anon = http.get(format!("{coord}/v1/status")).send().await.unwrap();
     assert_eq!(anon.status(), StatusCode::UNAUTHORIZED);
 
-    let _agent = spawn("agent", &home, &state);
+    let mut agent = spawn("agent", &home, &state);
     wait_for("device online", Duration::from_secs(30), || async move {
         let status: ClusterStatus = api.get("/v1/status").await?;
         status
@@ -490,6 +544,7 @@ async fn coord_and_agent_run_a_tiny_job() {
     assert!(show_str.contains(MARKER));
 
     job_add_cli(&home, &state);
+    agent_death_is_retried(&home, &state, &mut agent, api).await;
 
     let agent_api = Api {
         http,
