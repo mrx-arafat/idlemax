@@ -273,8 +273,20 @@ pub fn plan_install(text: Option<&str>, w: &Wrapper) -> Result<String, Statuslin
     Ok(out)
 }
 
+/// True when wrapping `backup` again gives exactly `text`, i.e. `text` is that backup plus our edit.
+fn is_backup_of(backup: &str, text: &str, w: &Wrapped) -> bool {
+    let spec = Wrapper {
+        script: &w.script,
+        idlemax_home: w.idlemax_home.as_deref(),
+    };
+    let backup_is_plain = !matches!(inspect(Some(backup)), Ok(Wiring::Wrapped(_)));
+    backup_is_plain && plan_install(Some(backup), &spec).is_ok_and(|rewrapped| rewrapped == text)
+}
+
 /// The new `settings.json` text with the original command back; the same text when not wrapped.
-pub fn plan_uninstall(text: &str) -> Result<String, StatuslineError> {
+/// `backup` is the copy made at install: when `text` is exactly that copy plus our edit, the
+/// copy is restored byte for byte, otherwise only the command is edited back.
+pub fn plan_uninstall(text: &str, backup: Option<&str>) -> Result<String, StatuslineError> {
     let doc = read(text)?;
     let Some(l) = &doc.line else {
         return Ok(text.to_string());
@@ -282,6 +294,9 @@ pub fn plan_uninstall(text: &str) -> Result<String, StatuslineError> {
     let Some(wrapped) = parse_wrapped(&l.command) else {
         return Ok(text.to_string());
     };
+    if let Some(backup) = backup.filter(|b| is_backup_of(b, text, &wrapped)) {
+        return Ok(backup.to_string());
+    }
     let out = match wrapped.original {
         Some(original) => replace(text, l.command_value.clone(), &json_string(&original)),
         None if l.only_ours => remove_member(&doc, l.member),

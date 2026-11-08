@@ -22,7 +22,7 @@ fn install_then_uninstall_restores_every_byte() {
         let installed = plan_install(Some(fixture), &W).unwrap();
         let wrapped = inspect(Some(&installed)).unwrap();
         assert!(matches!(wrapped, Wiring::Wrapped(_)), "{fixture}");
-        let restored = plan_uninstall(&installed).unwrap();
+        let restored = plan_uninstall(&installed, None).unwrap();
         if *fixture == "{}\n" {
             assert_eq!(restored, "{}\n");
         } else {
@@ -43,7 +43,7 @@ fn install_is_idempotent_and_keeps_inline_shell_working() {
         Some("input=$(cat); echo \"$input\" | jq -r '.model'")
     );
     // Uninstall leaves a file that was never wrapped alone.
-    assert_eq!(plan_uninstall(FIXTURES[0]).unwrap(), FIXTURES[0]);
+    assert_eq!(plan_uninstall(FIXTURES[0], None).unwrap(), FIXTURES[0]);
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn missing_file_gets_a_new_file_and_a_custom_home_is_passed_on() {
     };
     assert_eq!(found.idlemax_home.as_deref(), Some("/tmp/a b/state"));
     assert_eq!(found.original, None);
-    assert_eq!(plan_uninstall(&text).unwrap(), "{}\n");
+    assert_eq!(plan_uninstall(&text, None).unwrap(), "{}\n");
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn the_manual_readme_form_counts_as_installed_and_unwraps() {
     let manual = "{\"statusLine\": {\"type\": \"command\", \"command\": \"/repo/packaging/claude-statusline-capture.sh bash ~/s.sh\"}}";
     assert_eq!(plan_install(Some(manual), &W).unwrap(), manual);
     assert_eq!(
-        plan_uninstall(manual).unwrap(),
+        plan_uninstall(manual, None).unwrap(),
         "{\"statusLine\": {\"type\": \"command\", \"command\": \"bash ~/s.sh\"}}"
     );
 }
@@ -91,4 +91,28 @@ fn unexpected_shapes_are_refused_with_a_reason() {
         let err = plan_install(Some(text), &W).unwrap_err().to_string();
         assert!(err.contains(why), "{text}: {err}");
     }
+}
+
+#[test]
+fn the_backup_restores_every_byte_only_while_the_file_is_untouched() {
+    let original = "{\n  \"a\": 1,\n  \"statusLine\": {\"type\": \"command\", \"command\": \"x \\u00e9 \\/ y\"}\n}\n";
+    let installed = plan_install(Some(original), &W).unwrap();
+    // Without the backup an escape like \u00e9 comes back as the plain character.
+    assert_ne!(plan_uninstall(&installed, None).unwrap(), original);
+    assert_eq!(
+        plan_uninstall(&installed, Some(original)).unwrap(),
+        original
+    );
+
+    let edited = installed.replacen("\"a\": 1", "\"a\": 2", 1);
+    let restored = plan_uninstall(&edited, Some(original)).unwrap();
+    assert!(
+        restored.contains("\"a\": 2") && !restored.contains("sh -c"),
+        "{restored}"
+    );
+    // A backup that is itself wrapped is never mistaken for the original.
+    assert_eq!(
+        plan_uninstall(&installed, Some(&installed)).unwrap(),
+        plan_uninstall(&installed, None).unwrap()
+    );
 }

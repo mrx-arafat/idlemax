@@ -124,6 +124,15 @@ pub fn run(paths: &Paths, args: StatuslineArgs, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// `settings.json.idlemax.bak`: the file as it was before the last change idlemax made.
+/// It sits next to the file the path really points to, so a symlinked settings.json works.
+fn backup_path(settings: &Path) -> PathBuf {
+    let target = std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
+    let mut name = target.file_name().unwrap_or_default().to_os_string();
+    name.push(".idlemax.bak");
+    target.with_file_name(name)
+}
+
 fn read_settings(path: &Path) -> Result<Option<String>> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
@@ -138,11 +147,7 @@ fn save(settings: &Path, before: Option<&str>, after: &str) -> Result<Option<Pat
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     let target = std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
-    let backup = before.map(|_| {
-        let mut name = target.file_name().unwrap_or_default().to_os_string();
-        name.push(".idlemax.bak");
-        target.with_file_name(name)
-    });
+    let backup = before.map(|_| backup_path(&target));
     if let (Some(path), Some(old)) = (&backup, before) {
         write_atomic(path, old.as_bytes(), None)
             .with_context(|| format!("backing up to {}", path.display()))?;
@@ -213,8 +218,10 @@ fn install_wrapper(path: &Path) -> Result<()> {
 
 fn uninstall(p: &Places, dry_run: bool) -> Result<ChangeReport> {
     let before = read_settings(&p.settings)?;
+    let backup_text = read_settings(&backup_path(&p.settings))?;
     let after = match &before {
-        Some(text) => plan_uninstall(text).with_context(|| p.settings.display().to_string())?,
+        Some(text) => plan_uninstall(text, backup_text.as_deref())
+            .with_context(|| p.settings.display().to_string())?,
         None => String::new(),
     };
     let changed = before.as_deref().is_some_and(|b| b != after);
