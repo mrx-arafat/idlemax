@@ -136,6 +136,17 @@ pub fn unit_path(platform: Platform, kind: ServiceKind, home: &Path) -> PathBuf 
     }
 }
 
+/// A warning when the binary sits in a cargo build directory that a rebuild or `cargo clean` replaces.
+pub fn bin_warning(bin: &Path) -> Option<&'static str> {
+    let parts: Vec<_> = bin.components().map(|c| c.as_os_str()).collect();
+    let in_target = parts
+        .windows(2)
+        .any(|w| w[0] == "target" && (w[1] == "debug" || w[1] == "release"));
+    in_target.then_some(
+        "the binary is inside a cargo target directory; a rebuild or `cargo clean` would break the service. Install it first (`cargo install --path crates/idlemax`) or pass --bin",
+    )
+}
+
 fn text<'a>(what: &str, p: &'a Path) -> Result<&'a str, ServiceError> {
     p.to_str()
         .filter(|s| is_plain_text(s))

@@ -1,10 +1,13 @@
 //! Delivery: clap command line. Each subcommand makes one API call and prints the result.
 
 mod client;
+mod files;
 mod init;
 pub mod print;
 pub mod rows;
 mod schedule;
+mod service;
+mod statusline;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -79,6 +82,10 @@ enum Cmd {
         #[command(subcommand)]
         cmd: Option<AdviseCmd>,
     },
+    /// Install or remove the background service (LaunchAgent or systemd user unit)
+    Service(service::ServiceArgs),
+    /// Wire the Claude Code statusline into the quota probe
+    Statusline(statusline::StatuslineArgs),
     /// Interactive dashboard
     Tui,
     /// Talk to this device's agent directly; works while the coordinator is down
@@ -181,6 +188,8 @@ pub async fn run() -> Result<()> {
     let paths = state::paths_from_env()?;
     let cmd = match cmd {
         Cmd::Init(args) => return run_init(&paths, args),
+        Cmd::Service(args) => return service::run(&paths, args, json),
+        Cmd::Statusline(args) => return statusline::run(&paths, args, json),
         other => other,
     };
     let config = state::load_config(&paths)?;
@@ -306,7 +315,12 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
             .map(|e| out(json, &e, |e| print::events(e))),
         Cmd::Advise { cmd } => advise(c, cmd.unwrap_or(AdviseCmd::List), json, now).await,
         Cmd::Tui => return Ok(crate::tui::run(c.clone()).await?),
-        Cmd::Agent | Cmd::Coord | Cmd::Init(_) | Cmd::Local(_) => {
+        Cmd::Agent
+        | Cmd::Coord
+        | Cmd::Init(_)
+        | Cmd::Local(_)
+        | Cmd::Service(_)
+        | Cmd::Statusline(_) => {
             bail!("not a coordinator command")
         }
     };

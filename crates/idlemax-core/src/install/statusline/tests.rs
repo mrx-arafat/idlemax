@@ -82,7 +82,7 @@ fn unexpected_shapes_are_refused_with_a_reason() {
         ),
         (
             "{\"statusLine\": {\"type\": \"command\"}}",
-            "without a \"command\"",
+            "no \"command\" string",
         ),
         ("{\"statusLine\": {}, \"statusLine\": {}}", "more than one"),
         ("{\"a\": 1,}", "not valid JSON"),

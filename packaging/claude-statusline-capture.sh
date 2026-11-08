@@ -4,6 +4,7 @@
 # real statusline command with the same input. Without this file Claude accounts are never
 # spendable. It never fails the statusline: capture errors are ignored.
 #
+# `idlemax statusline install` does this for you (and `uninstall` undoes it). By hand, in
 # ~/.claude/settings.json:
 #   "statusLine": { "type": "command",
 #                   "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh <your statusline command>" }

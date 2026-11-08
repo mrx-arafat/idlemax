@@ -115,6 +115,8 @@ fn bad_inputs_are_refused() {
         ..env()
     };
     assert!(render(Platform::SystemdUser, ServiceKind::Agent, &injected).is_err());
+    assert!(bin_warning(Path::new("/w/target/debug/idlemax")).is_some());
+    assert!(bin_warning(Path::new("/home/u/.cargo/bin/idlemax")).is_none());
 }
 
 #[test]

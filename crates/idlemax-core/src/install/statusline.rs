@@ -17,9 +17,9 @@ const SHELL_PREFIX: &str = "sh -c ";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StatuslineError {
-    #[error("settings.json is not valid JSON ({0}); fix it by hand, then run this again")]
+    #[error("not valid JSON ({0}); fix it by hand, then run this again")]
     InvalidJson(String),
-    #[error("settings.json {0}; idlemax will not guess, edit it by hand")]
+    #[error("{0}; idlemax will not guess, edit it by hand")]
     UnexpectedShape(String),
     #[error("internal check failed ({0}); settings.json was left unchanged")]
     Verify(String),
@@ -129,7 +129,7 @@ fn only_one<'a>(
     let mut found = members.iter().enumerate().filter(|(_, m)| m.key == key);
     let first = found.next();
     if found.next().is_some() {
-        return shape(format!("has more than one \"{key}\" key"));
+        return shape(format!("it has more than one \"{key}\" key"));
     }
     Ok(first)
 }
@@ -138,7 +138,10 @@ fn read(text: &str) -> Result<Doc<'_>, StatuslineError> {
     let value: Value =
         serde_json::from_str(text).map_err(|e| StatuslineError::InvalidJson(e.to_string()))?;
     let Value::Object(root_map) = &value else {
-        return shape(format!("is {}, expected a JSON object", kind(&value)));
+        return shape(format!(
+            "the top level is {}, expected a JSON object",
+            kind(&value)
+        ));
     };
     let scan = |e| StatuslineError::Verify(format!("{e}"));
     let (members, root) = parse_object(text, 0).map_err(scan)?;
@@ -147,23 +150,23 @@ fn read(text: &str) -> Result<Doc<'_>, StatuslineError> {
         Some((member, m)) => {
             let Value::Object(map) = &root_map["statusLine"] else {
                 return shape(format!(
-                    "has \"statusLine\" set to {}, expected an object like {{\"type\": \"command\", \"command\": \"...\"}}",
+                    "\"statusLine\" is {}, expected an object like {{\"type\": \"command\", \"command\": \"...\"}}",
                     kind(&root_map["statusLine"])
                 ));
             };
             if map.get("type").and_then(Value::as_str) != Some("command") {
-                return shape("has a \"statusLine\" whose \"type\" is not \"command\"");
+                return shape("\"statusLine.type\" is not \"command\"");
             }
             let Some(command) = map
                 .get("command")
                 .and_then(Value::as_str)
                 .filter(|c| !c.trim().is_empty())
             else {
-                return shape("has a \"statusLine\" without a \"command\" string");
+                return shape("\"statusLine\" has no \"command\" string");
             };
             let (inner, _) = parse_object(text, m.value.start).map_err(scan)?;
             let Some((_, c)) = only_one(&inner, "command")? else {
-                return shape("has a \"statusLine\" without a \"command\" string");
+                return shape("\"statusLine\" has no \"command\" string");
             };
             Some(StatusLine {
                 member,
@@ -282,7 +285,7 @@ pub fn plan_uninstall(text: &str) -> Result<String, StatuslineError> {
     let out = match wrapped.original {
         Some(original) => replace(text, l.command_value.clone(), &json_string(&original)),
         None if l.only_ours => remove_member(&doc, l.member),
-        None => return shape("has a \"statusLine\" with extra keys next to the idlemax wrapper"),
+        None => return shape("\"statusLine\" has extra keys next to the idlemax wrapper"),
     };
     verify(Some(text), &out)?;
     Ok(out)
