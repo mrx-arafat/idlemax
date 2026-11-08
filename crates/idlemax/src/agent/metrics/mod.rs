@@ -11,6 +11,7 @@ pub mod disk;
 mod linux;
 mod macos;
 
+use std::path::PathBuf;
 use std::time::Instant;
 
 use idlemax_core::config::AgentConfig;
@@ -61,13 +62,14 @@ impl Sampler {
         })
     }
 
-    /// One snapshot. CPU busy % is the average since the previous call.
-    pub fn sample(&mut self) -> MetricsSnapshot {
+    /// One snapshot. CPU busy % is the average since the previous call. Disk space is the
+    /// least free of the filesystems holding `disk_paths`.
+    pub fn sample(&mut self, disk_paths: &[PathBuf]) -> MetricsSnapshot {
         self.sys.refresh_cpu_usage();
         self.sys.refresh_memory();
         let mem_total = self.sys.total_memory();
         let mem_avail = self.sys.available_memory();
-        let (disk_free, disk_total) = disk::read_root().unwrap_or((0, 0));
+        let (disk_free, disk_total) = disk::read_lowest(disk_paths).unwrap_or((0, 0));
         let mut s = MetricsSnapshot {
             at_ms: now_ms(),
             cpu_count: self.cpu_count,

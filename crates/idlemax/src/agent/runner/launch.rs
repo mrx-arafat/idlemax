@@ -176,16 +176,20 @@ fn resolve_program(program: &str) -> Result<String, RunnerError> {
         .ok_or_else(|| RunnerError::ProgramNotFound(program.to_string()))
 }
 
-/// Spec cwd with `~` expanded; the user's home when unset.
-fn resolve_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
+/// Spec cwd with `~` expanded; the user's home when unset. Touches no filesystem.
+pub(super) fn expand_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
     let home = || dirs::home_dir().ok_or(RunnerError::NoHome);
-    let dir = match cwd {
+    Ok(match cwd {
         None | Some("~") => home()?,
         Some(c) => match c.strip_prefix("~/") {
             Some(rest) => home()?.join(rest),
             None => PathBuf::from(c),
         },
-    };
+    })
+}
+
+fn resolve_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
+    let dir = expand_cwd(cwd)?;
     if dir.is_dir() {
         Ok(dir)
     } else {

@@ -95,11 +95,12 @@ impl Agent {
     ) -> Option<R> {
         let done = blocking(&self.runner, move |r| {
             let out = f(r);
-            (out, r.running())
+            (out, r.running(), r.job_dirs())
         });
         match done.await {
-            Ok((out, running)) => {
+            Ok((out, running, job_dirs)) => {
                 self.running = running;
+                self.job_dirs = job_dirs;
                 Some(out)
             }
             Err(e) => {

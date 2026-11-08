@@ -111,7 +111,7 @@ The script checks, in order:
 - the coordinator starts on a free loopback port inside `MemoryHigh=192M`, `MemoryMax=256M`, `MemorySwapMax=0`, `CPUQuota=20%`.
 - the agent starts inside `MemoryHigh=576M`, `MemoryMax=640M`, `MemorySwapMax=0`, `CPUQuota=100%`.
 - the coordinator sees the device online with a fresh metrics snapshot.
-- every metrics field matches the kernel: CPU count, CPU busy percent, load, memory total and available, memory free percent, swap total and used, root disk free and total, logind idle, AC and battery, thermal trip state, memory pressure, PSI memory and IO, and swap-in pages per second.
+- every metrics field matches the kernel: CPU count, CPU busy percent, load, memory total and available, memory free percent, swap total and used, disk free and total (the least free of `/`, the state dir and the running jobs' working directories), logind idle, AC and battery, thermal trip state, memory pressure, PSI memory and IO, and swap-in pages per second.
 - a 128 MiB memory-hog job is killed by the cgroup at its `MemoryMax` (`oom_kill` counted) and the job ends as `killed` with the error "killed by the 128 MiB memory cap".
   Job scopes set `MemoryMax` and `MemorySwapMax=0` but no `MemoryHigh`, because the kernel would throttle a hog below the cap instead of killing it.
   On systemd 253 or newer they also set `OOMPolicy=kill`, so the whole job dies with SIGKILL even when the process the kernel picked was a child of a shell; older hosts skip that property.

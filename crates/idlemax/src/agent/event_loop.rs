@@ -6,6 +6,7 @@
 //! the children: `sample` (guard verdict, device info), `jobs` (reconcile, reap, local
 //! controls) and `coord` (heartbeat trips, replies, the online flag, the advisor feed).
 
+mod bounded;
 mod coord;
 mod jobs;
 mod sample;
@@ -76,6 +77,8 @@ pub struct Agent {
     reading: Reading,
     decision: GuardDecision,
     running: Vec<RunningJob>,
+    /// Where the running jobs work, so the disk reading covers their filesystems.
+    job_dirs: Vec<PathBuf>,
     online: bool,
     last_heartbeat_ms: Option<UnixMs>,
     /// Shutting down: every tick kills, nothing starts.
@@ -102,6 +105,7 @@ impl Agent {
             reading: Reading::default(),
             decision: GuardDecision::default(),
             running: Vec::new(),
+            job_dirs: Vec::new(),
             online: false,
             last_heartbeat_ms: None,
             stopping: false,

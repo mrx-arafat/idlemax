@@ -73,9 +73,12 @@ pub fn home_dir() -> Option<PathBuf> {
     dirs::home_dir()
 }
 
-/// Free space on the filesystem holding the state dir, in MiB. Blocking.
-pub fn disk_free_mib() -> Option<u64> {
-    crate::agent::metrics::disk::read_root().map(|(free, _)| free / (1024 * 1024))
+/// Free space on the root and the filesystem holding the state dir, whichever is lower, in
+/// MiB. Blocking, and bounded by the probe timeout.
+pub fn disk_free_mib(state_dir: Option<&Path>) -> Option<u64> {
+    use crate::agent::metrics::disk;
+    let paths = disk::watched(state_dir.unwrap_or(Path::new("/")), &[]);
+    disk::read_lowest(&paths).map(|(free, _)| free / (1024 * 1024))
 }
 
 /// A home-relative path as `~/...`, so the report stays short.

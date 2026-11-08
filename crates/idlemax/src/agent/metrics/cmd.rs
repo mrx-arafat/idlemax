@@ -12,7 +12,8 @@ pub const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Runs `prog args`, returns stdout when the process exits before `timeout`.
 /// Output is returned even on a non-zero exit (sysctl exits 1 on one unknown oid
 /// but still prints the others). Returns None when it cannot spawn or times out;
-/// a timed out child is killed and reaped.
+/// a timed out child is killed and reaped on a side thread, because a child stuck in the
+/// kernel (a dead network mount) may never exit and must not hold this one.
 pub fn run(prog: &str, args: &[&str], timeout: Duration) -> Option<String> {
     let mut child = Command::new(prog)
         .args(args)
@@ -37,7 +38,9 @@ pub fn run(prog: &str, args: &[&str], timeout: Duration) -> Option<String> {
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(5)),
             _ => {
                 let _ = child.kill();
-                let _ = child.wait();
+                thread::spawn(move || {
+                    let _ = child.wait();
+                });
                 return None;
             }
         }

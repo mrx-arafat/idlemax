@@ -1,17 +1,28 @@
 //! Sampling: one guard verdict per sample tick, and the hourly device-info refresh.
 //! Part of the agent event loop (adapter layer); the verdict itself comes from the domain `Guard`.
+//! Both probe calls are bounded: a probe that hangs makes the verdict fail safe (pause)
+//! instead of stopping the loop.
+
+use std::time::Duration;
 
 use idlemax_core::reconcile::fail_safe_decision;
-use tracing::{error, info};
+use tracing::{info, warn};
 
-use super::{blocking, Agent};
+use super::bounded::blocking_within;
+use super::Agent;
 use crate::agent::probes::Probes;
 use crate::state::now_ms;
+
+/// Longest the loop waits for one batch of probes. Each probe command is capped at 2 s, so a
+/// healthy batch is far under this; only a stuck filesystem call can reach it.
+const PROBE_LIMIT: Duration = Duration::from_secs(10);
 
 impl Agent {
     pub(super) async fn on_sample(&mut self) {
         self.reap().await;
-        let decision = match blocking(&self.probes, Probes::read).await {
+        let job_dirs = self.job_dirs.clone();
+        let read = blocking_within(&self.probes, PROBE_LIMIT, move |p| p.read(&job_dirs));
+        let decision = match read.await {
             Ok(reading) => {
                 self.reading = reading;
                 self.guard.evaluate(
@@ -22,8 +33,8 @@ impl Agent {
                 )
             }
             Err(e) => {
-                error!("sample worker failed: {e}");
-                fail_safe_decision("metrics sample failed", now_ms())
+                warn!("metrics sample failed: {e}");
+                fail_safe_decision(&format!("metrics sample failed: {e}"), now_ms())
             }
         };
         if decision.action != self.decision.action {
@@ -34,7 +45,7 @@ impl Agent {
     }
 
     pub(super) async fn on_refresh_device_info(&mut self) {
-        match blocking(&self.probes, Probes::refresh_device_info).await {
+        match blocking_within(&self.probes, PROBE_LIMIT, Probes::refresh_device_info).await {
             Ok(device) => {
                 if device.capabilities != self.device.capabilities {
                     info!(
@@ -45,7 +56,7 @@ impl Agent {
                 }
                 self.device = device;
             }
-            Err(e) => error!("refresh device info failed: {e}"),
+            Err(e) => warn!("refresh device info failed: {e}"),
         }
     }
 }

@@ -8,7 +8,7 @@ use idlemax_core::quota::QuotaConfig;
 use idlemax_core::types::{DeviceInfo, MetricsSnapshot, QuotaSnapshot, UnixMs};
 use idlemax_core::Paths;
 
-use super::metrics::Sampler;
+use super::metrics::{disk, Sampler};
 use super::quota_probe::{self, ProbeDirs};
 use super::ring::MetricsRing;
 
@@ -25,6 +25,7 @@ pub struct Probes {
     ring: MetricsRing,
     ring_failing: bool,
     pause_file: PathBuf,
+    state_dir: PathBuf,
     quota: QuotaConfig,
     quota_dirs: ProbeDirs,
     agent_cfg: AgentConfig,
@@ -43,6 +44,7 @@ impl Probes {
             ring,
             ring_failing: false,
             pause_file: paths.pause_file(),
+            state_dir: paths.root().to_path_buf(),
             quota,
             quota_dirs: ProbeDirs::from_env(paths),
             agent_cfg,
@@ -57,8 +59,11 @@ impl Probes {
         self.sampler.device_info(&self.agent_cfg)
     }
 
-    pub fn read(&mut self) -> Reading {
-        let metrics = self.sampler.sample();
+    /// `job_dirs` are the working directories of the running jobs; the disk reading covers
+    /// them too, because a job fills the filesystem it runs on.
+    pub fn read(&mut self, job_dirs: &[PathBuf]) -> Reading {
+        let disk_paths = disk::watched(&self.state_dir, job_dirs);
+        let metrics = self.sampler.sample(&disk_paths);
         let now_ms = metrics.at_ms;
         match self.ring.append(&metrics, now_ms) {
             Ok(()) if self.ring_failing => {

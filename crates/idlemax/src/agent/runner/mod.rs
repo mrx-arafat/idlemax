@@ -258,6 +258,12 @@ impl Runner {
         jobs
     }
 
+    /// Working directories of the running jobs, for the disk reading. Reads no filesystem.
+    pub fn job_dirs(&self) -> Vec<PathBuf> {
+        let cwd = |slot: &Slot| launch::expand_cwd(slot.job.spec.cwd.as_deref()).ok();
+        self.slots.values().filter_map(cwd).collect()
+    }
+
     fn refresh_usage(&mut self, now: UnixMs) {
         if self.slots.is_empty() || now - self.usage_at_ms < USAGE_REFRESH_MS {
             return;

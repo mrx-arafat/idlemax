@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use idlemax_core::doctor::{self, format_mib, Check, DiskVerdict, Report};
 use idlemax_core::types::Os;
-use idlemax_core::Config;
+use idlemax_core::{Config, Paths};
 
 use super::facts;
 use crate::cli::rows;
@@ -82,7 +82,7 @@ fn entry_problem(entry: &str) -> Option<(String, String)> {
 }
 
 /// Check 6: free disk space against the guard's pause and kill lines.
-pub async fn disk(report: &mut Report, cfg: &Config) {
+pub async fn disk(report: &mut Report, cfg: &Config, paths: Option<&Paths>) {
     let policy = match cfg.guard_policy(Os::current()) {
         Ok(policy) => policy,
         Err(e) => {
@@ -94,7 +94,8 @@ pub async fn disk(report: &mut Report, cfg: &Config) {
             return;
         }
     };
-    let free = tokio::task::spawn_blocking(facts::disk_free_mib)
+    let state_dir = paths.map(|p| p.root().to_path_buf());
+    let free = tokio::task::spawn_blocking(move || facts::disk_free_mib(state_dir.as_deref()))
         .await
         .ok()
         .flatten();
