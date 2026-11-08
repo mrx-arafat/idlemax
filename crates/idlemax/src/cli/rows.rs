@@ -2,6 +2,7 @@
 
 use idlemax_core::protocol::DeviceView;
 use idlemax_core::quota::QuotaView;
+use idlemax_core::schedule::{Decision, RunResult, ScheduleView};
 use idlemax_core::types::{
     Event, GuardAction, GuardDecision, Job, JobStatus, QuotaWindowKind, Recommendation, UnixMs,
 };
@@ -18,6 +19,7 @@ pub const QUOTA_HEADER: [&str; 8] = [
 ];
 pub const ADVICE_HEADER: [&str; 7] = ["ID", "KIND", "TITLE", "CONF", "SOURCE", "STATUS", "AGE"];
 pub const EVENT_HEADER: [&str; 5] = ["TIME", "KIND", "DEVICE", "JOB", "MESSAGE"];
+pub const SCHEDULE_HEADER: [&str; 5] = ["ID", "NAME", "EVERY", "STATE", "LAST RESULT"];
 
 pub fn device_cells(d: &DeviceView, now_ms: UnixMs) -> Vec<String> {
     let m = d.metrics.as_ref();
@@ -167,6 +169,41 @@ pub fn event_cells(e: &Event) -> Vec<String> {
     ]
 }
 
+pub fn schedule_cells(v: &ScheduleView, now_ms: UnixMs) -> Vec<String> {
+    vec![
+        v.schedule.id.to_string(),
+        trunc(&v.schedule.spec.name, 32),
+        v.schedule.every.to_string(),
+        schedule_state(v, now_ms),
+        last_result(v.last_result.as_ref(), now_ms),
+    ]
+}
+
+/// What the schedule is doing: "job 41 queued", "next in 5h05m", "due now", "paused".
+pub fn schedule_state(v: &ScheduleView, now_ms: UnixMs) -> String {
+    match (v.decision, v.schedule.paused) {
+        (Decision::Running { job, status }, false) => format!("job {job} {status}"),
+        (Decision::Running { job, status }, true) => format!("paused, job {job} still {status}"),
+        (Decision::Paused, _) => "paused".into(),
+        (Decision::Wait { until_ms }, _) => format!("next {}", rel(until_ms, now_ms)),
+        (Decision::Fire, _) => "due now".into(),
+    }
+}
+
+/// "succeeded 3h00m ago", "failed (exit 2) 1m ago"; "-" before the first run ends.
+fn last_result(r: Option<&RunResult>, now_ms: UnixMs) -> String {
+    let Some(r) = r else { return "-".into() };
+    let detail = match (&r.error, r.exit_code) {
+        (Some(e), _) => format!(" ({})", trunc(e, 30)),
+        (None, Some(code)) if code != 0 => format!(" (exit {code})"),
+        _ => String::new(),
+    };
+    let at = r
+        .finished_ms
+        .map_or_else(String::new, |t| format!(" {}", rel(t, now_ms)));
+    format!("{}{detail}{at}", r.status)
+}
+
 /// Name of a unit serde enum, e.g. `CostClass::CpuLight` -> "cpu_light".
 pub fn snake<T: Serialize>(v: &T) -> String {
     match serde_json::to_value(v) {
@@ -232,7 +269,74 @@ pub fn trunc(s: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use idlemax_core::schedule::{Decision, RunResult, Schedule};
+    use idlemax_core::types::JobSpec;
+
     use super::*;
+
+    fn schedule_view(decision: Decision, last: Option<RunResult>, paused: bool) -> ScheduleView {
+        ScheduleView {
+            schedule: Schedule {
+                id: 3,
+                spec: JobSpec {
+                    name: "repo-health".into(),
+                    ..JobSpec::default()
+                },
+                every: "1d".parse().unwrap(),
+                paused,
+                created_ms: 0,
+                last_fired_ms: None,
+                last_job: None,
+            },
+            decision,
+            last_result: last,
+        }
+    }
+
+    #[test]
+    fn schedule_cells_say_what_it_waits_for_and_how_the_last_run_ended() {
+        const NOW: UnixMs = 1_800_000_000_000;
+        let failed = RunResult {
+            status: JobStatus::Failed,
+            exit_code: Some(2),
+            error: None,
+            finished_ms: Some(NOW - 3_600_000),
+        };
+        let ok = RunResult {
+            status: JobStatus::Succeeded,
+            exit_code: Some(0),
+            error: None,
+            finished_ms: Some(NOW - 60_000),
+        };
+        let cells = |v: &ScheduleView| schedule_cells(v, NOW)[3..].to_vec();
+        let wait = Decision::Wait {
+            until_ms: NOW + 5 * 3_600_000,
+        };
+        assert_eq!(
+            cells(&schedule_view(wait, Some(failed), false)),
+            ["next in 5h00m", "failed (exit 2) 1h00m ago"]
+        );
+        let queued = Decision::Running {
+            job: 41,
+            status: JobStatus::Queued,
+        };
+        assert_eq!(
+            cells(&schedule_view(queued, Some(ok.clone()), false)),
+            ["job 41 queued", "succeeded 1m ago"]
+        );
+        assert_eq!(
+            cells(&schedule_view(queued, None, true)),
+            ["paused, job 41 still queued", "-"]
+        );
+        assert_eq!(
+            cells(&schedule_view(Decision::Paused, Some(ok), true)),
+            ["paused", "succeeded 1m ago"]
+        );
+        assert_eq!(
+            cells(&schedule_view(Decision::Fire, None, false)),
+            ["due now", "-"]
+        );
+    }
 
     #[test]
     fn guard_summary_names_the_reason_at_the_action_level() {

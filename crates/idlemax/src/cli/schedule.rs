@@ -9,7 +9,7 @@ use idlemax_core::types::{JobSpec, UnixMs};
 use serde::Deserialize;
 
 use super::print::table;
-use super::rows::{rel, trunc};
+use super::rows;
 use super::{hint, out, ApiClient, COORD_DOWN};
 
 #[derive(Subcommand, Debug)]
@@ -97,7 +97,7 @@ fn added(v: &ScheduleView, now: UnixMs) -> String {
         v.schedule.id,
         v.schedule.spec.name,
         v.schedule.every,
-        state(v, now)
+        rows::schedule_state(v, now)
     )
 }
 
@@ -125,32 +125,8 @@ fn list(views: &[ScheduleView], now: UnixMs) -> String {
     if views.is_empty() {
         return "no schedules; add one with `idlemax schedule add <spec.toml> --every 1d`".into();
     }
-    let rows: Vec<Vec<String>> = views
-        .iter()
-        .map(|v| {
-            vec![
-                v.schedule.id.to_string(),
-                trunc(&v.schedule.spec.name, 32),
-                v.schedule.every.to_string(),
-                state(v, now),
-                v.schedule
-                    .last_fired_ms
-                    .map_or_else(|| "never".into(), |t| rel(t, now)),
-            ]
-        })
-        .collect();
-    table(&["ID", "NAME", "EVERY", "STATE", "LAST QUEUED"], &rows)
-}
-
-/// What the schedule is doing: "job 41 queued", "next in 5h05m", "due now", "paused".
-fn state(v: &ScheduleView, now: UnixMs) -> String {
-    match (v.decision, v.schedule.paused) {
-        (Decision::Running { job, status }, false) => format!("job {job} {status}"),
-        (Decision::Running { job, status }, true) => format!("paused, job {job} still {status}"),
-        (Decision::Paused, _) => "paused".into(),
-        (Decision::Wait { until_ms }, _) => format!("next {}", rel(until_ms, now)),
-        (Decision::Fire, _) => "due now".into(),
-    }
+    let rows: Vec<_> = views.iter().map(|v| rows::schedule_cells(v, now)).collect();
+    table(&rows::SCHEDULE_HEADER, &rows)
 }
 
 #[cfg(test)]
