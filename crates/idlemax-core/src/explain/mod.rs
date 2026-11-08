@@ -329,10 +329,19 @@ fn finished_summary(job: &Job) -> String {
     if let Some(code) = job.exit_code {
         s.push_str(&format!(" (exit {code})"));
     }
-    match &job.last_error {
-        Some(e) => format!("{s}: {e}"),
-        None => format!("{s}."),
+    // "exit code N" would only repeat the code just shown.
+    let error = job
+        .last_error
+        .as_deref()
+        .filter(|e| job.exit_code.is_none_or(|c| *e != format!("exit code {c}")));
+    match error {
+        Some(e) => s.push_str(&format!(": {e}.")),
+        None => s.push('.'),
     }
+    if matches!(job.status, JobStatus::Failed | JobStatus::Killed) {
+        s.push_str(" It will not run again by itself.");
+    }
+    s
 }
 
 /// A warning for `job add` when every device that could run the job reported an

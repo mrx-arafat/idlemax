@@ -361,20 +361,20 @@ fn retries_show_the_next_attempt_and_parked_jobs_say_what_to_do() {
     // The stored last_error comes from the scheduler itself, so a reworded one fails here.
     let mut failed = queued(1);
     failed.attempts = 1;
-    let mut retry = crate::scheduler::retry_or_park(&failed, NOW - 110_000, "exit 1");
+    let mut retry = crate::scheduler::retry_or_park(&failed, NOW - 110_000, "lease expired on mac");
     retry.not_before_ms = Some(NOW + 130_000);
     let e = World::new(retry).explain();
     let backoff = find(&e.reasons, ReasonKind::Backoff);
     assert_eq!(
         backoff.message,
-        "waiting out the retry delay: attempt 2 of 3 starts in 2m 10s (last error: exit 1)"
+        "waiting out the retry delay: attempt 2 of 3 starts in 2m 10s (last error: lease expired on mac)"
     );
     assert_eq!(backoff.until_ms, Some(NOW + 130_000));
 
     let mut parked = queued(2);
     parked.status = JobStatus::Parked;
     parked.attempts = 3;
-    parked.last_error = Some("exit 1; parked after 3 of 3 attempts".into());
+    parked.last_error = Some("lease expired on mac; parked after 3 of 3 attempts".into());
     let e = World::new(parked).explain();
     assert_eq!(e.state, ExplainState::Blocked);
     let r = find(&e.reasons, ReasonKind::Parked);
@@ -402,6 +402,29 @@ fn running_and_finished_jobs_are_not_blocked() {
     done.status = JobStatus::Succeeded;
     let e = World::new(done).explain();
     assert_eq!((e.state, e.reasons.len()), (ExplainState::Finished, 0));
+}
+
+#[test]
+fn a_failed_or_killed_job_is_final_and_says_so_without_repeating_itself() {
+    let ended = |status, exit_code, error: &str| {
+        let mut job = queued(4);
+        job.status = status;
+        job.exit_code = exit_code;
+        job.last_error = Some(error.into());
+        World::new(job).explain().summary
+    };
+    assert_eq!(
+        ended(JobStatus::Failed, Some(3), "exit code 3"),
+        "Job 4 (j4) failed (exit 3). It will not run again by itself."
+    );
+    assert_eq!(
+        ended(
+            JobStatus::Killed,
+            None,
+            "memory 900 MiB over the 512 MiB cap"
+        ),
+        "Job 4 (j4) killed: memory 900 MiB over the 512 MiB cap. It will not run again by itself."
+    );
 }
 
 #[test]
