@@ -147,6 +147,7 @@ idlemax init                        # config.toml and the token, once
 idlemax service install --dry-run   # prints the file and the exact launchctl or systemctl commands
 idlemax service install             # writes it and starts the agent
 idlemax service status
+idlemax doctor                      # then check the whole setup
 ```
 
 - **macOS** writes `~/Library/LaunchAgents/com.idlemax.agent.plist` and runs `launchctl bootstrap`.
@@ -164,6 +165,30 @@ Windows has no service command yet.
 For a production coordinator on a server, use the system units in [Deploying across devices](#deploying-across-devices).
 
 ## Following a job
+
+### Something is off
+
+```sh
+idlemax doctor
+```
+
+It checks this device and prints one line per check, `ok`, `warn` or `fail`, with the exact fix under every warn and fail:
+
+```text
+idlemax 0.1.0 doctor
+ok    home         /Users/you/.idlemax (default)
+ok    config       /Users/you/.idlemax/config.toml parses
+fail  token        /Users/you/.idlemax/token is mode 0644: group and others can read it
+                   fix: chmod 600 /Users/you/.idlemax/token
+warn  coordinator  http://127.0.0.1:7878 is up; the token was not checked
+                   fix: resolve the token check above, then run `idlemax doctor` again
+...
+```
+
+- The checks are `home`, `config` (unknown keys are named), `token`, `coordinator` (reachable, accepts the token, same version), `agent`, `allowlist`, `disk`, `ai`, `gh` and `service`.
+- It is read-only: it never runs `launchctl` or `systemctl` and starts nothing, and one broken check does not hide the others.
+- The exit code is 1 when any check fails and 0 otherwise, so a warn alone does not fail a script; `--json` prints the report, and `--coord URL` checks another coordinator.
+- It checks this device only, so run it on each one.
 
 ### My job is not running
 
@@ -394,6 +419,7 @@ Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`), and `--json` pri
 | `idlemax job add <spec.toml>` | validate and queue a job spec |
 | `idlemax job cancel <id>` | cancel a job, killing it if it runs |
 | `idlemax schedule add <spec.toml> [--every I] \| list \| pause <id> \| resume <id> \| rm <id>` | repeat a job on an interval, see [Recurring jobs](#recurring-jobs) |
+| `idlemax doctor` | check this device's setup, with the fix for every problem; exit 1 on a failed check |
 | `idlemax why <id>` | every reason a job is not running, with the fix for each |
 | `idlemax logs <id> [--tail N] [-f]` | print a job's output from this device |
 | `idlemax inbox [list \| show <id>]` | finished-job notes from this device (default `list`) |
