@@ -1,161 +1,128 @@
 # idlemax roadmap
 
-v0.1.0 ships the coordinator, the agent, the CLI, the TUI and the web dashboard, built and tested on macOS.
+v0.1.0 shipped the coordinator, the agent, the CLI, the TUI and the web dashboard, built and tested on macOS.
 This roadmap collects every gap found while building and reviewing it, every `SHORTCUT:` marker in `crates/`, and the open items from the design research.
 Each open item says why it matters, how to do it, and when it counts as done.
 Item numbers are stable, so commit messages and notes can refer to them.
 Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` before planning a release.
 
-## Status after the first v0.2 round (2026-11-06)
+## Status after the second round (2026-11-08)
 
-### Landed on main
+CI runs fmt, clippy and the full test suite on macOS and Linux for every push to `main`.
+The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 1).
+
+### Roadmap items landed
 
 | Item | What changed | Commit |
 |---|---|---|
-| 5 | Job updates are journaled before sending and replayed after a crash, and the coordinator applies each update once | `e06a009` |
-| 3 | Each agent sends the GitHub summary and session metadata to the coordinator, so the advisor works from a server coordinator | `da05dea` |
-| 8 | Control and advice-accept writes are atomic, and the store dead-code allow is gone | `b021525` |
-| 9 | Job runtime counts awake time only | `22cda05` |
-| 10 | Device info refreshes hourly, and the guard names a local pause apart from the PAUSE file | `f034e80` |
-| 4, 10 | Statusline capture install step in the README, wrapper proof test, example placeholders instead of one machine's paths | `54e2cdd` |
-| 12 | Interactive agy sessions hold their account | `d925e93` |
-| 13 | The AI pass prompt travels on stdin, and the pass runs with user hooks and MCP servers off | `9ebc796` |
-| 15 | Device presence survives a coordinator restart, and the server has header-read and request timeouts | `7ed16d9` |
+| 3 | Each agent sends the GitHub summary and session metadata to the coordinator | `da05dea` |
+| 4 | Statusline wrapper proof, byte-for-byte passthrough, `idlemax statusline install` | `54e2cdd`, `e780430`, `0fa6d7f` |
+| 5 | Job updates are journaled before sending and applied once after a crash | `e06a009` |
 | 6 | Dashboard checked in a browser, with layout, refresh and contrast fixes | `02f8744` |
-| 4 | The statusline wrapper passes its input through byte for byte | `e780430` |
+| 8 | Control and advice-accept writes are atomic | `b021525` |
+| 9 | Job runtime counts awake time only (logic and tests; a real sleep is item 9 below) | `22cda05` |
+| 10 | Hourly device refresh, separate local-pause reason, and the event loop split | `f034e80`, `323427e` |
+| 12 | Interactive agy sessions hold their account | `d925e93` |
+| 13 | The AI pass prompt travels on stdin, with user hooks and MCP servers off | `9ebc796` |
+| 14 | Daemonizing job children count against the cap, matched by a random per-attempt tag | `8ba59e3`, `c9a61ec` |
+| 15 | Device presence survives a restart, and the server has header-read and request timeouts | `7ed16d9` |
+| 18 | A job's real exit is reported after the agent died, and the other outbox gaps are closed | `1dbd25a` |
 
-### Written and tested locally, not reviewed or landed yet
+### New since v0.1.0, beyond the roadmap
 
-- Item 14 (daemonizing job children): the accounting, the runner change, the restart reap and the reliable tests are committed.
-  The runner tests passed 15 of 15 runs under four busy-loop processes on macOS; the Linux scope path was not run (see item 14).
-- Item 10 (split the agent event loop): `agent/event_loop.rs` is 255 lines, with `sample`, `jobs` and `coord` beside it holding what one tick does.
-  It is a code move only, checked by comparing every function body with the original, and the agent tests and the end-to-end test are unchanged and green.
-- Items 1 and 2 (Linux verification and tailnet rollout): `scripts/verify-linux.sh` with a fixture self-test, `docs/ROLLOUT.md`, a battery parser fix and four Linux parser tests exist.
-  It also adds `--expand-environment=no` to the systemd scope wrapper, which must be checked on the server before landing (see item 1).
+| Area | What changed | First commit |
+|---|---|---|
+| CI and releases | fmt, clippy and tests on macOS and Linux, a tag-triggered release, `scripts/install.sh` | `c33000e`, `8a45997` |
+| Setup | `idlemax setup`, `service install`, `statusline install`, `doctor` | `df562c7`, `0fa6d7f`, `26eee5c` |
+| Following work | `idlemax why` in the CLI, TUI and dashboard, `logs`, `inbox`, recurring `schedule` | `fb0abbb`, `cd3ebcc`, `97e06d6`, `04ce632`, `f1aa4eb` |
+| Agents | TOON output, structured errors, no-ops, home view, session hooks, generated skill, `job add --wait`, `AGENTS.md` | `e310996`, `c3d937a`, `1e8c2ec`, `916c772`, `d98e321`, `e19c504` |
+| Job policy | A failure is final; only causes that are not the job's fault are retried | `cb87737` |
+| Linux | Jobs no longer hold on unknown idle time, the systemd user manager is found by either socket, a job over its cap is killed by the cgroup | `1786f23`, `9cc51f7`, `3ff5eae` |
+| Security | An audit with fixes: accept errors no longer stop the server, stdin can no longer freeze the agent, private file modes, escape stripping | `d2e3221`, `47dfcbd` |
+| TUI | Every screen fits 80x24, display-width text, time-zone independent snapshots, `--utc` | `3057446`, `b170592` |
+| Community | CONTRIBUTING, SECURITY, issue forms, Dependabot, private vulnerability reporting | `ed051c9` |
 
 ### Needs the owner's OK before it runs
 
-- Running the Linux verification on the real server (item 1) and deploying on the tailnet (item 2).
+- Running the Linux verification on the production server (item 1) and deploying on the tailnet (item 2).
 - Installing the statusline wrapper into the real Claude settings (item 4).
 - One supervised AI pass, which spends quota (item 7).
 - A real sleep test on the Mac (item 9).
+- Tagging v0.2.0, which builds the release binaries and makes `scripts/install.sh` work.
 
 ## v0.2: run it for real on the Mac and the server
 
-### 1. Verify the Linux agent on the real server
+### 1. Verify the Linux agent on the production server
 
-- **Why:** The Linux metrics path, logind idle detection, PSI and the `systemd-run --scope` caps compile and pass fixture tests, but they have never run on Linux.
-  The `systemd-run --user` caps also depend on cgroup delegation, which is untested.
-  The systemd units were never linted, because `systemd-analyze` does not exist on macOS.
-- **How:** Review and land the local preparation (the verification script, the runbook, the battery parser fix).
-  First check that the server's `systemd-run --help` lists `--expand-environment`, because the prepared change makes the scope wrapper pass `--expand-environment=no` and an unknown option would fail every job there.
-  Then run the script on the server as the normal deployment user, in a temporary `IDLEMAX_HOME` against a loopback coordinator, with a binary built inside a capped transient scope.
-- **Done when:** Every Linux signal matches the kernel's own numbers.
-  The memory hog is killed at `MemoryMax` and reported as killed by the memory cap, and the CPU job stays within its quota.
-  `systemd-analyze verify` is clean for the coordinator and agent units.
+- **Why:** The Linux path is proven on a development host, not yet on the production server that also serves sites that must never be starved.
+- **Done so far:** On an Ubuntu 24.04 host with systemd 255, `scripts/verify-linux.sh` passed every check: kernel signal comparison, the capped user scopes, a memory hog killed at `MemoryMax` with the cap named in its error, a CPU job held to its quota, and `systemd-analyze verify` on both units.
+  The end-to-end test and the full suite pass there and in CI on Linux.
+- **How:** Check the server's systemd version first: `OOMPolicy=kill` is added only on systemd 253 or newer, and an older host runs without it.
+  Then run `scripts/verify-linux.sh` on the server as the normal deployment user, following `docs/ROLLOUT.md`, with a binary built inside a capped transient scope or taken from a release.
+- **Done when:** The same checks pass on the production server, and its sites show no slowdown during the run.
 
 ### 2. Deploy the coordinator on the tailnet
 
 - **Why:** The coordinator has only run on loopback, and production binds the server's tailnet address under the capped unit.
-- **How:** Follow the runbook from item 1: install the coordinator unit with `coordinator.listen` set to the tailnet address, give each device the shared token with `idlemax init --token-stdin`, and point the Mac agent's `coordinator.url` at the server.
-  Once, before the 24-hour run, point a v0.1.0 agent at the new coordinator, because old-agent compatibility rests on serde defaults and one API test only.
+- **How:** Follow `docs/ROLLOUT.md`: `idlemax setup --role coord` on the server with `coordinator.listen` set to the tailnet address, the shared token to each device with `--token-stdin`, and `idlemax setup --role agent --coord-url <server>` on the Mac.
+  Once, before the 24-hour run, point a v0.1.0 agent at the new coordinator, because old-agent compatibility rests on serde defaults and API tests only.
 - **Done when:** The Mac agent heartbeats to the server over the tailnet for 24 hours without a gap.
   The API and dashboard are unreachable from outside the tailnet.
   The coordinator stays under `MemoryMax=256M` and `CPUQuota=20%` for that whole day.
 
 ### 4. Install and verify the Claude statusline capture
 
-- **Why:** The wrapper and its README step are done and tested, but it is not installed, so no Claude snapshot is written and Claude accounts stay unspendable (fail closed).
-- **How:** Run `idlemax statusline install --dry-run`, check the diff, then `idlemax statusline install` against the real Claude settings.
-- **Done when:** A Claude account shows a fresh snapshot in `idlemax quota` within a minute of interactive use.
-  The visible statusline output is unchanged.
+- **Why:** The wrapper and its install command are done and tested, but nothing is installed yet, so Claude accounts stay unspendable (fail closed).
+- **How:** `idlemax statusline install --dry-run`, check the diff, then `idlemax statusline install`.
+- **Done when:** A Claude account shows a fresh snapshot in `idlemax quota` within a minute of interactive use, and the visible statusline output is unchanged.
 
 ### 7. Run one supervised AI pass end to end
 
 - **Why:** The `claude -p` advisor pass and the ingest of its output have never run, because a run spends quota.
-  The pass now sends its prompt on stdin and runs with `--settings {"disableAllHooks":true} --strict-mcp-config`, and that has only been checked against the documented flags and unit tests, never against a real `claude -p`.
+  The pass sends its prompt on stdin and runs with `--settings {"disableAllHooks":true} --strict-mcp-config`, which has only been checked against the documented flags and tests.
 - **How:** Allowlist `claude`, list the AI account in `agent.ai_accounts`, and wait until the quota is spendable.
   Then let the advisor queue its pass, watch it run under the guard, and review what it ingests.
-- **Done when:** One AI pass produces validated recommendations in `idlemax advise` without a retry.
-  Its quota use shows in `idlemax quota`, and no user hook or MCP server started during the pass.
+- **Done when:** One AI pass produces validated recommendations in `idlemax advise` without a retry, its quota use shows in `idlemax quota`, and no user hook or MCP server started during the pass.
 
 ### 9. Prove the awake-only runtime on a real sleep
 
-- **Why:** Runtime is now measured with the monotonic clock, which does not advance while the machine sleeps on macOS and Linux (confirmed in the Rust standard library source), and an injected-clock test covers the logic.
-  A real sleep has not been tried.
+- **Why:** Runtime uses the monotonic clock, which does not advance while the machine sleeps on macOS and Linux (confirmed in the Rust standard library source), and an injected-clock test covers the logic, but a real sleep has not been tried.
 - **How:** Start a job with a short `max_runtime_secs`, let the Mac sleep for longer than that, wake it, and watch the job.
 - **Done when:** The job is still running after wake and is killed only once its awake runtime passes the limit.
 
-### 14. Catch daemonizing job children
-
-- **Why:** The RSS cap walks the parent tree, so a child that reparents escapes the memory sum (SHORTCUT in `agent/runner/os.rs`).
-  On macOS this poll-based check is the only real cap, because `taskpolicy -m` is a soft limit there.
-- **How:** Land the local work: a process belongs to a job if it is the root, in the root's process group, carries the random `IDLEMAX_JOB_TAG` of this attempt in its environment, or descends from one of those, and members outside the group are signalled by pid.
-  The poll runs every second while a job is at half its cap or not yet measured.
-  The tag is random per attempt and kept in the pid file, because job ids repeat across agents on one host: matching by id alone let one agent measure and kill another's job.
-  The daemon test failed under load because macOS compresses or swaps idle pages out of the resident size, which the runner measured correctly; the test hog now holds random data and touches every page.
-  `pidfile::reap_orphans` kills members outside the group after an agent restart, trusting the recorded group only while the root's start time still matches.
-  A kill that finds only unreaped zombies in the group is not an error on macOS, where `kill` and `killpg` answer `EPERM` there.
-- **Done when:** A test job that daemonizes a memory hog is killed at its cap on macOS and Linux, and the test passes repeatedly under load.
-  The parent-tree SHORTCUT is replaced by one narrower SHORTCUT: a daemon started from an Apple-signed binary hides its environment tag on macOS, and catching it needs kqueue `NOTE_TRACK` or Endpoint Security.
-
 ### 19. Finish the dashboard checks
 
-- **Why:** The browser pass used Chrome only, and the filter's empty state was not exercised.
-- **How:** Open the dashboard in Safari and Firefox and on a real phone, and filter jobs by a status that has none.
-- **Done when:** No layout or control defect shows in any of them, and an empty filter shows a clear empty state.
+- **Why:** The browser passes used Chrome only.
+- **How:** Open the dashboard in Safari and Firefox and on a real phone, including a job with many waiting reasons and a status filter that matches nothing.
+- **Done when:** No layout or control defect shows in any of them.
 
 ## v0.3: learn from real runs and harden
 
 ### 11. Learn token costs and tune quota reserves
 
-- **Why:** Token class costs are fixed estimates (SHORTCUT in `scheduler/mod.rs`).
+- **Why:** Token class costs are fixed estimates (SHORTCUT in the scheduler).
   The reserves (40% per 5-hour window, 30% weekly, 15% in the final day) are research estimates.
   idlemax's own AI runs also count as interactive use, which lengthens the hold after every run.
-- **How:** After a week of runs, derive per-job usage from the quota snapshots around each AI job.
-  Then set the reserves from the observed interactive peaks, and leave sessions that idlemax started out of the interactive-use check.
-- **Done when:** The scheduler uses measured costs and the SHORTCUT is gone.
-  A week of night runs never pushes interactive use into a provider limit.
+- **How:** After a week of runs, derive per-job usage from the quota snapshots around each AI job, set the reserves from the observed interactive peaks, and leave sessions that idlemax started out of the interactive-use check.
+- **Done when:** The scheduler uses measured costs and the SHORTCUT is gone, and a week of night runs never pushes interactive use into a provider limit.
 
-### 18. Close the last outbox gap
+### 20. Catch daemons started from Apple-signed binaries
 
-- **Why:** The journal now covers the crash windows except one.
-  If the agent dies after a job exits and before it is reaped, no update is produced, and the lease expiry re-runs the job once `max_runtime_secs` plus the grace has passed.
-  Nothing outlives the agent to record how the job ended, and the exit code of a process that was reparented cannot be read afterwards.
-  Landed so far: a replayed result that arrives after its lease expired is applied when the job has not been leased since, a failed journal write is repaired by rewriting the journal from memory, and a replayed AI pass whose advice was never recorded is ingested again.
-  The macOS journal sync needed no change, because std runs `fcntl(F_FULLFSYNC)` for `sync_data` and `sync_all` on Apple targets.
-- **How:** A small supervisor sits between the OS throttle wrapper and the job: `idlemax job-wrap --marker <path> -- <argv>`, handled in `main` before the async runtime and the CLI parser start.
-  It runs the job in the same process group and, when the job ends, writes `{code, signal, pid, ended_ms}` to `agent/jobs/<id>.exit` (temp file, fsync, rename), then exits with the job's own status; a job that died of a signal is re-raised on the supervisor, so the agent sees the same `ExitStatus` as before and `outcome` is unchanged.
-  It does not forward `SIGTERM` or `SIGINT`: the group already delivers them to the job, and a second delivery makes many programs quit instead of shutting down.
-  It holds those two signals after the job is spawned, so a group stop cannot end it before the exit is recorded; the job must be spawned first because std's `posix_spawn` path does not reset the signal mask in the child.
-  The pid file gains a scrubbed copy of the job (no stdin, no env), the log offset, the wrapper name and the memory cap, so a restarted agent can build the update through the normal `finish` path.
-  On start `reap_orphans` asks the pure `orphan_verdict` (core) what each pid file means: a marker written by the recorded root is reported as the job's real exit, a live root with no marker was killed here, anything else is left to the lease.
-  A job's files are removed one `poll` after its update is handed out (the caller journals it in between), so a second crash repeats the report, which the coordinator applies once.
-  If the agent's executable is gone (Linux, replaced while running) the job runs unsupervised and the lease decides after a crash.
-- **Cost:** The supervisor counts in the job's memory: about 5 to 7 MiB resident in a debug build.
-- **Done when:** Met on macOS: `kill -9` of the agent mid-job, the job finishing alone, and a restart delivered the job's real exit once (attempt 1, `exit code 7`); a second restart changed nothing.
-  A `SIGKILL` of the whole group (power cut) leaves no marker, so the lease decides.
-  Not run on Linux.
+- **Why:** Item 14 matches a job's processes by group, tree and a random per-attempt environment tag, but macOS hides the environment of a `setsid` daemon started from an Apple-signed binary, so such a daemon is not attributed to its job (SHORTCUT in `agent/runner/os.rs`).
+- **How:** Track forks with kqueue `NOTE_TRACK` or Endpoint Security, both heavier than the current poll.
+- **Done when:** A daemonized `/usr/bin/perl` memory hog is killed at its job's cap on macOS.
+
+## Later
 
 ### 16. Roll out to more devices
 
-- **Why:** v0.1.0 targets one Mac and one server, and other devices (a Linux desktop, ARM boards, spare laptops) should join by installing one agent.
-  There is no Linux desktop user unit yet.
-  A Linux desktop whose logind never sets the idle hint reports idle 0, which holds every job on purpose.
-- **How:** Add a Linux desktop user unit and document the join steps.
-  Decide how a desktop without a logind idle hint measures idle time.
-- **Done when:** A third device joins with `idlemax init` and its unit, shows up in `idlemax status`, and runs a job under its own guard.
+- **Why:** Other devices (a Linux desktop, ARM boards, spare laptops) should join by installing one agent.
+  There is no Linux desktop user unit yet, and a Linux desktop whose logind never sets the idle hint reports idle 0, which holds every job on purpose.
+- **How:** Add a Linux desktop user unit, document the join steps, and decide how a desktop without a logind idle hint measures idle time.
+- **Done when:** A third device joins with `idlemax setup --role agent`, shows up in `idlemax status`, and runs a job under its own guard.
 
 ### 17. Support Windows
 
-- **Why:** Windows code paths compile in principle but were never built, and several parts are SHORTCUTs.
-  Windows maps to the `linux_server` preset, reports no idle, power or thermal data, and measures its largest disk instead of the system drive.
-  It cannot pause jobs, kills process trees with `taskkill`, and stops only on Ctrl-C.
-  Its token file gets no ACL check, and token generation reads `/dev/urandom`, which does not exist there.
-  The advisor feed reads only `HOME` for the session index, so it finds nothing where only `USERPROFILE` is set.
-  The research verified only `GetLastInputInfo` against Microsoft's documentation, not the Task Scheduler idle condition or the idle priority class.
-- **How:** Add a `windows_desktop` preset, `GetLastInputInfo` idle and `GetSystemPowerStatus` power, and measure the system drive.
-  Use job objects for pause and tree kill, handle service stop events, check the token file ACL, use `BCryptGenRandom`, and fall back to `USERPROFILE` in the advisor feed.
-  Ship Task Scheduler packaging after checking each primitive against Microsoft's documentation.
-- **Done when:** A Windows device passes the same guard, runner and end-to-end tests as macOS.
-  Every Windows SHORTCUT is gone.
+- **Why:** Windows code paths were never built, and several parts are SHORTCUTs: it maps to the `linux_server` preset, reports no idle, power or thermal data, measures its largest disk, cannot pause jobs, kills trees with `taskkill`, stops only on Ctrl-C, gets no token file ACL check, reads `/dev/urandom` for tokens, has no service detection in `doctor`, no session hooks, and the advisor feed reads only `HOME`.
+- **How:** A `windows_desktop` preset, `GetLastInputInfo` idle and `GetSystemPowerStatus` power, the system drive, job objects for pause and tree kill, service stop events, a token file ACL check, `BCryptGenRandom`, a `USERPROFILE` fallback, and Task Scheduler packaging after checking each primitive against Microsoft's documentation.
+- **Done when:** A Windows device passes the same guard, runner and end-to-end tests as macOS, and every Windows SHORTCUT is gone.
