@@ -64,24 +64,30 @@ pub fn launch(
     })
 }
 
+/// Hands the job its input without waiting for it. `start` runs on the agent loop under the
+/// runner lock, so a blocking write to a program that never reads would stop sampling, the
+/// guard, the kill switch and the heartbeat for as long as the job lives. A thread does the
+/// write; it ends when the input is written or the job's pipe closes (it exited or was killed).
 fn feed_stdin(child: &mut Child, input: Option<&str>) -> Result<(), RunnerError> {
     let Some(input) = input else {
         return Ok(());
     };
-    let result = child
-        .stdin
-        .take()
-        .ok_or(RunnerError::StdinUnavailable)
-        .and_then(|mut stdin| {
-            stdin
-                .write_all(input.as_bytes())
-                .map_err(RunnerError::Stdin)
+    let mut stdin = child.stdin.take().ok_or(RunnerError::StdinUnavailable)?;
+    let input = input.to_owned();
+    let writer = std::thread::Builder::new()
+        .name("job-stdin".into())
+        .spawn(move || {
+            // A job that exits without reading everything is not an error: the pipe just closes.
+            if let Err(e) = stdin.write_all(input.as_bytes()) {
+                tracing::debug!(error = %e, "job closed stdin before reading it all");
+            }
         });
-    if result.is_err() {
+    if let Err(e) = writer {
         let _ = child.kill();
         let _ = child.wait();
+        return Err(RunnerError::Stdin(e));
     }
-    result
+    Ok(())
 }
 
 /// Own process group, so pause and kill reach every process the job starts.

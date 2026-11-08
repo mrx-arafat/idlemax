@@ -111,6 +111,37 @@ fn stdin_reaches_the_job() {
     );
 }
 
+/// A program that never reads its input must not hold up the agent: `start` runs on the
+/// agent loop under the runner lock, so a blocked write there stops the guard and the kill switch.
+#[test]
+fn a_job_that_ignores_stdin_does_not_block_start_and_one_that_reads_gets_every_byte() {
+    const MIB: usize = 1024 * 1024;
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+
+    let mut idle = job(3, &["sh", "-c", "sleep 30"], 64);
+    idle.spec.stdin = Some("x".repeat(MIB));
+    let began = Instant::now();
+    r.start(&idle).unwrap();
+    assert!(
+        began.elapsed() < Duration::from_secs(5),
+        "start waited {:?} for a job that does not read stdin",
+        began.elapsed()
+    );
+    r.kill(3).unwrap();
+    wait_ended(&mut r, STARVED);
+
+    let mut reader = job(4, &["sh", "-c", "wc -c"], 64);
+    reader.spec.stdin = Some("y".repeat(MIB));
+    r.start(&reader).unwrap();
+    let update = wait_ended(&mut r, STARVED);
+    assert_eq!(update.status, JobStatus::Succeeded);
+    assert_eq!(
+        update.output_tail.as_deref().map(str::trim),
+        Some("1048576")
+    );
+}
+
 /// True once the OS reports `pid` as stopped (SIGSTOP has taken effect).
 fn stopped(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
