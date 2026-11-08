@@ -12,7 +12,7 @@ use idlemax_core::host::AllowedHosts;
 use idlemax_core::protocol::{ControlRequest, LocalStatus};
 use idlemax_core::types::ControlAction;
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::coord::api::http::{self, ApiFailure, BearerToken, HostGuard, JsonBody};
 use crate::coord::server::{self, Limits};
@@ -24,14 +24,20 @@ const CONTROL_WAIT: Duration = Duration::from_secs(5);
 #[derive(Clone)]
 pub struct LocalHandle {
     status: watch::Receiver<LocalStatus>,
-    control: mpsc::UnboundedSender<ControlAction>,
+    control: mpsc::UnboundedSender<LocalControl>,
+}
+
+#[derive(Debug)]
+pub struct LocalControl {
+    pub action: ControlAction,
+    pub applied: oneshot::Sender<()>,
 }
 
 /// The agent loop side: publish `status` after every change and drain `control` promptly.
 #[derive(Debug)]
 pub struct LocalPorts {
     pub status: watch::Sender<LocalStatus>,
-    pub control: mpsc::UnboundedReceiver<ControlAction>,
+    pub control: mpsc::UnboundedReceiver<LocalControl>,
 }
 
 pub fn local_channel(initial: LocalStatus) -> (LocalHandle, LocalPorts) {
@@ -96,26 +102,30 @@ async fn status(State(h): State<LocalHandle>) -> Json<LocalStatus> {
     Json(h.status.borrow().clone())
 }
 
-/// 200 once the agent shows the requested pause state, 202 if it has not within 5 s.
+/// 200 once the agent has applied this control, 202 if it has not within 5 s.
 async fn control(
-    State(mut h): State<LocalHandle>,
+    State(h): State<LocalHandle>,
     JsonBody(req): JsonBody<ControlRequest>,
 ) -> Result<(StatusCode, Json<LocalStatus>), ApiFailure> {
-    let expected = local_paused_after(&req).map_err(|e| ApiFailure::BadRequest(e.to_string()))?;
-    h.control.send(req.action).map_err(|_| loop_stopped())?;
-    let applied = h.status.wait_for(|s| s.local_paused == expected);
-    match tokio::time::timeout(CONTROL_WAIT, applied)
-        .await
-        .map(|r| r.map(|s| s.clone()))
-    {
-        Ok(Ok(status)) => Ok((StatusCode::OK, Json(status))),
+    local_paused_after(&req).map_err(|e| ApiFailure::BadRequest(e.to_string()))?;
+    let (applied, received) = oneshot::channel();
+    h.control
+        .send(LocalControl {
+            action: req.action,
+            applied,
+        })
+        .map_err(|_| loop_stopped())?;
+    match tokio::time::timeout(CONTROL_WAIT, received).await {
+        Ok(Ok(())) => Ok((StatusCode::OK, Json(h.status.borrow().clone()))),
         Ok(Err(_closed)) => Err(loop_stopped()),
         Err(_elapsed) => Ok((StatusCode::ACCEPTED, Json(h.status.borrow().clone()))),
     }
 }
 
 fn loop_stopped() -> ApiFailure {
-    ApiFailure::Unavailable("the agent loop is not running".into())
+    ApiFailure::Unavailable(
+        "the agent could not apply this control; check its log and retry".into(),
+    )
 }
 
 #[cfg(test)]
@@ -126,6 +136,32 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
 
     use super::*;
+
+    #[tokio::test]
+    async fn stop_all_waits_for_this_control_even_when_already_paused() {
+        let initial = LocalStatus {
+            local_paused: true,
+            ..LocalStatus::default()
+        };
+        let (handle, mut ports) = local_channel(initial.clone());
+        let req = ControlRequest {
+            scope: idlemax_core::types::ControlScope::Global,
+            action: ControlAction::StopAll,
+            reason: None,
+        };
+        let task = tokio::spawn(control(State(handle), JsonBody(req)));
+        let request = ports.control.recv().await.unwrap();
+        tokio::task::yield_now().await;
+        assert!(
+            !task.is_finished(),
+            "an old paused status acknowledged a new stop_all"
+        );
+        ports.status.send_replace(initial);
+        request.applied.send(()).unwrap();
+        let (code, Json(status)) = task.await.unwrap().unwrap();
+        assert_eq!(code, StatusCode::OK);
+        assert!(status.local_paused);
+    }
 
     /// The kill switch lives here: a page that reaches it under its own domain name is refused.
     #[tokio::test]

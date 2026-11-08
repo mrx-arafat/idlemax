@@ -22,7 +22,7 @@ use idlemax_core::guard::Guard;
 use idlemax_core::job_run;
 use idlemax_core::protocol::{LocalStatus, RunningJob};
 use idlemax_core::reconcile::AgentState;
-use idlemax_core::types::{ControlAction, DeviceInfo, GuardDecision, UnixMs};
+use idlemax_core::types::{DeviceInfo, GuardDecision, UnixMs};
 use idlemax_core::VERSION;
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinError, JoinHandle};
@@ -31,6 +31,7 @@ use tracing::{error, info, warn};
 
 use crate::state::now_ms;
 
+use super::api::LocalControl;
 use super::client::CoordClient;
 use super::outbox::DurableOutbox;
 use super::probes::{Probes, Reading};
@@ -120,7 +121,7 @@ impl Agent {
     pub async fn run(
         mut self,
         shutdown: impl Future<Output = ()>,
-        mut control: mpsc::UnboundedReceiver<ControlAction>,
+        mut control: mpsc::UnboundedReceiver<LocalControl>,
     ) {
         tokio::pin!(shutdown);
         let mut sample = ticker(self.sample_every, false);

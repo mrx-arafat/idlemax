@@ -8,21 +8,30 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use super::{blocking, Agent};
+use crate::agent::api::LocalControl;
 use crate::agent::runner::Runner;
 use crate::state::now_ms;
 
 impl Agent {
     pub(super) async fn on_local_controls(
         &mut self,
-        first: ControlAction,
-        control: &mut mpsc::UnboundedReceiver<ControlAction>,
+        first: LocalControl,
+        control: &mut mpsc::UnboundedReceiver<LocalControl>,
     ) {
-        let mut controls = vec![first];
+        let mut controls = vec![first.action];
+        let mut acknowledgements = vec![first.applied];
         while let Ok(c) = control.try_recv() {
-            controls.push(c);
+            controls.push(c.action);
+            acknowledgements.push(c.applied);
         }
         info!(?controls, "local control");
-        self.reconcile(&[], &controls, &[]).await;
+        let applied = self.reconcile(&[], &controls, &[]).await;
+        self.publish();
+        if applied {
+            for acknowledgement in acknowledgements {
+                let _ = acknowledgement.send(());
+            }
+        }
     }
 
     /// Plans with the domain state, runs the actions in the runner, queues the updates.
@@ -31,7 +40,7 @@ impl Agent {
         commands: &[AgentCommand],
         local: &[ControlAction],
         assign: &[Job],
-    ) {
+    ) -> bool {
         let input = TickInput {
             guard: &self.decision,
             kill_switch: self.reading.kill_switch,
@@ -43,7 +52,7 @@ impl Agent {
         };
         let actions = self.state.plan(&input);
         if actions.is_empty() {
-            return;
+            return true;
         }
         let outcomes = self.with_runner(move |r| {
             actions
@@ -55,15 +64,18 @@ impl Agent {
                 .collect::<Vec<_>>()
         });
         let Some(outcomes) = outcomes.await else {
-            return;
+            return false;
         };
         let now = now_ms();
+        let mut applied = true;
         for (action, outcome) in outcomes {
+            applied &= outcome.is_ok();
             log_action(&action, &outcome);
             if let Some(u) = self.state.applied(&action, outcome, &self.device.id, now) {
                 self.outbox.push(u);
             }
         }
+        applied
     }
 
     /// Reaps finished jobs into the outbox.
