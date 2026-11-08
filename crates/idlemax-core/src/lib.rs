@@ -11,6 +11,7 @@ pub mod paths;
 pub mod protocol;
 pub mod quota;
 pub mod reconcile;
+pub mod schedule;
 pub mod scheduler;
 pub mod types;
 
