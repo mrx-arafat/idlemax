@@ -38,12 +38,23 @@ fn a_result_shows_status_exit_code_run_time_and_the_log_end() {
         ..job(JobStatus::Failed, Some(3))
     };
     let text = result_text(&failed, &Log::On("srv".into()));
+    // "exit code 3" would only repeat the line above it.
     assert!(
-        text.contains("exit code: 3\nran: 2m on mac\nerror: exit code 3"),
+        text.contains("exit code: 3\nran: 2m on mac\nlog: on device srv"),
         "{text}"
     );
     assert!(
         text.ends_with("log: on device srv; run `idlemax logs 12` there"),
+        "{text}"
+    );
+
+    let capped = Job {
+        last_error: Some("memory 900 MiB over the 512 MiB cap".into()),
+        ..job(JobStatus::Killed, None)
+    };
+    let text = result_text(&capped, &Log::None);
+    assert!(
+        text.contains("ran: 0.4s on mac\nerror: memory 900 MiB over the 512 MiB cap\nlog: none"),
         "{text}"
     );
 

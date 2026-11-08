@@ -150,7 +150,9 @@ fn result_text(job: &Job, log: &Log) -> String {
         print::job_line(job),
         ran_text(job)
     );
-    if let Some(error) = &job.last_error {
+    // "exit code N" would only repeat the line above.
+    let repeats_code = |e: &str| job.exit_code.is_some_and(|c| e == format!("exit code {c}"));
+    if let Some(error) = job.last_error.as_deref().filter(|e| !repeats_code(e)) {
         text.push_str(&format!("\nerror: {error}"));
     }
     match log {
