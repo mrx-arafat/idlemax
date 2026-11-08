@@ -2,6 +2,7 @@
 
 mod client;
 mod files;
+mod handlers;
 mod home;
 mod hooks;
 mod inbox;
@@ -34,7 +35,7 @@ use crate::state::{self, now_ms};
 
 pub use client::{ApiClient, ClientError};
 pub use job::ExitWith;
-pub use out::{views, CliError, Format, Out, Peer};
+pub use out::{CliError, Format, Out, Peer};
 
 /// The bare version, what `-V`, `-v` and `--version` print.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -61,6 +62,9 @@ struct Cli {
     /// Do not cut long text in toon output
     #[arg(long, global = true)]
     full: bool,
+    /// Add list columns to toon output, e.g. --fields cost,age (or all)
+    #[arg(long, global = true, value_delimiter = ',', value_name = "FIELDS")]
+    fields: Vec<String>,
     /// Print the version
     #[arg(short = 'V', short_alias = 'v', long, global = true)]
     version: bool,
@@ -196,7 +200,7 @@ pub enum InboxCmd {
 }
 
 #[derive(Subcommand, Debug)]
-enum AdviseCmd {
+pub enum AdviseCmd {
     /// List recommendations, open ones first
     List,
     /// Queue the recommendation's suggested job
@@ -208,7 +212,7 @@ enum AdviseCmd {
 }
 
 #[derive(Subcommand, Debug)]
-enum LocalCmd {
+pub enum LocalCmd {
     /// Agent state on this device
     Status,
     /// Pause every job on this device
@@ -262,7 +266,7 @@ pub async fn run() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let format = Format::resolve(cli.format, cli.json, std::io::stdout().is_terminal());
-    let out = Out::new(format, cli.full);
+    let out = Out::new(format, cli.full, cli.fields.clone());
     match execute(cli, &out).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => match e.downcast_ref::<ExitWith>() {
@@ -281,7 +285,7 @@ fn usage_exit(e: clap::Error, args: &[String]) -> ExitCode {
         e.exit();
     }
     let err = out::usage_error(&e, &mut Cli::command(), args);
-    Out::new(format, false).report(&err)
+    Out::new(format, false, Vec::new()).report(&err)
 }
 
 /// True when the whole command line is one version flag, so it can skip everything else.
@@ -329,7 +333,7 @@ async fn execute(cli: Cli, out: &Out) -> Result<()> {
         Cmd::Local(cmd) => {
             let client =
                 ApiClient::new(&format!("http://{}", config.agent.listen), token(&paths)?)?;
-            run_local(cmd, &client, out)
+            handlers::local(cmd, &client, out)
                 .await
                 .map_err(|e| hint(e, Peer::Agent))
         }
@@ -349,7 +353,7 @@ async fn execute(cli: Cli, out: &Out) -> Result<()> {
             } else {
                 let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
                 let client = ApiClient::new(&url, token(&paths)?)?;
-                logs::run_logs_remote(&client, &log_path, id).await
+                logs::run_logs_remote(&client, id, out).await
             }
         }
         cmd => {
@@ -404,7 +408,7 @@ fn run_init(paths: &Paths, args: InitArgs, out: &Out) -> Result<()> {
                 w.token.path.display()
             )
         },
-        &[],
+        &out::hints::init(),
     )
 }
 
@@ -476,19 +480,17 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, out: &Out, zone: rows::Zone) -> Resu
 
 async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone) -> Result<()> {
     match cmd {
-        Cmd::Status => out.emit(&c.status().await?, |s| print::status(s, now), &[]),
-        Cmd::Jobs { status, limit } => {
-            out.emit(&c.jobs(status, limit).await?, |j| print::jobs(j, now), &[])
-        }
+        Cmd::Status => handlers::status(c, out, now).await,
+        Cmd::Jobs { status, limit } => handlers::jobs(c, out, now, status, limit).await,
         Cmd::Why { id } => out.emit(&c.why(id).await?, why::render, &[]),
-        Cmd::Job(JobCmd::Cancel { id }) => cancel(c, id, out).await,
+        Cmd::Job(JobCmd::Cancel { id }) => handlers::cancel(c, id, out).await,
         Cmd::Schedule(cmd) => schedule::run(cmd, c, out, now).await,
-        Cmd::Pause(t) => control(c, t.request(ControlAction::Pause), out).await,
-        Cmd::Resume(t) => control(c, t.request(ControlAction::Resume), out).await,
-        Cmd::StopAll(t) => control(c, t.request(ControlAction::StopAll), out).await,
-        Cmd::Quota => quota(c, out, now).await,
-        Cmd::Events { limit } => out.emit(&c.events(limit).await?, |e| print::events(e, zone), &[]),
-        Cmd::Advise { cmd } => advise(c, cmd.unwrap_or(AdviseCmd::List), out, now).await,
+        Cmd::Pause(t) => handlers::control(c, t.request(ControlAction::Pause), out).await,
+        Cmd::Resume(t) => handlers::control(c, t.request(ControlAction::Resume), out).await,
+        Cmd::StopAll(t) => handlers::control(c, t.request(ControlAction::StopAll), out).await,
+        Cmd::Quota => handlers::quota(c, out, now).await,
+        Cmd::Events { limit } => handlers::events(c, out, limit, zone).await,
+        Cmd::Advise { cmd } => handlers::advise(c, cmd.unwrap_or(AdviseCmd::List), out, now).await,
         Cmd::Tui => Ok(crate::tui::run(c.clone(), zone).await?),
         Cmd::Job(JobCmd::Add(_))
         | Cmd::Agent
@@ -506,104 +508,4 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
             bail!("not a coordinator command")
         }
     }
-}
-
-async fn control(c: &ApiClient, req: ControlRequest, out: &Out) -> Result<()> {
-    let before = c.status().await?;
-    let (s, label, result) = match noop::control(&req, &before) {
-        Some(state) => {
-            let result = noop::already(state);
-            (before, result.clone(), result)
-        }
-        None => (
-            c.control(&req).await?,
-            print::control_label(&req),
-            views::done(&req),
-        ),
-    };
-    out.emit_with(
-        &s,
-        |s| format!("ok: {label}\n{}", print::summary(s)),
-        || Ok(views::control(&result, &s)),
-        &[],
-    )
-}
-
-async fn quota(c: &ApiClient, out: &Out, now: i64) -> Result<()> {
-    let (views, status) = tokio::try_join!(c.quota(), c.status())?;
-    out.emit(
-        &views,
-        |v| print::quota(v, &status.paused_accounts, now),
-        &[],
-    )
-}
-
-async fn advise(c: &ApiClient, cmd: AdviseCmd, out: &Out, now: i64) -> Result<()> {
-    match cmd {
-        AdviseCmd::List => out.emit(&c.advice().await?, |a| print::advice(a, now), &[]),
-        AdviseCmd::Refresh => out.emit(&c.refresh_advice().await?, |a| print::advice(a, now), &[]),
-        AdviseCmd::Accept { id } => out.emit(&c.accept_advice(id).await?, print::job_line, &[]),
-        AdviseCmd::Dismiss { id } => dismiss(c, id, out).await,
-    }
-}
-
-async fn dismiss(c: &ApiClient, id: i64, out: &Out) -> Result<()> {
-    let known = c.advice().await?.into_iter().find(|r| r.id == id);
-    if let Some(rec) = known.filter(noop::dismiss) {
-        let result = noop::already("dismissed");
-        return out.emit_with(
-            &rec,
-            |r| format!("advice {} {result}: {}", r.id, r.title),
-            || Ok(views::advice_result(&result, &rec)),
-            &[],
-        );
-    }
-    let rec = c.dismiss_advice(id).await?;
-    out.emit_with(
-        &rec,
-        print::advice_line,
-        || Ok(views::advice_result("dismissed", &rec)),
-        &[],
-    )
-}
-
-async fn cancel(c: &ApiClient, id: JobId, out: &Out) -> Result<()> {
-    let known = c.job(id).await?;
-    if let Some(status) = noop::cancel(&known) {
-        let result = noop::already(status);
-        return out.emit_with(
-            &known,
-            |j| format!("job {} {result}: {}", j.id, j.spec.name),
-            || Ok(views::job_result(&result, &known)),
-            &[],
-        );
-    }
-    let job = c.cancel_job(id).await?;
-    out.emit_with(
-        &job,
-        print::job_line,
-        || Ok(views::job_result("cancelled", &job)),
-        &[],
-    )
-}
-
-async fn run_local(cmd: LocalCmd, c: &ApiClient, out: &Out) -> Result<()> {
-    let action = match cmd {
-        LocalCmd::Status => None,
-        LocalCmd::Pause => Some(ControlAction::Pause),
-        LocalCmd::Resume => Some(ControlAction::Resume),
-        LocalCmd::StopAll => Some(ControlAction::StopAll),
-    };
-    let s = match action {
-        None => c.local_status().await?,
-        Some(action) => {
-            let req = ControlRequest {
-                scope: ControlScope::Global,
-                action,
-                reason: None,
-            };
-            c.local_control(&req).await?
-        }
-    };
-    out.emit(&s, |s| print::local_status(s, now_ms()), &[])
 }

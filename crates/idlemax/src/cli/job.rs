@@ -12,7 +12,8 @@ use idlemax_core::job_draft::{DraftError, JobDraft};
 use idlemax_core::types::{CostClass, Job, JobSpec};
 use idlemax_core::Paths;
 
-use super::{job_wait, print, schedule, why, ApiClient, CliError, Format, Out};
+use super::out::{hints, views};
+use super::{job_wait, noop, print, schedule, why, ApiClient, CliError, Format, Out};
 
 const NOTHING_TO_RUN: &str = "nothing to run: give a spec file (`idlemax job add spec.toml`), \
     `-` to read the spec from stdin, or a command after `--` (`idlemax job add -- cargo test`)\n";
@@ -110,8 +111,12 @@ pub async fn add(c: &ApiClient, paths: &Paths, args: AddArgs, out: &Out) -> Resu
         .add_job(&spec)
         .await
         .map_err(|e| super::hint(e, super::Peer::Coordinator))?;
-    announce(&job, created, out, wait)?;
-    why::warn_if_unrunnable(c, &spec).await;
+    let warning = why::unrunnable_warning(c, &spec).await;
+    // TOON carries the warning in the reply, since agents read stdout only.
+    if let (Some(w), false) = (&warning, out.is_toon() && !wait) {
+        eprintln!("warning: {w}");
+    }
+    announce(&job, created, out, wait, warning.as_deref())?;
     if wait {
         job_wait::run(c, paths, job, timeout, out).await
     } else {
@@ -204,7 +209,13 @@ fn parse_spec(text: &str, origin: &str, schedule_arg: &str) -> Result<JobSpec> {
 
 /// Says the coordinator has the job and what to run next. Stdout carries it unless the
 /// result owns stdout (`--wait`, or `--json` which prints the job).
-fn announce(job: &Job, created: bool, out: &Out, waiting: bool) -> Result<()> {
+fn announce(
+    job: &Job,
+    created: bool,
+    out: &Out,
+    waiting: bool,
+    warning: Option<&str>,
+) -> Result<()> {
     if waiting {
         // The result is coming, so the next steps would only be noise.
         eprintln!("{}", queued_line(job, created));
@@ -213,7 +224,17 @@ fn announce(job: &Job, created: bool, out: &Out, waiting: bool) -> Result<()> {
     if out.format() == Format::Json {
         eprintln!("{}", queued_text(job, created));
     }
-    out.emit(job, |j| queued_text(j, created), &[])
+    let result = if created {
+        "queued".to_string()
+    } else {
+        noop::already("queued")
+    };
+    out.emit_with(
+        job,
+        |j| queued_text(j, created),
+        || Ok(views::job_added(&result, job, warning)),
+        &hints::job_added(job.id),
+    )
 }
 
 fn queued_line(job: &Job, created: bool) -> String {

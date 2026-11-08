@@ -110,8 +110,13 @@ pub fn job_cells(j: &Job, now_ms: UnixMs) -> Vec<String> {
 }
 
 fn job_result(j: &Job, now_ms: UnixMs) -> String {
+    trunc(&job_result_full(j, now_ms), 48)
+}
+
+/// The job's last error, else its exit code or how long it has run; "-" when none applies.
+pub fn job_result_full(j: &Job, now_ms: UnixMs) -> String {
     if let Some(err) = &j.last_error {
-        return trunc(err, 48);
+        return err.clone();
     }
     match (j.exit_code, j.started_ms, j.finished_ms) {
         (Some(code), _, _) => format!("exit {code}"),

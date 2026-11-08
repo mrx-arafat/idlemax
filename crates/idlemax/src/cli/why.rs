@@ -48,13 +48,10 @@ fn push_reasons(text: &mut String, reasons: &[Reason]) {
     }
 }
 
-/// Warns on stderr when every device that could run `spec` has reported an allowlist
-/// without its command. Best effort: it never fails the add.
-pub async fn warn_if_unrunnable(c: &ApiClient, spec: &JobSpec) {
-    if let Ok(status) = c.status().await {
-        let devices: Vec<DeviceInfo> = status.devices.into_iter().map(|d| d.info).collect();
-        if let Some(warning) = allowlist_warning(spec, &devices) {
-            eprintln!("warning: {warning}");
-        }
-    }
+/// The warning that no device would run `spec`: every device that could has reported an
+/// allowlist without its command. Best effort: it never fails the add.
+pub async fn unrunnable_warning(c: &ApiClient, spec: &JobSpec) -> Option<String> {
+    let status = c.status().await.ok()?;
+    let devices: Vec<DeviceInfo> = status.devices.into_iter().map(|d| d.info).collect();
+    allowlist_warning(spec, &devices)
 }

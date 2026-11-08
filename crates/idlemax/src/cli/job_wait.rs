@@ -14,6 +14,8 @@ use serde::Serialize;
 
 use super::client::ClientError;
 use super::job::ExitWith;
+use super::out::toon::Node;
+use super::out::{hints, views};
 use super::{print, rows, ApiClient, Out};
 
 /// Log lines printed with the result.
@@ -57,7 +59,12 @@ pub async fn run(
             log_tail: None,
             timed_out,
         };
-        out.emit(&report, |_| timeout_text(&job, waited), &[])?;
+        out.emit_with(
+            &report,
+            |_| timeout_text(&job, waited),
+            || Ok(timeout_view(&job, waited)),
+            &hints::job_added(job.id),
+        )?;
         return Err(ExitWith(TIMED_OUT_EXIT).into());
     }
     let log = log_of(paths, &job);
@@ -70,7 +77,12 @@ pub async fn run(
         log_tail: lines,
         timed_out,
     };
-    out.emit(&report, |_| result_text(&job, &log), &[])?;
+    out.emit_with(
+        &report,
+        |_| result_text(&job, &log),
+        || Ok(result_view(&job, &log)),
+        &hints::job_changed(),
+    )?;
     match exit_code(job.status) {
         0 => Ok(()),
         code => Err(ExitWith(code).into()),
@@ -170,6 +182,45 @@ fn result_text(job: &Job, log: &Log) -> String {
         Log::None => text.push_str("\nlog: none recorded"),
     }
     text
+}
+
+/// The TOON result of a waited job: how it ended, what it printed last.
+fn result_view(job: &Job, log: &Log) -> Node {
+    let Node::Obj(mut fields) = views::job_result(&job.status.to_string(), job) else {
+        return Node::Null;
+    };
+    fields.push((
+        "exit_code".into(),
+        job.exit_code.map_or(Node::Null, |c| Node::Int(c.into())),
+    ));
+    fields.push(("ran".into(), Node::str(ran_text(job))));
+    if let Some(error) = &job.last_error {
+        fields.push(("error".into(), Node::str(error)));
+    }
+    let note = |text: String| ("log".to_string(), Node::Str(text));
+    fields.push(match log {
+        Log::Lines(lines) if lines.is_empty() => note("empty".into()),
+        Log::Lines(lines) => (
+            "log_tail".into(),
+            Node::Arr(
+                lines
+                    .iter()
+                    .map(|l| Node::obj([("line", Node::str(l))]))
+                    .collect(),
+            ),
+        ),
+        Log::On(device) => note(format!(
+            "on device {device}; run `idlemax logs {}` there",
+            job.id
+        )),
+        Log::None => note("none recorded".into()),
+    });
+    Node::Obj(fields)
+}
+
+fn timeout_view(job: &Job, waited: Duration) -> Node {
+    let result = format!("still {} after waiting {}s", job.status, waited.as_secs());
+    views::job_result(&result, job)
 }
 
 fn ran_text(job: &Job) -> String {

@@ -8,9 +8,10 @@ use idlemax_core::schedule::{Decision, Every, NewSchedule, ScheduleId, ScheduleV
 use idlemax_core::types::{JobSpec, UnixMs};
 use serde::Deserialize;
 
+use super::out::{hints, lists, views};
 use super::print::table;
 use super::rows;
-use super::{hint, noop, views, ApiClient, CliError, Out, Peer};
+use super::{hint, noop, ApiClient, CliError, Out, Peer};
 
 #[derive(Subcommand, Debug)]
 pub enum ScheduleCmd {
@@ -42,12 +43,34 @@ pub async fn run(cmd: ScheduleCmd, c: &ApiClient, out: &Out, now: UnixMs) -> Res
             ScheduleCmd::Add { spec, every } => {
                 let new = read_new_schedule(&spec, every)?;
                 let v = c.add_schedule(&new).await?;
-                out.emit(&v, |v| added(v, now), &[])
+                out.emit_with(
+                    &v,
+                    |v| added(v, now),
+                    || Ok(views::schedule_result("scheduled", &v, now, None)),
+                    &hints::schedule_added(),
+                )
             }
-            ScheduleCmd::List => out.emit(&c.schedules().await?, |v| list(v, now), &[]),
-            ScheduleCmd::Rm { id } => out.emit(&c.remove_schedule(id).await?, removed, &[]),
-            ScheduleCmd::Pause { id } => toggle(c, id, true, out).await,
-            ScheduleCmd::Resume { id } => toggle(c, id, false, out).await,
+            ScheduleCmd::List => {
+                let all = c.schedules().await?;
+                out.emit_with(
+                    &all,
+                    |v| list(v, now),
+                    || Ok(lists::schedules(&all, now, out.fields())?),
+                    &hints::schedules(all.len()),
+                )
+            }
+            ScheduleCmd::Rm { id } => {
+                let v = c.remove_schedule(id).await?;
+                let note = still_running(&v);
+                out.emit_with(
+                    &v,
+                    removed,
+                    || Ok(views::schedule_result("removed", &v, now, note)),
+                    &hints::schedules(0),
+                )
+            }
+            ScheduleCmd::Pause { id } => toggle(c, id, true, now, out).await,
+            ScheduleCmd::Resume { id } => toggle(c, id, false, now, out).await,
         }
     }
     .await;
@@ -55,7 +78,7 @@ pub async fn run(cmd: ScheduleCmd, c: &ApiClient, out: &Out, now: UnixMs) -> Res
 }
 
 /// Pauses or resumes a schedule; one that is already there answers "already ... (no-op)".
-async fn toggle(c: &ApiClient, id: ScheduleId, pause: bool, out: &Out) -> Result<()> {
+async fn toggle(c: &ApiClient, id: ScheduleId, pause: bool, now: UnixMs, out: &Out) -> Result<()> {
     let (word, state) = if pause {
         ("paused", "paused")
     } else {
@@ -74,7 +97,7 @@ async fn toggle(c: &ApiClient, id: ScheduleId, pause: bool, out: &Out) -> Result
     out.emit_with(
         &view,
         |v| line(v, &result),
-        || Ok(views::schedule_result(&result, &view)),
+        || Ok(views::schedule_result(&result, &view, now, None)),
         &[],
     )
 }
@@ -126,15 +149,24 @@ fn added(v: &ScheduleView, now: UnixMs) -> String {
     )
 }
 
+/// The reminder that a job a removed schedule already queued keeps going.
+fn still_running(v: &ScheduleView) -> Option<String> {
+    match v.decision {
+        Decision::Running { job, status } => Some(format!(
+            "job {job} is still {status}; stop it with `idlemax job cancel {job}`"
+        )),
+        _ => None,
+    }
+}
+
 fn removed(v: &ScheduleView) -> String {
     let mut text = format!(
         "removed schedule {} ({})",
         v.schedule.id, v.schedule.spec.name
     );
-    if let Decision::Running { job, status } = v.decision {
-        text.push_str(&format!(
-            "\njob {job} is still {status}; stop it with `idlemax job cancel {job}`"
-        ));
+    if let Some(note) = still_running(v) {
+        text.push('\n');
+        text.push_str(&note);
     }
     text
 }

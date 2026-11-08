@@ -5,11 +5,12 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use idlemax_core::job_run::inbox::tail as tail_lines;
 use idlemax_core::types::JobId;
 
-use super::client::{ApiClient, ClientError};
+use super::out::toon::Node;
+use super::{ApiClient, Out, Peer};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 
@@ -23,8 +24,8 @@ pub async fn run_logs_local(path: &Path, tail: Option<usize>, follow: bool) -> R
 }
 
 /// Runs `idlemax logs <job-id>` by asking the coordinator which device ran the job.
-pub async fn run_logs_remote(client: &ApiClient, path: &Path, id: JobId) -> Result<()> {
-    handle_missing_log(client, path, id).await
+pub async fn run_logs_remote(client: &ApiClient, id: JobId, out: &Out) -> Result<()> {
+    handle_missing_log(client, id, out).await
 }
 
 /// Print the current content of the log file, optionally tailing the last N lines.
@@ -96,26 +97,35 @@ async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
 }
 
 /// When the local log file is absent, asks the coordinator which device ran the job.
-async fn handle_missing_log(client: &ApiClient, path: &Path, id: JobId) -> Result<()> {
-    match client.job(id).await {
-        Ok(job) => {
-            if let Some(device) = job.device {
-                println!("job {id} ran on {device}; run this there");
-            } else {
-                println!("job {id} has not run yet (status: {})", job.status);
-            }
-            Ok(())
-        }
-        Err(ClientError::Api { status: 404, .. }) => {
-            println!("job {id} not found");
-            Ok(())
-        }
-        Err(e) => {
-            bail!(
-                "log file {} not found and coordinator unreachable: {}",
-                path.display(),
-                e
-            );
-        }
-    }
+async fn handle_missing_log(client: &ApiClient, id: JobId, out: &Out) -> Result<()> {
+    let job = client
+        .job(id)
+        .await
+        .map_err(|e| super::hint(e, Peer::Coordinator))?;
+    let (text, note, hints) = match &job.device {
+        Some(device) => (
+            format!("job {id} ran on {device}; run this there"),
+            format!("not on this device; it ran on {device}"),
+            vec![format!("Run `idlemax logs {id}` on {device} to read it")],
+        ),
+        None => (
+            format!("job {id} has not run yet (status: {})", job.status),
+            "none yet, the job has not run".to_string(),
+            vec![format!(
+                "Run `idlemax why {id}` to see why it has not started"
+            )],
+        ),
+    };
+    out.emit_with(
+        &job,
+        |_| text.clone(),
+        || {
+            Ok(Node::obj([
+                ("job", Node::Int(id)),
+                ("status", Node::str(job.status.to_string())),
+                ("log", Node::Str(note)),
+            ]))
+        },
+        &hints,
+    )
 }

@@ -8,6 +8,7 @@ use idlemax_core::job_run::inbox::{parse_note, sort_entries, InboxEntry};
 use idlemax_core::types::JobId;
 use idlemax_core::Paths;
 
+use super::out::{hints, lists};
 use super::{print, Out};
 
 /// Reads all notes from `$IDLEMAX_HOME/inbox`, returning them sorted newest first.
@@ -45,7 +46,12 @@ pub fn load_notes(inbox_dir: &Path) -> Result<Vec<InboxEntry>> {
 /// Runs `idlemax inbox [list]`.
 pub fn run_list(paths: &Paths, out: &Out) -> Result<()> {
     let entries = load_notes(&paths.inbox_dir())?;
-    out.emit(&entries, |entries| table_text(entries), &[])
+    out.emit_with(
+        &entries,
+        |entries| table_text(entries),
+        || Ok(lists::inbox(&entries, out.fields())?),
+        &hints::inbox(entries.len()),
+    )
 }
 
 fn table_text(entries: &[InboxEntry]) -> String {

@@ -203,8 +203,21 @@ async fn logs_absent_asks_coordinator() {
     });
 
     let env = TempHome::new_with_coord(port);
-    let out = env.run(&["logs", "12"]);
+    let out = env.run(&["--format", "table", "logs", "12"]);
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(stdout.trim(), "job 12 ran on server; run this there");
+
+    // Piped, the same answer is TOON an agent can act on.
+    let out = env.run(&["logs", "12"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.starts_with("job: 12\nstatus: succeeded\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Run `idlemax logs 12` on server"),
+        "{stdout}"
+    );
 }

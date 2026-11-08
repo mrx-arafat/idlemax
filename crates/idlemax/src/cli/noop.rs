@@ -2,7 +2,7 @@
 //! "already X (no-op)" with exit 0 instead of repeating them or failing.
 //! Pure: each function reads the state the CLI just fetched.
 
-use idlemax_core::protocol::{ClusterStatus, ControlRequest};
+use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::schedule::ScheduleView;
 use idlemax_core::types::{
     ControlAction, ControlScope, Job, JobStatus, Recommendation, RecommendationStatus,
@@ -36,6 +36,16 @@ pub fn control(req: &ControlRequest, s: &ClusterStatus) -> Option<&'static str> 
         (ControlAction::StopAll, ControlScope::Global) if s.global_paused && active == 0 => {
             Some("stopped")
         }
+        _ => None,
+    }
+}
+
+/// This device's own pause state, for `idlemax local pause|resume|stop-all`.
+pub fn local(action: ControlAction, s: &LocalStatus) -> Option<&'static str> {
+    match action {
+        ControlAction::Pause if s.local_paused => Some("paused"),
+        ControlAction::Resume if !s.local_paused => Some("running"),
+        ControlAction::StopAll if s.local_paused && s.running.is_empty() => Some("stopped"),
         _ => None,
     }
 }
@@ -139,5 +149,15 @@ mod tests {
         assert!(!dismiss(&rec(RecommendationStatus::Open)));
         assert!(!dismiss(&rec(RecommendationStatus::Accepted)));
         assert_eq!(already("paused"), "already paused (no-op)");
+
+        let mut local_status = LocalStatus::default();
+        assert_eq!(local(ControlAction::Resume, &local_status), Some("running"));
+        assert_eq!(local(ControlAction::Pause, &local_status), None);
+        local_status.local_paused = true;
+        assert_eq!(local(ControlAction::Pause, &local_status), Some("paused"));
+        assert_eq!(
+            local(ControlAction::StopAll, &local_status),
+            Some("stopped")
+        );
     }
 }

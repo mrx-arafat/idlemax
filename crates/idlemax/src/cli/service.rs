@@ -17,6 +17,7 @@ use idlemax_core::Paths;
 use serde::Serialize;
 
 use super::files::write_atomic;
+use super::out::{hints, toon::Node};
 use super::Out;
 use text::{install_text, status_text, uninstall_text};
 
@@ -136,10 +137,11 @@ pub fn run(paths: &Paths, args: ServiceArgs, out: &Out) -> Result<()> {
         ServiceCmd::Install { which, dry_run, .. } => {
             let kinds = kinds(which, &[ServiceKind::Agent]);
             let reports = install(&ctx, paths, &SystemRunner, &kinds, dry_run)?;
-            out.emit(
+            out.emit_with(
                 &reports,
                 |r| r.iter().map(install_text).collect::<Vec<_>>().join("\n"),
-                &[],
+                || named(&reports),
+                &hints::then("idlemax service status", "check it"),
             )?;
         }
         ServiceCmd::Uninstall { which, dry_run } => {
@@ -149,18 +151,24 @@ pub fn run(paths: &Paths, args: ServiceArgs, out: &Out) -> Result<()> {
                 &kinds(which, &ServiceKind::ALL),
                 dry_run,
             )?;
-            out.emit(
+            out.emit_with(
                 &reports,
                 |r| r.iter().map(uninstall_text).collect::<Vec<_>>().join("\n"),
-                &[],
+                || named(&reports),
+                &hints::then("idlemax service status", "check it"),
             )?;
         }
         ServiceCmd::Status { which } => {
             let all = status(&ctx, &SystemRunner, &kinds(which, &ServiceKind::ALL));
-            out.emit(&all, |s| status_text(s), &[])?;
+            out.emit_with(&all, |s| status_text(s), || named(&all), &[])?;
         }
     }
     Ok(())
+}
+
+/// The per-service reports under a name, so the TOON reply is not a bare root array.
+fn named<T: Serialize>(reports: &[T]) -> Result<Node> {
+    Ok(Node::obj([("services", Node::of(&reports)?)]))
 }
 
 fn kinds(which: Option<Unit>, default: &[ServiceKind]) -> Vec<ServiceKind> {

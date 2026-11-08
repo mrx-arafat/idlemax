@@ -16,6 +16,7 @@ use idlemax_core::Paths;
 use serde::Serialize;
 
 use super::files::{backup_path, read_optional, save, write_atomic};
+use super::out::hints;
 use super::Out;
 
 #[derive(Args, Debug)]
@@ -114,13 +115,27 @@ struct StatusReport {
 pub fn run(paths: &Paths, args: StatuslineArgs, out: &Out) -> Result<()> {
     let places = places(paths)?;
     match args.cmd {
-        StatuslineCmd::Install { dry_run } => {
-            out.emit(&install(&places, dry_run)?, change_text, &[])
+        StatuslineCmd::Install { dry_run } => out.emit(
+            &install(&places, dry_run)?,
+            change_text,
+            &hints::then("idlemax statusline status", "check how it is wired"),
+        ),
+        StatuslineCmd::Uninstall { dry_run } => out.emit(
+            &uninstall(&places, dry_run)?,
+            change_text,
+            &hints::then("idlemax statusline status", "check how it is wired"),
+        ),
+        StatuslineCmd::Status => {
+            let report = status(&places)?;
+            let hints = match report.state {
+                "installed" => Vec::new(),
+                _ => hints::then(
+                    "idlemax statusline install --dry-run",
+                    "preview wiring the quota probe",
+                ),
+            };
+            out.emit(&report, status_text, &hints)
         }
-        StatuslineCmd::Uninstall { dry_run } => {
-            out.emit(&uninstall(&places, dry_run)?, change_text, &[])
-        }
-        StatuslineCmd::Status => out.emit(&status(&places)?, status_text, &[]),
     }
 }
 

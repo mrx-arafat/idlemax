@@ -1,0 +1,199 @@
+//! Delivery: the coordinator-backed subcommands. Each reads what it needs, skips a mutation
+//! that would change nothing, and hands the value, a table renderer, a TOON view and the
+//! next-step hints to the output boundary.
+
+use anyhow::Result;
+use idlemax_core::protocol::ControlRequest;
+use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus, UnixMs};
+
+use super::out::{hints, lists, views};
+use super::rows::Zone;
+use super::{noop, print, AdviseCmd, ApiClient, LocalCmd, Out};
+use crate::state::now_ms;
+
+pub async fn status(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
+    let s = c.status().await?;
+    out.emit_with(
+        &s,
+        |s| print::status(s, now),
+        || Ok(views::status(&s, now, out.fields())?),
+        &hints::status(s.devices.len(), s.global_paused),
+    )
+}
+
+pub async fn jobs(
+    c: &ApiClient,
+    out: &Out,
+    now: UnixMs,
+    filter: Option<JobStatus>,
+    limit: u32,
+) -> Result<()> {
+    let list = c.jobs(filter, limit).await?;
+    let total = if out.is_toon() {
+        Some(views::job_total(&c.status().await?.jobs, filter))
+    } else {
+        None
+    };
+    out.emit_with(
+        &list,
+        |j| print::jobs(j, now),
+        || Ok(lists::jobs(&list, total, filter, now, out.fields())?),
+        &hints::jobs(list.len(), total, filter),
+    )
+}
+
+pub async fn control(c: &ApiClient, req: ControlRequest, out: &Out) -> Result<()> {
+    let before = c.status().await?;
+    let (s, label, result) = match noop::control(&req, &before) {
+        Some(state) => {
+            let result = noop::already(state);
+            (before, result.clone(), result)
+        }
+        None => (
+            c.control(&req).await?,
+            print::control_label(&req),
+            views::done(&req),
+        ),
+    };
+    out.emit_with(
+        &s,
+        |s| format!("ok: {label}\n{}", print::summary(s)),
+        || Ok(views::control(&result, &s)),
+        &hints::control(req.action == ControlAction::Resume),
+    )
+}
+
+pub async fn cancel(c: &ApiClient, id: JobId, out: &Out) -> Result<()> {
+    let known = c.job(id).await?;
+    if let Some(status) = noop::cancel(&known) {
+        let result = noop::already(status);
+        return out.emit_with(
+            &known,
+            |j| format!("job {} {result}: {}", j.id, j.spec.name),
+            || Ok(views::job_result(&result, &known)),
+            &hints::job_changed(),
+        );
+    }
+    let job = c.cancel_job(id).await?;
+    out.emit_with(
+        &job,
+        print::job_line,
+        || Ok(views::job_result("cancelled", &job)),
+        &hints::job_changed(),
+    )
+}
+
+pub async fn quota(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
+    let (views_in, status) = tokio::try_join!(c.quota(), c.status())?;
+    out.emit_with(
+        &views_in,
+        |v| print::quota(v, &status.paused_accounts, now),
+        || {
+            Ok(lists::quota(
+                &views_in,
+                &status.paused_accounts,
+                now,
+                out.fields(),
+            )?)
+        },
+        &hints::quota(views_in.len()),
+    )
+}
+
+pub async fn events(c: &ApiClient, out: &Out, limit: u32, zone: Zone) -> Result<()> {
+    let list = c.events(limit).await?;
+    out.emit_with(
+        &list,
+        |e| print::events(e, zone),
+        || Ok(lists::events(&list, zone, out.fields())?),
+        &hints::events(list.len(), limit),
+    )
+}
+
+pub async fn advise(c: &ApiClient, cmd: AdviseCmd, out: &Out, now: UnixMs) -> Result<()> {
+    match cmd {
+        AdviseCmd::List => advice_list(c.advice().await?, out, now),
+        AdviseCmd::Refresh => advice_list(c.refresh_advice().await?, out, now),
+        AdviseCmd::Accept { id } => {
+            let job = c.accept_advice(id).await?;
+            let result = format!("accepted advice {id}, job queued");
+            out.emit_with(
+                &job,
+                print::job_line,
+                || Ok(views::job_result(&result, &job)),
+                &hints::job_added(job.id),
+            )
+        }
+        AdviseCmd::Dismiss { id } => dismiss(c, id, out).await,
+    }
+}
+
+fn advice_list(
+    list: Vec<idlemax_core::types::Recommendation>,
+    out: &Out,
+    now: UnixMs,
+) -> Result<()> {
+    let open = list
+        .iter()
+        .filter(|r| r.status == idlemax_core::types::RecommendationStatus::Open)
+        .count();
+    out.emit_with(
+        &list,
+        |a| print::advice(a, now),
+        || Ok(lists::advice(&list, now, out.fields())?),
+        &hints::advice(open),
+    )
+}
+
+async fn dismiss(c: &ApiClient, id: i64, out: &Out) -> Result<()> {
+    let known = c.advice().await?.into_iter().find(|r| r.id == id);
+    if let Some(rec) = known.filter(noop::dismiss) {
+        let result = noop::already("dismissed");
+        return out.emit_with(
+            &rec,
+            |r| format!("advice {} {result}: {}", r.id, r.title),
+            || Ok(views::advice_result(&result, &rec)),
+            &hints::advice(0),
+        );
+    }
+    let rec = c.dismiss_advice(id).await?;
+    out.emit_with(
+        &rec,
+        print::advice_line,
+        || Ok(views::advice_result("dismissed", &rec)),
+        &hints::advice(0),
+    )
+}
+
+/// `idlemax local ...`: this device's agent, which works while the coordinator is down.
+pub async fn local(cmd: LocalCmd, c: &ApiClient, out: &Out) -> Result<()> {
+    let action = match cmd {
+        LocalCmd::Status => None,
+        LocalCmd::Pause => Some(ControlAction::Pause),
+        LocalCmd::Resume => Some(ControlAction::Resume),
+        LocalCmd::StopAll => Some(ControlAction::StopAll),
+    };
+    let before = c.local_status().await?;
+    let (s, result) = match action {
+        None => (before, None),
+        Some(action) => match noop::local(action, &before) {
+            Some(state) => (before, Some(noop::already(state))),
+            None => {
+                let req = ControlRequest {
+                    scope: ControlScope::Global,
+                    action,
+                    reason: None,
+                };
+                let done = format!("{} this device", views::verb(action));
+                (c.local_control(&req).await?, Some(done))
+            }
+        },
+    };
+    let now = now_ms();
+    out.emit_with(
+        &s,
+        |s| print::local_status(s, now),
+        || Ok(views::local(result.as_deref(), &s, now)),
+        &[],
+    )
+}

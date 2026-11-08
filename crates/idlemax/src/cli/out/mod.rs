@@ -10,6 +10,8 @@
 //! Keep decisions out of here: callers pass finished values and finished hint strings.
 
 mod failure;
+pub mod hints;
+pub mod lists;
 mod shape;
 pub mod toon;
 mod usage;
@@ -50,11 +52,25 @@ impl Format {
 pub struct Out {
     format: Format,
     full: bool,
+    fields: Vec<String>,
 }
 
 impl Out {
-    pub fn new(format: Format, full: bool) -> Self {
-        Self { format, full }
+    pub fn new(format: Format, full: bool, fields: Vec<String>) -> Self {
+        Self {
+            format,
+            full,
+            fields,
+        }
+    }
+
+    pub fn is_toon(&self) -> bool {
+        self.format == Format::Toon
+    }
+
+    /// The extra list columns asked for with `--fields`.
+    pub fn fields(&self) -> &[String] {
+        &self.fields
     }
 
     pub fn format(&self) -> Format {
