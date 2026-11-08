@@ -8,6 +8,7 @@ mod finish;
 mod launch;
 mod os;
 mod pidfile;
+mod stop;
 #[cfg(all(test, unix))]
 mod tests;
 mod wrapper;
@@ -28,6 +29,7 @@ use tracing::{info, warn};
 use crate::state::now_ms;
 use finish::Ended;
 use os::{ProcTable, Sig, Usage};
+use stop::{enforce, stop, Stop};
 
 /// Minimum gap between process table refreshes, however often `poll` runs.
 const USAGE_REFRESH_MS: i64 = 1_000;
@@ -96,12 +98,6 @@ struct Slot {
     /// Members outside the job's process group, signalled by pid.
     outside: Vec<u32>,
     stop: Option<Stop>,
-}
-
-struct Stop {
-    reason: StopReason,
-    term_sent_ms: UnixMs,
-    kill_sent: bool,
 }
 
 impl Runner {
@@ -343,44 +339,6 @@ impl Slot {
             ai_account: spec.ai_account.clone(),
         }
     }
-}
-
-fn enforce(slot: &mut Slot, now: UnixMs, awake_ms: i64) {
-    let id = slot.job.id;
-    if let Some(stop) = slot.stop.as_mut() {
-        if !stop.kill_sent && job_run::kill_due(stop.term_sent_ms, now) {
-            match os::signal_job(slot.pid, &slot.outside, Sig::Kill) {
-                Ok(()) => stop.kill_sent = true,
-                Err(e) => warn!(job = id, error = %e, "cannot SIGKILL job"),
-            }
-        }
-        return;
-    }
-    let rss = slot.usage.map(|u| u.rss_bytes);
-    if let Some(reason) = job_run::breach(&slot.job.spec, slot.clock.active_ms(awake_ms), rss) {
-        warn!(job = id, reason = ?reason.message(), "stopping job over its cap");
-        if let Err(e) = stop(slot, reason, now, awake_ms) {
-            warn!(job = id, error = %e, "cannot stop job");
-        }
-    }
-}
-
-fn stop(slot: &mut Slot, reason: StopReason, now: UnixMs, awake_ms: i64) -> io::Result<()> {
-    if slot.stop.is_some() {
-        return Ok(());
-    }
-    os::signal_job(slot.pid, &slot.outside, Sig::Term)?;
-    slot.stop = Some(Stop {
-        reason,
-        term_sent_ms: now,
-        kill_sent: false,
-    });
-    if slot.clock.is_paused() {
-        // A stopped process acts on SIGTERM only once continued.
-        os::signal_job(slot.pid, &slot.outside, Sig::Cont)?;
-        slot.clock.resume(awake_ms);
-    }
-    Ok(())
 }
 
 fn exit_info(status: ExitStatus) -> ExitInfo {
