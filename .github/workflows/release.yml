@@ -82,7 +82,7 @@ jobs:
           name="idlemax-${VERSION}-${TARGET}"
           tmp=$(mktemp -d)
           tar -xzf "dist/${name}.tar.gz" -C "$tmp"
-          test "$("$tmp/$name/idlemax" --version)" = "idlemax ${VERSION}"
+          test "$("$tmp/$name/idlemax" --version)" = "${VERSION}"
       - name: Inspect the cross-built binary
         if: ${{ !matrix.smoke }}
         run: |
@@ -133,4 +133,4 @@ jobs:
           set -eu
           export IDLEMAX_INSTALL_DIR="$RUNNER_TEMP/bin"
           sh scripts/install.sh
-          test "$("$IDLEMAX_INSTALL_DIR/idlemax" --version)" = "idlemax ${IDLEMAX_VERSION}"
+          test "$("$IDLEMAX_INSTALL_DIR/idlemax" --version)" = "${IDLEMAX_VERSION}"

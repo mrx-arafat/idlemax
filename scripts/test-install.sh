@@ -122,10 +122,11 @@ check "explains that no release exists yet" refused "no release has been publish
 
 # Happy path: latest release found by redirect, checksum verified, binary installed and runnable.
 BIN="$T/bin"
-make_asset x86_64-unknown-linux-gnu 'echo "idlemax 0.9.0"'
+make_asset x86_64-unknown-linux-gnu 'echo "0.9.0"'
 inst FAKE_OS=Linux FAKE_ARCH=x86_64 IDLEMAX_INSTALL_DIR="$BIN"
 check "installs the latest release" ok
-version_ok() { [ "$("$BIN/idlemax" --version)" = "idlemax 0.9.0" ]; }
+check "names what it installed" said "^Installed idlemax 0.9.0\$"
+version_ok() { [ "$("$BIN/idlemax" --version)" = "0.9.0" ]; }
 check "installed binary runs" version_ok
 clean() { [ -z "$(ls -A "$T/tmp")" ] && [ "$(ls -A "$BIN")" = idlemax ]; }
 check "leaves no temp files behind" clean

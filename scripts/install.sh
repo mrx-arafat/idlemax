@@ -199,7 +199,7 @@ main() {
   mv -f "$STAGED" "$dir/idlemax" || die "cannot replace $dir/idlemax"
   STAGED=""
 
-  printf 'Installed %s\n' "$("$dir/idlemax" --version)"
+  printf 'Installed idlemax %s\n' "$("$dir/idlemax" --version)"
   printf '  %s/idlemax\n' "$dir"
   case ":${PATH:-}:" in
     *":$dir:"*) ;;
