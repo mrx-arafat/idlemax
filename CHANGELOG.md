@@ -7,8 +7,183 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-08
+
+### Added
+
+- **agent:** Persist the outbox so job updates survive a crash
+- **advisor:** Send advisor inputs from each agent
+- **agent:** Refresh device info hourly, report local pause apart
+- **agent:** Detect interactive agy use
+- **coord:** Persist device presence, add header and request timeouts
+- **install:** Add a release installer script
+- **scripts:** Verify the Linux agent and job caps on a host
+- **core:** Add recurring schedules with a pure due decision
+- **coord:** Store, sweep and API routes for schedules
+- **cli:** Idlemax schedule add, list, rm, pause and resume
+- **core:** Plan service and statusline installs as pure functions
+- **cli:** Add service and statusline install commands
+- **core:** Add inbox note parsing and notification decisions
+- **agent:** Send macos notifications on job finish
+- **coord:** Support single job lookup GET /v1/jobs/:id
+- **cli:** Add logs and inbox subcommands
+- **sched:** Skip devices whose command allowlist refuses the job
+- **core:** Explain every reason a job is not running
+- **cli:** Add idlemax why, warn when no device allows a command
+- **core:** Add doctor check model and pure judgments
+- **cli:** Add idlemax doctor
+- **core:** Report how a schedule's last job ended
+- **tui:** Add a Schedules tab with pause, resume and remove
+- **web:** Add a Schedules panel to the dashboard
+- **cli:** Doctor reports jobs held by PAUSE or a local pause
+- **core:** Add an idempotency key to JobSpec
+- **coord:** Queue a keyed job once (store V6)
+- **core:** Build a JobSpec from job add flags
+- **core:** Poll pacing and exit codes for waiting on a job
+- **cli:** Job add from flags or stdin, with --wait and --key
+- **cli:** Run a flag-built job once, pin job add end to end
+- **coord:** Add GET /v1/why, one headline reason per waiting job
+- **web:** Show why a queued, leased or paused job is waiting
+- **core:** Count a job's processes by group, env tag and tree
+- **tui:** Show why a job is not running on the Jobs tab
+- **cli:** Print a live home view when idlemax has no arguments
+- **core:** Plan SessionStart hook edits for Claude, Codex and OpenCode
+- **cli:** Add idlemax hooks install, uninstall and status
+- **cli:** Generate the agent skill and check it in CI
+- **core:** Retry only what is not the job's fault
+- **core:** Say which devices can never take a job
+- **web:** Give a waiting job's reasons the full row
+- **core:** Plan idlemax setup for an agent, a coordinator or both
+- **cli:** Idlemax setup, one command from install to a working device
+- **cli:** Add a TOON v4.4 encoder for agent-friendly output
+- **cli:** Route all output through one boundary with --format
+- **cli:** Structured errors on stdout, exit codes and bare version
+- **cli:** Make pause, resume, cancel and dismiss idempotent
+- **cli:** Minimal TOON views with totals, empty states and hints
+- **cli:** Put home, hooks, skill, why and logs on the output boundary
+- **cli:** Follow main in the TOON job counts, wait result and why
+- **cli:** Put idlemax setup on the output boundary
+- **cli:** Point first-run hints at idlemax setup
+- **core:** Record a job's exit so a restarted agent can report it
+- **agent:** Report a job's real exit after the agent died
+
+### Changed
+
+- **cli:** Share schedule row rendering with the TUI
+- **agent:** Read root disk space in-process via sysinfo
+- **agent:** Sample macOS thermal throttling with 60s TTL cache
+- **agent:** Split the event loop by responsibility
+- **advice:** Split the advisor rules by rule family
+- **core:** Split reconcile by responsibility
+- **core:** Drop the run-once special case for flag-built jobs
+- **cli:** Split cli.rs into commands, dispatch and init_cmd
+- **sched:** Split scheduler/mod.rs by responsibility
+- **tui:** Split app.rs into state, keys and requests
+- **agent:** Move throttle wrapper detection out of runner/os.rs
+- **agent:** Move job stopping out of runner/mod.rs
+
+### Fixed
+
+- **coord:** Write control and advice-accept changes atomically
+- **agent:** Count job runtime while awake only
+- **advisor:** Keep the AI pass prompt off argv, disable user hooks
+- **web:** Dashboard layout, poll and contrast fixes from a browser pass
+- **packaging:** Pass statusline input through byte for byte
+- **cli:** Show the guard reason that matches its action
+- **agent:** Ignore unknown battery status for Linux AC state
+- **cli:** Restore the statusline backup byte for byte on uninstall
+- **notify:** Pass notification text as arguments to osascript
+- **agent:** Reap spawned osascript child process to prevent zombies
+- **core:** Do not hold jobs for unknown idle time when the minimum is 0
+- **agent:** Find the systemd user manager by its private socket too
+- **scripts:** Make verify-linux.sh run and report every check
+- **core:** Tell the user how to get past unknown idle time
+- **coord:** Apply a result that arrives after its lease expired
+- **agent:** Repair a failed outbox journal write instead of giving up
+- **coord:** Ingest an AI pass again when its update is replayed
+- **core:** Kill a job at its memory cap on Linux and say so
+- **scripts:** Expect the memory hog to be killed at MemoryMax
+- **cli:** Quieter job add --wait, usage errors exit 2
+- **tui:** Fit the header, tab bar and footer to 80 columns
+- **tui:** Fit table columns to the terminal and explain empty tabs
+- **tui:** Never cut off an error, a flash or a confirmation hint
+- **tui:** Keep the guard reason readable on the Devices tab at 80 columns
+- **agent:** Cap jobs whose children daemonize, poll faster near the cap
+- **agent:** Kill daemonized job members after an agent restart
+- **agent:** Treat EPERM from a zombie-only group as gone on macOS
+- **core:** Why names the guard keys that actually hold a job
+- **cli:** Print a config error once, with the key path first
+- **doctor:** Point service and statusline fixes at the commands
+- **tui:** Measure text in display cells so Japanese and emoji fit
+- **core:** Why says a failed or killed job is final
+- **cli:** Status counts killed jobs next to failed ones
+- **cli:** Job add --wait does not repeat the exit code as an error
+- **tui:** Make event-time snapshots independent of the time zone
+- **cli:** Do not call a device pause a no-op on another pause's word
+- **coord:** Keep serving when accept fails
+- **agent:** Never block the agent loop on a job's stdin
+- **coord:** Refuse the IPv4-mapped wildcard address too
+- **cli:** Give config backups the mode of the file they copy
+- **state:** Keep the state tree and job output private
+- **cli:** Never write config files through a planted temp symlink
+- **config:** Refuse tokens shorter than 32 characters
+- **statusline:** Keep the capture file private
+- **cli:** Strip terminal control characters from API text
+- **agent:** Keep a paused job stopped, and pause tests after it starts
+- **agent:** Find a job's processes by a per-attempt tag, not the job id
+- **agent:** Give the local API the coordinator's connection limits
+- **api:** Refuse a Host header that names a host we do not answer to
+- **agent:** Start jobs from a minimal environment
+- **core:** Bound every field of a job spec
+- **coord:** Bound what a token holder can make the store keep
+- **web:** Serve the dashboard script as a file and forbid inline script
+
+### Documentation
+
+- Statusline capture install step and example placeholders
+- Record the first v0.2 round in the roadmap
+- Add the release procedure
+- Add the Linux rollout and tailnet runbook
+- Document schedules in API.md and the recurring examples
+- Add light and dark dashboard screenshots
+- Rewrite the README to lead with the problem and the safety story
+- Link the Linux rollout and release runbooks from the README
+- Add CONTRIBUTING.md for contributor guidance
+- Add SECURITY.md with vulnerability reporting policy
+- **packaging:** Word the service file headers for the installed file
+- Point roadmap item 4 at idlemax statusline install
+- Document the why endpoint and the reported command allowlist
+- Add AGENTS.md for coding agents
+- Document service, why, logs, inbox, schedule and statusline
+- Point the rollout runbook at idlemax service install
+- Document idlemax doctor in the README
+- Describe the Schedules TUI tab, dashboard panel and LAST RESULT
+- Say a reachable systemd user manager enables the cgroup caps
+- **agent:** Note that the journal sync is already a full sync on macOS
+- Record what closed the outbox gaps and design the last one
+- Document the job idempotency key on POST /v1/jobs
+- Record what finished the daemonizing-children item
+- Record the event loop split in the roadmap
+- **packaging:** Cite the README heading that exists
+- Say a Linux job over its memory cap is killed by the cgroup
+- Recapture the dashboard screenshots with waiting reasons
+- State the measured idle overhead in the README
+- Note the generated skill and the hooks command in AGENTS.md
+- Describe which job endings are retried
+- Recapture the dashboard screenshots with the full-width why rows
+- Describe the security model after the audit fixes
+- README pass 3, setup, agents, job states, why and output formats
+- Record the second round in the roadmap
+- Describe the host check, job environment, limits and dashboard script
+- Document allowed_hosts and the minimal job environment
+- Update status, install and roadmap for v0.2.0
+
 ## [0.1.0] - 2026-11-05
 
 ### Added
 
 - Put idle compute and leftover AI quota to work safely
+
+[Unreleased]: https://github.com/mrx-arafat/idlemax/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mrx-arafat/idlemax/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/mrx-arafat/idlemax/releases/tag/v0.1.0
