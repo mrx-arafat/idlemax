@@ -119,6 +119,12 @@ pub enum SetupError {
     )]
     NeedsToken,
     #[error(
+        "--coord-url {0} names a host, but the coordinator binds an IP address: use its IP in \
+         --coord-url, e.g. http://100.64.0.10:7878 (edit coordinator.url in config.toml afterwards \
+         if agents should use the name, and add the name to coordinator.allowed_hosts)"
+    )]
+    ListenNeedsIp(String),
+    #[error(
         "config.toml already sets coordinator.url to {have}, not {want}: edit config.toml to change \
          it, or leave out --coord-url"
     )]
@@ -143,7 +149,7 @@ pub fn plan(req: &Request<'_>, existing: &Existing<'_>) -> Result<SetupPlan, Set
             if req.role == Role::Agent && wanted.is_none() {
                 return Err(SetupError::NeedsCoordUrl);
             }
-            let cfg = config_for(req.role, req.os, wanted.as_deref());
+            let cfg = config_for(req.role, req.os, wanted.as_deref())?;
             let url = cfg.coordinator.url.clone();
             (ConfigPlan::Write(Box::new(cfg)), url)
         }
@@ -183,17 +189,29 @@ pub fn plan(req: &Request<'_>, existing: &Existing<'_>) -> Result<SetupPlan, Set
 }
 
 /// The `config.toml` a new setup starts from: the defaults, this OS's guard profile, and the
-/// coordinator address. A coordinator that others must reach listens on that address too.
-pub fn config_for(role: Role, os: Os, coord_url: Option<&str>) -> Config {
+/// coordinator address. A coordinator that others must reach listens on that address too, so
+/// it must be an IP address: the coordinator binds a socket address and cannot bind a name.
+pub fn config_for(role: Role, os: Os, coord_url: Option<&str>) -> Result<Config, SetupError> {
     let mut cfg = Config::default();
     cfg.agent.profile = Some(DeviceProfile::default_for(os));
     if let Some(url) = coord_url {
         cfg.coordinator.url = url.to_string();
         if let Some(authority) = authority_with_port(url).filter(|_| role.runs_coordinator()) {
-            cfg.coordinator.listen = authority.to_string();
+            cfg.coordinator.listen = listen_for(authority)
+                .ok_or_else(|| SetupError::ListenNeedsIp(authority.to_string()))?;
         }
     }
-    cfg
+    Ok(cfg)
+}
+
+/// The `coordinator.listen` for a URL authority `host:port`: an IP address as it is,
+/// `localhost` as 127.0.0.1, and None for any other name.
+fn listen_for(authority: &str) -> Option<String> {
+    if authority.parse::<std::net::SocketAddr>().is_ok() {
+        return Some(authority.to_string());
+    }
+    let port = authority.strip_prefix("localhost:")?.parse::<u16>().ok()?;
+    Some(format!("127.0.0.1:{port}"))
 }
 
 /// What `service install` would do to a unit file that may already exist.

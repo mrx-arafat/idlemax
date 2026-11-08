@@ -95,7 +95,7 @@ fn plan_err(req: Request<'_>) -> SetupError {
 
 #[test]
 fn a_finished_setup_plans_nothing_to_write_and_refuses_a_different_address() {
-    let cfg = config_for(Role::Both, Os::Linux, Some(TAILNET));
+    let cfg = config_for(Role::Both, Os::Linux, Some(TAILNET)).unwrap();
     let existing = Existing {
         config: Some(&cfg),
         token: true,
@@ -156,4 +156,29 @@ fn a_unit_file_is_only_rewritten_when_its_content_changes() {
     assert_eq!(unit_change(None, "a"), UnitChange::Create);
     assert_eq!(unit_change(Some("a"), "a"), UnitChange::Same);
     assert_eq!(unit_change(Some("old"), "a"), UnitChange::Update);
+}
+
+#[test]
+fn a_coordinator_listens_on_an_ip_never_on_a_name_it_cannot_bind() {
+    let listen =
+        |role, url| config_for(role, Os::Linux, Some(url)).map(|cfg| cfg.coordinator.listen);
+    assert_eq!(listen(Role::Coord, TAILNET).unwrap(), "100.64.0.10:7878");
+    assert_eq!(
+        listen(Role::Both, "http://localhost:9000").unwrap(),
+        "127.0.0.1:9000"
+    );
+    // MagicDNS names and other hosts cannot be bound: ask for the IP instead of writing a
+    // listen address that makes the service restart forever.
+    for url in ["http://box.tail1234.ts.net:7878", "http://myhost:7878"] {
+        let err = listen(Role::Coord, url).unwrap_err();
+        assert!(matches!(err, SetupError::ListenNeedsIp(_)), "{url}: {err}");
+        assert!(err.to_string().contains("IP"), "{err}");
+    }
+    // An agent only reaches the coordinator, so a name is fine there.
+    let agent = config_for(
+        Role::Agent,
+        Os::Linux,
+        Some("http://box.tail1234.ts.net:7878"),
+    );
+    assert!(agent.is_ok());
 }

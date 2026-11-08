@@ -225,6 +225,7 @@ ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http:
 - `--statusline` also runs `idlemax statusline install`, for the roles that run an agent.
   `--no-service` writes the files but installs no service.
 - The guard profile comes from the OS: `macos_laptop` on macOS and `linux_server` on Linux.
+- With `--role coord` or `--role both` the `--coord-url` host must be an IP address (or `localhost`), because the coordinator binds it; a name such as a MagicDNS host is refused with that advice.
 - Nothing existing is overwritten.
   A `--coord-url` that disagrees with the existing `config.toml`, or a `--token-stdin` token that differs from the existing token file, is refused with the fix.
 - A service file is rewritten and the service restarted only when its content would change, for example after the binary moved.
