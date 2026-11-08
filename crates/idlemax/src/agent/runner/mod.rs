@@ -4,6 +4,7 @@
 
 #[cfg(all(test, unix))]
 mod daemon_tests;
+mod error;
 mod finish;
 mod launch;
 mod os;
@@ -14,13 +15,12 @@ mod tests;
 mod wrapper;
 
 use std::collections::HashMap;
-use std::io;
 use std::path::PathBuf;
 use std::process::{Child, ExitStatus};
 use std::time::Instant;
 
 use idlemax_core::config::AgentConfig;
-use idlemax_core::job_run::{self, AdmitError, ExitInfo, JobKey, RunClock, StopReason, Wrapper};
+use idlemax_core::job_run::{self, ExitInfo, JobKey, RunClock, StopReason, Wrapper};
 use idlemax_core::protocol::{JobUpdate, RunningJob};
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Paths;
@@ -32,6 +32,8 @@ use finish::Ended;
 use os::{ProcTable, Sig, Usage};
 use pidfile::Saved;
 use stop::{enforce, stop, Stop};
+
+pub use error::RunnerError;
 
 /// A random tag for one attempt. Processes used to be found by job id alone, but ids repeat
 /// across agents (and test runs) on one host, so one agent adopted and killed another's job.
@@ -51,41 +53,6 @@ const _: fn() = || {
     fn send_static<T: Send + 'static>() {}
     send_static::<Runner>();
 };
-
-#[derive(Debug, thiserror::Error)]
-pub enum RunnerError {
-    #[error("job {0} is already running")]
-    AlreadyRunning(JobId),
-    #[error("job refused: {0}")]
-    Refused(#[from] AdmitError),
-    #[error("command is empty")]
-    EmptyCommand,
-    #[error("job stdin pipe unavailable")]
-    StdinUnavailable,
-    #[error("write job stdin: {0}")]
-    Stdin(#[source] io::Error),
-    #[error("program {0:?} not found")]
-    ProgramNotFound(String),
-    #[error("program {0:?} must be a bare name or an absolute path")]
-    RelativeProgram(String),
-    #[error("cwd {} is not a directory", .0.display())]
-    BadCwd(PathBuf),
-    #[error("no home directory for the default cwd")]
-    NoHome,
-    #[error("{what} {}: {source}", path.display())]
-    Io {
-        what: &'static str,
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("signal job {id}: {source}")]
-    Signal {
-        id: JobId,
-        #[source]
-        source: io::Error,
-    },
-}
 
 pub struct Runner {
     paths: Paths,
