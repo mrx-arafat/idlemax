@@ -191,6 +191,20 @@ td .t2 { font-size: 12px; color: var(--muted); margin-top: 1px; overflow-wrap: a
 td.acts { white-space: nowrap; text-align: right; }
 td.acts .btn + .btn { margin-left: 4px; }
 .job-name { font-weight: 600; overflow-wrap: anywhere; }
+
+/* Why a queued, leased or paused job is not running: one line, expandable to every reason. */
+.why { margin-top: 6px; font-size: 12.5px; }
+.why summary { cursor: pointer; color: var(--muted); overflow-wrap: anywhere; }
+.why summary .tag { color: var(--warn); font-weight: 600; }
+.why summary .more { color: var(--faint); white-space: nowrap; }
+.why-body { margin-top: 6px; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
+.why-h { margin-top: 8px; font-size: 12px; font-weight: 600; }
+.why-h:first-child { margin-top: 0; }
+.why-list { margin: 4px 0 0; padding-left: 18px; }
+.why-list li + li { margin-top: 6px; }
+.why-list .fix { color: var(--muted); }
+.why-note { margin-top: 8px; color: var(--muted); }
+.why-note:first-child { margin-top: 0; }
 .sched-table td.c-state > div + div { margin-top: 4px; }
 select {
   height: 28px; padding: 0 8px; border: 1px solid var(--control); border-radius: 6px;
@@ -409,6 +423,8 @@ const POLL_MS = 5000;
 const TOKEN_KEY = "idlemax.token";
 const ACTIVE = new Set(["leased", "running", "paused"]);
 const TERMINAL = new Set(["succeeded", "failed", "killed", "cancelled", "parked"]);
+// Jobs that wait for something: GET /v1/why explains these.
+const WAITING = new Set(["queued", "leased", "paused"]);
 
 // Token: localStorage when available, memory otherwise.
 let memToken = "";
@@ -523,7 +539,10 @@ const scopes = {
 };
 
 // State and polling.
-const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
+const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
+// Full explanations are fetched only for the rows a user opened, and re-fetched once per poll.
+const whyOpen = new Set();
+const whyDetail = new Map();
 
 async function refresh() {
   if (state.busy || !tokenStore.get()) return;
@@ -537,11 +556,14 @@ async function refresh() {
     ["quota", api("GET", "/v1/quota")],
     ["advice", api("GET", "/v1/advice")],
     ["events", api("GET", "/v1/events?limit=60")],
+    ["why", api("GET", "/v1/why")],
   ];
-  const results = await Promise.allSettled(calls.map((c) => c[1]));
+  const openIds = [...whyOpen];
+  const detailCalls = openIds.map((id) => api("GET", whyPath(id)));
+  const [results, details] = await Promise.all([Promise.allSettled(calls.map((c) => c[1])), Promise.allSettled(detailCalls)]);
   state.busy = false;
   state.allFailed = results.every((r) => r.status === "rejected");
-  if (results.some((r) => r.status === "rejected" && r.reason instanceof AuthError)) {
+  if ([...results, ...details].some((r) => r.status === "rejected" && r.reason instanceof AuthError)) {
     logout("The coordinator rejected this token. Paste the current one.");
     return;
   }
@@ -552,6 +574,7 @@ async function refresh() {
     else state.errors[key] = r.reason && r.reason.message ? r.reason.message : "request failed";
   });
   if (anyOk) state.lastOk = Date.now();
+  details.forEach((r, i) => whyDetail.set(openIds[i], r.status === "fulfilled" ? { data: r.value } : { error: r.reason && r.reason.message ? r.reason.message : "request failed" }));
   render();
 }
 
@@ -628,9 +651,10 @@ function section(key, deps, boxId, fn) {
   const box = $(boxId);
   const focusables = () => [...box.querySelectorAll("button, select, summary")];
   const focused = focusables().indexOf(document.activeElement);
-  const open = [...box.querySelectorAll("details")].map((d) => d.open);
+  // Keyed <details> (the "why" rows) are restored from whyOpen by the code that builds them.
+  const open = [...box.querySelectorAll("details:not([data-key])")].map((d) => d.open);
   fn();
-  box.querySelectorAll("details").forEach((d, i) => { d.open = Boolean(open[i]); });
+  box.querySelectorAll("details:not([data-key])").forEach((d, i) => { d.open = Boolean(open[i]); });
   if (focused >= 0) { const el = focusables()[focused]; if (el) el.focus({ preventScroll: true }); }
 }
 
@@ -647,6 +671,7 @@ function render() {
   section("advice", [state.advice, e.advice, state.showClosed], "advice", renderAdvice);
   section("quota", [state.quota, s && s.paused_accounts, e.quota], "quota", renderQuota);
   section("events", [state.events, e.events], "events", renderEvents);
+  renderWhy();
 }
 
 function renderUpdated() {
@@ -780,7 +805,8 @@ function renderJobs() {
     return h("tr", null,
       h("td", { class: "c-id num mono" }, `#${j.id}`),
       h("td", { class: "c-job" }, h("div", { class: "job-name" }, spec.name || "(unnamed)"), h("div", { class: "t2" }, detail),
-        outcome ? h("div", { class: "t2", style: j.last_error ? "color:var(--bad)" : null }, outcome) : null),
+        outcome ? h("div", { class: "t2", style: j.last_error ? "color:var(--bad)" : null }, outcome) : null,
+        WAITING.has(j.status) ? whyShell(j) : null),
       h("td", { class: "c-status" }, jobBadge(j.status), h("div", { class: "t2 num" }, `try ${j.attempts || 0}/${spec.cost === "ai" ? 1 : spec.max_attempts || "?"}`)),
       h("td", { class: "c-dev", title: j.device }, j.device || h("span", { class: "faint" }, "-")),
       h("td", { class: "c-created r nw" }, h("div", null, when(j.created_ms)), h("div", { class: "t2 num" }, ran(j))),
@@ -790,6 +816,80 @@ function renderJobs() {
   box.replaceChildren(h("div", { class: "scroll" }, h("table", { class: "jobs-table" },
     h("thead", null, h("tr", null, h("th", null, "ID"), h("th", null, "Job"), h("th", null, "Status"), h("th", null, "Device"), h("th", { class: "r" }, "Created"), h("th", { class: "r" }, h("span", { class: "faint" }, "Actions")))),
     h("tbody", null, rows))));
+}
+
+// The "why" row of a waiting job: built empty and hidden with the table, then filled in place
+// by renderWhy(), so a changing reason or countdown never rebuilds the table or loses a click.
+function whyShell(j) {
+  return h("details", { class: "why", "data-key": j.id, "data-status": j.status, hidden: true, open: whyOpen.has(j.id), ontoggle: onWhyToggle },
+    h("summary", null), h("div", { class: "why-body" }));
+}
+const whyPath = (id) => `/v1/jobs/${encodeURIComponent(id)}/why`;
+
+function onWhyToggle(e) {
+  const el = e.currentTarget;
+  const id = Number(el.dataset.key);
+  if (el.open === whyOpen.has(id)) return; // a rebuild restoring its own state
+  if (!el.open) { whyOpen.delete(id); return; }
+  whyOpen.add(id);
+  api("GET", whyPath(id)).then((data) => whyDetail.set(id, { data }), (err) => {
+    if (err instanceof AuthError) logout("The coordinator rejected this token. Paste the current one.");
+    else whyDetail.set(id, { error: err.message });
+  }).then(renderWhy);
+}
+
+const WHY_TAG = { queued: "waiting", leased: "starting", paused: "paused" };
+const WHY_QUIET = new Set(["last_seen_ms"]); // moves on every heartbeat without a visible change
+
+function renderWhy() {
+  const byJob = new Map((state.why || []).map((s) => [s.job, s]));
+  const multi = ((state.status && state.status.devices) || []).length > 1;
+  const rows = [...$("jobs").querySelectorAll("details.why")];
+  const present = new Set(rows.map((el) => Number(el.dataset.key)));
+  for (const id of [...whyOpen]) if (!present.has(id)) whyOpen.delete(id);
+  for (const id of [...whyDetail.keys()]) if (!present.has(id)) whyDetail.delete(id);
+  rows.forEach((el) => {
+    const id = Number(el.dataset.key);
+    patchWhy(el, byJob.get(id), whyDetail.get(id), multi);
+  });
+}
+
+function patchWhy(el, summary, detail, multi) {
+  const head = summary && summary.headline;
+  el.hidden = !head;
+  if (!head) { delete el.dataset.sig; return; }
+  const next = JSON.stringify([el.dataset.status, multi, summary, detail], (k, v) => (NOT_SHOWN.has(k) || WHY_QUIET.has(k) ? undefined : v));
+  if (el.dataset.sig === next) return;
+  el.dataset.sig = next;
+  const where = multi && head.device ? ` on ${head.device}` : "";
+  // replaceChildren turns null into the text "null", so only real nodes and strings go in.
+  const line = [h("span", { class: "tag" }, `${WHY_TAG[el.dataset.status] || "waiting"}${where}:`), " ", head.reason.message,
+    summary.more ? h("span", { class: "more" }, ` +${summary.more} more`) : null];
+  el.querySelector("summary").replaceChildren(...line.filter((k) => k != null));
+  el.querySelector(".why-body").replaceChildren(...whyBody(summary, detail).filter((k) => k != null));
+}
+
+function reasonList(reasons) {
+  return h("ul", { class: "why-list" }, reasons.map((r) => h("li", null, h("div", null, r.message),
+    r.fix ? h("div", { class: "fix" }, h("strong", null, "Fix: "), r.fix) : null)));
+}
+
+// Until the full explanation arrives, the body shows the headline with its fix.
+function whyBody(summary, detail) {
+  if (detail && detail.error) return [h("div", { class: "why-note" }, `Could not load the reasons: ${detail.error}`)];
+  if (!detail) {
+    return [reasonList([summary.headline.reason]), summary.more ? h("div", { class: "why-note" }, "Loading the other reasons") : null];
+  }
+  const e = detail.data;
+  const out = [];
+  if (e.reasons.length) out.push(h("div", { class: "why-h" }, "On every device"), reasonList(e.reasons));
+  for (const d of e.devices) {
+    if (d.reasons.length) out.push(h("div", { class: "why-h" }, `${d.device} (${d.online ? "online" : "offline"})`), reasonList(d.reasons));
+  }
+  const clear = e.devices.filter((d) => !d.reasons.length).map((d) => d.device);
+  if (clear.length) out.push(h("div", { class: "why-note" }, `No device-specific blocker: ${clear.join(", ")}`));
+  if (!out.length) out.push(h("div", { class: "why-note" }, e.summary));
+  return out;
 }
 
 // What a schedule is doing: its running job, when it is next due, and whether it is paused.
@@ -960,7 +1060,9 @@ function renderEvents() {
 function logout(msg) {
   tokenStore.set("");
   clearInterval(state.timer);
-  Object.assign(state, { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, errors: {}, lastOk: 0 });
+  Object.assign(state, { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, errors: {}, lastOk: 0 });
+  whyOpen.clear();
+  whyDetail.clear();
   Object.keys(sig).forEach((k) => delete sig[k]);
   $("app").hidden = true;
   $("login").hidden = false;
