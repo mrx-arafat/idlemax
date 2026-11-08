@@ -6,11 +6,11 @@ use std::io;
 
 pub use idlemax_core::job_run::Usage;
 use idlemax_core::job_run::{could_belong, job_procs, orphan_procs, JobKey, JobProcs, ProcFact};
-use idlemax_core::types::{JobId, UnixMs};
+use idlemax_core::types::UnixMs;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
 use tracing::warn;
 
-use super::launch::JOB_ID_ENV;
+use super::launch::JOB_TAG_ENV;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sig {
@@ -158,8 +158,8 @@ const ENV_SETTLE_SECS: u64 = 5;
 /// OS process table, refreshed for memory and CPU only.
 pub struct ProcTable {
     sys: System,
-    /// Job id from each process's env, read once per process: pid to (start, tag).
-    tags: HashMap<u32, (u64, Option<JobId>)>,
+    /// Attempt tag from each process's env, read once per process: pid to (start, tag).
+    tags: HashMap<u32, (u64, Option<u64>)>,
 }
 
 impl ProcTable {
@@ -274,12 +274,12 @@ impl ProcTable {
 
 // SHORTCUT: macOS hides the env of Apple-signed binaries, so a setsid daemon built from one
 // is not attributed to its job; use kqueue NOTE_TRACK or Endpoint Security if a job does that.
-/// The job id the runner put in a process's env (`IDLEMAX_JOB_ID=<id>`).
-fn job_tag(environ: &[OsString]) -> Option<JobId> {
+/// The attempt tag the runner put in a process's env (`IDLEMAX_JOB_TAG=<tag>`).
+fn job_tag(environ: &[OsString]) -> Option<u64> {
     environ.iter().find_map(|entry| {
         let value = entry
             .to_str()?
-            .strip_prefix(JOB_ID_ENV)?
+            .strip_prefix(JOB_TAG_ENV)?
             .strip_prefix('=')?;
         value.parse().ok()
     })

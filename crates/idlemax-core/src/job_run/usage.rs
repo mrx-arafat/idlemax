@@ -32,8 +32,8 @@ pub struct ProcFact {
     pub pgid: Option<u32>,
     /// Whole seconds since the epoch.
     pub start_secs: u64,
-    /// The job id in the process's `IDLEMAX_JOB_ID` env, when readable.
-    pub tag: Option<JobId>,
+    /// The attempt tag in the process's `IDLEMAX_JOB_TAG` env, when readable.
+    pub tag: Option<u64>,
     pub rss_bytes: u64,
     pub cpu_pct: f64,
 }
@@ -44,6 +44,8 @@ pub struct JobKey {
     pub id: JobId,
     pub root: u32,
     pub started_ms: UnixMs,
+    /// Random per attempt. Job ids repeat across agents on one host; this does not.
+    pub tag: u64,
 }
 
 /// A job's processes: summed usage, and the members a group signal cannot reach.
@@ -110,7 +112,7 @@ fn members(job: &JobKey, procs: &[ProcFact], by_group: bool) -> JobProcs {
 
 fn is_seed(job: &JobKey, p: &ProcFact, by_group: bool) -> bool {
     (by_group && (p.pid == job.root || p.pgid == Some(job.root)))
-        || (p.tag == Some(job.id) && could_belong(p.start_secs, job.started_ms))
+        || (p.tag == Some(job.tag) && could_belong(p.start_secs, job.started_ms))
 }
 
 /// How long to wait before the next memory check. Each job is `(rss_bytes, cap_mb)`;
@@ -137,6 +139,7 @@ mod tests {
         id: 7,
         root: 100,
         started_ms: 1_000_000,
+        tag: 0x7a6,
     };
     const STARTED_SECS: u64 = 1_000;
 
@@ -151,8 +154,8 @@ mod tests {
         }
     }
 
-    fn tagged(mut p: ProcFact, job: JobId, start_secs: u64) -> ProcFact {
-        p.tag = Some(job);
+    fn tagged(mut p: ProcFact, tag: u64, start_secs: u64) -> ProcFact {
+        p.tag = Some(tag);
         p.start_secs = start_secs;
         p
     }
@@ -167,11 +170,12 @@ mod tests {
             // Child that moved to its own group, parent still alive.
             fact(103, 100, 103, 8),
             // setsid daemon: own group, reparented, found by its env tag.
-            tagged(fact(104, 1, 104, 16), 7, STARTED_SECS),
+            tagged(fact(104, 1, 104, 16), JOB.tag, STARTED_SECS),
             fact(105, 104, 105, 32),
-            // Not ours: another job's tag, a tag from before this job started, no tag.
-            tagged(fact(106, 1, 106, 1 << 20), 8, STARTED_SECS),
-            tagged(fact(107, 1, 107, 1 << 20), 7, STARTED_SECS - 10),
+            // Not ours: another attempt's tag (even of a job with the same id), a tag from
+            // before this job started, no tag.
+            tagged(fact(106, 1, 106, 1 << 20), JOB.tag + 1, STARTED_SECS),
+            tagged(fact(107, 1, 107, 1 << 20), JOB.tag, STARTED_SECS - 10),
             fact(108, 1, 108, 1 << 20),
         ];
         let found = job_procs(&JOB, &procs).unwrap();
@@ -186,7 +190,7 @@ mod tests {
     fn orphan_procs_trust_the_group_only_while_the_root_is_the_same_process() {
         let procs = [
             fact(102, 1, 100, 4),
-            tagged(fact(104, 1, 104, 16), 7, STARTED_SECS),
+            tagged(fact(104, 1, 104, 16), JOB.tag, STARTED_SECS),
             fact(108, 1, 108, 1 << 20),
         ];
         // Root died and its pid may be reused: only the tagged daemon is ours.

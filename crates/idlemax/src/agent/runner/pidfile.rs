@@ -21,6 +21,9 @@ use super::os::{self, ProcTable, Sig};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Saved {
     pub job: Job,
+    /// The attempt tag in the env of the job's processes; 0 in a file an older agent wrote.
+    #[serde(default)]
+    pub tag: u64,
     pub log_offset: u64,
     pub wrapper: String,
     pub memory_cap_mib: Option<u64>,
@@ -147,6 +150,7 @@ fn reap_one(
         id,
         root: pid,
         started_ms,
+        tag: record.saved.as_ref().map_or(0, |s| s.tag),
     };
     let left = procs.orphans(&job, root_same).outside_group;
     let killed = if root_same {

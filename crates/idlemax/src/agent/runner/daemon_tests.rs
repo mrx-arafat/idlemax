@@ -12,17 +12,18 @@ use idlemax_core::Paths;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 use super::os;
-use super::tests::{is_cap_kill, wait_until, STARVED};
+use super::tests::{is_cap_kill, wait_ended, wait_until, STARVED};
 use super::Runner;
 
 const ROLE: &str = "IDLEMAX_TEST_ROLE";
 const HOG_PID_FILE: &str = "IDLEMAX_TEST_HOG_PID_FILE";
 const NEW_GROUP: &str = "IDLEMAX_TEST_NEW_GROUP";
 const HOG_MIB: usize = 96;
-/// Each test has its own job id, and no other runner test uses these: a live runner adopts
-/// (and a restart reaps) every process tagged with its job id, whoever started it.
+/// Distinct job ids keep each test's logs and pid files apart. Processes are found by a
+/// random per-attempt tag, so ids never decide who owns a process.
 const CAP_JOB: i64 = 51;
 const RESTART_JOB: i64 = 52;
+const SHARED_ID: i64 = 53;
 
 /// Not a test by itself: the roles below re-run this binary and land here.
 #[test]
@@ -36,6 +37,8 @@ fn role_entry() {
             spawn("helper", false);
             std::thread::sleep(Duration::from_secs(60));
         }
+        // A job that just stays alive.
+        "idle" => std::thread::sleep(Duration::from_secs(60)),
         // The helper starts the hog and exits, so the hog is reparented to init.
         "helper" => spawn("hog", std::env::var(NEW_GROUP).is_ok()),
         _ => {
@@ -188,7 +191,12 @@ fn a_daemonized_hog_counts_against_the_cap_and_is_killed_with_the_job() {
         assert_eq!(update.status, JobStatus::Killed, "{update:?}");
         assert!(is_cap_kill(&error, 64), "{error}");
 
-        let hog = read_pid(&pid_file).expect("the hog wrote its pid before it was capped");
+        let hog = read_pid(&pid_file).unwrap_or_else(|| {
+            panic!(
+                "no hog pid after the cap kill: {error}; pid file {:?}; (ms, runner MiB, hog pid, hog MiB): {trace:?}",
+                std::fs::read_to_string(&pid_file)
+            )
+        });
         assert!(
             gone(hog),
             "new_group={new_group}: hog {hog} outlived the job"
@@ -245,4 +253,35 @@ fn a_restarted_agent_kills_daemonized_members_of_orphaned_jobs() {
         );
         assert_eq!(errors, if root_alive { vec![killed] } else { vec![] });
     }
+}
+
+/// Job ids are only unique per coordinator, so two agents (or two test runs) on one host can run
+/// jobs with the same id. One runner must never measure or signal the other's processes.
+#[test]
+fn a_runner_leaves_the_processes_of_another_agents_job_with_the_same_id_alone() {
+    let exe = std::env::current_exe()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let env = [(ROLE, "idle".to_string())];
+    let (home_a, home_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let mut a = runner(home_a.path(), &exe);
+    a.start(&job(SHARED_ID, &exe, home_a.path(), &env, 4096))
+        .unwrap();
+    let a_root = a.running()[0].pid.unwrap();
+    let mut b = runner(home_b.path(), &exe);
+    b.start(&job(SHARED_ID, &exe, home_b.path(), &env, 4096))
+        .unwrap();
+
+    // B measures its job, so it has looked at every process on the host, then stops it.
+    wait_until("B to measure its job", STARVED, || {
+        b.poll();
+        b.running()[0].rss_bytes.is_some()
+    });
+    b.kill(SHARED_ID).unwrap();
+    wait_ended(&mut b, STARVED);
+
+    assert!(os::alive(a_root), "B signalled A's job {a_root}");
+    a.kill(SHARED_ID).unwrap();
+    wait_ended(&mut a, STARVED);
 }

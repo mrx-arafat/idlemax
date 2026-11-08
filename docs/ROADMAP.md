@@ -90,8 +90,9 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
 
 - **Why:** The RSS cap walks the parent tree, so a child that reparents escapes the memory sum (SHORTCUT in `agent/runner/os.rs`).
   On macOS this poll-based check is the only real cap, because `taskpolicy -m` is a soft limit there.
-- **How:** Land the local work: a process belongs to a job if it is the root, in the root's process group, carries the job's `IDLEMAX_JOB_ID` environment tag, or descends from one of those, and members outside the group are signalled by pid.
+- **How:** Land the local work: a process belongs to a job if it is the root, in the root's process group, carries the random `IDLEMAX_JOB_TAG` of this attempt in its environment, or descends from one of those, and members outside the group are signalled by pid.
   The poll runs every second while a job is at half its cap or not yet measured.
+  The tag is random per attempt and kept in the pid file, because job ids repeat across agents on one host: matching by id alone let one agent measure and kill another's job.
   The daemon test failed under load because macOS compresses or swaps idle pages out of the resident size, which the runner measured correctly; the test hog now holds random data and touches every page.
   `pidfile::reap_orphans` kills members outside the group after an agent restart, trusting the recorded group only while the root's start time still matches.
   A kill that finds only unreaped zombies in the group is not an error on macOS, where `kill` and `killpg` answer `EPERM` there.

@@ -80,7 +80,7 @@ pub(super) fn wait_until(what: &str, within: Duration, mut cond: impl FnMut() ->
     }
 }
 
-fn wait_ended(r: &mut Runner, within: Duration) -> JobUpdate {
+pub(super) fn wait_ended(r: &mut Runner, within: Duration) -> JobUpdate {
     let deadline = Instant::now() + within;
     loop {
         if let Some(update) = r.poll().into_iter().next() {

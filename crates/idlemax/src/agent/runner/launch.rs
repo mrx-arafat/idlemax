@@ -15,6 +15,9 @@ use super::{pidfile, wrapper, RunnerError};
 
 /// Env var every job gets with its own id.
 pub const JOB_ID_ENV: &str = "IDLEMAX_JOB_ID";
+/// Env var every job gets with the random tag of this attempt: the agent finds the job's
+/// processes by it, so it must not be shared with another agent's job of the same id.
+pub const JOB_TAG_ENV: &str = "IDLEMAX_JOB_TAG";
 
 pub struct Launched {
     pub child: Child,
@@ -30,6 +33,7 @@ pub fn launch(
     supervisor: Option<&[String]>,
     job: &Job,
     started_ms: UnixMs,
+    tag: u64,
 ) -> Result<Launched, RunnerError> {
     let spec = &job.spec;
     let (program, args) = spec
@@ -50,6 +54,7 @@ pub fn launch(
         .envs(&spec.env)
         .env_remove(TOKEN_ENV)
         .env(JOB_ID_ENV, job.id.to_string())
+        .env(JOB_TAG_ENV, tag.to_string())
         .stdin(
             spec.stdin
                 .as_ref()

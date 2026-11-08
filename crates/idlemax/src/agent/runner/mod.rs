@@ -33,6 +33,16 @@ use os::{ProcTable, Sig, Usage};
 use pidfile::Saved;
 use stop::{enforce, stop, Stop};
 
+/// A random tag for one attempt. Processes used to be found by job id alone, but ids repeat
+/// across agents (and test runs) on one host, so one agent adopted and killed another's job.
+/// Never 0, which stands for "no tag" in a pid file an older agent wrote.
+fn new_tag(id: JobId, started_ms: UnixMs) -> u64 {
+    use std::hash::BuildHasher;
+    std::collections::hash_map::RandomState::new()
+        .hash_one((id, started_ms, std::process::id()))
+        .max(1)
+}
+
 /// Minimum gap between process table refreshes, however often `poll` runs.
 const USAGE_REFRESH_MS: i64 = 1_000;
 
@@ -96,6 +106,8 @@ pub struct Runner {
 
 struct Slot {
     job: Job,
+    /// Random per attempt; in the env of every process the job starts.
+    tag: u64,
     child: Child,
     pid: u32,
     clock: RunClock,
@@ -154,9 +166,12 @@ impl Runner {
         // An exit record left by an earlier attempt must not pass for this one's.
         pidfile::clear_marker(&self.paths, job.id);
         let supervisor = self.supervisor.as_deref();
-        let launched = launch::launch(&self.paths, &self.wrapper, supervisor, job, started_ms)?;
+        let tag = new_tag(job.id, started_ms);
+        let launched =
+            launch::launch(&self.paths, &self.wrapper, supervisor, job, started_ms, tag)?;
         let saved = Saved {
             job: job.clone(),
+            tag,
             log_offset: launched.log_offset,
             wrapper: self.wrapper.name().to_string(),
             memory_cap_mib: self.memory_cap_mib(job),
@@ -167,6 +182,7 @@ impl Runner {
         info!(job = job.id, pid = launched.pid, "job started");
         let slot = Slot {
             job: job.clone(),
+            tag,
             child: launched.child,
             pid: launched.pid,
             clock: RunClock::start(started_ms, awake_ms),
@@ -363,6 +379,7 @@ impl Slot {
             id: self.job.id,
             root: self.pid,
             started_ms: self.clock.started_ms(),
+            tag: self.tag,
         }
     }
 
