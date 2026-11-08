@@ -115,7 +115,29 @@ The reply's `assign` holds newly leased jobs to start now.
 A lease lasts `coordinator.lease_secs` (default 120 s) and is renewed by every heartbeat that reports the job in `running`.
 An expired lease re-queues the job with `not_before_ms` backoff; after `max_attempts` it is `parked`.
 AI jobs (`cost = "ai"`) get one attempt and never retry automatically.
+See [Retries](#retries) for which endings are retried.
 A device is offline after `coordinator.offline_after_secs` (default 90 s) without a heartbeat.
+
+### Retries
+
+A job's own result is final.
+A non-zero exit, a death by signal or the OS killing it ends the job `failed`.
+A kill for its `mem_mb` cap or `max_runtime_secs`, an owner stop (local `stop_all`) and a coordinator `stop_all` end it `killed`, and a cancel ends it `cancelled`.
+None of these is retried, whatever `max_attempts` says: running a deterministic failure again would waste the spare capacity idlemax exists to use.
+
+Only a cause that is not the job's fault puts it back in the queue, with a backoff of 2, 4, 8 minutes and so on, capped at 1 hour:
+
+| Cause | Sent as |
+|---|---|
+| lease lost or expired (agent gone, device offline, coordinator restart) | the sweep re-queues it |
+| the guard killed it because the user came back or the machine came under pressure | `killed` with `retryable` |
+| the agent was shutting down | `killed` with `retryable` |
+| the agent could not start the process | `failed` with `retryable` |
+| the agent restarted and reaped the orphan of the previous run | `killed` with `retryable` |
+
+Each of these counts one attempt, and after `max_attempts` (default 3) the job is `parked` for a human.
+`attempts` counts leases.
+AI jobs are never retried: such a cause parks them at once, and their own failures end `failed`.
 
 ### Job updates
 
@@ -126,14 +148,15 @@ The agent posts a `JobUpdate` on every status change of a leased job:
 | `running` | agent | after a successful start or resume |
 | `paused` | agent | after a pause |
 | `queued` | agent | lease return: it could not start an assigned job (guard, kill switch, local pause, slots or RAM budget, already running); `error` says why |
-| `failed` | agent | the runner could not start the job |
+| `failed` | agent | the agent could not start the job (`retryable`) |
 | `succeeded`, `failed`, `killed` | runner via agent | the process ended, including cap and max-runtime kills |
 
 A `queued` update gives the lease back: the coordinator re-queues the job without counting an attempt.
 Terminal updates carry `exit_code`, `output_path` (inbox file on the device) and `output_tail` (last 64 KiB of the attempt's log).
 `rate_limited = true` means an AI job hit a usage limit or HTTP 429; that account is blocked for the rest of its window.
 `owner_stop = true` marks a `killed` update caused by the owner's local `stop_all`.
-An owner stop (coordinator or local `stop_all`) is final: the job ends `killed` and is not retried, while a guard kill is re-queued like any failed attempt.
+`retryable = true` marks an attempt that ended for a reason that is not the job's fault: a guard kill, an agent shutting down, an agent that could not start the job, or an orphan reaped after an agent restart.
+Every other `failed` or `killed` update is final, including one from an agent that predates the field.
 An update never moves a terminal job out of its terminal status, and an update from a device that does not hold the lease is ignored.
 The one exception is a late result: if the agent was away past the lease, the sweep put the job back in the queue (or parked it), and the agent then delivers the terminal update of that attempt, the coordinator applies it as if it had arrived in time.
 That needs `attempt`, the lease count of the attempt the update belongs to (`Job.attempts` when it was leased), to equal the stored job's `attempts` while the job has no device.
@@ -163,7 +186,7 @@ The device-side verdicts (guard, running jobs, slot and RAM budget) are as of th
 ```json
 {"job": 7, "name": "nightly-make", "status": "queued", "state": "blocked",
  "summary": "Job 7 (nightly-make) is queued but not starting.",
- "reasons": [{"kind": "backoff", "message": "waiting out the retry delay: attempt 2 of 3 starts in 1m 10s (last error: exit code 1)",
+ "reasons": [{"kind": "backoff", "message": "waiting out the retry delay: attempt 2 of 3 starts in 1m 10s (last error: lease expired on my-laptop)",
               "fix": null, "until_ms": 1730000070000}],
  "devices": [{"device": "my-laptop", "online": true, "last_seen_ms": 1730000000000, "ready": false,
               "reasons": [{"kind": "guard", "message": "on battery (guard pause)",
