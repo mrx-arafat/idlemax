@@ -18,7 +18,7 @@ use serde::Deserialize;
 use super::agents::log_transition;
 use super::http::{ApiFailure, JsonBody};
 use super::{offline_after_ms, page_limit, AppState};
-use crate::coord::store::{Store, StoreError};
+use crate::coord::store::{Added, Store, StoreError};
 use crate::state::now_ms;
 
 /// Quota inputs older than the longest window (a week) cannot matter.
@@ -75,16 +75,21 @@ pub async fn get_one(
     Ok(Json(operator_job(job)))
 }
 
-/// `POST /v1/jobs`: 201 with the queued job.
+/// `POST /v1/jobs`: 201 with the queued job, or 200 with the unfinished job that already
+/// holds the spec's `key`.
 pub async fn add(
     State(app): State<AppState>,
     JsonBody(spec): JsonBody<JobSpec>,
 ) -> Result<(StatusCode, Json<Job>), ApiFailure> {
     let now = now_ms();
-    let job = app
-        .with_store(move |store, cfg| add_job(store, cfg, &spec, now))
+    let added = app
+        .with_store(move |store, cfg| add_job_once(store, cfg, &spec, now))
         .await?;
-    Ok((StatusCode::CREATED, Json(operator_job(job))))
+    let status = match added {
+        Added::New(_) => StatusCode::CREATED,
+        Added::Existing(_) => StatusCode::OK,
+    };
+    Ok((status, Json(operator_job(added.into_job()))))
 }
 
 /// `POST /v1/jobs/{id}/cancel`: the job as stored after cancelling.
@@ -156,11 +161,23 @@ pub(super) fn add_job(
     spec: &JobSpec,
     now: UnixMs,
 ) -> Result<Job, ApiFailure> {
+    Ok(add_job_once(store, cfg, spec, now)?.into_job())
+}
+
+/// Queues the spec unless its key already names an unfinished job (then nothing changes).
+fn add_job_once(
+    store: &mut Store,
+    cfg: &Config,
+    spec: &JobSpec,
+    now: UnixMs,
+) -> Result<Added, ApiFailure> {
     admit_job(spec, &cfg.quota)?;
-    let job = store.insert_job(spec, now)?;
-    let msg = format!("{} queued (priority {})", job.spec.name, job.spec.priority);
-    store.append_event(EventKind::JobQueued, None, Some(job.id), &msg, now)?;
-    Ok(job)
+    let added = store.insert_job_once(spec, now)?;
+    if let Added::New(job) = &added {
+        let msg = format!("{} queued (priority {})", job.spec.name, job.spec.priority);
+        store.append_event(EventKind::JobQueued, None, Some(job.id), &msg, now)?;
+    }
+    Ok(added)
 }
 
 /// Persists the pause flag and changed job rows atomically.

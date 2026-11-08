@@ -118,6 +118,40 @@ async fn stdin_is_private_in_operator_responses_but_reaches_the_agent() {
 }
 
 #[tokio::test]
+async fn adding_the_same_key_twice_queues_one_job() {
+    let api = Api::start().await;
+    let spec = |key: &str| JobSpec {
+        name: "tests".into(),
+        key: Some(key.into()),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+
+    let first = api.post("/v1/jobs", &spec("pr-7")).await;
+    assert_eq!(first.status(), StatusCode::CREATED);
+    let first: Job = first.json().await.unwrap();
+    let again = api.post("/v1/jobs", &spec("pr-7")).await;
+    assert_eq!(again.status(), StatusCode::OK);
+    assert_eq!(again.json::<Job>().await.unwrap().id, first.id);
+
+    let other = api.post("/v1/jobs", &spec("pr-8")).await;
+    assert_eq!(other.status(), StatusCode::CREATED);
+    let blank = api.post("/v1/jobs", &spec("  ")).await;
+    assert_eq!(blank.status(), StatusCode::BAD_REQUEST);
+    let listed: Vec<Job> = api
+        .http
+        .get(format!("{}/v1/jobs", api.base))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 2);
+}
+
+#[tokio::test]
 async fn bearer_token_is_required_and_stop_all_kills_on_the_next_heartbeat() {
     let api = Api::start().await;
     let anon = |path: &str| api.http.get(format!("{}{path}", api.base)).send();

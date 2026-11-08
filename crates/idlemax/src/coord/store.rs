@@ -15,6 +15,7 @@ mod schema;
 mod tests;
 mod updates;
 
+pub use jobs::Added;
 pub use updates::{NewEvent, UpdateWrites};
 
 use std::path::{Path, PathBuf};

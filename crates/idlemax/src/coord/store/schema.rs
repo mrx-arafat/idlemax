@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -148,4 +148,11 @@ CREATE TABLE schedules (
   last_fired_ms INTEGER,
   last_job_id INTEGER
 ) STRICT;
+"#;
+
+/// Idempotency key of the job spec (`JobSpec.key`), so a retried add finds its unfinished job.
+/// Older rows have none.
+const V6: &str = r#"
+ALTER TABLE jobs ADD COLUMN key TEXT;
+CREATE INDEX jobs_by_key ON jobs(key, status) WHERE key IS NOT NULL;
 "#;

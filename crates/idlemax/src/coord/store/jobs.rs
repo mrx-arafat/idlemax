@@ -12,11 +12,46 @@ const JOB_COLUMNS: &str = "id, spec, status, device, attempts, created_ms, start
     finished_ms, lease_expires_ms, not_before_ms, exit_code, last_error, output_path";
 
 const ACTIVE: &str = "('leased', 'running', 'paused')";
+/// Statuses that are not terminal; a test pins this list to `JobStatus::is_terminal`.
+pub(super) const LIVE: &str = "('queued', 'leased', 'running', 'paused')";
+
+/// What `insert_job_once` did.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Added {
+    /// The spec was queued as a new job.
+    New(Job),
+    /// A job with the spec's key had not finished, so nothing was queued.
+    Existing(Job),
+}
+
+impl Added {
+    pub fn into_job(self) -> Job {
+        match self {
+            Added::New(job) | Added::Existing(job) => job,
+        }
+    }
+}
 
 impl Store {
-    /// Queues a validated spec.
+    /// Queues a validated spec without looking at its key; production code uses
+    /// `insert_job_once`.
+    #[cfg(test)]
     pub fn insert_job(&mut self, spec: &JobSpec, now: UnixMs) -> StoreResult<Job> {
         insert_job(&self.conn, spec, now)
+    }
+
+    /// Queues a validated spec unless its key already names an unfinished job, in which
+    /// case that job is returned. Check and insert share one transaction.
+    pub fn insert_job_once(&mut self, spec: &JobSpec, now: UnixMs) -> StoreResult<Added> {
+        let tx = self.conn.transaction()?;
+        if let Some(key) = &spec.key {
+            if let Some(job) = unfinished_with_key(&tx, key)? {
+                return Ok(Added::Existing(job));
+            }
+        }
+        let job = insert_job(&tx, spec, now)?;
+        tx.commit()?;
+        Ok(Added::New(job))
     }
 
     pub fn get_job(&self, id: JobId) -> StoreResult<Option<Job>> {
@@ -205,14 +240,15 @@ fn job_from_row(r: &Row<'_>) -> rusqlite::Result<Job> {
 pub(super) fn insert_job(conn: &Connection, spec: &JobSpec, now: UnixMs) -> StoreResult<Job> {
     spec.validate().map_err(StoreError::InvalidSpec)?;
     conn.execute(
-        "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms)
-             VALUES (?1, ?2, 'queued', ?3, ?4, ?5)",
+        "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key)
+             VALUES (?1, ?2, 'queued', ?3, ?4, ?5, ?6)",
         params![
             json_text(spec)?,
             spec.name,
             spec.priority,
             spec.ai_account,
-            now
+            now,
+            spec.key
         ],
     )?;
     let id = conn.last_insert_rowid();
@@ -222,4 +258,12 @@ pub(super) fn insert_job(conn: &Connection, spec: &JobSpec, now: UnixMs) -> Stor
 pub(super) fn get_job(conn: &Connection, id: JobId) -> StoreResult<Option<Job>> {
     let sql = format!("SELECT {JOB_COLUMNS} FROM jobs WHERE id = ?1");
     Ok(conn.query_row(&sql, [id], job_from_row).optional()?)
+}
+
+/// The oldest job with `key` that has not finished.
+fn unfinished_with_key(conn: &Connection, key: &str) -> StoreResult<Option<Job>> {
+    let sql = format!(
+        "SELECT {JOB_COLUMNS} FROM jobs WHERE key = ?1 AND status IN {LIVE} ORDER BY id LIMIT 1"
+    );
+    Ok(conn.query_row(&sql, [key], job_from_row).optional()?)
 }
