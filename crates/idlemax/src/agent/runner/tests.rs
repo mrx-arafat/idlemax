@@ -13,6 +13,12 @@ use super::Runner;
 
 #[test]
 fn sleeping_past_runtime_survives_until_awake_limit() {
+    for exit_before_poll in [false, true] {
+        sleeping_runtime_case(exit_before_poll);
+    }
+}
+
+fn sleeping_runtime_case(exit_before_poll: bool) {
     let home = tempfile::tempdir().unwrap();
     let mut r = runner(home.path(), &["sh"]);
     let mut task = job(9, &["sh", "-c", "while :; do sleep 1; done"], 64);
@@ -21,19 +27,63 @@ fn sleeping_past_runtime_survives_until_awake_limit() {
     r.start_at(&task, wall, 0).unwrap();
     // Inject a clock with one hour of sleep and just one second awake.
     let wall_slept = wall + 3_600_000;
-    r.poll_at(wall_slept, 1_000);
-    assert!(r.slots[&9].stop.is_none(), "sleep consumed the runtime cap");
-    r.poll_at(wall_slept + 9_001, 10_001);
-    assert!(matches!(
-        r.slots[&9].stop.as_ref().map(|s| &s.reason),
-        Some(idlemax_core::job_run::StopReason::MaxRuntime { limit_secs: 10 })
-    ));
-    let update = wait_ended(&mut r, STARVED);
+    let first = r.poll_at(wall_slept, 1_000);
+    assert!(
+        r.slots.get(&9).is_some_and(|s| s.stop.is_none()),
+        "sleep consumed the runtime cap: {}; updates={first:?}",
+        runtime_diagnostic(&mut r, 9, 1_000)
+    );
+    if exit_before_poll {
+        // Force the same valid stop/reap ordering that a scheduler preemption can
+        // create between poll_at's enforcement and its subsequent exit check.
+        super::stop::enforce(r.slots.get_mut(&9).unwrap(), 10_001);
+        assert!(
+            r.slots[&9].stop.is_some(),
+            "could not arrange runtime stop: {}",
+            runtime_diagnostic(&mut r, 9, 10_001)
+        );
+        wait_until("the runtime-stopped child to exit", STARVED, || {
+            r.slots
+                .get_mut(&9)
+                .unwrap()
+                .child
+                .try_wait()
+                .unwrap()
+                .is_some()
+        });
+    }
+    let child_before_poll = r.slots.get_mut(&9).map(|s| s.child.try_wait());
+    let ended = r.poll_at(wall_slept + 9_001, 10_001);
+    let update = match ended.into_iter().next() {
+        Some(update) => update,
+        None => {
+            assert!(matches!(
+                r.slots.get(&9).and_then(|s| s.stop.as_ref()).map(|s| &s.reason),
+                Some(idlemax_core::job_run::StopReason::MaxRuntime { limit_secs: 10 })
+            ), "awake limit did not record MaxRuntime: {}; child_before_poll={child_before_poll:?}", runtime_diagnostic(&mut r, 9, 10_001));
+            wait_ended(&mut r, STARVED)
+        }
+    };
+    assert_eq!(update.id, 9);
     assert_eq!(update.status, JobStatus::Killed);
     assert_eq!(
         update.error.as_deref(),
         Some("max runtime of 10 s exceeded")
     );
+}
+
+fn runtime_diagnostic(r: &mut Runner, id: i64, awake_ms: i64) -> String {
+    let slot = r.slots.get_mut(&id).map(|s| {
+        format!(
+            "stop={:?}, child={:?}, active_ms={}, usage={:?}",
+            s.stop.as_ref().map(|stop| &stop.reason),
+            s.child.try_wait(),
+            s.clock.active_ms(awake_ms),
+            s.usage
+        )
+    });
+    let log = std::fs::read_to_string(r.paths.job_log_file(id));
+    format!("slot={slot:?}, log={log:?}")
 }
 
 #[test]
