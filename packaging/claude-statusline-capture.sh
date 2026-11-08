@@ -16,12 +16,19 @@ input=${input%x}
 home=${IDLEMAX_HOME-${HOME:-}/.idlemax}
 dir="$home/agent"
 if [ -n "${IDLEMAX_HOME-x}" ] && [ -d "$dir" ]; then
-  tmp="$dir/.claude-statusline.$$"
-  if printf '%s' "$input" >"$tmp" 2>/dev/null; then
-    mv -f "$tmp" "$dir/claude-statusline.json" 2>/dev/null || rm -f "$tmp"
-  else
-    rm -f "$tmp"
-  fi
+  # The capture holds the session's paths and cost: owner-only, and never written through a
+  # file or link that already sits at the temp name. A subshell keeps both settings away from
+  # the statusline command below.
+  (
+    umask 077
+    set -C
+    tmp="$dir/.claude-statusline.$$"
+    if printf '%s' "$input" >"$tmp" 2>/dev/null; then
+      mv -f "$tmp" "$dir/claude-statusline.json" 2>/dev/null || rm -f "$tmp"
+    else
+      rm -f "$tmp"
+    fi
+  )
 fi
 
 if [ "$#" -gt 0 ]; then

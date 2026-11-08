@@ -82,6 +82,37 @@ fn read_claude_statusline_missing_file_errors() {
     assert!(err.is_not_found());
 }
 
+/// The capture holds the session's paths and cost, so it is private whatever umask Claude Code
+/// runs the statusline under.
+#[cfg(unix)]
+#[test]
+fn the_statusline_capture_file_is_private_under_a_permissive_umask() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("state");
+    fs::create_dir_all(state_dir.join("agent")).unwrap();
+
+    let mut child = Command::new("sh")
+        .args(["-c", "umask 022 && exec \"$0\" cat"])
+        .arg(capture_script_path())
+        .env("IDLEMAX_HOME", &state_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"{\"cwd\": \"/p\"}\n")
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+
+    let capture = state_dir.join("agent/claude-statusline.json");
+    let mode = fs::metadata(&capture).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "capture file mode");
+}
+
 #[test]
 fn claude_statusline_capture_wrapper_proves_transparent_and_fast() {
     let script = capture_script_path();
