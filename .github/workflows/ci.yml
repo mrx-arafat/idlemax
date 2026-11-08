@@ -1,18 +1,21 @@
 name: CI
 
+# Docs-only changes skip CI; the generated skill is checked by CI, so it still runs.
 on:
   push:
     branches: [main]
+    paths: ["**", "!**/*.md", "!docs/**", "!LICENSE", "skills/**"]
   pull_request:
     branches: [main]
+    paths: ["**", "!**/*.md", "!docs/**", "!LICENSE", "skills/**"]
 
 permissions:
   contents: read
 
-# Superseded pull request runs are cancelled; every commit on main keeps its own result.
+# A newer push cancels the run it supersedes, on main too, so a burst of pushes costs one run.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always

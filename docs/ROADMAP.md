@@ -9,7 +9,7 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
 
 ## Status after the second round (2026-11-08)
 
-CI runs fmt, clippy and the full test suite on macOS and Linux for every push to `main`.
+CI runs fmt, clippy and the full test suite on macOS and Linux for every push to `main` that changes more than docs.
 The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 1).
 
 ### Roadmap items landed

@@ -87,7 +87,8 @@ Open pull requests against `main` and fill in the template, including how you te
 
 ## CI and releases
 
-CI (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request that targets it:
+CI (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request that targets it, except when only Markdown files, `docs/` or `LICENSE` change (the generated skill under `skills/` still runs it).
+A newer push cancels the run it supersedes, so push finished work in batches rather than one commit at a time:
 
 - `cargo fmt --all --check`;
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` on macOS and Ubuntu;
