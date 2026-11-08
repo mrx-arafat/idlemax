@@ -86,6 +86,33 @@ impl ApiClient {
         self.get("/v1/status").await
     }
 
+    /// GET /healthz, the one route that needs no token: the server is listening.
+    pub async fn healthz(&self) -> Result<()> {
+        let path = "/healthz";
+        let resp = self
+            .http
+            .get(self.url(path))
+            .send()
+            .await
+            .map_err(|source| ClientError::Unreachable {
+                url: self.url(path),
+                source,
+            })?;
+        let status = resp.status();
+        let body = resp.bytes().await.map_err(|source| ClientError::Body {
+            path: path.to_string(),
+            source,
+        })?;
+        if status.is_success() {
+            return Ok(());
+        }
+        Err(ClientError::Api {
+            status: status.as_u16(),
+            path: path.to_string(),
+            message: error_message(&body),
+        })
+    }
+
     pub async fn jobs(&self, status: Option<JobStatus>, limit: u32) -> Result<Vec<Job>> {
         self.get(&jobs_path(status, limit)).await
     }

@@ -1,5 +1,6 @@
 //! Delivery: plain-text rendering of API responses for the CLI.
 
+use idlemax_core::doctor::Report;
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::quota::QuotaView;
 use idlemax_core::types::{ControlScope, Event, Job, Recommendation, UnixMs};
@@ -122,6 +123,47 @@ pub fn events(list: &[Event]) -> String {
     }
     let rows: Vec<_> = list.iter().map(rows::event_cells).collect();
     table(&rows::EVENT_HEADER, &rows)
+}
+
+/// One line per check, an indented fix line under each warn or fail, then a summary.
+pub fn doctor(r: &Report) -> String {
+    let width = r
+        .checks
+        .iter()
+        .map(|c| c.id.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max("service".len());
+    let mut out = format!("idlemax {} doctor\n", r.version);
+    for check in &r.checks {
+        out.push_str(&format!(
+            "{:<4}  {:<width$}  {}\n",
+            check.level.word(),
+            check.id,
+            check.detail,
+            width = width
+        ));
+        if let Some(fix) = &check.fix {
+            out.push_str(&format!(
+                "      {:<width$}  fix: {}\n",
+                "",
+                fix,
+                width = width
+            ));
+        }
+    }
+    out.push_str(&format!(
+        "\n{} checks: {} ok, {} warn, {} fail",
+        r.checks.len(),
+        r.counts.ok,
+        r.counts.warn,
+        r.counts.fail
+    ));
+    out.push_str(match r.healthy {
+        true => "\nall checks passed",
+        false => "\nfix the failing checks above, then run `idlemax doctor` again",
+    });
+    out
 }
 
 pub fn local_status(s: &LocalStatus, now_ms: UnixMs) -> String {

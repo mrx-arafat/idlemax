@@ -109,6 +109,8 @@ enum Cmd {
     Statusline(statusline::StatuslineArgs),
     /// Interactive dashboard
     Tui,
+    /// Check this device's setup; prints one line per check and the fix for anything wrong
+    Doctor,
     /// Talk to this device's agent directly; works while the coordinator is down
     #[command(subcommand)]
     Local(LocalCmd),
@@ -217,6 +219,10 @@ impl Target {
 
 pub async fn run() -> Result<()> {
     let Cli { coord, json, cmd } = Cli::parse();
+    // Doctor reports a broken state dir or config instead of failing on it.
+    if let Cmd::Doctor = &cmd {
+        return run_doctor(coord, json).await;
+    }
     let paths = state::paths_from_env()?;
     let cmd = match cmd {
         Cmd::Init(args) => return run_init(&paths, args),
@@ -261,6 +267,16 @@ pub async fn run() -> Result<()> {
             run_coord(cmd, &client, json).await
         }
     }
+}
+
+/// Prints the report, then exits 1 when a check failed so scripts and CI see it.
+async fn run_doctor(coord: Option<String>, json: bool) -> Result<()> {
+    let report = crate::doctor::run(coord).await;
+    out(json, &report, print::doctor);
+    if !report.healthy {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 fn run_init(paths: &Paths, args: InitArgs) -> Result<()> {
@@ -364,7 +380,8 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
         | Cmd::Service(_)
         | Cmd::Statusline(_)
         | Cmd::Logs { .. }
-        | Cmd::Inbox { .. } => {
+        | Cmd::Inbox { .. }
+        | Cmd::Doctor => {
             bail!("not a coordinator command")
         }
     };

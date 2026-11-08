@@ -5,6 +5,7 @@ mod advisor;
 mod agent;
 mod cli;
 mod coord;
+mod doctor;
 mod state;
 mod tui;
 

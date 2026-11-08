@@ -7,7 +7,7 @@
 
 mod caps;
 mod cmd;
-mod disk;
+pub mod disk;
 mod linux;
 mod macos;
 

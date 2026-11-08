@@ -4,7 +4,7 @@
 
 mod rules;
 
-pub use rules::{is_limit_message, spendable, views, SpendContext};
+pub use rules::{is_limit_message, spendable, views, SpendContext, SNAPSHOT_MAX_AGE_MS};
 
 use serde::{Deserialize, Serialize};
 

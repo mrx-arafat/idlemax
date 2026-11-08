@@ -1,0 +1,88 @@
+//! Adapter: reads the installed service unit, if any. Never runs launchctl or systemctl.
+
+use std::path::{Path, PathBuf};
+
+use idlemax_core::doctor::{Check, Report};
+
+use super::facts;
+
+const PLACEHOLDERS: [&str; 3] = ["@BIN@", "@HOME@", "@PATH@"];
+
+/// `kind` is "agent" or "coordinator"; a coordinator-only machine has the latter.
+fn candidates(home: Option<&Path>) -> Vec<(&'static str, PathBuf)> {
+    let mut units: Vec<(&'static str, PathBuf)> = Vec::new();
+    if cfg!(target_os = "macos") {
+        for label in ["com.idlemax.agent.plist", "com.idlemax.coord.plist"] {
+            let kind = if label.contains("agent") {
+                "agent"
+            } else {
+                "coordinator"
+            };
+            if let Some(home) = home {
+                units.push((kind, home.join("Library/LaunchAgents").join(label)));
+            }
+            units.push((kind, Path::new("/Library/LaunchDaemons").join(label)));
+        }
+    } else if cfg!(target_os = "linux") {
+        for name in ["idlemax-agent.service", "idlemax-coord.service"] {
+            let kind = if name.contains("agent") {
+                "agent"
+            } else {
+                "coordinator"
+            };
+            units.push((kind, Path::new("/etc/systemd/system").join(name)));
+            if let Some(home) = home {
+                units.push((kind, home.join(".config/systemd/user").join(name)));
+            }
+        }
+    }
+    units
+}
+
+pub fn check(report: &mut Report, home: Option<&Path>) {
+    let units = candidates(home);
+    let found = units
+        .iter()
+        .find_map(|(kind, path)| facts::read_text(path).map(|text| (*kind, path.clone(), text)));
+    let Some((kind, path, text)) = found else {
+        report.push(Check::warn(
+            "service",
+            "no idlemax service unit installed: the agent stops when its terminal closes",
+            install_fix(),
+        ));
+        return;
+    };
+    let missing: Vec<&str> = PLACEHOLDERS
+        .iter()
+        .copied()
+        .filter(|p| text.contains(p))
+        .collect();
+    if missing.is_empty() {
+        report.push(Check::ok(
+            "service",
+            format!("{kind} unit {}", facts::short(&path)),
+        ));
+    } else {
+        report.push(Check::warn(
+            "service",
+            format!(
+                "{} still contains {}",
+                facts::short(&path),
+                missing.join(", ")
+            ),
+            "render the placeholders before loading it, following the README install steps for this OS",
+        ));
+    }
+}
+
+fn install_fix() -> String {
+    if cfg!(target_os = "macos") {
+        "install packaging/macos/com.idlemax.agent.plist as ~/Library/LaunchAgents/com.idlemax.agent.plist (README \"Install on macOS\")".into()
+    } else if cfg!(target_os = "linux") {
+        "install packaging/linux/idlemax-agent.service as /etc/systemd/system/idlemax-agent.service, then `systemctl enable --now idlemax-agent` (README \"Install on Linux\")".into()
+    } else {
+        // SHORTCUT: no Windows service, start the agent at login when a Windows device joins.
+        "service install is not supported on this OS yet: start `idlemax agent` at login yourself"
+            .into()
+    }
+}
