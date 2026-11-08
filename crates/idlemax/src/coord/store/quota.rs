@@ -1,5 +1,6 @@
 //! Quota ledger: probe snapshots per account window and rate-limit hits (adapter).
 
+use idlemax_core::quota;
 use idlemax_core::types::{QuotaSnapshot, UnixMs};
 use rusqlite::{params, Connection, Row};
 
@@ -40,13 +41,17 @@ pub(super) fn upsert_limit_hit(conn: &Connection, account: &str, at_ms: UnixMs) 
     Ok(())
 }
 
-pub(super) fn insert_snapshots(conn: &Connection, snaps: &[QuotaSnapshot]) -> StoreResult<()> {
+pub(super) fn insert_snapshots(
+    conn: &Connection,
+    snaps: &[QuotaSnapshot],
+    now: UnixMs,
+) -> StoreResult<()> {
     let mut stmt = conn.prepare_cached(
         "INSERT INTO quota_snapshots (account, quota_window, at_ms, used_pct, resets_at_ms, source)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT (account, quota_window, at_ms) DO NOTHING",
     )?;
-    for s in snaps {
+    for s in snaps.iter().map(|s| quota::as_received(s, now)) {
         stmt.execute(params![
             s.account,
             json_text(&s.window)?,

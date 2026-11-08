@@ -82,7 +82,7 @@ impl Store {
             hb.local_paused,
         ])?;
         fold_minute(&tx, hb, now)?;
-        super::quota::insert_snapshots(&tx, &hb.quota)?;
+        super::quota::insert_snapshots(&tx, &hb.quota, now)?;
         tx.commit()?;
         Ok(previous)
     }

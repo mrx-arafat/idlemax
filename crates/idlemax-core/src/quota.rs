@@ -8,7 +8,7 @@ pub use rules::{is_limit_message, spendable, views, SpendContext, SNAPSHOT_MAX_A
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ProbeSource, QuotaWindowKind, UnixMs};
+use crate::types::{ProbeSource, QuotaSnapshot, QuotaWindowKind, UnixMs};
 
 pub const MINUTE_MS: i64 = 60_000;
 pub const WEEK_MINUTES: u32 = 7 * 24 * 60;
@@ -257,4 +257,38 @@ pub struct QuotaView {
     pub reasons: Vec<String>,
     /// Evaluation time.
     pub at_ms: UnixMs,
+}
+
+/// A snapshot as the coordinator stores it: never dated after the coordinator's `now`. The
+/// newest snapshot per window wins, so one capture from a device whose clock ran ahead would
+/// otherwise hide every real snapshot until that future date.
+pub fn as_received(snap: &QuotaSnapshot, now: UnixMs) -> QuotaSnapshot {
+    QuotaSnapshot {
+        at_ms: snap.at_ms.min(now),
+        ..snap.clone()
+    }
+}
+
+#[cfg(test)]
+mod received_tests {
+    use super::{as_received, rolling_5h, QuotaSnapshot};
+    use crate::types::ProbeSource;
+
+    #[test]
+    fn a_snapshot_from_a_clock_ahead_is_dated_now_so_the_next_real_one_wins() {
+        const NOW: i64 = 1_800_000_000_000;
+        let snap = |at_ms, used_pct| QuotaSnapshot {
+            account: "claude".into(),
+            window: rolling_5h(),
+            used_pct,
+            resets_at_ms: None,
+            source: ProbeSource::Manual,
+            at_ms,
+        };
+        let future = as_received(&snap(NOW + 365 * 86_400_000, 10.0), NOW);
+        assert_eq!(future.at_ms, NOW);
+        let real = as_received(&snap(NOW + 30_000, 85.0), NOW + 30_000);
+        assert!(real.at_ms > future.at_ms, "the next real snapshot is newer");
+        assert_eq!(as_received(&snap(NOW - 5, 50.0), NOW).at_ms, NOW - 5);
+    }
 }
