@@ -5,14 +5,16 @@ CONTRIBUTING.md is the longer human version; this file is the short one loaded e
 
 ## What this is
 
-idlemax keeps a developer's Mac and server busy on useful jobs using only spare capacity, and spends leftover AI subscription quota before it resets.
+idlemax's main goal is to make the maximum use of every resource a developer has, properly: the CPU, memory, disk and I/O of each Mac and server, and the AI subscription quota before it resets, all kept busy on useful jobs.
 It is one Rust binary, `idlemax`, with two daemons:
 
 - `idlemax coord`: job queue, SQLite, HTTP API and web dashboard (default `127.0.0.1:7878`).
 - `idlemax agent`: one per device; samples metrics, runs the guard, runs jobs under OS throttles, serves a local API on `127.0.0.1:7879`.
 
 The CLI, TUI and dashboard talk to the coordinator API.
-It must never slow the machine it runs on, so the guard and the kill switch file `$IDLEMAX_HOME/PAUSE` are safety features, not options.
+"Properly" means the jobs never get in the way of the person at the machine or the server's own work; the guard and the kill switch file `$IDLEMAX_HOME/PAUSE` are how it gets there, and they are not optional.
+Both failures are bugs: a guard that lets a job slow the machine, and a guard that holds jobs while the machine has room to spare.
+Prefer signals of real contention (PSI, swap-in rate, memory pressure, load against CPU count) over static usage levels.
 
 ## Layer map
 
