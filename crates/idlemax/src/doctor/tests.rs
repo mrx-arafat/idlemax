@@ -192,7 +192,7 @@ fn allowlist_finds_each_broken_entry() {
 fn service_absent_placeholder_and_installed() {
     let home = tempfile::tempdir().unwrap();
     let mut report = Report::new("t", None);
-    service::check(&mut report, Some(home.path()));
+    service::check(&mut report, &service::installed(Some(home.path())));
     let check = one(&report, "service");
     assert_eq!(check.level, Level::Warn, "{}", check.detail);
     assert!(check.fix.unwrap().contains("idlemax service install"));
@@ -208,7 +208,7 @@ fn service_absent_placeholder_and_installed() {
     std::fs::create_dir_all(unit.parent().unwrap()).unwrap();
     std::fs::write(&unit, "<string>@BIN@</string>").unwrap();
     let mut report = Report::new("t", None);
-    service::check(&mut report, Some(home.path()));
+    service::check(&mut report, &service::installed(Some(home.path())));
     let check = one(&report, "service");
     assert_eq!(check.level, Level::Warn);
     assert!(check.detail.contains("@BIN@"));
@@ -216,8 +216,55 @@ fn service_absent_placeholder_and_installed() {
 
     std::fs::write(&unit, "<string>/usr/local/bin/idlemax</string>").unwrap();
     let mut report = Report::new("t", None);
-    service::check(&mut report, Some(home.path()));
+    service::check(&mut report, &service::installed(Some(home.path())));
     assert_eq!(one(&report, "service").level, Level::Ok);
+}
+
+#[test]
+fn a_unit_whose_binary_is_gone_fails_and_one_that_runs_passes() {
+    let home = tempfile::tempdir().unwrap();
+    let missing = home.path().join("gone/idlemax");
+    let real = home.path().join("bin/idlemax");
+    std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+    std::fs::write(&real, "#!/bin/sh\n").unwrap();
+    executable(&real);
+    let unit = match cfg!(target_os = "linux") {
+        true => home
+            .path()
+            .join(".config/systemd/user/idlemax-agent.service"),
+        _ => home
+            .path()
+            .join("Library/LaunchAgents/com.idlemax.agent.plist"),
+    };
+    std::fs::create_dir_all(unit.parent().unwrap()).unwrap();
+    let write = |bin: &Path| {
+        let text = match cfg!(target_os = "linux") {
+            true => format!("[Service]\nExecStart={} agent\n", bin.display()),
+            _ => format!(
+                "<key>ProgramArguments</key>\n<array>\n<string>{}</string>\n<string>agent</string>\n</array>\n",
+                bin.display()
+            ),
+        };
+        std::fs::write(&unit, text).unwrap();
+        let mut report = Report::new("t", None);
+        service::check(&mut report, &service::installed(Some(home.path())));
+        one(&report, "service")
+    };
+    let broken = write(&missing);
+    assert_eq!(broken.level, Level::Fail, "{}", broken.detail);
+    assert!(broken.detail.contains("gone/idlemax"), "{}", broken.detail);
+    assert!(broken.fix.unwrap().contains("service install --bin"));
+    assert_eq!(write(&real).level, Level::Ok);
+}
+
+#[test]
+fn an_agent_that_does_not_answer_is_a_failure_only_when_its_service_is_installed() {
+    let url = "http://127.0.0.1:7879";
+    let hint = net::agent_down(url, false);
+    assert_eq!(hint.level, Level::Warn);
+    let down = net::agent_down(url, true);
+    assert_eq!(down.level, Level::Fail);
+    assert!(down.fix.unwrap().contains("idlemax service status"));
 }
 
 fn account(name: &str) -> AccountConfig {

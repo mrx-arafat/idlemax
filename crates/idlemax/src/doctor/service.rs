@@ -3,6 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use idlemax_core::doctor::{Check, Report};
+use idlemax_core::install::service::Platform;
+use idlemax_core::install::unit_read::read_unit;
 
 use super::facts;
 
@@ -39,12 +41,36 @@ fn candidates(home: Option<&Path>) -> Vec<(&'static str, PathBuf)> {
     units
 }
 
-pub fn check(report: &mut Report, home: Option<&Path>) {
-    let units = candidates(home);
-    let found = units
-        .iter()
-        .find_map(|(kind, path)| facts::read_text(path).map(|text| (*kind, path.clone(), text)));
-    let Some((kind, path, text)) = found else {
+/// An idlemax service unit found on disk.
+pub struct Found {
+    /// "agent" or "coordinator".
+    pub kind: &'static str,
+    pub path: PathBuf,
+    pub text: String,
+}
+
+/// Every installed unit, the agent's first.
+pub fn installed(home: Option<&Path>) -> Vec<Found> {
+    candidates(home)
+        .into_iter()
+        .filter_map(|(kind, path)| facts::read_text(&path).map(|text| Found { kind, path, text }))
+        .collect()
+}
+
+pub fn agent_installed(units: &[Found]) -> bool {
+    units.iter().any(|u| u.kind == "agent")
+}
+
+fn platform() -> Platform {
+    if cfg!(target_os = "macos") {
+        Platform::Launchd
+    } else {
+        Platform::SystemdUser
+    }
+}
+
+pub fn check(report: &mut Report, units: &[Found]) {
+    let Some(Found { kind, path, text }) = units.first() else {
         report.push(Check::warn(
             "service",
             "no idlemax service unit installed: the agent stops when its terminal closes",
@@ -57,21 +83,29 @@ pub fn check(report: &mut Report, home: Option<&Path>) {
         .copied()
         .filter(|p| text.contains(p))
         .collect();
-    if missing.is_empty() {
-        report.push(Check::ok(
-            "service",
-            format!("{kind} unit {}", facts::short(&path)),
-        ));
-    } else {
+    if !missing.is_empty() {
         report.push(Check::warn(
             "service",
             format!(
                 "{} still contains {}",
-                facts::short(&path),
+                facts::short(path),
                 missing.join(", ")
             ),
             "this file is an unrendered template: run `idlemax service install`, which fills the placeholders in and reloads it",
         ));
+        return;
+    }
+    let bin = read_unit(platform(), text).bin;
+    match bin.as_deref().filter(|b| Path::new(b).is_absolute()) {
+        Some(bin) if !facts::is_executable(Path::new(bin)) => report.push(Check::fail(
+            "service",
+            format!("{kind} unit {} runs {bin}, which is missing or not executable", facts::short(path)),
+            format!("put idlemax at {bin}, or run `idlemax service install --bin /full/path/idlemax` to point a per-user service at it"),
+        )),
+        _ => report.push(Check::ok(
+            "service",
+            format!("{kind} unit {}", facts::short(path)),
+        )),
     }
 }
 

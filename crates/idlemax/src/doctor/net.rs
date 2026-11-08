@@ -124,6 +124,7 @@ pub async fn local_agent(
     cfg: &Config,
     token: Option<&str>,
     paths: Option<&Paths>,
+    agent_unit: bool,
 ) {
     let url = format!("http://{}", cfg.agent.listen);
     let Some(token) = token else {
@@ -151,7 +152,7 @@ pub async fn local_agent(
             let file = paths.map_or_else(|| "$IDLEMAX_HOME/PAUSE".into(), Paths::pause_file);
             report.push(pause_check(&status, &file));
         }
-        Err(e) => report.push(agent_error(&url, &e)),
+        Err(e) => report.push(agent_error(&url, &e, agent_unit)),
     }
 }
 
@@ -202,13 +203,31 @@ pub(super) fn pause_check(s: &LocalStatus, pause_file: &Path) -> Check {
     )
 }
 
-fn agent_error(url: &str, e: &ClientError) -> Check {
-    match e {
-        ClientError::Unreachable { .. } => Check::warn(
+/// Nothing answers on the agent's address. With the service installed that is a failure, not
+/// a hint: the machine should be running jobs and is not.
+pub(super) fn agent_down(url: &str, agent_unit: bool) -> Check {
+    if !agent_unit {
+        return Check::warn(
             "agent",
             format!("no agent answers at {url}"),
             "start it with `idlemax agent`, or install the service (see the service check)",
-        ),
+        );
+    }
+    let log = if cfg!(target_os = "macos") {
+        "<state dir>/logs/agent.log"
+    } else {
+        "`journalctl --user -u idlemax-agent`"
+    };
+    Check::fail(
+        "agent",
+        format!("no agent answers at {url}, though its service is installed"),
+        format!("run `idlemax service status`; `idlemax service install` starts it again, and {log} says why it stopped"),
+    )
+}
+
+fn agent_error(url: &str, e: &ClientError, agent_unit: bool) -> Check {
+    match e {
+        ClientError::Unreachable { .. } => agent_down(url, agent_unit),
         _ if auth_rejected(e) => Check::fail(
             "agent",
             format!("the agent at {url} rejected the token: {}", e.describe()),

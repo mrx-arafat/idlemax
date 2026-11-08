@@ -21,11 +21,20 @@ pub async fn run(coord_url: Option<String>) -> Report {
     let config = checks::config(&mut report, paths.as_ref());
     let token = checks::token(&mut report, paths.as_ref());
     net::coordinator(&mut report, &config, token.as_deref(), coord_url.as_deref()).await;
-    net::local_agent(&mut report, &config, token.as_deref(), paths.as_ref()).await;
+    let units = service::installed(facts::home_dir().as_deref());
+    let agent_unit = service::agent_installed(&units);
+    net::local_agent(
+        &mut report,
+        &config,
+        token.as_deref(),
+        paths.as_ref(),
+        agent_unit,
+    )
+    .await;
     host::allowlist(&mut report, &config);
     host::disk(&mut report, &config, paths.as_ref()).await;
     ai::accounts(&mut report, &config, paths.as_ref()).await;
     host::github(&mut report, &config).await;
-    service::check(&mut report, facts::home_dir().as_deref());
+    service::check(&mut report, &units);
     report
 }
