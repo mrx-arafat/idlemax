@@ -614,7 +614,7 @@ def job_info(path, job_id=None):
     print("\t".join([
         str(job.get("id")),
         str(job.get("status")),
-        "" if job.get("exit_code") is None else str(job.get("exit_code")),
+        "-" if job.get("exit_code") is None else str(job.get("exit_code")),
         error,
     ]))
     return 0
@@ -694,7 +694,6 @@ def watch_cgroup(base, out_path, timeout=90.0):
     max_current = 0
     peak = 0
     oom_kill = 0
-    high = 0
     memory_max = None
     swap_max = None
     max_swap = 0
@@ -718,7 +717,6 @@ def watch_cgroup(base, out_path, timeout=90.0):
         if events:
             counts = parse_memory_events(events)
             oom_kill = max(oom_kill, counts.get("oom_kill", 0))
-            high = max(high, counts.get("high", 0))
         peak_value = read_int(os.path.join(base, "memory.peak"))
         if peak_value is not None:
             peak = max(peak, peak_value)
@@ -727,13 +725,12 @@ def watch_cgroup(base, out_path, timeout=90.0):
         swap_current = read_int(os.path.join(base, "memory.swap.current"))
         if swap_current is not None:
             max_swap = max(max_swap, swap_current)
-        time.sleep(0.004)
+        time.sleep(0.001)
     data = {
         "samples": samples,
         "max_current": max_current,
         "peak": max(peak, max_current),
         "oom_kill": oom_kill,
-        "high": high,
         "memory_max": memory_max,
         "swap_max": swap_max,
         "max_swap": max_swap,
@@ -750,7 +747,6 @@ def watch_info(path):
         str(data.get("max_current", 0)),
         str(data.get("peak", 0)),
         str(data.get("oom_kill", 0)),
-        str(data.get("high", 0)),
         str(data.get("memory_max")),
         str(data.get("swap_max")),
         str(data.get("max_swap", 0)),
@@ -851,6 +847,23 @@ def selftest():
             os.chdir(here)
         add(from_root != 987654321987, "read_pswpin.root_slash", repr(from_root))
 
+        # A job with no exit code must not leave an empty tab field: bash would collapse it
+        # and shift the error text into the exit column.
+        import io
+        jobs = os.path.join(tmp, "jobs.json")
+        with open(jobs, "w") as fh:
+            json.dump([{"id": 7, "status": "parked", "exit_code": None,
+                        "last_error": "killed by the 128 MiB memory cap"}], fh)
+        captured, real_stdout = io.StringIO(), sys.stdout
+        sys.stdout = captured
+        try:
+            job_info(jobs, "7")
+        finally:
+            sys.stdout = real_stdout
+        fields = captured.getvalue().rstrip("\n").split("\t")
+        add(fields == ["7", "parked", "-", "killed by the 128 MiB memory cap"],
+            "job_info.no_exit_code", repr(fields))
+
         df = parse_df("Filesystem 1024-blocks Used Available Capacity Mounted on\n"
                       "/dev/sda1 100000 20000 80000 20% /\n")
         add(df == (80000 * 1024, 100000 * 1024), "parse_df", repr(df))
@@ -933,8 +946,8 @@ def selftest():
         info = json.loads(read_text(watch))
         add(info["memory_max"] == 64 * MIB and info["samples"] > 0,
             "watch_cgroup", "samples=%s max=%s" % (info["samples"], info["memory_max"]))
-        add((info.get("high"), info.get("oom_kill")) == (7, 1),
-            "watch_cgroup.events", "high=%s oom_kill=%s" % (info.get("high"), info.get("oom_kill")))
+        add(info.get("oom_kill") == 1,
+            "watch_cgroup.events", "oom_kill=%s" % info.get("oom_kill"))
 
         add(close_enough(cpu_value(1000, 2000, 1_000_000_000), 0.1, 0.001),
             "cpu_percent", "0.1")
@@ -1144,6 +1157,7 @@ job_refresh() {
     return 1
   fi
   IFS=$'\t' read -r JOB_ID JOB_STATUS JOB_EXIT JOB_ERROR <<< "$line"
+  [[ $JOB_EXIT != - ]] || JOB_EXIT=""
 }
 
 wait_job_running() {
@@ -1219,6 +1233,7 @@ add_job() {
   fi
   IFS=$'\t' read -r JOB_ID JOB_STATUS JOB_EXIT JOB_ERROR \
     < <(python3 "$HELPER" job-info "$TMP/job.add.json")
+  [[ $JOB_EXIT != - ]] || JOB_EXIT=""
   [[ -n ${JOB_ID:-} ]]
 }
 
@@ -1279,24 +1294,23 @@ PY
   if [[ ! -s $watch ]]; then
     record FAIL "job.memory.watch" "the cgroup watcher produced no data"
   else
-    local samples current peak oom high memmax swapmax maxswap
-    IFS=$'\t' read -r samples current peak oom high memmax swapmax maxswap \
+    local samples current peak oom memmax swapmax maxswap
+    IFS=$'\t' read -r samples current peak oom memmax swapmax maxswap \
       < <(python3 "$HELPER" watch-info "$watch")
     local expected=$((128 * 1024 * 1024))
-    local throttle=$((expected * 3 / 4))
     record "$([[ $memmax == "$expected" ]] && printf PASS || printf FAIL)" \
       "job.memory.max" "memory.max=$memmax expected=$expected"
-    # MemoryHigh sits at 75% of the cap and swap is off, so a hog is throttled there by the
-    # kernel and never reaches MemoryMax. What protects the host is that it stays under the
-    # cap, was throttled or killed by the cgroup, and did not finish.
     record "$([[ $peak -le $expected ]] && printf PASS || printf FAIL)" \
       "job.memory.contained" "peak=$peak never above memory.max=$expected (samples=$samples, swap=$maxswap/$swapmax)"
-    record "$([[ $peak -ge $((throttle * 9 / 10)) ]] && printf PASS || printf FAIL)" \
-      "job.memory.peak" "peak=$peak current=$current, the hog grew into MemoryHigh=$throttle (90% required)"
-    record "$([[ $high -ge 1 || $oom -ge 1 ]] && printf PASS || printf FAIL)" \
-      "job.memory.enforced" "cgroup memory.events high=$high oom_kill=$oom (either one means the kernel acted)"
-    record "$([[ $JOB_STATUS == killed || $JOB_STATUS == failed || $JOB_STATUS == parked ]] && printf PASS || printf FAIL)" \
-      "job.memory.stopped" "status=$JOB_STATUS exit=${JOB_EXIT:-none} error=${JOB_ERROR:-none}"
+    record "$([[ $peak -ge $((expected * 9 / 10)) ]] && printf PASS || printf FAIL)" \
+      "job.memory.peak" "peak=$peak current=$current of $expected (90% required)"
+    record "$([[ $oom -ge 1 ]] && printf PASS || printf FAIL)" \
+      "job.memory.oom" "cgroup oom_kill=$oom"
+    # No MemoryHigh below the cap: the kernel kills the hog at MemoryMax instead of throttling
+    # it, and the agent reports that cap as the reason. The job has one attempt, so the
+    # coordinator shows it as parked with that error.
+    record "$([[ ( $JOB_STATUS == killed || $JOB_STATUS == parked ) && $JOB_ERROR == *"killed by the 128 MiB memory cap"* ]] && printf PASS || printf FAIL)" \
+      "job.memory.killed" "status=$JOB_STATUS exit=${JOB_EXIT:-none} error=${JOB_ERROR:-none}"
   fi
 }
 

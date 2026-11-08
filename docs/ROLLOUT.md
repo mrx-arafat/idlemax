@@ -112,8 +112,9 @@ The script checks, in order:
 - the agent starts inside `MemoryHigh=576M`, `MemoryMax=640M`, `MemorySwapMax=0`, `CPUQuota=100%`.
 - the coordinator sees the device online with a fresh metrics snapshot.
 - every metrics field matches the kernel: CPU count, CPU busy percent, load, memory total and available, memory free percent, swap total and used, root disk free and total, logind idle, AC and battery, thermal trip state, memory pressure, PSI memory and IO, and swap-in pages per second.
-- a 128 MiB memory-hog job never exceeds its `MemoryMax`.
-  The agent sets `MemoryHigh` to 75% of that and turns swap off, so the kernel throttles the hog near 96 MiB (the cgroup counts `high` events) instead of OOM-killing it, and idlemax stops the job at its `max_runtime_secs`.
+- a 128 MiB memory-hog job is killed by the cgroup at its `MemoryMax` (`oom_kill` counted) and the job ends as `killed` with the error "killed by the 128 MiB memory cap".
+  Job scopes set `MemoryMax` and `MemorySwapMax=0` but no `MemoryHigh`, because the kernel would throttle a hog below the cap instead of killing it.
+  On systemd 253 or newer they also set `OOMPolicy=kill`, so the whole job dies with SIGKILL even when the process the kernel picked was a child of a shell; older hosts skip that property.
 - a CPU-bound job with several workers stays at or below its 100% quota, throttles, and succeeds.
 - `systemd-analyze verify` is clean for the coordinator and agent units.
 
@@ -443,7 +444,7 @@ On an older systemd the script stops before it creates anything; once the runner
 ROADMAP 1, done when:
 
 - [ ] `signal.*` rows are PASS: every Linux metrics field matches `/proc`, `/sys`, logind and `df`.
-- [ ] `job.memory.max`, `job.memory.contained`, `job.memory.peak`, `job.memory.enforced` and `job.memory.stopped` are PASS: the 128 MiB memory hog stayed under its cgroup limit, was throttled by `MemoryHigh` (or OOM-killed), and did not finish.
+- [ ] `job.memory.max`, `job.memory.contained`, `job.memory.peak`, `job.memory.oom` and `job.memory.killed` are PASS: the 128 MiB memory hog was killed at its cgroup limit and reported as killed by the memory cap.
 - [ ] `job.cpu.quota`, `job.cpu.percent`, `job.cpu.throttled` and `job.cpu.completed` are PASS: the CPU job stayed within 100% of one CPU.
 - [ ] `units.verify` is PASS and `sudo systemd-analyze verify /etc/systemd/system/idlemax-coord.service /etc/systemd/system/idlemax-agent.service` prints nothing.
 
