@@ -9,6 +9,7 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use idlemax_core::host::AllowedHosts;
 use idlemax_core::protocol::ApiError;
 use serde::de::DeserializeOwned;
 
@@ -23,6 +24,9 @@ pub enum ApiFailure {
     NotFound(String),
     #[error("method not allowed")]
     MethodNotAllowed,
+    /// The `Host` header names a host this server does not answer to.
+    #[error("{0}")]
+    Misdirected(String),
     #[error("{0}")]
     Conflict(String),
     /// An extractor rejection keeps its own status (400, 413, 415, 422).
@@ -42,6 +46,7 @@ impl ApiFailure {
             ApiFailure::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiFailure::NotFound(_) => StatusCode::NOT_FOUND,
             ApiFailure::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+            ApiFailure::Misdirected(_) => StatusCode::MISDIRECTED_REQUEST,
             ApiFailure::Conflict(_) => StatusCode::CONFLICT,
             ApiFailure::Rejected { status, .. } => *status,
             ApiFailure::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
@@ -89,6 +94,40 @@ where
         let Json(value) = Json::<T>::from_request(req, state).await?;
         Ok(JsonBody(value))
     }
+}
+
+/// Which `Host` values a router answers to (DNS-rebinding defence), and what to tell a
+/// caller whose name is refused.
+#[derive(Clone)]
+pub struct HostGuard {
+    hosts: Arc<AllowedHosts>,
+    hint: &'static str,
+}
+
+impl HostGuard {
+    pub fn new(hosts: AllowedHosts, hint: &'static str) -> Self {
+        Self {
+            hosts: Arc::new(hosts),
+            hint,
+        }
+    }
+}
+
+/// Middleware, outermost: 421 unless `Host` is an IP address, a loopback name or a listed name.
+/// A request with no `Host` (HTTP/1.0, a plain script) cannot come from a rebinding page.
+pub async fn require_host(State(guard): State<HostGuard>, req: Request, next: Next) -> Response {
+    if let Some(value) = req.headers().get(header::HOST) {
+        let host = value.to_str().unwrap_or("");
+        if !guard.hosts.allows(host) {
+            let shown: String = String::from_utf8_lossy(value.as_bytes())
+                .chars()
+                .take(100)
+                .collect();
+            let message = format!("host {shown:?} is not allowed; {}", guard.hint);
+            return ApiFailure::Misdirected(message).into_response();
+        }
+    }
+    next.run(req).await
 }
 
 /// The bearer token every `/v1` route requires.

@@ -8,12 +8,13 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{middleware, Json, Router};
 use idlemax_core::control::local_paused_after;
+use idlemax_core::host::AllowedHosts;
 use idlemax_core::protocol::{ControlRequest, LocalStatus};
 use idlemax_core::types::ControlAction;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 
-use crate::coord::api::http::{self, ApiFailure, BearerToken, JsonBody};
+use crate::coord::api::http::{self, ApiFailure, BearerToken, HostGuard, JsonBody};
 use crate::coord::server::{self, Limits};
 
 /// How long `POST /v1/local/control` waits for the agent loop to apply the action.
@@ -57,12 +58,17 @@ pub fn router(handle: LocalHandle, token: &str) -> Router {
             BearerToken::new(token),
             http::require_bearer,
         ));
+    let guard = HostGuard::new(
+        AllowedHosts::default(),
+        "the local API answers only to IP addresses and localhost",
+    );
     Router::new()
         .route("/healthz", get(http::healthz))
         .merge(v1)
         .fallback(http::no_route)
         .method_not_allowed_fallback(http::wrong_method)
         .with_state(handle)
+        .layer(middleware::from_fn_with_state(guard, http::require_host))
 }
 
 /// Serves until the process stops. The caller binds `config.agent.listen` (loopback). It
@@ -120,6 +126,27 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
 
     use super::*;
+
+    /// The kill switch lives here: a page that reaches it under its own domain name is refused.
+    #[tokio::test]
+    async fn a_rebinding_host_gets_421_and_loopback_names_do_not() {
+        let (handle, _ports) = local_channel(LocalStatus::default());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(serve(listener, handle, "t".repeat(40)));
+        let get = |host: String| async move {
+            reqwest::Client::new()
+                .get(format!("http://{addr}/healthz"))
+                .header(reqwest::header::HOST, host)
+                .send()
+                .await
+                .unwrap()
+                .status()
+        };
+        assert_eq!(get("evil.example:7879".into()).await, 421);
+        assert_eq!(get(format!("127.0.0.1:{}", addr.port())).await, 200);
+        assert_eq!(get(format!("localhost:{}", addr.port())).await, 200);
+    }
 
     /// A client that opens a connection and says nothing must be dropped after the header
     /// timeout, like on the coordinator, instead of holding a connection forever.

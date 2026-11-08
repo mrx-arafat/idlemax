@@ -32,9 +32,13 @@ struct Api {
 
 impl Api {
     async fn start() -> Self {
+        Self::start_with(Config::default()).await
+    }
+
+    async fn start_with(config: Config) -> Self {
         let home = tempfile::tempdir().unwrap();
         let store = Store::open_in_memory().unwrap();
-        let app = AppState::new(store, Config::default(), Paths::new(home.path()));
+        let app = AppState::new(store, config, Paths::new(home.path()));
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, router(app, TOKEN)).await });
@@ -51,6 +55,17 @@ impl Api {
             .post(url)
             .bearer_auth(TOKEN)
             .json(body)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// A GET that carries the token and the given `Host` header.
+    async fn get_as(&self, path: &str, host: &str) -> reqwest::Response {
+        self.http
+            .get(format!("{}{path}", self.base))
+            .header(reqwest::header::HOST, host)
+            .bearer_auth(TOKEN)
             .send()
             .await
             .unwrap()
@@ -581,4 +596,60 @@ async fn why_summaries_cover_the_waiting_jobs_newest_first_with_one_headline_eac
 
     let one: Vec<WhySummary> = get("/v1/why?limit=1").await.unwrap().json().await.unwrap();
     assert_eq!(one.iter().map(|s| s.job).collect::<Vec<_>>(), [ids[2]]);
+}
+
+/// DNS rebinding: a page that reaches 127.0.0.1:7878 under its own domain name sends that name as
+/// `Host`. The token-free routes (dashboard, healthz) would answer it, so every route checks it.
+#[tokio::test]
+async fn a_foreign_host_name_gets_421_on_every_route_and_our_own_names_do_not() {
+    let mut config = Config::default();
+    config.coordinator.url = "http://box:7878".into();
+    config.coordinator.allowed_hosts = vec!["server.tailnet.ts.net".into()];
+    let api = Api::start_with(config).await;
+
+    for path in ["/", "/healthz", "/v1/status", "/no/such/route"] {
+        let res = api.get_as(path, "evil.example:7878").await;
+        assert_eq!(res.status(), StatusCode::MISDIRECTED_REQUEST, "{path}");
+    }
+    let body: serde_json::Value = api
+        .get_as("/healthz", "evil.example:7878")
+        .await
+        .json()
+        .await
+        .unwrap();
+    let message = body["error"].as_str().unwrap();
+    assert!(
+        message.contains("evil.example") && message.contains("coordinator.allowed_hosts"),
+        "{message}"
+    );
+
+    for host in [
+        "127.0.0.1:7878",
+        "localhost:7878",
+        "[::1]:7878",
+        "100.64.0.1:7878",
+        "box:7878",
+        "server.tailnet.ts.net",
+    ] {
+        for path in ["/healthz", "/v1/status"] {
+            let res = api.get_as(path, host).await;
+            assert_eq!(res.status(), StatusCode::OK, "{host} {path}");
+        }
+    }
+
+    // HTTP/1.0 without a Host header is not a browser page: it is served.
+    let mut raw = tokio::net::TcpStream::connect(api.base.trim_start_matches("http://"))
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut raw, b"GET /healthz HTTP/1.0\r\n\r\n")
+        .await
+        .unwrap();
+    let mut reply = String::new();
+    tokio::io::AsyncReadExt::read_to_string(&mut raw, &mut reply)
+        .await
+        .unwrap();
+    assert!(
+        reply.starts_with("HTTP/1.0 200") || reply.starts_with("HTTP/1.1 200"),
+        "{reply}"
+    );
 }

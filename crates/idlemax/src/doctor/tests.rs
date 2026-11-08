@@ -399,3 +399,20 @@ fn home_check_warns_when_other_users_can_reach_the_state_dir() {
         assert_eq!(warn.fix.as_deref(), Some("chmod 700 /s/.idlemax"));
     }
 }
+
+#[test]
+fn a_misdirected_coordinator_reply_tells_how_to_allow_the_name() {
+    use crate::cli::ClientError;
+    let refused = ClientError::Api {
+        status: 421,
+        path: "/v1/status".into(),
+        message: "host \"server:7878\" is not allowed".into(),
+    };
+    let check = net::coordinator_error("http://server:7878", &refused);
+    assert_eq!(check.level, Level::Fail);
+    let fix = check.fix.unwrap();
+    assert!(
+        fix.contains("allowed_hosts") && fix.contains("IP address"),
+        "{fix}"
+    );
+}

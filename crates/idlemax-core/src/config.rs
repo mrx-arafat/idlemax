@@ -44,6 +44,9 @@ pub struct CoordinatorConfig {
     pub listen: String,
     /// Where agents and the CLI reach the coordinator.
     pub url: String,
+    /// Host names (besides IP addresses, `localhost` and the host of `url`) the coordinator
+    /// answers to, such as a MagicDNS name. Any other name in a `Host` header gets 421.
+    pub allowed_hosts: Vec<String>,
     pub lease_secs: u64,
     /// A device is offline after this long without a heartbeat.
     pub offline_after_secs: u64,
@@ -55,6 +58,7 @@ impl Default for CoordinatorConfig {
         Self {
             listen: DEFAULT_COORD_LISTEN.into(),
             url: DEFAULT_COORD_URL.into(),
+            allowed_hosts: Vec::new(),
             lease_secs: 120,
             offline_after_secs: 90,
             metrics_retention_days: 7,

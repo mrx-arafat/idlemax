@@ -8,6 +8,7 @@ pub mod control;
 pub mod doctor;
 pub mod explain;
 pub mod guard;
+pub mod host;
 pub mod install;
 pub mod job_draft;
 pub mod job_run;

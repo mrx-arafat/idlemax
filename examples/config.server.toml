@@ -5,6 +5,9 @@
 # Bind to the tailnet IP only, never a public address.
 listen = "100.64.0.10:7878"
 url = "http://100.64.0.10:7878"
+# The coordinator answers only to IP addresses, localhost, the host of `url` and these names;
+# any other name in a Host header gets 421. List a MagicDNS name here if devices use one.
+# allowed_hosts = ["server.tailnet.ts.net"]
 # A lease lives this long without a heartbeat before the job is re-queued with backoff.
 lease_secs = 120
 offline_after_secs = 90

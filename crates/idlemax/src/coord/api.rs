@@ -15,10 +15,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use axum::routing::{delete, get, post};
 use axum::{middleware, Router};
 use idlemax_core::control::ControlError;
+use idlemax_core::host::AllowedHosts;
 use idlemax_core::{Config, Paths};
 use tokio::task::JoinError;
 
-use self::http::{ApiFailure, BearerToken};
+use self::http::{ApiFailure, BearerToken, HostGuard};
 use super::store::{Store, StoreError};
 use super::web;
 
@@ -98,6 +99,7 @@ pub fn router(state: AppState, token: &str) -> Router {
             BearerToken::new(token),
             http::require_bearer,
         ));
+    let guard = HostGuard::new(coordinator_hosts(state.config()), HOST_HINT);
     Router::new()
         .route("/healthz", get(http::healthz))
         .route("/", get(web::index))
@@ -105,6 +107,18 @@ pub fn router(state: AppState, token: &str) -> Router {
         .fallback(http::no_route)
         .method_not_allowed_fallback(http::wrong_method)
         .with_state(state)
+        .layer(middleware::from_fn_with_state(guard, http::require_host))
+}
+
+const HOST_HINT: &str = "add the name to coordinator.allowed_hosts in the coordinator's config.toml, or reach it by its IP address";
+
+/// Names the coordinator answers to besides IP addresses and `localhost`: the host of its own
+/// `coordinator.url` and the ones the owner lists.
+fn coordinator_hosts(cfg: &Config) -> AllowedHosts {
+    let own = reqwest::Url::parse(&cfg.coordinator.url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string));
+    AllowedHosts::new(cfg.coordinator.allowed_hosts.iter().cloned().chain(own))
 }
 
 impl From<StoreError> for ApiFailure {

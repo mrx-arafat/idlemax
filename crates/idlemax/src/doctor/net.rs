@@ -49,12 +49,17 @@ pub async fn coordinator(
     });
 }
 
-fn coordinator_error(url: &str, e: &ClientError) -> Check {
+pub(super) fn coordinator_error(url: &str, e: &ClientError) -> Check {
     match e {
         ClientError::Unreachable { .. } => Check::fail(
             "coordinator",
             not_answering(url, e),
             down_fix(url),
+        ),
+        ClientError::Api { status: 421, .. } => Check::fail(
+            "coordinator",
+            format!("{url} refused this host name: {}", e.describe()),
+            "add the name used in coordinator.url to coordinator.allowed_hosts in the coordinator's config.toml, or put the coordinator's IP address in coordinator.url",
         ),
         _ if auth_rejected(e) => Check::fail(
             "coordinator",
