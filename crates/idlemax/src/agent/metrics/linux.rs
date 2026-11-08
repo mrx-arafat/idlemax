@@ -203,6 +203,65 @@ mod tests {
     }
 
     #[test]
+    fn parses_real_proc_pressure_and_vmstat_formats() {
+        let psi = parse_psi(
+            "some avg10=1.25 avg60=0.50 avg300=0.10 total=1234\n\
+             full avg10=0.75 avg60=0.25 avg300=0.05 total=5678\n",
+        );
+        assert_eq!(
+            psi,
+            Psi {
+                some_avg10: Some(1.25),
+                full_avg10: Some(0.75),
+            }
+        );
+
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "proc/vmstat",
+            "nr_free_pages 100\npswpout 40\npswpin 123456\nnr_pswpin 9\n",
+        );
+        assert_eq!(read_pswpin(tmp.path()), Some(123_456));
+    }
+
+    #[test]
+    fn thermal_reads_real_trip_types_and_disabled_points() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zone = "sys/class/thermal/thermal_zone0";
+        write(tmp.path(), &format!("{zone}/temp"), "85000\n");
+        write(tmp.path(), &format!("{zone}/trip_point_0_type"), "active\n");
+        write(tmp.path(), &format!("{zone}/trip_point_0_temp"), "70000\n");
+        write(
+            tmp.path(),
+            &format!("{zone}/trip_point_1_type"),
+            "passive\n",
+        );
+        write(tmp.path(), &format!("{zone}/trip_point_1_temp"), "90000\n");
+        write(
+            tmp.path(),
+            &format!("{zone}/trip_point_2_type"),
+            "critical\n",
+        );
+        write(tmp.path(), &format!("{zone}/trip_point_2_temp"), "0\n");
+        assert_eq!(read_thermal_limited(tmp.path()), Some(false));
+
+        write(tmp.path(), &format!("{zone}/trip_point_1_temp"), "80000\n");
+        assert_eq!(read_thermal_limited(tmp.path()), Some(true));
+        assert_eq!(read_thermal_limited(Path::new("/missing")), None);
+    }
+
+    #[test]
+    fn logind_uses_realtime_idle_hint_and_rejects_non_graphical_seats() {
+        let idle = "CanGraphical=yes\nIdleHint=yes\nIdleSinceHint=1690000000000000\n";
+        assert_eq!(parse_logind_seat(idle, 1_690_000_042_000_000), Some(42));
+        let active = "CanGraphical=yes\nIdleHint=no\nIdleSinceHint=1690000000000000\n";
+        assert_eq!(parse_logind_seat(active, 1_690_000_042_000_000), Some(0));
+        assert_eq!(parse_logind_seat(&idle.replace("yes", "no"), 0), None);
+        assert_eq!(parse_logind_seat("CanGraphical=no\nIdleHint=no\n", 0), None);
+    }
+
+    #[test]
     fn power_ignores_peripherals_and_unknown_battery_status() {
         let tmp = tempfile::tempdir().unwrap();
         let battery = "sys/class/power_supply/BAT0";
