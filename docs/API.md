@@ -8,7 +8,7 @@ Optional fields may be omitted on input; missing fields take their defaults.
 ## Auth and errors
 
 Every call except `GET /healthz` and `GET /` needs `Authorization: Bearer <token>`.
-The token comes from `IDLEMAX_TOKEN` or `$IDLEMAX_HOME/token` (mode 0600).
+The token comes from `IDLEMAX_TOKEN` or `$IDLEMAX_HOME/token` (mode 0600) and must be at least 32 characters; `idlemax init` makes 64.
 Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 
 ## Coordinator (default `127.0.0.1:7878`, tailnet IP in production)
@@ -50,7 +50,7 @@ An unset `key` is left out of the JSON, and a coordinator or agent that predates
 `POST /v1/jobs/{id}/cancel` answers 404 for an unknown job and 409 for a finished one.
 `GET /v1/jobs/{id}/why` answers 404 for an unknown job (see [Why a job is not running](#why-a-job-is-not-running)).
 A job update for an unknown job is 404.
-`coordinator.listen` on `0.0.0.0` or `[::]` is refused at startup.
+`coordinator.listen` on `0.0.0.0`, `[::]` or `[::ffff:0.0.0.0]` is refused at startup.
 
 ## Agent local API (default `127.0.0.1:7879`)
 

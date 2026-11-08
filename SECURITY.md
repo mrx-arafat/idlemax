@@ -24,22 +24,65 @@ The following areas are in scope for security reports:
 - HTTP API: token verification across endpoints, request validation, refusal of wildcard bindings (`0.0.0.0`, `[::]`), and loopback enforcement for the local agent API.
 - Job execution: process isolation, environment variable filtering (refusing `LD_*` and `DYLD_*` variables and withholding the API token), argv execution without shell interpolation, allowlist enforcement, and OS resource limits.
 - Statusline wrapper: safe capture of usage metrics in `packaging/claude-statusline-capture.sh`, atomic file replacement, avoiding credential exposure, and non-blocking failure semantics.
+- Files idlemax writes: the modes of the state directory, job logs, inbox notes and backups, and the config edits made by `idlemax hooks`, `statusline` and `service`.
+- The advisor: untrusted text from GitHub and agent sessions, and the confinement of the AI pass.
 
 Third-party dependencies with known vulnerabilities that do not affect idlemax's execution paths are out of scope unless accompanied by an exploitable vector.
 
 ## Security model summary
 
-idlemax is built around several core security guarantees:
+idlemax is built around several core security guarantees.
 
-- One bearer token (32 random bytes as hex, file mode 0600) guards every API call except `/healthz` and `/`, and is compared in constant time.
-- Anyone holding the token can run any allowlisted program with any arguments on your devices.
-  Treat the token like an SSH key and keep allowlists narrow, because allowlisting generic interpreters such as `sh` or `python3` allows arbitrary code execution.
-- The coordinator refuses to bind `0.0.0.0` or `[::]`.
+### Who is trusted
+
+- One bearer token (at least 32 characters, 64 when `idlemax init` makes it, file mode 0600) guards every API call except `/healthz` and `/`, and is compared in constant time.
+  Shorter tokens are refused at startup, by `init --token-stdin` and by `doctor`.
+- Every device and every CLI shares that one token, so a holder can act as any device: lease its jobs, report results and read every job spec.
+  Treat the token like an SSH key; if it leaks, replace it everywhere.
+- Anyone holding the token can run any allowlisted program with any arguments and almost any environment on your devices.
+  An allowlist entry names a program, not a use of it: `git` allows `git -c core.sshCommand=...`, and a job may set `PATH`, `BASH_ENV` or `NODE_OPTIONS`.
+  Keep allowlists narrow, and never allowlist generic interpreters such as `sh` or `python3`.
+- There is no per-device credential and no login throttle: the protection is the token's length and keeping the coordinator off untrusted networks.
+
+### Network
+
+- The coordinator refuses to bind `0.0.0.0`, `[::]` or `[::ffff:0.0.0.0]`.
   Its traffic is plain HTTP, so bind it to a private network such as a tailnet that encrypts transit traffic.
-- The local agent API listens on loopback only.
+- A peer that opens many idle connections cannot stop the coordinator: a failed `accept` is logged and retried, and header timeouts close idle connections.
+  It can still crowd out other clients while it does, which is one more reason to keep the coordinator on a private network.
+- The local agent API listens on loopback only and needs the same token.
+- Browsers cannot call the API with the token: the API sends no CORS headers and answers preflights with 405.
+  The coordinator does not check the `Host` header; with the bearer token required on every route that holds data, DNS rebinding reaches only `/healthz` and the token-free dashboard page.
+
+### Jobs
+
 - Jobs run without a shell, as the agent's user, with `IDLEMAX_JOB_ID` in their environment but never the API token.
   Loader environment variables starting with `LD_` or `DYLD_` are refused.
+  Jobs otherwise inherit the agent's environment, so keep secrets out of the environment the agent starts with.
+- The agent checks its own allowlist whatever the coordinator says, matches `argv[0]` exactly, and resolves a bare name on its own `PATH` before the job's `PATH` exists.
+- A job's `stdin` is written by a separate thread, so a program that never reads it cannot stop the agent's guard, kill switch or heartbeat.
 - AI CLIs run only on devices that list the account, using the login already present on that device.
   idlemax never reads or copies AI credentials across devices.
+
+### Files
+
+- New state directories are mode 0700, and job logs, inbox notes, metrics, the database and the token are 0600, because job output can hold secrets.
+  A directory that already exists keeps its mode; `idlemax doctor` warns when the state directory is open to group or others.
+- `idlemax hooks`, `statusline` and `service` edit your agent configuration only when you run them.
+  They change only their own entry, keep a backup with the same mode as the file it copies, create temporary files exclusively and never write through a link planted at the temporary name, and refuse a file they cannot understand.
+- Values written into those files (paths with spaces, quotes, `$`, backticks) are quoted for the target: shell words in hooks, JSON strings in the OpenCode plugin, escaped text in plists and systemd units.
+  Control characters are refused in plist and unit values.
+
+### Output
+
+- Text output removes terminal control characters from names, ids, messages and advice, so a hostile device id, job name or PR title cannot run an escape sequence in your terminal.
+  Job logs and inbox notes are printed as written, like `cat`, and the TUI drops control characters itself.
 - The web dashboard loads nothing remote, sends a strict Content-Security-Policy, writes every API string as text rather than HTML, and keeps the token in the browser's local storage.
+  Its single inline script is allowed by the policy because the page has no HTML sink and no remote script.
+
+### Advisor
+
+- Text from `gh` and from agent sessions is data: it goes to the AI pass as JSON the prompt calls data.
+- The AI pass runs `claude -p` with no tools, no hooks and no MCP servers, takes its prompt on stdin, and its output is checked against a strict schema.
+  A suggested job can only name a template you wrote, so a prompt-injected title can at most pick one of your templates, and only `advisor.auto_accept` templates queue without you.
 - Quota probes only read the CLI usage metadata and session files.
