@@ -9,6 +9,7 @@ mod init;
 mod job;
 mod job_wait;
 mod logs;
+mod out;
 pub mod print;
 pub mod rows;
 mod schedule;
