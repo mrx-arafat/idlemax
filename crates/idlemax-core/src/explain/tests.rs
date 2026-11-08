@@ -3,7 +3,9 @@
 use super::*;
 use crate::config::GuardPolicy;
 use crate::guard::Guard;
-use crate::types::{CostClass, DeviceProfile, GuardAction, GuardDecision, MetricsSnapshot};
+use crate::types::{
+    CostClass, DeviceProfile, GuardAction, GuardDecision, MemoryPressure, MetricsSnapshot,
+};
 
 const NOW: UnixMs = 1_000_000;
 
@@ -263,6 +265,50 @@ fn every_reason_the_guard_produces_comes_with_a_fix() {
             assert!(r.fix.is_some(), "no fix for guard reason {reason:?}");
         }
     }
+}
+
+#[test]
+fn a_guard_reason_names_the_setting_that_holds_the_job() {
+    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let metrics = MetricsSnapshot {
+        memory_pressure: Some(MemoryPressure::Warn),
+        load_avg_1m: 9.0,
+        disk_free_bytes: 1 << 30,
+        ..calm()
+    };
+    let decision = guard.evaluate(&metrics, &[], true, true);
+    let fix_for = |what: &str| {
+        let raw = decision.reasons.iter().find(|r| r.contains(what));
+        let raw = raw.unwrap_or_else(|| panic!("no {what:?} in {:?}", decision.reasons));
+        guard_text::reason(raw).fix.unwrap_or_default()
+    };
+
+    let pressure = fix_for("memory pressure");
+    assert!(
+        pressure.contains("guard.memory_pressure_pause"),
+        "{pressure}"
+    );
+    assert!(!pressure.contains("mem_free_pct"), "{pressure}");
+
+    for (what, kill_key, pause_key) in [
+        ("load 1m", "guard.load_1m_kill", "guard.load_1m_pause"),
+        (
+            "disk free",
+            "guard.disk_free_mib_kill",
+            "guard.disk_free_mib_pause",
+        ),
+    ] {
+        let fix = fix_for(what);
+        assert!(fix.contains(kill_key) && fix.contains(pause_key), "{fix}");
+    }
+}
+
+#[test]
+fn a_pause_level_reason_names_only_the_pause_setting() {
+    let fix = guard_text::reason("pause: disk free 12000.0 MiB < 15360 MiB").fix;
+    let fix = fix.unwrap_or_default();
+    assert!(fix.contains("guard.disk_free_mib_pause"), "{fix}");
+    assert!(!fix.contains("disk_free_mib_kill"), "{fix}");
 }
 
 #[test]
