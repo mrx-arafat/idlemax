@@ -13,6 +13,7 @@ mod failure;
 mod shape;
 pub mod toon;
 mod usage;
+pub mod views;
 
 use std::io::{ErrorKind, Write};
 use std::process::ExitCode;

@@ -24,6 +24,14 @@ impl Node {
     pub fn of<T: Serialize>(value: &T) -> Result<Node, serde_json::Error> {
         serde_json::from_str(&serde_json::to_string(value)?)
     }
+
+    pub fn str(s: impl Into<String>) -> Node {
+        Node::Str(s.into())
+    }
+
+    pub fn obj<K: Into<String>>(fields: impl IntoIterator<Item = (K, Node)>) -> Node {
+        Node::Obj(fields.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
 }
 
 impl From<u64> for Node {

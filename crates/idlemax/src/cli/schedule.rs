@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use super::print::table;
 use super::rows;
-use super::{hint, ApiClient, CliError, Out, Peer};
+use super::{hint, noop, views, ApiClient, CliError, Out, Peer};
 
 #[derive(Subcommand, Debug)]
 pub enum ScheduleCmd {
@@ -46,16 +46,37 @@ pub async fn run(cmd: ScheduleCmd, c: &ApiClient, out: &Out, now: UnixMs) -> Res
             }
             ScheduleCmd::List => out.emit(&c.schedules().await?, |v| list(v, now), &[]),
             ScheduleCmd::Rm { id } => out.emit(&c.remove_schedule(id).await?, removed, &[]),
-            ScheduleCmd::Pause { id } => {
-                out.emit(&c.pause_schedule(id).await?, |v| line(v, "paused"), &[])
-            }
-            ScheduleCmd::Resume { id } => {
-                out.emit(&c.resume_schedule(id).await?, |v| line(v, "resumed"), &[])
-            }
+            ScheduleCmd::Pause { id } => toggle(c, id, true, out).await,
+            ScheduleCmd::Resume { id } => toggle(c, id, false, out).await,
         }
     }
     .await;
     result.map_err(|e| hint(e, Peer::Coordinator))
+}
+
+/// Pauses or resumes a schedule; one that is already there answers "already ... (no-op)".
+async fn toggle(c: &ApiClient, id: ScheduleId, pause: bool, out: &Out) -> Result<()> {
+    let (word, state) = if pause {
+        ("paused", "paused")
+    } else {
+        ("resumed", "running")
+    };
+    let known = c
+        .schedules()
+        .await?
+        .into_iter()
+        .find(|v| v.schedule.id == id);
+    let (view, result) = match known.filter(|v| noop::schedule(v, pause)) {
+        Some(v) => (v, noop::already(state)),
+        None if pause => (c.pause_schedule(id).await?, word.to_string()),
+        None => (c.resume_schedule(id).await?, word.to_string()),
+    };
+    out.emit_with(
+        &view,
+        |v| line(v, &result),
+        || Ok(views::schedule_result(&result, &view)),
+        &[],
+    )
 }
 
 /// The one key a spec file may carry beyond a `JobSpec`.

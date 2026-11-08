@@ -9,6 +9,7 @@ mod init;
 mod job;
 mod job_wait;
 mod logs;
+mod noop;
 mod out;
 pub mod print;
 pub mod rows;
@@ -33,7 +34,7 @@ use crate::state::{self, now_ms};
 
 pub use client::{ApiClient, ClientError};
 pub use job::ExitWith;
-pub use out::{CliError, Format, Out, Peer};
+pub use out::{views, CliError, Format, Out, Peer};
 
 /// The bare version, what `-V`, `-v` and `--version` print.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -480,7 +481,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
             out.emit(&c.jobs(status, limit).await?, |j| print::jobs(j, now), &[])
         }
         Cmd::Why { id } => out.emit(&c.why(id).await?, why::render, &[]),
-        Cmd::Job(JobCmd::Cancel { id }) => out.emit(&c.cancel_job(id).await?, print::job_line, &[]),
+        Cmd::Job(JobCmd::Cancel { id }) => cancel(c, id, out).await,
         Cmd::Schedule(cmd) => schedule::run(cmd, c, out, now).await,
         Cmd::Pause(t) => control(c, t.request(ControlAction::Pause), out).await,
         Cmd::Resume(t) => control(c, t.request(ControlAction::Resume), out).await,
@@ -508,10 +509,22 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
 }
 
 async fn control(c: &ApiClient, req: ControlRequest, out: &Out) -> Result<()> {
-    let s = c.control(&req).await?;
-    out.emit(
+    let before = c.status().await?;
+    let (s, label, result) = match noop::control(&req, &before) {
+        Some(state) => {
+            let result = noop::already(state);
+            (before, result.clone(), result)
+        }
+        None => (
+            c.control(&req).await?,
+            print::control_label(&req),
+            views::done(&req),
+        ),
+    };
+    out.emit_with(
         &s,
-        |s| format!("ok: {}\n{}", print::control_label(&req), print::summary(s)),
+        |s| format!("ok: {label}\n{}", print::summary(s)),
+        || Ok(views::control(&result, &s)),
         &[],
     )
 }
@@ -530,10 +543,48 @@ async fn advise(c: &ApiClient, cmd: AdviseCmd, out: &Out, now: i64) -> Result<()
         AdviseCmd::List => out.emit(&c.advice().await?, |a| print::advice(a, now), &[]),
         AdviseCmd::Refresh => out.emit(&c.refresh_advice().await?, |a| print::advice(a, now), &[]),
         AdviseCmd::Accept { id } => out.emit(&c.accept_advice(id).await?, print::job_line, &[]),
-        AdviseCmd::Dismiss { id } => {
-            out.emit(&c.dismiss_advice(id).await?, print::advice_line, &[])
-        }
+        AdviseCmd::Dismiss { id } => dismiss(c, id, out).await,
     }
+}
+
+async fn dismiss(c: &ApiClient, id: i64, out: &Out) -> Result<()> {
+    let known = c.advice().await?.into_iter().find(|r| r.id == id);
+    if let Some(rec) = known.filter(noop::dismiss) {
+        let result = noop::already("dismissed");
+        return out.emit_with(
+            &rec,
+            |r| format!("advice {} {result}: {}", r.id, r.title),
+            || Ok(views::advice_result(&result, &rec)),
+            &[],
+        );
+    }
+    let rec = c.dismiss_advice(id).await?;
+    out.emit_with(
+        &rec,
+        print::advice_line,
+        || Ok(views::advice_result("dismissed", &rec)),
+        &[],
+    )
+}
+
+async fn cancel(c: &ApiClient, id: JobId, out: &Out) -> Result<()> {
+    let known = c.job(id).await?;
+    if let Some(status) = noop::cancel(&known) {
+        let result = noop::already(status);
+        return out.emit_with(
+            &known,
+            |j| format!("job {} {result}: {}", j.id, j.spec.name),
+            || Ok(views::job_result(&result, &known)),
+            &[],
+        );
+    }
+    let job = c.cancel_job(id).await?;
+    out.emit_with(
+        &job,
+        print::job_line,
+        || Ok(views::job_result("cancelled", &job)),
+        &[],
+    )
 }
 
 async fn run_local(cmd: LocalCmd, c: &ApiClient, out: &Out) -> Result<()> {
