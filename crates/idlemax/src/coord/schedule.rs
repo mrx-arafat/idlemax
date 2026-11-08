@@ -6,7 +6,7 @@ use idlemax_core::schedule::{decide, Decision, Schedule};
 use idlemax_core::types::{Job, UnixMs};
 use idlemax_core::Config;
 
-use super::store::{Store, StoreResult};
+use super::store::{Store, StoreError, StoreResult};
 
 /// Queues a job for every due schedule and returns how many it queued. A schedule that
 /// fails (a store error) is logged and skipped so the others still fire.
@@ -37,8 +37,15 @@ fn fire_one(
         store.defer_schedule(schedule, &e.to_string(), now)?;
         return Ok(false);
     }
-    store.fire_schedule(schedule, now)?;
-    Ok(true)
+    match store.fire_schedule(schedule, now) {
+        Ok(_) => Ok(true),
+        // A full queue is a reason to wait an interval and say so, not to retry every sweep.
+        Err(e @ StoreError::LimitReached { .. }) => {
+            store.defer_schedule(schedule, &e.to_string(), now)?;
+            Ok(false)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// The job the schedule's last fire queued, if it still exists.
@@ -155,5 +162,35 @@ mod tests {
         // It does not retry (and log) on every sweep, only after the next interval.
         assert_eq!(fire_due(&mut store, &cfg, T0 + MINUTE).unwrap(), 0);
         assert_eq!(store.events(0).unwrap().len(), 1);
+    }
+
+    /// API.md promises an error event and a retry after the next interval when a schedule
+    /// cannot queue its job, the live-job cap included, not a silent retry every sweep.
+    #[test]
+    fn a_fire_refused_by_the_live_job_cap_says_why_and_waits_an_interval() {
+        let mut store = Store::open_in_memory().unwrap();
+        let cfg = Config::default();
+        for i in 0..10_000 {
+            store
+                .insert_job(&job_spec(&format!("filler-{i}")), T0)
+                .unwrap();
+        }
+        let every: Every = "5m".parse().unwrap();
+        store
+            .insert_schedule(&job_spec("nightly"), every, T0)
+            .unwrap();
+
+        assert_eq!(fire_due(&mut store, &cfg, T0).unwrap(), 0);
+        let errors = |store: &Store| {
+            store
+                .events(0)
+                .unwrap()
+                .into_iter()
+                .filter(|e| e.kind == EventKind::Error)
+                .count()
+        };
+        assert_eq!(errors(&store), 1);
+        assert_eq!(fire_due(&mut store, &cfg, T0 + MINUTE).unwrap(), 0);
+        assert_eq!(errors(&store), 1, "no retry before the next interval");
     }
 }
