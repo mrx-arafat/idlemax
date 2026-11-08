@@ -2,8 +2,13 @@
 //! run clock, cap checks, exit outcome, rate-limit scan). No I/O, no clock.
 
 pub mod inbox;
+mod usage;
 mod wrap;
 
+pub use usage::{
+    could_belong, job_procs, poll_every, JobKey, JobProcs, ProcFact, Usage, POLL_NEAR_CAP,
+    POLL_RELAXED,
+};
 pub use wrap::{scope_unit, supports_scope_oom_policy, Wrapper};
 
 use crate::types::{CostClass, JobSpec, JobStatus, UnixMs};
