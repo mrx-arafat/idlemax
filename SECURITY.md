@@ -22,7 +22,7 @@ The following areas are in scope for security reports:
 
 - Token handling: generation of 32-byte hex tokens, file permissions (mode 0600), storage in `$IDLEMAX_HOME/token`, and constant-time comparison.
 - HTTP API: token verification across endpoints, request validation, refusal of wildcard bindings (`0.0.0.0`, `[::]`), and loopback enforcement for the local agent API.
-- Job execution: process isolation, environment variable filtering (refusing `LD_*` and `DYLD_*` variables and withholding the API token), argv execution without shell interpolation, allowlist enforcement, and OS resource limits.
+- Job execution: process isolation, the minimal environment a job starts with (and the refusal of `LD_*` and `DYLD_*` variables and of the API token), argv execution without shell interpolation, allowlist enforcement, field limits on job specs, and OS resource limits.
 - Statusline wrapper: safe capture of usage metrics in `packaging/claude-statusline-capture.sh`, atomic file replacement, avoiding credential exposure, and non-blocking failure semantics.
 - Files idlemax writes: the modes of the state directory, job logs, inbox notes and backups, and the config edits made by `idlemax hooks`, `statusline` and `service`.
 - The advisor: untrusted text from GitHub and agent sessions, and the confinement of the AI pass.
@@ -50,15 +50,20 @@ idlemax is built around several core security guarantees.
   Its traffic is plain HTTP, so bind it to a private network such as a tailnet that encrypts transit traffic.
 - A peer that opens many idle connections cannot stop the coordinator: a failed `accept` is logged and retried, and header timeouts close idle connections.
   It can still crowd out other clients while it does, which is one more reason to keep the coordinator on a private network.
-- The local agent API listens on loopback only and needs the same token.
+- The local agent API listens on loopback only, needs the same token, and has the same header and request timeouts as the coordinator.
 - Browsers cannot call the API with the token: the API sends no CORS headers and answers preflights with 405.
-  The coordinator does not check the `Host` header; with the bearer token required on every route that holds data, DNS rebinding reaches only `/healthz` and the token-free dashboard page.
+- Every route of the coordinator and of the agent's local API checks the `Host` header and answers 421 for a name it does not serve, so a web page that reaches 127.0.0.1 under its own domain name (DNS rebinding) gets nothing, not even the token-free dashboard page.
+  IP addresses, `localhost`, the host of `coordinator.url` and the names in `coordinator.allowed_hosts` are served; a device that reaches the coordinator by a DNS name (a MagicDNS name, say) needs that name listed, and `idlemax doctor` says so.
+  A rebinding page can only ever present a domain name, which is why IP addresses need no listing.
 
 ### Jobs
 
-- Jobs run without a shell, as the agent's user, with `IDLEMAX_JOB_ID` in their environment but never the API token.
+- Jobs run without a shell, as the agent's user, with `IDLEMAX_JOB_ID` and `IDLEMAX_JOB_TAG` (which the runner uses to find a job's processes) in their environment but never the API token.
   Loader environment variables starting with `LD_` or `DYLD_` are refused.
-  Jobs otherwise inherit the agent's environment, so keep secrets out of the environment the agent starts with.
+  A job starts from a minimal environment, not the agent's: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `IDLEMAX_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, the XDG base directories and the user-manager address `systemd-run --user` needs.
+  API keys, tokens, proxy settings and `SSH_AUTH_SOCK` in the agent's environment do not reach jobs; a job that needs one says so in the `env` of its spec.
+- Every field of a job spec is bounded (name, argument and environment sizes, stdin, working directory, lists), and a spec over a limit is a 400 that names the limit.
+- The store is bounded too: events keep their newest 100000 and are cut to 500 characters, at most 256 devices, 10000 unfinished jobs and 1024 pause flags are accepted (409 beyond that), device ids and names must be plain and short, and silent devices and old finished jobs are pruned.
 - The agent checks its own allowlist whatever the coordinator says, matches `argv[0]` exactly, and resolves a bare name on its own `PATH` before the job's `PATH` exists.
 - A job's `stdin` is written by a separate thread, so a program that never reads it cannot stop the agent's guard, kill switch or heartbeat.
 - AI CLIs run only on devices that list the account, using the login already present on that device.
@@ -78,7 +83,8 @@ idlemax is built around several core security guarantees.
 - Text output removes terminal control characters from names, ids, messages and advice, so a hostile device id, job name or PR title cannot run an escape sequence in your terminal.
   Job logs and inbox notes are printed as written, like `cat`, and the TUI drops control characters itself.
 - The web dashboard loads nothing remote, sends a strict Content-Security-Policy, writes every API string as text rather than HTML, and keeps the token in the browser's local storage.
-  Its single inline script is allowed by the policy because the page has no HTML sink and no remote script.
+  Its one script is a separate file, `/dashboard.js`, and the policy is `script-src 'self'`: an inline script, `eval` or a script from another origin does not run.
+  Styles stay inline because the page sets a few `style` attributes; style cannot run code, and the policy lets the page load or send nothing outside this origin.
 
 ### Advisor
 

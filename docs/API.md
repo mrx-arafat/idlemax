@@ -7,9 +7,14 @@ Optional fields may be omitted on input; missing fields take their defaults.
 
 ## Auth and errors
 
-Every call except `GET /healthz` and `GET /` needs `Authorization: Bearer <token>`.
+Every call except `GET /healthz`, `GET /` and `GET /dashboard.js` needs `Authorization: Bearer <token>`.
 The token comes from `IDLEMAX_TOKEN` or `$IDLEMAX_HOME/token` (mode 0600) and must be at least 32 characters; `idlemax init` makes 64.
 Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
+
+Every route, token-free ones included, also checks the `Host` header (DNS-rebinding defence).
+It must be an IP address, `localhost` or a `*.localhost` name, the host of `coordinator.url`, or a name in `coordinator.allowed_hosts`; any other name gets `421 Misdirected Request`.
+A request with no `Host` header is served.
+The agent local API accepts IP addresses and `localhost` names only.
 
 ## Coordinator (default `127.0.0.1:7878`, tailnet IP in production)
 
@@ -17,6 +22,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 |---|---|---|---|
 | GET | /healthz | | `ok` (text, no auth) |
 | GET | / | | dashboard HTML (no auth) |
+| GET | /dashboard.js | | the dashboard's one script, `text/javascript` (no auth) |
 | POST | /v1/agent/heartbeat | `Heartbeat` | `HeartbeatReply` |
 | POST | /v1/agent/job-update | `JobUpdate` | `JobUpdateReply` |
 | POST | /v1/agent/advisor-inputs | `AdvisorInputs` | `{}` |
@@ -41,7 +47,18 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
-`POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`.
+`POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`, and 409 when 10000 jobs are already unfinished.
+`JobSpec::validate` bounds every field, and the 400 names the field and its limit:
+
+| Field | Limit |
+|---|---|
+| `name` | 200 characters, no control characters |
+| `command` | 1024 arguments, 128 KiB each, 512 KiB in all, no NUL byte |
+| `env` | 256 variables, names without `=`, values up to 32 KiB, 256 KiB in all |
+| `stdin` | 1 MiB |
+| `cwd` | 4096 bytes, no NUL byte |
+| `requires`, `devices` | 64 entries of up to 128 characters |
+| `ai_account` | 128 characters |
 A spec may carry `key`, an idempotency key of 1 to 128 characters.
 While a job with that key is queued, leased, running or paused, `POST /v1/jobs` queues nothing and answers 200 with that job, so a client may retry safely.
 Once the job has finished the key is free again.
@@ -117,6 +134,17 @@ An expired lease re-queues the job with `not_before_ms` backoff; after `max_atte
 AI jobs (`cost = "ai"`) get one attempt and never retry automatically.
 See [Retries](#retries) for which endings are retried.
 A device is offline after `coordinator.offline_after_secs` (default 90 s) without a heartbeat.
+A heartbeat is refused with 400 when the device id (128 characters), host name (253) or a capability or AI account entry (128 characters, 64 entries) has a control character or is over its limit.
+The coordinator keeps at most 256 devices: a heartbeat from a new one over that is 409, and a device silent for 30 days is forgotten.
+
+### Limits and retention
+
+The store is bounded so one token holder cannot grow it without limit:
+
+- events: messages are cut to 500 characters and only the newest 100000 are kept (and none older than 30 days);
+- finished jobs older than 90 days are pruned, except `parked` ones and the last job of a schedule;
+- pause flags: at most 1024 (a new one over that is 409; resuming is always allowed), and a pause request for a device id with a control character or over 128 characters is 400;
+- advisor inputs: at most 256 KiB per device (400 over that).
 
 ### Retries
 
