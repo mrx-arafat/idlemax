@@ -103,6 +103,7 @@ pub fn router(state: AppState, token: &str) -> Router {
     Router::new()
         .route("/healthz", get(http::healthz))
         .route("/", get(web::index))
+        .route("/dashboard.js", get(web::script))
         .merge(v1)
         .fallback(http::no_route)
         .method_not_allowed_fallback(http::wrong_method)

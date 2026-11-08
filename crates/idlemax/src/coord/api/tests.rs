@@ -815,3 +815,88 @@ fn a_store_limit_is_a_409_not_a_500() {
     assert_eq!(failure.status(), StatusCode::CONFLICT);
     assert!(failure.to_string().contains("too many devices"));
 }
+
+/// The dashboard holds the token in localStorage, so any script that runs on it is full control:
+/// the policy allows only the script served from the same origin, never an inline one.
+#[tokio::test]
+async fn the_dashboard_runs_one_same_origin_script_and_the_policy_forbids_inline_script() {
+    let api = Api::start().await;
+    let page = api.http.get(format!("{}/", api.base)).send().await.unwrap();
+    let csp = page.headers()["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    let html = page.text().await.unwrap();
+    let script_src = csp
+        .split(';')
+        .find(|d| d.trim().starts_with("script-src"))
+        .unwrap();
+    assert_eq!(script_src.trim(), "script-src 'self'", "{csp}");
+    assert!(
+        csp.contains("default-src 'none'") && csp.contains("connect-src 'self'"),
+        "{csp}"
+    );
+    assert!(
+        html.contains("<script src=\"/dashboard.js\"></script>"),
+        "the page loads its script"
+    );
+    assert_eq!(
+        html.matches("<script").count(),
+        1,
+        "no inline script block is left"
+    );
+
+    // The script needs no token, is served as JavaScript and is not sniffed into anything else.
+    let script = api
+        .http
+        .get(format!("{}/dashboard.js", api.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(script.status(), StatusCode::OK);
+    assert_eq!(
+        script.headers()["content-type"],
+        "text/javascript; charset=utf-8"
+    );
+    assert_eq!(script.headers()["x-content-type-options"], "nosniff");
+    let js = script.text().await.unwrap();
+    assert!(
+        js.contains("tokenStore") && js.contains("function h(tag"),
+        "the dashboard code is served"
+    );
+    // Every API string is written as text: no HTML or code sink anywhere in it.
+    for sink in [
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "new Function",
+    ] {
+        assert!(!js.contains(sink), "{sink} in the dashboard script");
+    }
+
+    // The script parses. Skipped where node is not installed (CI runners have it).
+    if let Ok(node) = which_node() {
+        let file = api._home.path().join("dashboard.mjs");
+        std::fs::write(&file, &js).unwrap();
+        let out = std::process::Command::new(node)
+            .arg("--check")
+            .arg(&file)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+fn which_node() -> Result<std::path::PathBuf, ()> {
+    let path = std::env::var_os("PATH").ok_or(())?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("node"))
+        .find(|p| p.is_file())
+        .ok_or(())
+}
