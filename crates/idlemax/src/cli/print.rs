@@ -187,7 +187,8 @@ pub fn local_status(result: Option<&str>, s: &LocalStatus, now_ms: UnixMs) -> St
         yes_no(s.kill_switch),
         guard_summary(&s.guard),
     ));
-    for reason in s.guard.reasons.iter().skip(1) {
+    // The summary picks the reason at the verdict's level and cuts it, so list every one in full.
+    for reason in &s.guard.reasons {
         out.push_str(&format!("\n  {reason}"));
     }
     out.push_str(&format!("\nrunning jobs: {}", s.running.len()));
