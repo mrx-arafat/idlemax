@@ -130,7 +130,32 @@ fn is_root() -> bool {
 }
 
 fn user_bus_exists() -> bool {
-    std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| Path::new(&d).join("bus").exists())
+    std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| user_manager_socket_in(Path::new(&d)))
+}
+
+/// `systemd-run --user` talks to the user manager over the D-Bus session socket, or over the
+/// manager's own private socket when there is no session bus (typical for ssh on a server).
+fn user_manager_socket_in(runtime_dir: &Path) -> bool {
+    ["bus", "systemd/private"]
+        .iter()
+        .any(|socket| runtime_dir.join(socket).exists())
+}
+
+#[cfg(test)]
+mod wrapper_tests {
+    use super::user_manager_socket_in;
+
+    #[test]
+    fn user_manager_is_found_by_either_socket_systemd_run_uses() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!user_manager_socket_in(dir.path()), "empty runtime dir");
+        std::fs::create_dir(dir.path().join("systemd")).unwrap();
+        std::fs::write(dir.path().join("systemd/private"), "").unwrap();
+        assert!(user_manager_socket_in(dir.path()), "private socket only");
+        let bus = tempfile::tempdir().unwrap();
+        std::fs::write(bus.path().join("bus"), "").unwrap();
+        assert!(user_manager_socket_in(bus.path()), "session bus only");
+    }
 }
 
 /// Resolves a bare program name on the agent's PATH.
