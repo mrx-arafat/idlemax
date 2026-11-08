@@ -110,7 +110,8 @@ print_summary() {
 cleanup() {
   set +e
   local unit
-  for unit in "${JOB_UNITS[@]}"; do
+  # bash 3.2 (stock macOS) treats an empty array as unset under `set -u`.
+  for unit in ${JOB_UNITS[@]+"${JOB_UNITS[@]}"}; do
     systemctl --user stop "$unit" >/dev/null 2>&1
   done
   if [[ -n $AGENT_UNIT ]]; then

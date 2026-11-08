@@ -1,6 +1,7 @@
 #!/bin/sh
 # Tests the maintainer scripts offline in temp dirs: scripts/changelog.sh orders a prerelease
-# tag before its release. Usage: sh scripts/test-scripts.sh
+# tag before its release, and scripts/verify-linux.sh --self-test runs to the end on the
+# macOS system bash (3.2) and removes its temp dir. Usage: sh scripts/test-scripts.sh
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -39,6 +40,18 @@ case $unreleased in
 esac
 order=$(grep -n '^## \[0' "$T/changelog.md" | sed 's/^[0-9]*:## \[\([^]]*\)\].*/\1/' | tr '\n' ' ')
 [ "$order" = "0.2.0 0.2.0-rc.1 0.1.0 " ] || fail "release sections are in the order: $order"
+
+# The self-test must print its summary and leave nothing behind, even on bash 3.2.
+shell=bash
+[ -x /bin/bash ] && shell=/bin/bash
+out=$(TMPDIR="$T/tmp" "$shell" "$HERE/verify-linux.sh" --self-test 2>&1)
+status=$?
+[ "$status" -eq 0 ] || fail "verify-linux.sh --self-test exited $status: $out"
+case $out in
+  *"PASS: the parser fixtures matched every expected value."*) ;;
+  *) fail "verify-linux.sh --self-test printed no PASS summary: $out" ;;
+esac
+[ -z "$(ls -A "$T/tmp")" ] || fail "verify-linux.sh --self-test left $(ls -A "$T/tmp")"
 
 [ "$failed" -eq 0 ] && echo "scripts: ok"
 exit "$failed"
