@@ -534,6 +534,8 @@ The advisor queues a template without asking only if its name is in `advisor.aut
 ## Docs
 
 - [docs/API.md](docs/API.md): wire formats, lease and control semantics
+- [docs/ROLLOUT.md](docs/ROLLOUT.md): runbook to verify the Linux agent, then deploy the coordinator on a tailnet
+- [docs/RELEASING.md](docs/RELEASING.md): how a release is cut
 - [docs/ROADMAP.md](docs/ROADMAP.md): what comes next
 - [CHANGELOG.md](CHANGELOG.md): release notes
 
