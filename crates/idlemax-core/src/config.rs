@@ -201,15 +201,14 @@ pub struct GuardPolicy {
     pub psi_io_full_kill: Option<f64>,
     pub load_1m_pause: Option<f64>,
     pub load_1m_kill: Option<f64>,
+    /// Below this, start no new jobs (running ones go on: pausing frees no disk).
     pub disk_free_mib_pause: Option<u64>,
+    /// Below this, kill running jobs. Measured on the least free of `/`, the state dir and the
+    /// running jobs' working directories.
     pub disk_free_mib_kill: Option<u64>,
 }
 
 const GIB_MIB: u64 = 1024;
-/// 1 GB (10^9 bytes) in MiB, rounded up so the threshold is never looser.
-const fn gb_mib(gb: u64) -> u64 {
-    (gb * 1_000_000_000).div_ceil(1024 * 1024)
-}
 
 impl GuardPolicy {
     pub fn for_profile(profile: DeviceProfile) -> Self {
@@ -254,8 +253,8 @@ impl GuardPolicy {
             psi_io_full_kill: None,
             load_1m_pause: Some(6.0),
             load_1m_kill: Some(8.0),
-            disk_free_mib_pause: Some(15 * GIB_MIB),
-            disk_free_mib_kill: Some(10 * GIB_MIB),
+            disk_free_mib_pause: Some(2 * GIB_MIB),
+            disk_free_mib_kill: Some(GIB_MIB),
         }
     }
 
@@ -287,8 +286,8 @@ impl GuardPolicy {
             psi_io_full_kill: Some(25.0),
             load_1m_pause: Some(1.5),
             load_1m_kill: Some(2.0),
-            disk_free_mib_pause: Some(gb_mib(10)),
-            disk_free_mib_kill: Some(gb_mib(5)),
+            disk_free_mib_pause: Some(2 * GIB_MIB),
+            disk_free_mib_kill: Some(GIB_MIB),
         }
     }
 

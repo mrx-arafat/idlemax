@@ -112,7 +112,7 @@ It runs on macOS (Apple Silicon or Intel) and Linux (x86_64 or arm64).
    idlemax why 1
    ```
 
-   It lists every reason with its fix, for example a guard pause such as `disk free 13756.2 MiB < 15360 MiB`.
+   It lists every reason with its fix, for example a guard hold such as `disk free 1500.0 MiB < 2048 MiB`.
    That is the guard protecting a busy machine.
    To see the demo through anyway, relax the key it names in `[guard]` (here `disk_free_mib_pause = 0` and `disk_free_mib_kill = 0`) and restart the agent.
 
@@ -616,8 +616,11 @@ Linux and a busy machine have not been measured.
 | PSI memory | | | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
 | PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
 | Load average, 1 min | > 6 | > 8 | > 1.5 | > 2.0 | `load_1m_pause`, `load_1m_kill` |
-| Disk free | < 15 GiB | < 10 GiB | < 10 GB | < 5 GB | `disk_free_mib_pause`, `disk_free_mib_kill` |
+| Disk free | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | `disk_free_mib_pause`, `disk_free_mib_kill` |
 | Capacity | 2 jobs, 1 GiB total | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
+
+Disk is the least free space of `/`, the state dir and the working directory of each running job, because a job fills the filesystem it runs on.
+Below the first disk line nothing new starts and running jobs go on, since pausing a job gives no disk back; below the kill line running jobs are killed.
 
 </details>
 

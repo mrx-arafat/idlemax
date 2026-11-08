@@ -54,11 +54,23 @@ impl Findings {
 
     /// Kill-level when `value < kill`, else pause when `value < pause`.
     fn below(&mut self, what: &str, value: f64, limits: (Option<f64>, Option<f64>), unit: &str) {
-        let (pause, kill) = limits;
+        self.below_with(Level::Pause, what, value, limits, unit);
+    }
+
+    /// Like `below`, with `soft` as the level of the first line.
+    fn below_with(
+        &mut self,
+        soft: Level,
+        what: &str,
+        value: f64,
+        limits: (Option<f64>, Option<f64>),
+        unit: &str,
+    ) {
+        let (first, kill) = limits;
         if let Some(k) = kill.filter(|k| value < *k) {
             self.add(Level::Kill, format!("{what} {value:.1}{unit} < {k}{unit}"));
-        } else if let Some(p) = pause.filter(|p| value < *p) {
-            self.add(Level::Pause, format!("{what} {value:.1}{unit} < {p}{unit}"));
+        } else if let Some(p) = first.filter(|p| value < *p) {
+            self.add(soft, format!("{what} {value:.1}{unit} < {p}{unit}"));
         }
     }
 
@@ -353,7 +365,9 @@ impl Guard {
             if m.disk_total_bytes == 0 {
                 f.add(Level::Hold, "disk metrics unavailable".into());
             } else {
-                f.below("disk free", mib(m.disk_free_bytes), disk, " MiB");
+                // A pause gives no disk back, so the first line only holds new jobs.
+                let free = mib(m.disk_free_bytes);
+                f.below_with(Level::Hold, "disk free", free, disk, " MiB");
             }
         }
         if p.require_ac_power {

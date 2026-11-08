@@ -296,7 +296,7 @@ fn a_guard_reason_names_the_setting_that_holds_the_job() {
     let metrics = MetricsSnapshot {
         memory_pressure: Some(MemoryPressure::Warn),
         load_avg_1m: 9.0,
-        disk_free_bytes: 1 << 30,
+        disk_free_bytes: 512 << 20,
         ..calm()
     };
     let decision = guard.evaluate(&metrics, &[], true, true);

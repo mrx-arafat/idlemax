@@ -51,6 +51,7 @@ fn linux() -> MetricsSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum A {
     Run,
+    Hold,
     Pause,
     Kill,
 }
@@ -71,7 +72,7 @@ type Case = (
 
 #[test]
 fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
-    use A::{Kill, Pause, Run};
+    use A::{Hold, Kill, Pause, Run};
     let cases: &[Case] = &[
         ("mac healthy", MAC, |_| {}, 0, false, (Run, Run)),
         (
@@ -139,9 +140,28 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
             (Pause, Kill),
         ),
         (
-            "mac disk < 10 GiB",
+            "mac 4.6 GiB free of 228 GiB runs jobs",
             MAC,
-            |m| m.disk_free_bytes = 10 * GIB - MIB,
+            |m| {
+                m.disk_total_bytes = 228 * GIB;
+                m.disk_free_bytes = 4 * GIB + 600 * MIB;
+            },
+            0,
+            false,
+            (Run, Run),
+        ),
+        (
+            "mac disk < 2 GiB holds new jobs only",
+            MAC,
+            |m| m.disk_free_bytes = 2 * GIB - MIB,
+            0,
+            false,
+            (Hold, Hold),
+        ),
+        (
+            "mac disk < 1 GiB",
+            MAC,
+            |m| m.disk_free_bytes = GIB - MIB,
             0,
             false,
             (Pause, Kill),
@@ -221,9 +241,25 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
             (Pause, Kill),
         ),
         (
-            "server disk 4 GB",
+            "server 2099 MiB free runs jobs",
             SERVER,
-            |m| m.disk_free_bytes = 4 * GB,
+            |m| m.disk_free_bytes = 2099 * MIB,
+            0,
+            false,
+            (Run, Run),
+        ),
+        (
+            "server disk < 2 GiB holds new jobs only",
+            SERVER,
+            |m| m.disk_free_bytes = 2 * GIB - MIB,
+            0,
+            false,
+            (Hold, Hold),
+        ),
+        (
+            "server disk < 1 GiB",
+            SERVER,
+            |m| m.disk_free_bytes = GIB - MIB,
             0,
             false,
             (Pause, Kill),
@@ -241,6 +277,7 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
         };
         let action = |a: A| match a {
             A::Run => run,
+            A::Hold => GuardAction::Hold,
             A::Pause => GuardAction::Pause,
             A::Kill => GuardAction::Kill,
         };
