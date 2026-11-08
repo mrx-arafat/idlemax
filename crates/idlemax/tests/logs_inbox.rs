@@ -2,8 +2,10 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 use idlemax_core::job_run::inbox::{self, RunReport};
 use idlemax_core::job_run::Outcome;
@@ -143,6 +145,58 @@ fn logs_preserve_non_utf8_output_including_when_tailed_or_followed() {
         assert!(out.status.success(), "{:?}", out);
         assert_eq!(out.stdout, bytes);
     }
+}
+
+#[test]
+fn following_a_retry_waits_for_its_own_footer_even_across_reads() {
+    struct Follower(Child);
+    impl Drop for Follower {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let env = TempHome::new();
+    let log = env.paths.job_log_file(10);
+    fs::write(&log, b"=== idlemax job 10 attempt 1 started fixture ===\nold\n=== idlemax: killed (exit none) ===\n=== idlemax job 10 attempt 2 started fixture ===\nready\n").unwrap();
+    let output = env.home.join("follow.out");
+    let mut follower = Follower(
+        Command::new(BIN)
+            .args(["logs", "10", "--follow"])
+            .env_clear()
+            .env("HOME", &env.home)
+            .env("IDLEMAX_HOME", &env.state)
+            .stdout(fs::File::create(&output).unwrap())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let until = |condition: &mut dyn FnMut() -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !condition() {
+            assert!(Instant::now() < deadline, "timed out following log");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    until(&mut || fs::read(&output).unwrap().ends_with(b"ready\n"));
+    assert!(
+        follower.0.try_wait().unwrap().is_none(),
+        "must follow attempt 2"
+    );
+    let mut writer = fs::OpenOptions::new().append(true).open(log).unwrap();
+    writer.write_all(b"after-ready\n=== idle").unwrap();
+    until(&mut || fs::read(&output).unwrap().ends_with(b"=== idle"));
+    assert!(follower.0.try_wait().unwrap().is_none());
+    writer.write_all(b"max: succeeded (exit 0) ===\n").unwrap();
+    let mut exit = None;
+    until(&mut || {
+        exit = follower.0.try_wait().unwrap();
+        exit.is_some()
+    });
+    assert!(exit.unwrap().success());
+    assert!(fs::read(&output)
+        .unwrap()
+        .ends_with(b"after-ready\n=== idlemax: succeeded (exit 0) ===\n"));
 }
 
 #[test]

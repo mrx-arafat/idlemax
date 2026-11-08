@@ -4,11 +4,13 @@
 mod env;
 mod exit_marker;
 pub mod inbox;
+mod log;
 mod usage;
 mod wrap;
 
 pub use env::inherits;
 pub use exit_marker::{orphan_verdict, ExitMarker, OrphanVerdict};
+pub use log::LogProgress;
 pub use usage::{
     could_belong, job_procs, orphan_procs, poll_every, JobKey, JobProcs, ProcFact, Usage,
     POLL_NEAR_CAP, POLL_RELAXED,

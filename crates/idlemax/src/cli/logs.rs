@@ -6,6 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use idlemax_core::job_run::LogProgress;
 use idlemax_core::types::JobId;
 
 use super::out::toon::Node;
@@ -71,7 +72,8 @@ async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
 
     print_bytes(&initial_content, tail)?;
 
-    if String::from_utf8_lossy(&initial_content).contains("=== idlemax:") {
+    let mut progress = LogProgress::default();
+    if progress.push(&initial_content) {
         return Ok(());
     }
 
@@ -84,8 +86,7 @@ async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
                 Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => return Ok(()),
                 other => other?,
             }
-            let text = String::from_utf8_lossy(chunk);
-            if text.contains("=== idlemax:") {
+            if progress.push(chunk) {
                 break;
             }
         } else {
@@ -93,6 +94,7 @@ async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
             let current_pos = file.stream_position()?;
             if meta.len() < current_pos {
                 file.seek(SeekFrom::Start(0))?;
+                progress = LogProgress::default();
                 continue;
             }
             tokio::time::sleep(POLL_INTERVAL).await;
