@@ -108,10 +108,25 @@ impl Out {
         view: impl FnOnce() -> Result<Node>,
         hints: &[String],
     ) -> Result<String> {
+        // `--fields` picks TOON columns, but a bad one is a usage error in every format.
+        if self.format != Format::Toon && !self.fields.is_empty() {
+            view()?;
+            return self.render_plain(value, table);
+        }
+        Ok(match self.format {
+            Format::Toon => printable(&self.toon(view()?, hints)),
+            _ => self.render_plain(value, table)?,
+        })
+    }
+
+    fn render_plain<T: Serialize>(
+        &self,
+        value: &T,
+        table: impl FnOnce(&T) -> String,
+    ) -> Result<String> {
         Ok(match self.format {
             Format::Json => serde_json::to_string_pretty(value).context("encoding JSON")?,
-            Format::Table => printable(&table(value)),
-            Format::Toon => printable(&self.toon(view()?, hints)),
+            _ => printable(&table(value)),
         })
     }
 
@@ -250,5 +265,26 @@ mod tests {
         assert!(!Out::new(Format::Table, false, Vec::new())
             .error_text(&err)
             .contains('\x1b'));
+    }
+
+    /// README: a bad `--fields` is a usage error (exit 2) in every format, not only in TOON.
+    #[test]
+    fn a_bad_fields_list_fails_in_every_format() {
+        let value = serde_json::json!({ "id": 1 });
+        let bad = || {
+            Err(anyhow::anyhow!(CliError::usage(
+                "unknown field `bogus`",
+                "valid --fields: id"
+            )))
+        };
+        for format in [Format::Json, Format::Table, Format::Toon] {
+            let out = Out::new(format, false, vec!["bogus".into()]);
+            assert!(
+                out.render(&value, |_| String::new(), bad, &[]).is_err(),
+                "{format:?}"
+            );
+        }
+        let plain = Out::new(Format::Json, false, Vec::new());
+        assert!(plain.render(&value, |_| String::new(), bad, &[]).is_ok());
     }
 }
