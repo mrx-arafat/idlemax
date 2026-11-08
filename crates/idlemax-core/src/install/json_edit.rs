@@ -34,6 +34,20 @@ pub fn parse_object(text: &str, at: usize) -> Result<(Vec<Member>, Range<usize>)
     Ok((members, start..s.i))
 }
 
+/// Element spans of the array whose `[` is the first non-space byte at or after `at`,
+/// and the byte range of the whole array including both brackets.
+pub fn parse_array(text: &str, at: usize) -> Result<(Vec<Range<usize>>, Range<usize>), ScanError> {
+    let mut s = Scan {
+        text,
+        i: at,
+        depth: 0,
+    };
+    s.ws();
+    let start = s.i;
+    let items = s.array()?;
+    Ok((items, start..s.i))
+}
+
 struct Scan<'a> {
     text: &'a str,
     i: usize,
@@ -88,7 +102,9 @@ impl Scan<'_> {
             Some(b'{') => {
                 self.object()?;
             }
-            Some(b'[') => self.array()?,
+            Some(b'[') => {
+                self.array()?;
+            }
             Some(b'"') => {
                 self.string()?;
             }
@@ -152,22 +168,23 @@ impl Scan<'_> {
         })
     }
 
-    fn array(&mut self) -> Result<(), ScanError> {
+    fn array(&mut self) -> Result<Vec<Range<usize>>, ScanError> {
         self.nested(|s| {
             s.eat(b'[')?;
+            let mut items = Vec::new();
             s.ws();
             if s.peek() == Some(b']') {
                 s.i += 1;
-                return Ok(());
+                return Ok(items);
             }
             loop {
-                s.value()?;
+                items.push(s.value()?);
                 s.ws();
                 match s.peek() {
                     Some(b',') => s.i += 1,
                     Some(b']') => {
                         s.i += 1;
-                        return Ok(());
+                        return Ok(items);
                     }
                     _ => return s.err(),
                 }
@@ -193,9 +210,22 @@ mod tests {
     }
 
     #[test]
+    fn locates_array_elements_by_span() {
+        let text = "x [1, {\"a\": [2]},\n \"s]\" ] y";
+        let (items, whole) = parse_array(text, 2).unwrap();
+        let got: Vec<&str> = items.iter().map(|r| &text[r.clone()]).collect();
+        assert_eq!(got, ["1", "{\"a\": [2]}", "\"s]\""]);
+        assert_eq!(&text[whole], "[1, {\"a\": [2]},\n \"s]\" ]");
+        assert_eq!(parse_array("[ ]", 0).unwrap().0, Vec::<Range<usize>>::new());
+    }
+
+    #[test]
     fn broken_input_is_an_error_not_a_panic() {
         for bad in ["{", "{\"a\"", "{\"a\":", "{\"a\": [1,", "[1]", ""] {
             assert!(parse_object(bad, 0).is_err(), "{bad}");
+        }
+        for bad in ["[", "[1,", "{}", ""] {
+            assert!(parse_array(bad, 0).is_err(), "{bad}");
         }
     }
 }
