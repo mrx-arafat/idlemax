@@ -87,7 +87,7 @@ const label = (s) => String(s || "").replace(/_/g, " ");
 const JOB_TONE = { queued: "", leased: "info", running: "info", paused: "warn", succeeded: "ok", failed: "bad", killed: "bad", cancelled: "", parked: "warn" };
 const GUARD_TONE = { run: "ok", hold: "", pause: "warn", kill: "bad" };
 const KIND_TONE = { assign: "info", do: "info", fix: "bad", follow_up: "", warn: "warn" };
-function badge(text, tone, dot) { return h("span", { class: `badge ${tone || ""}` }, dot ? h("span", { class: "dot" }) : null, text); }
+function badge(text, tone, dot, title) { return h("span", { class: `badge ${tone || ""}`, title }, dot ? h("span", { class: "dot" }) : null, text); }
 function jobBadge(status) { return badge(label(status), JOB_TONE[status]); }
 function guardText(action) {
   if (!action) return "unknown";
@@ -342,7 +342,8 @@ function deviceCard(d, byAll) {
   const badges = [
     d.online ? badge("online", "ok", true) : badge(rel(d.last_seen_ms, "offline, seen ", ""), "bad", true),
     d.paused ? badge(byAll ? "paused (all)" : "paused", "warn") : null,
-    d.local_paused ? badge("kill switch", "warn") : null,
+    // The agent reports one flag for the PAUSE file and for `idlemax local pause`, so name neither.
+    d.local_paused ? badge("paused on device", "warn", false, "Paused on the device itself, by `idlemax local pause` or the PAUSE file in $IDLEMAX_HOME. Run `idlemax local resume` there and delete PAUSE.") : null,
   ];
   const stats = m ? [
     stat("CPU busy", fmtPct(m.cpu_busy_pct)),
