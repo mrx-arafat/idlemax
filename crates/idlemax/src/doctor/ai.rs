@@ -138,7 +138,7 @@ fn label(source: ProbeSource) -> &'static str {
 
 fn refresh(source: ProbeSource, account: &str) -> String {
     match source {
-        ProbeSource::ClaudeStatusline => "use Claude Code once so the statusline capture refreshes; if it never appears, install packaging/claude-statusline-capture.sh (README \"Install the statusline capture\")".into(),
+        ProbeSource::ClaudeStatusline => "use Claude Code once so the statusline capture refreshes; if it never appears, run `idlemax statusline install`".into(),
         ProbeSource::CodexSessions => "run codex once so a session records its rate limits, or set probe_path to its sessions directory".into(),
         ProbeSource::Manual => format!("write the account's windows to $IDLEMAX_HOME/agent/quota-{account}.json, or set probe_path"),
     }

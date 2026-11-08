@@ -70,16 +70,16 @@ pub fn check(report: &mut Report, home: Option<&Path>) {
                 facts::short(&path),
                 missing.join(", ")
             ),
-            "render the placeholders before loading it, following the README install steps for this OS",
+            "this file is an unrendered template: run `idlemax service install`, which fills the placeholders in and reloads it",
         ));
     }
 }
 
 fn install_fix() -> String {
     if cfg!(target_os = "macos") {
-        "install packaging/macos/com.idlemax.agent.plist as ~/Library/LaunchAgents/com.idlemax.agent.plist (README \"Install on macOS\")".into()
+        "run `idlemax service install` (add --dry-run to preview the file and commands)".into()
     } else if cfg!(target_os = "linux") {
-        "install packaging/linux/idlemax-agent.service as /etc/systemd/system/idlemax-agent.service, then `systemctl enable --now idlemax-agent` (README \"Install on Linux\")".into()
+        "run `idlemax service install` for a per-user service, or install the system units from packaging/linux as the README's \"Deploying across devices\" describes".into()
     } else {
         // SHORTCUT: no Windows service, start the agent at login when a Windows device joins.
         "service install is not supported on this OS yet: start `idlemax agent` at login yourself"

@@ -385,7 +385,10 @@ async fn doctor_reports_healthy_and_every_broken_case() {
         assert_eq!(code, 0, "{report}");
         let service = check(&report, "service");
         assert_eq!(service["level"], "warn");
-        assert!(service["fix"].as_str().unwrap().contains("packaging/"));
+        assert!(service["fix"]
+            .as_str()
+            .unwrap()
+            .contains("idlemax service install"));
         assert_eq!(level(&report, "ai"), "ok");
     }
 
@@ -400,6 +403,9 @@ async fn doctor_reports_healthy_and_every_broken_case() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{text}");
     assert!(text.contains("warn  service"), "{text}");
-    assert!(text.contains("fix: install packaging/"), "{text}");
+    assert!(
+        text.contains("fix: run `idlemax service install`"),
+        "{text}"
+    );
     assert!(text.contains("11 checks: 10 ok, 1 warn, 0 fail"), "{text}");
 }

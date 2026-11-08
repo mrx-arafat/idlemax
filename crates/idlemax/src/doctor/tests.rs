@@ -177,7 +177,7 @@ fn service_absent_placeholder_and_installed() {
     service::check(&mut report, Some(home.path()));
     let check = one(&report, "service");
     assert_eq!(check.level, Level::Warn, "{}", check.detail);
-    assert!(check.fix.unwrap().contains("packaging/"));
+    assert!(check.fix.unwrap().contains("idlemax service install"));
 
     let unit = match cfg!(target_os = "linux") {
         true => home
@@ -194,6 +194,7 @@ fn service_absent_placeholder_and_installed() {
     let check = one(&report, "service");
     assert_eq!(check.level, Level::Warn);
     assert!(check.detail.contains("@BIN@"));
+    assert!(check.fix.unwrap().contains("idlemax service install"));
 
     std::fs::write(&unit, "<string>/usr/local/bin/idlemax</string>").unwrap();
     let mut report = Report::new("t", None);
@@ -284,6 +285,30 @@ fn ai_account_missing_probe_is_a_warning_with_the_path() {
     );
     assert!(check.detail.contains("/nowhere"), "{}", check.detail);
     assert!(check.fix.unwrap().contains("quota-work.json"));
+}
+
+#[test]
+fn a_claude_account_without_a_capture_points_at_statusline_install() {
+    let mut account = account("claude-max");
+    account.probe = Some(ProbeSource::ClaudeStatusline);
+    account.probe_path = None;
+    let state = tempfile::tempdir().unwrap();
+    let dirs = crate::agent::quota_probe::ProbeDirs {
+        state_dir: state.path().to_path_buf(),
+        ..Default::default()
+    };
+    let err = crate::agent::quota_probe::probe_account(&account, &dirs)
+        .err()
+        .unwrap();
+    let check = ai::account_check(
+        &Config::default(),
+        &account,
+        Err(err),
+        &[],
+        1_800_000_000_000,
+    );
+    assert_eq!(check.level, Level::Warn, "{}", check.detail);
+    assert!(check.fix.unwrap().contains("idlemax statusline install"));
 }
 
 #[test]
