@@ -54,7 +54,14 @@ pub async fn jobs(
 
 pub async fn control(c: &ApiClient, req: ControlRequest, out: &Out) -> Result<()> {
     let before = c.status().await?;
-    let (s, label, result) = match noop::control(&req, &before) {
+    let finished_job = match (req.action, &req.scope) {
+        (ControlAction::StopAll, ControlScope::Job(id)) => noop::cancel(&c.job(*id).await?),
+        _ => None,
+    };
+    let repeated = finished_job
+        .map(|status| status.to_string())
+        .or_else(|| noop::control(&req, &before).map(str::to_owned));
+    let (s, label, result) = match repeated {
         Some(state) => {
             let result = noop::already(state);
             (before, result.clone(), result)
@@ -65,11 +72,16 @@ pub async fn control(c: &ApiClient, req: ControlRequest, out: &Out) -> Result<()
             views::done(&req),
         ),
     };
+    let next = if finished_job.is_some() {
+        hints::job_changed()
+    } else {
+        hints::control(&req)
+    };
     out.emit_with(
         &s,
         |s| format!("ok: {label}\n{}", print::summary(s)),
         || Ok(views::control(&result, &s)),
-        &hints::control(&req),
+        &next,
     )
 }
 
