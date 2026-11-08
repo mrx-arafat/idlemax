@@ -241,12 +241,21 @@ impl Runner {
     }
 
     fn poll_at(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
-        self.settle_handed_out();
         self.hold_pauses();
         self.refresh_usage(now);
         for slot in self.slots.values_mut() {
             enforce(slot, now, awake_ms);
         }
+        self.poll_exits_at(now, awake_ms)
+    }
+
+    /// Cheap exit checks between resource samples; never scans running process usage.
+    pub fn poll_exits(&mut self) -> Vec<JobUpdate> {
+        self.poll_exits_at(now_ms(), self.awake_ms())
+    }
+
+    fn poll_exits_at(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
+        self.settle_handed_out();
         let mut updates = std::mem::take(&mut self.pending);
         updates.extend(self.reap(now, awake_ms));
         self.settle = updates.iter().map(|u| u.id).collect();

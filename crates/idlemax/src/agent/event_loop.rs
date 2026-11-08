@@ -9,6 +9,8 @@
 mod bounded;
 mod coord;
 mod jobs;
+#[cfg(test)]
+mod refill_tests;
 mod sample;
 
 use std::future::Future;
@@ -83,6 +85,7 @@ pub struct Agent {
     last_heartbeat_ms: Option<UnixMs>,
     /// Shutting down: every tick kills, nothing starts.
     stopping: bool,
+    refill_due: bool,
 }
 
 impl Agent {
@@ -109,6 +112,7 @@ impl Agent {
             online: false,
             last_heartbeat_ms: None,
             stopping: false,
+            refill_due: false,
         }
     }
 
@@ -123,6 +127,8 @@ impl Agent {
         let mut beat = ticker(self.heartbeat_every, true);
         let mut reap_every = job_run::POLL_RELAXED;
         let mut reap = ticker(reap_every, false);
+        let mut exits = tokio::time::interval(Duration::from_millis(250));
+        exits.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut refresh_device = ticker(self.device_refresh_every, false);
         let mut trip: Option<JoinHandle<Trip>> = None;
         let mut beat_due = false;
@@ -149,12 +155,18 @@ impl Agent {
                 _ = sample.tick() => self.on_sample().await,
                 _ = beat.tick() => beat_due = true,
                 _ = reap.tick() => self.reap().await,
+                _ = exits.tick(), if !self.running.is_empty() => self.reap_exits().await,
                 Some(done) = join(&mut feed) => {
                     feed = None;
                     log_feed_end(done);
                 }
                 _ = feed_tick.tick(), if feed_on => feed_due = true,
                 _ = refresh_device.tick() => self.on_refresh_device_info().await,
+            }
+            if self.refill_due {
+                self.on_sample().await;
+                self.refill_due = false;
+                beat_due = true;
             }
             if trip.is_none() {
                 trip = self.next_trip(&mut beat_due);

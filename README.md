@@ -576,6 +576,7 @@ flowchart LR
   The systemd unit caps it at `MemoryMax=256M` and `CPUQuota=20%`.
 - **Agent** (`idlemax agent`): one per device.
   It samples the machine, runs the guard, heartbeats to the coordinator, starts leased jobs under OS throttles and writes each result to an inbox note.
+  When a job ends, it refreshes the guard budget and requests more work without waiting for the periodic heartbeat.
   Its local API on loopback keeps working while the coordinator is down.
 - **Jobs are leased, not pushed.**
   A lease that a heartbeat does not renew within 120 s is re-queued with backoff.

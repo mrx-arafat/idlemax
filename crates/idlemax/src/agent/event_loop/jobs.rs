@@ -68,9 +68,18 @@ impl Agent {
 
     /// Reaps finished jobs into the outbox.
     pub(super) async fn reap(&mut self) {
-        let Some(updates) = self.with_runner(Runner::poll).await else {
+        self.reap_with(Runner::poll).await;
+    }
+
+    pub(super) async fn reap_exits(&mut self) {
+        self.reap_with(Runner::poll_exits).await;
+    }
+
+    async fn reap_with(&mut self, poll: fn(&mut Runner) -> Vec<idlemax_core::protocol::JobUpdate>) {
+        let Some(updates) = self.with_runner(poll).await else {
             return;
         };
+        self.refill_due |= !updates.is_empty();
         for u in updates {
             let name = self.state.job_name(u.id).map(str::to_string);
             let u = self.state.finished(u);
