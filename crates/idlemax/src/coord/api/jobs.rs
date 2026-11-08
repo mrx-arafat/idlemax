@@ -59,6 +59,22 @@ pub async fn list(
     Ok(Json(jobs.await?.into_iter().map(operator_job).collect()))
 }
 
+/// `GET /v1/jobs/{id}`.
+pub async fn get_one(
+    State(app): State<AppState>,
+    path: Result<Path<JobId>, PathRejection>,
+) -> Result<Json<Job>, ApiFailure> {
+    let Path(id) = path?;
+    let job = app
+        .with_store(move |store, _| {
+            store
+                .get_job(id)?
+                .ok_or_else(|| ApiFailure::NotFound(format!("job {id} not found")))
+        })
+        .await?;
+    Ok(Json(operator_job(job)))
+}
+
 /// `POST /v1/jobs`: 201 with the queued job.
 pub async fn add(
     State(app): State<AppState>,

@@ -89,6 +89,23 @@ impl ApiClient {
         self.get(&jobs_path(status, limit)).await
     }
 
+    pub async fn job(&self, id: JobId) -> Result<Job> {
+        match self.get(&format!("/v1/jobs/{id}")).await {
+            Ok(j) => Ok(j),
+            Err(ClientError::Api { status: 404, .. }) => {
+                let list = self.jobs(None, 200).await?;
+                list.into_iter()
+                    .find(|j| j.id == id)
+                    .ok_or_else(|| ClientError::Api {
+                        status: 404,
+                        path: format!("/v1/jobs/{id}"),
+                        message: format!("job {id} not found"),
+                    })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn add_job(&self, spec: &JobSpec) -> Result<Job> {
         self.post("/v1/jobs", Some(spec)).await
     }

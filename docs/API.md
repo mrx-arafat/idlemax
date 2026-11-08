@@ -22,6 +22,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | POST | /v1/agent/advisor-inputs | `AdvisorInputs` | `{}` |
 | GET | /v1/status | | `ClusterStatus` |
 | GET | /v1/jobs?status=&limit= | | `[Job]` |
+| GET | /v1/jobs/{id} | | `Job` |
 | POST | /v1/jobs | `JobSpec` | `Job` |
 | POST | /v1/jobs/{id}/cancel | | `Job` |
 | GET | /v1/quota | | `[quota::QuotaView]` |
