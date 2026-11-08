@@ -57,7 +57,7 @@ pub fn read_power(root: &Path) -> Power {
     };
     let (mut mains_seen, mut mains_online) = (false, false);
     let mut battery_pct = None;
-    let mut discharging = false;
+    let (mut battery_status_known, mut discharging) = (false, false);
     for entry in entries.flatten() {
         let dir = entry.path();
         match read_trim(&dir.join("type")).as_deref() {
@@ -70,14 +70,19 @@ pub fn read_power(root: &Path) -> Power {
                     battery_pct =
                         read_trim(&dir.join("capacity")).and_then(|c| c.parse::<f64>().ok());
                 }
-                discharging |= read_trim(&dir.join("status")).as_deref() == Some("Discharging");
+                let status = read_trim(&dir.join("status"));
+                battery_status_known |= matches!(
+                    status.as_deref(),
+                    Some("Charging" | "Discharging" | "Not charging" | "Full")
+                );
+                discharging |= status.as_deref() == Some("Discharging");
             }
             _ => {}
         }
     }
     let on_ac = if mains_seen {
         Some(mains_online)
-    } else if battery_pct.is_some() {
+    } else if battery_pct.is_some() && battery_status_known {
         Some(!discharging)
     } else {
         None
@@ -182,5 +187,56 @@ pub fn read(root: &Path, logind_out: Option<&str>, now_us: u64) -> LinuxReadings
         psi_mem: read_psi(root, "memory"),
         psi_io: read_psi(root, "io"),
         pswpin: read_pswpin(root),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    fn write(root: &Path, relative: &str, text: &str) {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn power_ignores_peripherals_and_unknown_battery_status() {
+        let tmp = tempfile::tempdir().unwrap();
+        let battery = "sys/class/power_supply/BAT0";
+        write(tmp.path(), &format!("{battery}/type"), "Battery\n");
+        write(tmp.path(), &format!("{battery}/capacity"), "41\n");
+        write(tmp.path(), &format!("{battery}/status"), "Unknown\n");
+        assert_eq!(
+            read_power(tmp.path()),
+            Power {
+                on_ac: None,
+                battery_pct: Some(41.0),
+            }
+        );
+
+        write(tmp.path(), &format!("{battery}/status"), "Discharging\n");
+        write(
+            tmp.path(),
+            "sys/class/power_supply/hidpp_battery_0/type",
+            "Battery\n",
+        );
+        write(
+            tmp.path(),
+            "sys/class/power_supply/hidpp_battery_0/scope",
+            "Device\n",
+        );
+        write(
+            tmp.path(),
+            "sys/class/power_supply/hidpp_battery_0/capacity",
+            "99\n",
+        );
+        assert_eq!(read_power(tmp.path()).on_ac, Some(false));
+
+        write(tmp.path(), "sys/class/power_supply/AC/type", "Mains\n");
+        write(tmp.path(), "sys/class/power_supply/AC/online", "1\n");
+        assert_eq!(read_power(tmp.path()).on_ac, Some(true));
     }
 }
