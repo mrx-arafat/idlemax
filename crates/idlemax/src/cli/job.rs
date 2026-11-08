@@ -162,7 +162,7 @@ impl AddArgs {
 }
 
 /// Prints `message` as a command line mistake and exits 2, like clap's own errors.
-fn usage_error(message: &str) -> ! {
+pub(super) fn usage_error(message: &str) -> ! {
     clap::Error::raw(ErrorKind::ArgumentConflict, message).exit()
 }
 

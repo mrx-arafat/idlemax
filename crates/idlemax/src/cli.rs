@@ -13,6 +13,7 @@ pub mod print;
 pub mod rows;
 mod schedule;
 mod service;
+mod setup;
 mod skill;
 mod statusline;
 pub mod why;
@@ -112,6 +113,8 @@ enum Cmd {
         #[command(subcommand)]
         cmd: Option<AdviseCmd>,
     },
+    /// Set this device up in one command: init, the background service, then doctor (safe to repeat)
+    Setup(setup::SetupArgs),
     /// Install or remove the background service (LaunchAgent or systemd user unit)
     Service(service::ServiceArgs),
     /// Wire the Claude Code statusline into the quota probe
@@ -255,6 +258,7 @@ pub async fn run() -> Result<()> {
     let paths = state::paths_from_env()?;
     let cmd = match cmd {
         Cmd::Init(args) => return run_init(&paths, args),
+        Cmd::Setup(args) => return setup::run(&paths, args, coord, json).await,
         Cmd::Service(args) => return service::run(&paths, args, json),
         Cmd::Statusline(args) => return statusline::run(&paths, args, json),
         other => other,
@@ -411,6 +415,7 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool, zone: rows::Zone) -> Res
         | Cmd::Coord
         | Cmd::Init(_)
         | Cmd::Local(_)
+        | Cmd::Setup(_)
         | Cmd::Service(_)
         | Cmd::Statusline(_)
         | Cmd::Logs { .. }

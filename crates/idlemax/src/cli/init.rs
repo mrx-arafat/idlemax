@@ -55,18 +55,24 @@ fn write_config(paths: &Paths, opts: &InitOptions) -> Result<Outcome> {
     if let Some(url) = &opts.coord_url {
         cfg.coordinator.url = url.trim_end_matches('/').to_string();
     }
+    write_new_config(paths, &cfg)?;
+    Ok(Outcome::Created)
+}
+
+/// Writes `cfg` as `config.toml`, which must not exist yet.
+pub(super) fn write_new_config(paths: &Paths, cfg: &Config) -> Result<()> {
     cfg.validate()?;
+    let path = paths.config_file();
     let mut f = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&path)
         .with_context(|| format!("creating {}", path.display()))?;
     f.write_all(cfg.to_toml_string()?.as_bytes())
-        .with_context(|| format!("writing {}", path.display()))?;
-    Ok(Outcome::Created)
+        .with_context(|| format!("writing {}", path.display()))
 }
 
-fn write_token_file(paths: &Paths, given: Option<&str>) -> Result<Outcome> {
+pub(super) fn write_token_file(paths: &Paths, given: Option<&str>) -> Result<Outcome> {
     let path = paths.token_file();
     if path.exists() {
         if given.is_some() {

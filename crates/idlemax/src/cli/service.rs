@@ -76,7 +76,7 @@ pub trait Runner {
     fn run(&self, step: &Step) -> std::io::Result<Output>;
 }
 
-struct SystemRunner;
+pub(super) struct SystemRunner;
 
 impl Runner for SystemRunner {
     fn run(&self, step: &Step) -> std::io::Result<Output> {
@@ -95,19 +95,19 @@ impl Runner for SystemRunner {
 
 mod text;
 
-struct Ctx {
-    platform: Platform,
-    env: ServiceEnv,
+pub(super) struct Ctx {
+    pub(super) platform: Platform,
+    pub(super) env: ServiceEnv,
 }
 
 #[derive(Serialize)]
-struct InstallReport {
-    kind: ServiceKind,
+pub(super) struct InstallReport {
+    pub(super) kind: ServiceKind,
     dry_run: bool,
-    file: PathBuf,
+    pub(super) file: PathBuf,
     content: String,
-    commands: Vec<Step>,
-    notes: Vec<String>,
+    pub(super) commands: Vec<Step>,
+    pub(super) notes: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -173,7 +173,11 @@ fn absolute_str(p: &Path) -> Result<String> {
         .map_err(|p| anyhow::anyhow!("{} is not valid UTF-8", Path::new(&p).display()))
 }
 
-fn service_env(paths: &Paths, platform: Platform, bin: Option<PathBuf>) -> Result<ServiceEnv> {
+pub(super) fn service_env(
+    paths: &Paths,
+    platform: Platform,
+    bin: Option<PathBuf>,
+) -> Result<ServiceEnv> {
     let home = var("HOME")
         .map(PathBuf::from)
         .context("HOME is unset or empty; cannot find where the service file goes")?;
@@ -218,7 +222,7 @@ fn current_uid(platform: Platform) -> Result<u32> {
         .context("`id -u` did not print a number")
 }
 
-fn install(
+pub(super) fn install(
     ctx: &Ctx,
     paths: &Paths,
     runner: &dyn Runner,

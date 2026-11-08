@@ -42,15 +42,15 @@ enum StatuslineCmd {
 }
 
 /// Where everything lives, from `HOME`, `CLAUDE_CONFIG_DIR` and the state dir.
-struct Places {
-    settings: PathBuf,
-    wrapper: PathBuf,
+pub(super) struct Places {
+    pub(super) settings: PathBuf,
+    pub(super) wrapper: PathBuf,
     state: PathBuf,
     /// The state dir to pass on to the wrapper, set only when it is not the default.
     custom_home: Option<String>,
 }
 
-fn places(paths: &Paths) -> Result<Places> {
+pub(super) fn places(paths: &Paths) -> Result<Places> {
     let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
     let claude_dir = match (var("CLAUDE_CONFIG_DIR"), var("HOME")) {
         (Some(dir), _) => PathBuf::from(dir),
@@ -88,14 +88,14 @@ impl Places {
 }
 
 #[derive(Serialize)]
-struct ChangeReport {
+pub(super) struct ChangeReport {
     dry_run: bool,
-    changed: bool,
-    settings: PathBuf,
-    backup: Option<PathBuf>,
-    wrapper: PathBuf,
+    pub(super) changed: bool,
+    pub(super) settings: PathBuf,
+    pub(super) backup: Option<PathBuf>,
+    pub(super) wrapper: PathBuf,
     diff: String,
-    notes: Vec<String>,
+    pub(super) notes: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -124,7 +124,7 @@ pub fn run(paths: &Paths, args: StatuslineArgs, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn install(p: &Places, dry_run: bool) -> Result<ChangeReport> {
+pub(super) fn install(p: &Places, dry_run: bool) -> Result<ChangeReport> {
     let script = p
         .wrapper
         .to_str()
