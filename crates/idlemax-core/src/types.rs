@@ -139,12 +139,18 @@ pub enum TokenClass {
 pub const DEFAULT_MEM_MB: u64 = 512;
 pub const DEFAULT_MAX_RUNTIME_SECS: u64 = 1800;
 pub const DEFAULT_MAX_ATTEMPTS: u32 = 3;
+/// Longest idempotency key, in characters.
+pub const MAX_KEY_CHARS: usize = 128;
 
 /// A job request. `command` is argv, never run through a shell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct JobSpec {
     pub name: String,
+    /// Idempotency key: while a job with this key has not finished, adding the same key
+    /// again returns that job instead of queueing a duplicate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub command: Vec<String>,
     /// Optional standard input, kept out of argv and operator job responses.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,6 +176,7 @@ impl Default for JobSpec {
     fn default() -> Self {
         Self {
             name: String::new(),
+            key: None,
             command: Vec::new(),
             stdin: None,
             cwd: None,
@@ -200,6 +207,10 @@ pub enum SpecError {
     AiWithoutAccount,
     #[error("ai_account is only allowed with cost ai")]
     AccountWithoutAi,
+    #[error("key is empty")]
+    EmptyKey,
+    #[error("key is longer than 128 characters")]
+    KeyTooLong,
 }
 
 impl JobSpec {
@@ -210,6 +221,14 @@ impl JobSpec {
         }
         if self.command.first().is_none_or(|c| c.trim().is_empty()) {
             return Err(SpecError::EmptyCommand);
+        }
+        if let Some(key) = &self.key {
+            if key.trim().is_empty() {
+                return Err(SpecError::EmptyKey);
+            }
+            if key.chars().count() > MAX_KEY_CHARS {
+                return Err(SpecError::KeyTooLong);
+            }
         }
         for (field, value) in [
             ("mem_mb", self.mem_mb),
@@ -536,3 +555,6 @@ pub struct Recommendation {
     pub source: RecommendationSource,
     pub status: RecommendationStatus,
 }
+
+#[cfg(test)]
+mod tests;
