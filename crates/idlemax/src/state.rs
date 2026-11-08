@@ -62,11 +62,40 @@ fn user_home_var() -> Option<OsString> {
     std::env::var_os("HOME")
 }
 
+/// Creates the state tree, every new directory mode 0700: job logs, inbox notes and metrics
+/// live in it. A directory that already exists keeps its mode (a shared `IDLEMAX_HOME` may be
+/// group-owned on purpose); `idlemax doctor` warns when one is open to other users.
 pub fn ensure_dirs(paths: &Paths) -> Result<(), StateError> {
+    let root = paths.root().to_path_buf();
+    create_private_dir(&root).map_err(io_err(&root))?;
     for dir in paths.dirs() {
-        std::fs::create_dir_all(&dir).map_err(io_err(&dir))?;
+        create_private_dir(&dir).map_err(io_err(&dir))?;
     }
     Ok(())
+}
+
+/// `create_dir_all` whose new directories are mode 0700 (where the OS has modes).
+pub fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(dir)
+}
+
+/// Open options for a file only its owner may read: mode 0600 at creation (where the OS has
+/// modes). The caller adds `write`, `append`, `create` and friends.
+pub fn private_file() -> std::fs::OpenOptions {
+    let mut opts = std::fs::OpenOptions::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts
 }
 
 /// Missing `config.toml` gives defaults; a malformed one is an error.
@@ -137,4 +166,28 @@ pub fn generate_token() -> Result<String, StateError> {
         .and_then(|mut f| f.read_exact(&mut buf))
         .map_err(io_err(path))?;
     Ok(encode_token(&buf))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    fn mode(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// Job logs, inbox notes and metrics sit under this tree, so no directory of it may be
+    /// open to group or others, whatever the umask: the root itself is created 0700 too.
+    #[test]
+    fn the_state_tree_is_created_private() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = Paths::new(tmp.path().join("outer").join(".idlemax"));
+        ensure_dirs(&paths).unwrap();
+        for dir in std::iter::once(paths.root().to_path_buf()).chain(paths.dirs()) {
+            assert_eq!(mode(&dir), 0o700, "{}", dir.display());
+        }
+        assert_eq!(mode(&paths.logs_dir()), 0o700, "logs");
+    }
 }

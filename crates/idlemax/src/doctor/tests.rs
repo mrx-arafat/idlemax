@@ -360,3 +360,24 @@ fn pause_check_names_each_hold_with_its_own_fix() {
     let fix = both.fix.unwrap();
     assert!(fix.contains("rm /state/PAUSE") && fix.contains("idlemax local resume"));
 }
+
+#[test]
+fn home_check_warns_when_other_users_can_reach_the_state_dir() {
+    let ok = checks::home_check("/s/.idlemax", "default", Some(0o700));
+    assert_eq!(ok.level, Level::Ok);
+    assert_eq!(
+        checks::home_check("/s/.idlemax", "default", None).level,
+        Level::Ok
+    );
+
+    for open in [0o755, 0o750, 0o705] {
+        let warn = checks::home_check("/s/.idlemax", "IDLEMAX_HOME", Some(open));
+        assert_eq!(warn.level, Level::Warn, "{open:o}");
+        assert!(
+            warn.detail.contains(&format!("{open:04o}")),
+            "{}",
+            warn.detail
+        );
+        assert_eq!(warn.fix.as_deref(), Some("chmod 700 /s/.idlemax"));
+    }
+}

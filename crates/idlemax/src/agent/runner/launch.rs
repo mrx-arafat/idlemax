@@ -1,6 +1,6 @@
 //! Adapter: spawns one job attempt as an OS process under the throttle wrapper.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -150,9 +150,9 @@ fn open_log(
 ) -> Result<(File, PathBuf, u64), RunnerError> {
     let path = paths.job_log_file(job.id);
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(io_err("create", dir))?;
+        crate::state::create_private_dir(dir).map_err(io_err("create", dir))?;
     }
-    let mut file = OpenOptions::new()
+    let mut file = crate::state::private_file()
         .create(true)
         .append(true)
         .open(&path)

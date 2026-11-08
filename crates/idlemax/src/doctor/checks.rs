@@ -26,7 +26,7 @@ pub fn home(report: &mut Report) -> Option<Paths> {
                 true => HOME_ENV.to_string(),
                 false => "default".into(),
             };
-            report.push(Check::ok("home", format!("{root} ({source})")));
+            report.push(home_check(&root, &source, dir_mode(paths.root())));
             Some(paths)
         }
         Err(StateError::Home(HomeError::Empty)) => {
@@ -48,6 +48,34 @@ pub fn home(report: &mut Report) -> Option<Paths> {
             None
         }
     }
+}
+
+/// The state dir resolves; a warning when other users can reach it, since job logs, inbox notes
+/// and metrics live there. `mode` is its permission bits, None where the platform has none.
+pub fn home_check(root: &str, source: &str, mode: Option<u32>) -> Check {
+    match mode.filter(|m| !token_mode_is_private(*m)) {
+        Some(open) => Check::warn(
+            "home",
+            format!(
+                "{root} ({source}) is mode {open:04o}: other users can read job logs and notes"
+            ),
+            format!("chmod 700 {root}"),
+        ),
+        None => Check::ok("home", format!("{root} ({source})")),
+    }
+}
+
+#[cfg(unix)]
+fn dir_mode(path: &Path) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|m| m.permissions().mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn dir_mode(_path: &Path) -> Option<u32> {
+    None
 }
 
 /// Check 1b: `config.toml` parses, and every key in it is one the parser uses.

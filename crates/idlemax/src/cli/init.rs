@@ -63,7 +63,7 @@ fn write_config(paths: &Paths, opts: &InitOptions) -> Result<Outcome> {
 pub(super) fn write_new_config(paths: &Paths, cfg: &Config) -> Result<()> {
     cfg.validate()?;
     let path = paths.config_file();
-    let mut f = std::fs::OpenOptions::new()
+    let mut f = state::private_file()
         .write(true)
         .create_new(true)
         .open(&path)
@@ -89,4 +89,23 @@ pub(super) fn write_token_file(paths: &Paths, given: Option<&str>) -> Result<Out
     };
     state::write_token(paths, &token)?;
     Ok(Outcome::Created)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn init_writes_a_private_config_and_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = Paths::new(tmp.path().join("state"));
+        init(&paths, &InitOptions::default()).unwrap();
+        let mode =
+            |p: std::path::PathBuf| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(paths.config_file()), 0o600, "config.toml");
+        assert_eq!(mode(paths.token_file()), 0o600, "token");
+        assert_eq!(mode(paths.root().to_path_buf()), 0o700, "state dir");
+    }
 }

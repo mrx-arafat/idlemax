@@ -21,7 +21,7 @@ fn file(paths: &Paths, id: JobId) -> PathBuf {
 
 /// Records `<pid> <started_ms>` for a running job.
 pub fn write(paths: &Paths, id: JobId, pid: u32, started_ms: UnixMs) -> io::Result<()> {
-    std::fs::create_dir_all(dir(paths))?;
+    crate::state::create_private_dir(&dir(paths))?;
     std::fs::write(file(paths, id), format!("{pid} {started_ms}\n"))
 }
 

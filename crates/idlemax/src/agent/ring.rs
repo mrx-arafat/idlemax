@@ -1,6 +1,6 @@
 //! 24 h metrics ring buffer in `agent/metrics.jsonl`. Adapter layer: blocking file I/O only.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
@@ -49,7 +49,7 @@ impl MetricsRing {
 
     pub fn append(&mut self, m: &MetricsSnapshot, now_ms: UnixMs) -> Result<(), RingError> {
         let line = serde_json::to_string(m)?;
-        let mut f = OpenOptions::new()
+        let mut f = crate::state::private_file()
             .create(true)
             .append(true)
             .open(&self.path)
@@ -74,7 +74,12 @@ impl MetricsRing {
             })
             .collect();
         let tmp = self.path.with_extension("jsonl.tmp");
-        let mut out = File::create(&tmp).map_err(|e| self.io(e))?;
+        let mut out = crate::state::private_file()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)
+            .map_err(|e| self.io(e))?;
         for l in &kept {
             writeln!(out, "{l}").map_err(|e| self.io(e))?;
         }
@@ -88,5 +93,39 @@ impl MetricsRing {
             path: self.path.clone(),
             source,
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use idlemax_core::types::MetricsSnapshot;
+
+    use super::*;
+
+    /// Host metrics are not for other users: the file is 0600, also after a compaction rewrites it.
+    #[test]
+    fn the_metrics_file_is_private_before_and_after_compaction() {
+        let dir = tempfile::tempdir().unwrap();
+        // A huge sample interval makes the ring compact after two samples.
+        let mut ring = MetricsRing::open(dir.path(), u64::MAX).unwrap();
+        let mode = || {
+            std::fs::metadata(dir.path().join(FILE_NAME))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        let now = 1_000_000;
+        let sample = MetricsSnapshot {
+            at_ms: now,
+            ..MetricsSnapshot::default()
+        };
+        ring.append(&sample, now).unwrap();
+        assert_eq!(mode(), 0o600, "first write");
+        ring.append(&sample, now).unwrap();
+        assert_eq!(ring.lines, 2, "compaction kept both samples");
+        assert_eq!(mode(), 0o600, "after compaction");
     }
 }

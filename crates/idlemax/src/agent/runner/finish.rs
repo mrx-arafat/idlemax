@@ -103,6 +103,17 @@ fn append_footer(path: &Path, outcome: &Outcome) {
     }
 }
 
+/// Writes `bytes` to a new or emptied file that only its owner can read.
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = crate::state::private_file()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+    file.write_all(bytes)
+}
+
 /// Writes the note atomically (temp file, then rename) so readers never see half a note.
 fn write_note(paths: &Paths, report: &RunReport<'_>) -> Option<PathBuf> {
     let dir = paths.inbox_dir();
@@ -113,8 +124,8 @@ fn write_note(paths: &Paths, report: &RunReport<'_>) -> Option<PathBuf> {
         report.utc_offset_secs,
     );
     let (tmp, path) = (dir.join(format!(".{name}.tmp")), dir.join(&name));
-    let result = std::fs::create_dir_all(&dir)
-        .and_then(|()| std::fs::write(&tmp, inbox::render(report)))
+    let result = crate::state::create_private_dir(&dir)
+        .and_then(|()| write_private(&tmp, inbox::render(report).as_bytes()))
         .and_then(|()| std::fs::rename(&tmp, &path));
     match result {
         Ok(()) => Some(path),

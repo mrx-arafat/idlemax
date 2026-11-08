@@ -142,6 +142,26 @@ fn a_job_that_ignores_stdin_does_not_block_start_and_one_that_reads_gets_every_b
     );
 }
 
+/// Job output can hold secrets and private repo content: the log and the inbox note are 0600
+/// in 0700 directories, so another local user cannot read them.
+#[test]
+fn job_logs_and_inbox_notes_are_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    r.start(&job(5, &["sh", "-c", "echo secret output"], 64))
+        .unwrap();
+    let update = wait_ended(&mut r, STARVED);
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let paths = Paths::new(home.path());
+    let log = paths.job_log_file(5);
+    let note = Path::new(update.output_path.as_deref().expect("a note was written"));
+    assert_eq!(mode(&log), 0o600, "job log");
+    assert_eq!(mode(note), 0o600, "inbox note");
+    assert_eq!(mode(&paths.job_logs_dir()), 0o700, "logs/jobs");
+    assert_eq!(mode(&paths.inbox_dir()), 0o700, "inbox");
+}
+
 /// True once the OS reports `pid` as stopped (SIGSTOP has taken effect).
 fn stopped(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};

@@ -67,6 +67,11 @@ fn write_token(path: &Path, text: &str) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
 }
 
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
 fn service_unit(home: &Path) -> PathBuf {
     match cfg!(target_os = "linux") {
         true => home.join(".config/systemd/user/idlemax-agent.service"),
@@ -151,6 +156,8 @@ async fn doctor_reports_healthy_and_every_broken_case() {
     std::fs::create_dir_all(&home).unwrap();
     std::fs::create_dir_all(&state).unwrap();
     assert_isolated(&state);
+    // A private state dir, as `idlemax init` leaves it.
+    set_mode(&state, 0o700);
 
     let (coord_port, agent_port) = (free_port(), free_port());
     write_config(
@@ -376,6 +383,21 @@ async fn doctor_reports_healthy_and_every_broken_case() {
         );
         assert!(!detail.contains("error sending request"), "{detail}");
         assert!(coord["fix"].as_str().unwrap().contains("idlemax coord"));
+    }
+
+    // A state dir open to other users is a warning with its fix; job logs and notes live there.
+    {
+        set_mode(&state, 0o755);
+        let (code, report) = doctor(&home, &state, &[]);
+        assert_eq!(code, 0, "{report}");
+        let home_check = check(&report, "home");
+        assert_eq!(home_check["level"], "warn");
+        assert!(home_check["detail"].as_str().unwrap().contains("mode 0755"));
+        assert_eq!(
+            home_check["fix"].as_str().unwrap(),
+            format!("chmod 700 {}", state.display())
+        );
+        set_mode(&state, 0o700);
     }
 
     // A warn alone does not fail the run: no service unit, no AI accounts.
