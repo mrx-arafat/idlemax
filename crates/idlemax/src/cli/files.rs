@@ -69,21 +69,35 @@ fn mode_of(_path: &Path) -> Option<u32> {
 }
 
 fn write_then_rename(tmp: &Path, path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
-    std::fs::write(tmp, bytes)?;
+    // The temp name is predictable: clear whatever sits there (a symlink is removed, never
+    // followed), then create it exclusively so nothing can be written through a planted link.
+    match std::fs::remove_file(tmp) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = match (mode, std::fs::metadata(path)) {
-            (Some(m), _) => Some(std::fs::Permissions::from_mode(m)),
-            (None, Ok(existing)) => Some(existing.permissions()),
-            (None, Err(_)) => None,
-        };
-        if let Some(perms) = perms {
-            std::fs::set_permissions(tmp, perms)?;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        // Created with the final mode, never wider, so the content is not readable for a moment.
+        let final_mode = mode.or_else(|| mode_of(path));
+        if let Some(m) = final_mode {
+            opts.mode(m);
+        }
+        let mut file = opts.open(tmp)?;
+        io::Write::write_all(&mut file, bytes)?;
+        if let Some(m) = final_mode {
+            file.set_permissions(std::fs::Permissions::from_mode(m))?;
         }
     }
     #[cfg(not(unix))]
-    let _ = mode;
+    {
+        let _ = mode;
+        let mut file = opts.open(tmp)?;
+        io::Write::write_all(&mut file, bytes)?;
+    }
     std::fs::rename(tmp, path)
 }
 
@@ -113,6 +127,35 @@ mod tests {
             std::fs::read_dir(dir.path()).unwrap().count(),
             1,
             "no temp file left"
+        );
+    }
+
+    /// The temp name is predictable, so a file or symlink planted there must never be written
+    /// through (it would overwrite whatever the symlink points at, as the invoking user).
+    #[test]
+    fn a_planted_temp_symlink_is_replaced_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (file, victim) = (
+            dir.path().join("settings.json"),
+            dir.path().join("victim.txt"),
+        );
+        std::fs::write(&file, "old").unwrap();
+        std::fs::write(&victim, "precious").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join("settings.json.idlemax-tmp")).unwrap();
+
+        write_atomic(&file, b"new", None).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "precious",
+            "victim"
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(
+            leftovers.len(),
+            2,
+            "only the file and the victim remain: {leftovers:?}"
         );
     }
 
