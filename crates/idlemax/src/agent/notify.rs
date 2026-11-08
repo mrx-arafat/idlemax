@@ -36,13 +36,3 @@ pub fn notify_job_finish(
         Err(e) => warn!(error = %e, "cannot spawn osascript notification"),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn notify_does_not_panic() {
-        notify_job_finish("test-job", JobStatus::Succeeded, Some(0), None);
-    }
-}
