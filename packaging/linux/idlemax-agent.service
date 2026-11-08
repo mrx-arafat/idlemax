@@ -1,12 +1,12 @@
 # idlemax device agent for a Linux server.
 # Samples metrics, runs the guard, heartbeats to the coordinator and runs leased jobs.
-# Install: see README "Install on Linux".
+# Install: see README "Deploying across devices".
 #
 # Jobs run as the idlemax user. The runner uses `systemd-run --user --scope` only when that
-# user has a user manager bus; without lingering (the default) it runs jobs under
-# `nice -n 19 ionice -c3` inside this unit's cgroup, so the caps below bound the agent plus
-# its one job (linux_server preset: 1 job, 512 MiB). Keep lingering off for the idlemax user
-# so every job stays inside these caps.
+# user has a reachable user manager (its bus or private socket). Without lingering (the
+# default) it runs jobs under `nice -n 19 ionice -c3` inside this unit's cgroup, so the caps
+# below bound the agent plus its one job (linux_server preset: 1 job, 512 MiB). Keep
+# lingering off for the idlemax user so every job stays inside these caps.
 
 [Unit]
 Description=idlemax agent

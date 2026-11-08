@@ -1,7 +1,7 @@
 # idlemax coordinator (job queue, leases, quota ledger, HTTP API, dashboard).
 # Runs on the server next to production sites, so it is capped hard.
 # Bind it to the tailnet IP in $IDLEMAX_HOME/config.toml, never a public address.
-# Install: see README "Install on Linux".
+# Install: see README "Deploying across devices".
 
 [Unit]
 Description=idlemax coordinator
