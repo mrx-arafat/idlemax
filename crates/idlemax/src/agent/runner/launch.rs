@@ -9,7 +9,7 @@ use idlemax_core::job_run::{scope_unit, Wrapper};
 use idlemax_core::types::{Job, UnixMs};
 use idlemax_core::{Paths, TOKEN_ENV};
 
-use super::{os, RunnerError};
+use super::{wrapper, RunnerError};
 
 /// Env var every job gets with its own id.
 pub const JOB_ID_ENV: &str = "IDLEMAX_JOB_ID";
@@ -120,7 +120,7 @@ fn resolve_program(program: &str) -> Result<String, RunnerError> {
     if path.components().count() > 1 {
         return Err(RunnerError::RelativeProgram(program.to_string()));
     }
-    os::which(program)
+    wrapper::which(program)
         .map(|p| p.to_string_lossy().into_owned())
         .ok_or_else(|| RunnerError::ProgramNotFound(program.to_string()))
 }

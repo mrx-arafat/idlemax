@@ -10,6 +10,7 @@ mod os;
 mod pidfile;
 #[cfg(all(test, unix))]
 mod tests;
+mod wrapper;
 
 use std::collections::HashMap;
 use std::io;
@@ -107,7 +108,7 @@ impl Runner {
     /// Detects the throttle and kills jobs orphaned by a previous agent process;
     /// their Killed updates come out of the first `poll`.
     pub fn new(paths: Paths, device: DeviceId, config: AgentConfig) -> Self {
-        let wrapper = os::detect_wrapper();
+        let wrapper = wrapper::detect_wrapper();
         let mut procs = ProcTable::new();
         if procs.is_none() {
             warn!("process table unavailable: memory cap left to the OS throttle");
