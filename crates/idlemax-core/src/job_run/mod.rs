@@ -1,11 +1,13 @@
 //! Domain: pure decisions for running one job on a device (admission, throttle argv,
 //! run clock, cap checks, exit outcome, rate-limit scan). No I/O, no clock.
 
+mod env;
 mod exit_marker;
 pub mod inbox;
 mod usage;
 mod wrap;
 
+pub use env::inherits;
 pub use exit_marker::{orphan_verdict, ExitMarker, OrphanVerdict};
 pub use usage::{
     could_belong, job_procs, orphan_procs, poll_every, JobKey, JobProcs, ProcFact, Usage,

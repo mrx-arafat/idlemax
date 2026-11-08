@@ -230,6 +230,57 @@ fn pause_resume_and_kill(home: &Path, r: &mut Runner, id: i64) {
     assert_eq!((u.status, u.error), (JobStatus::Killed, None));
 }
 
+/// A job gets the few variables a tool needs to find itself and its login, the spec's own
+/// `env` and its id: nothing else from the agent, which may hold API keys or an ssh-agent socket.
+#[test]
+fn a_job_gets_a_minimal_environment_plus_its_own() {
+    // Edition 2021: set_var is safe, and the name is unique to this test.
+    std::env::set_var("IDLEMAX_TEST_CANARY_SECRET", "leaked");
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    let mut task = job(6, &["sh", "-c", "env | sort"], 64);
+    task.spec.env.insert("FROM_SPEC".into(), "yes".into());
+    r.start(&task).unwrap();
+    wait_ended(&mut r, STARVED);
+    std::env::remove_var("IDLEMAX_TEST_CANARY_SECRET");
+
+    let log = std::fs::read_to_string(Paths::new(home.path()).job_log_file(6)).unwrap();
+    // The log's own `=== ... ===` header and footer lines are not variables.
+    let names: Vec<&str> = log
+        .lines()
+        .filter(|l| !l.starts_with("==="))
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, _)| k)
+        .collect();
+    for wanted in [
+        "PATH",
+        "HOME",
+        "FROM_SPEC",
+        "IDLEMAX_JOB_ID",
+        "IDLEMAX_JOB_TAG",
+    ] {
+        assert!(names.contains(&wanted), "{wanted} missing from:\n{log}");
+    }
+    assert!(
+        !log.contains("IDLEMAX_TEST_CANARY_SECRET"),
+        "the agent's variable leaked:\n{log}"
+    );
+    assert!(
+        names.iter().all(|n| idlemax_core::job_run::inherits(n)
+            || [
+                "FROM_SPEC",
+                "IDLEMAX_JOB_ID",
+                "IDLEMAX_JOB_TAG",
+                "PWD",
+                "SHLVL",
+                "_",
+                "OLDPWD"
+            ]
+            .contains(n)),
+        "unexpected variables in:\n{log}"
+    );
+}
+
 #[test]
 fn pause_freezes_the_group_kill_ends_it_and_the_memory_cap_kills_the_tree() {
     let home = tempfile::tempdir().unwrap();

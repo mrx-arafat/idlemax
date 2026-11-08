@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-use idlemax_core::job_run::{scope_unit, Wrapper};
+use idlemax_core::job_run::{self, scope_unit, Wrapper};
 use idlemax_core::types::{Job, JobId, UnixMs};
 use idlemax_core::{Paths, TOKEN_ENV};
 
@@ -49,9 +49,9 @@ pub fn launch(
     let (exe, exe_args) = full.split_first().ok_or(RunnerError::EmptyCommand)?;
     let stderr = log.try_clone().map_err(io_err("clone log", &log_path))?;
     let mut cmd = Command::new(exe);
-    cmd.args(exe_args)
-        .current_dir(&cwd)
-        .envs(&spec.env)
+    cmd.args(exe_args).current_dir(&cwd);
+    inherit_minimal_env(&mut cmd);
+    cmd.envs(&spec.env)
         .env_remove(TOKEN_ENV)
         .env(JOB_ID_ENV, job.id.to_string())
         .env(JOB_TAG_ENV, tag.to_string())
@@ -98,6 +98,21 @@ fn supervised(
     full.extend(["--marker".into(), marker, "--".into()]);
     full.extend(argv);
     full
+}
+
+/// A job starts from a near-empty environment: only what `job_run::inherits` names comes from
+/// the agent, then the spec's `env` and the job id are added on top.
+// SHORTCUT: Windows keeps the whole environment (programs there fail without SystemRoot and
+// friends), clear it with a Windows allowlist when a Windows device joins.
+fn inherit_minimal_env(cmd: &mut Command) {
+    #[cfg(unix)]
+    {
+        cmd.env_clear().envs(
+            std::env::vars_os().filter(|(name, _)| name.to_str().is_some_and(job_run::inherits)),
+        );
+    }
+    #[cfg(not(unix))]
+    let _ = cmd;
 }
 
 /// Hands the job its input without waiting for it. `start` runs on the agent loop under the
