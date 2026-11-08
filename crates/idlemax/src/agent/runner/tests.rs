@@ -8,6 +8,7 @@ use idlemax_core::protocol::JobUpdate;
 use idlemax_core::types::{Job, JobSpec, JobStatus};
 use idlemax_core::Paths;
 
+use super::os::{self, Sig};
 use super::Runner;
 
 #[test]
@@ -27,7 +28,7 @@ fn sleeping_past_runtime_survives_until_awake_limit() {
         r.slots[&9].stop.as_ref().map(|s| &s.reason),
         Some(idlemax_core::job_run::StopReason::MaxRuntime { limit_secs: 10 })
     ));
-    let update = wait_ended(&mut r, Duration::from_secs(5));
+    let update = wait_ended(&mut r, STARVED);
     assert_eq!(update.status, JobStatus::Killed);
     assert_eq!(
         update.error.as_deref(),
@@ -58,6 +59,11 @@ fn job(id: i64, argv: &[&str], mem_mb: u64) -> Job {
     }
 }
 
+/// Jobs run at background priority (`taskpolicy -c background`), so on a busy machine they
+/// are starved on purpose: starting, stopping or dying takes seconds, not milliseconds.
+/// Waits return the moment the condition holds, so a generous limit costs nothing when green.
+pub(super) const STARVED: Duration = Duration::from_secs(60);
+
 /// Polls `cond` until it holds; panics naming `what` after `within`. No fixed sleeps.
 pub(super) fn wait_until(what: &str, within: Duration, mut cond: impl FnMut() -> bool) {
     let deadline = Instant::now() + within;
@@ -73,7 +79,11 @@ fn wait_ended(r: &mut Runner, within: Duration) -> JobUpdate {
         if let Some(update) = r.poll().into_iter().next() {
             return update;
         }
-        assert!(Instant::now() < deadline, "job did not end in time");
+        assert!(
+            Instant::now() < deadline,
+            "job did not end in time; running: {:?}",
+            r.running()
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
 }
@@ -86,12 +96,25 @@ fn stdin_reaches_the_job() {
     job.spec.stdin = Some("private prompt sentinel".into());
     r.start(&job).unwrap();
 
-    let update = wait_ended(&mut r, Duration::from_secs(10));
+    let update = wait_ended(&mut r, STARVED);
     assert_eq!(update.status, JobStatus::Succeeded);
     assert_eq!(
         update.output_tail.as_deref(),
         Some("private prompt sentinel")
     );
+}
+
+/// True once the OS reports `pid` as stopped (SIGSTOP has taken effect).
+fn stopped(pid: u32) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+    let (mut sys, pid) = (System::new().unwrap(), Pid::from_u32(pid));
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    sys.process(pid)
+        .is_some_and(|p| p.status() == ProcessStatus::Stop)
 }
 
 #[test]
@@ -104,28 +127,49 @@ fn pause_freezes_the_group_kill_ends_it_and_the_memory_cap_kills_the_tree() {
         64,
     ))
     .unwrap();
+    let root = r.running()[0].pid.unwrap();
     let log = Paths::new(home.path()).job_log_file(3);
-    let len = || std::fs::metadata(&log).unwrap().len();
-    std::thread::sleep(Duration::from_millis(300));
+    let len = || std::fs::metadata(&log).map_or(0, |m| m.len());
+    wait_until("the job to write", STARVED, || len() > 0);
     r.pause(3).unwrap();
-    std::thread::sleep(Duration::from_millis(200));
+    // SIGSTOP lands when the job is next scheduled: wait for the OS to say so, then it
+    // must stay silent. A stopped job cannot write, however busy the machine is.
+    wait_until("the paused job to stop", STARVED, || stopped(root));
     let frozen = len();
     std::thread::sleep(Duration::from_millis(400));
     assert_eq!(len(), frozen, "paused job kept writing");
     assert_eq!(r.running()[0].status, JobStatus::Paused);
     r.resume(3).unwrap();
-    std::thread::sleep(Duration::from_millis(300));
-    assert!(len() > frozen, "resumed job did not continue");
+    wait_until("the resumed job to write", STARVED, || len() > frozen);
     r.pause(3).unwrap();
     r.kill(3).unwrap();
-    let u = wait_ended(&mut r, Duration::from_secs(10));
+    let u = wait_ended(&mut r, STARVED);
     assert_eq!((u.status, u.error), (JobStatus::Killed, None));
 
     // `; echo` keeps sh as the parent, so the hog is a grandchild of the job root.
-    let script = "perl -e '$x = \"x\" x (96 * 1024 * 1024); sleep 60'; echo done";
-    r.start(&job(4, &["sh", "-c", script], 32)).unwrap();
-    let u = wait_ended(&mut r, Duration::from_secs(20));
+    // Random data: macOS compresses idle uniform pages out of the resident size the cap reads.
+    let hog =
+        r#"$b = pack("L*", map { int rand 4294967296 } 1 .. 16384); $x = $b x 1536; sleep 60"#;
+    let script = format!("perl -e '{hog}'; echo done");
+    r.start(&job(4, &["sh", "-c", &script], 32)).unwrap();
+    let u = wait_ended(&mut r, STARVED);
     assert_eq!(u.status, JobStatus::Killed, "{u:?}");
     let error = u.error.unwrap_or_default();
     assert!(error.ends_with("MiB over the 32 MiB cap"), "{error}");
+}
+
+#[test]
+fn signalling_a_group_of_unreaped_zombies_is_not_an_error() {
+    use std::os::unix::process::CommandExt;
+    // macOS answers EPERM, not ESRCH, while every process left in a group is a zombie.
+    let mut root = std::process::Command::new("sh")
+        .args(["-c", "exit 0"])
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pgid = root.id();
+    wait_until("the group leader to exit", STARVED, || !os::alive(pgid));
+    os::signal_group(pgid, Sig::Term).unwrap();
+    os::signal_group(pgid, Sig::Kill).unwrap();
+    root.wait().unwrap();
 }

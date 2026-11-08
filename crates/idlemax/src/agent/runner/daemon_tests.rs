@@ -9,9 +9,10 @@ use std::time::{Duration, Instant};
 use idlemax_core::config::AgentConfig;
 use idlemax_core::types::{Job, JobSpec, JobStatus};
 use idlemax_core::Paths;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
-use super::tests::wait_until;
+use super::os;
+use super::tests::{wait_until, STARVED};
 use super::Runner;
 
 const ROLE: &str = "IDLEMAX_TEST_ROLE";
@@ -116,29 +117,13 @@ fn job(id: i64, exe: &str, cwd: &Path, env: &[(&str, String)], mem_mb: u64) -> J
     }
 }
 
-fn alive(pid: u32) -> bool {
-    let (mut sys, pid) = (System::new().unwrap(), Pid::from_u32(pid));
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[pid]),
-        true,
-        ProcessRefreshKind::nothing(),
-    );
-    sys.process(pid)
-        .is_some_and(|p| p.status() != ProcessStatus::Zombie)
-}
-
-/// Jobs run at background priority (`taskpolicy -c background`), so on a busy machine they
-/// are starved on purpose: starting a process chain or dying takes seconds, not milliseconds.
-/// Waits return the moment the condition holds, so a generous limit costs nothing when green.
-const STARVED: Duration = Duration::from_secs(60);
-
 /// The process ends within `STARVED`.
 fn gone(pid: u32) -> bool {
     let until = Instant::now() + STARVED;
-    while alive(pid) && Instant::now() < until {
+    while os::alive(pid) && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(50));
     }
-    !alive(pid)
+    !os::alive(pid)
 }
 
 /// The hog's pid once it has finished writing its pid file (the file exists before its content).
@@ -185,7 +170,7 @@ fn a_daemonized_hog_counts_against_the_cap_and_is_killed_with_the_job() {
         let mut r = runner(home.path(), &exe);
         r.start(&job(CAP_JOB, &exe, home.path(), &env, 64)).unwrap();
 
-        let (start, deadline) = (Instant::now(), Instant::now() + Duration::from_secs(30));
+        let (start, deadline) = (Instant::now(), Instant::now() + STARVED);
         let mut trace = Vec::new();
         let update = loop {
             if let Some(u) = r.poll().into_iter().next() {

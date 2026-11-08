@@ -28,19 +28,19 @@ pub enum Sig {
 #[cfg(unix)]
 pub fn signal_group(pgid: u32, sig: Sig) -> io::Result<()> {
     let raw = signalable(pgid, "group")?;
-    allow_gone(nix::sys::signal::killpg(
-        nix::unistd::Pid::from_raw(raw),
-        unix_signal(sig),
-    ))
+    allow_gone(
+        nix::sys::signal::killpg(nix::unistd::Pid::from_raw(raw), unix_signal(sig)),
+        pgid,
+    )
 }
 
 #[cfg(unix)]
 fn signal_pid(pid: u32, sig: Sig) -> io::Result<()> {
     let raw = signalable(pid, "process")?;
-    allow_gone(nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(raw),
-        unix_signal(sig),
-    ))
+    allow_gone(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), unix_signal(sig)),
+        pid,
+    )
 }
 
 /// pid 0 is our own group and 1 is init: never signal those.
@@ -65,12 +65,35 @@ fn unix_signal(sig: Sig) -> nix::sys::signal::Signal {
     }
 }
 
+/// A signal to something already gone is not an error. macOS answers EPERM, not ESRCH, while
+/// the only processes left are unreaped zombies (a group whose leader exited and was not yet
+/// waited on), so there EPERM counts as gone unless `root`, the signalled pid or group leader,
+/// is still alive: then it is a real denial.
 #[cfg(unix)]
-fn allow_gone(result: nix::Result<()>) -> io::Result<()> {
+fn allow_gone(result: nix::Result<()>, root: u32) -> io::Result<()> {
+    use nix::errno::Errno;
     match result {
-        Ok(()) | Err(nix::errno::Errno::ESRCH) => Ok(()),
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(Errno::EPERM) if cfg!(target_os = "macos") && !alive(root) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// True while `pid` is a live (not zombie) process. Fails closed: when the process table
+/// cannot be read the process counts as alive.
+#[cfg(unix)]
+pub(super) fn alive(pid: u32) -> bool {
+    let pid = Pid::from_u32(pid);
+    let Some(mut sys) = System::new().ok() else {
+        return true;
+    };
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    sys.process(pid)
+        .is_some_and(|p| p.status() != ProcessStatus::Zombie)
 }
 
 /// Signals each pid, best effort: a member can exit between the scan and the signal, and
