@@ -230,6 +230,7 @@ impl Runner {
 
     fn poll_at(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         self.settle_handed_out();
+        self.hold_pauses();
         self.refresh_usage(now);
         for slot in self.slots.values_mut() {
             enforce(slot, now, awake_ms);
@@ -238,6 +239,17 @@ impl Runner {
         updates.extend(self.reap(now, awake_ms));
         self.settle = updates.iter().map(|u| u.id).collect();
         updates
+    }
+
+    /// Stops a paused job's group again. A SIGSTOP that lands while the job is still executing
+    /// its wrapper chain (taskpolicy, nice, the program) can be lost, which would leave a job
+    /// marked paused but running. Stopping a stopped group changes nothing.
+    fn hold_pauses(&self) {
+        for slot in self.slots.values().filter(|s| s.clock.is_paused()) {
+            if let Err(e) = os::signal_job(slot.pid, &slot.outside, Sig::Stop) {
+                warn!(job = slot.job.id, error = %e, "cannot hold a paused job");
+            }
+        }
     }
 
     /// Removes the files of jobs reported by the previous `poll`. Until then they stay, so an

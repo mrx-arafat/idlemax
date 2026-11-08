@@ -201,7 +201,11 @@ fn pause_resume_and_kill(home: &Path, r: &mut Runner, id: i64) {
     let root = r.running()[0].pid.unwrap();
     let log = Paths::new(home).job_log_file(id);
     let len = || std::fs::metadata(&log).map_or(0, |m| m.len());
-    wait_until("the job to write", STARVED, || len() > 0);
+    // The header is written at launch; the first tick proves the job runs its script, past the
+    // exec chain (taskpolicy, nice, sh) where a SIGSTOP can be lost.
+    wait_until("the job to tick", STARVED, || {
+        std::fs::read_to_string(&log).is_ok_and(|t| t.contains("tick"))
+    });
     r.pause(id).unwrap();
     // SIGSTOP lands when each process is next scheduled: wait for the OS to say that all of
     // them stopped, then the job must stay silent however busy the machine is.
@@ -348,4 +352,35 @@ fn a_job_that_ended_while_the_agent_was_down_is_reported_with_its_real_exit() {
     assert!(pid_file.exists() && marker.exists());
     assert!(restarted.poll().is_empty());
     assert!(!pid_file.exists() && !marker.exists());
+}
+
+#[test]
+fn a_pause_the_job_did_not_honour_is_applied_again_on_the_next_poll() {
+    use nix::sys::signal::{killpg, Signal};
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    let log = Paths::new(home.path()).job_log_file(64);
+    r.start(&job(
+        64,
+        &["sh", "-c", "while :; do echo tick; sleep 0.05; done"],
+        64,
+    ))
+    .unwrap();
+    let root = r.running()[0].pid.unwrap();
+    wait_until("the job to tick", STARVED, || {
+        std::fs::read_to_string(&log).is_ok_and(|t| t.contains("tick"))
+    });
+    r.pause(64).unwrap();
+    wait_until("the group to stop", STARVED, || group_stopped(root));
+
+    // A SIGSTOP that lands while a job is still executing its wrapper chain can be lost; the
+    // same thing happens when something else continues the group behind the runner's back.
+    killpg(nix::unistd::Pid::from_raw(root as i32), Signal::SIGCONT).unwrap();
+    wait_until("the group to run again", STARVED, || !group_stopped(root));
+    r.poll();
+    wait_until("the pause to hold again", STARVED, || group_stopped(root));
+    assert_eq!(r.running()[0].status, JobStatus::Paused);
+
+    r.kill(64).unwrap();
+    wait_ended(&mut r, STARVED);
 }
