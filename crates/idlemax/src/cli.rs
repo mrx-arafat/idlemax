@@ -2,6 +2,8 @@
 
 mod client;
 mod files;
+mod home;
+mod hooks;
 mod inbox;
 mod init;
 mod job;
@@ -41,8 +43,9 @@ struct Cli {
     /// Print JSON instead of tables
     #[arg(long, global = true)]
     json: bool,
+    /// Without a command, print the live home view
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -116,6 +119,8 @@ enum Cmd {
     /// Talk to this device's agent directly; works while the coordinator is down
     #[command(subcommand)]
     Local(LocalCmd),
+    /// Session hooks for coding agents
+    Hooks(hooks::HooksArgs),
 }
 
 #[derive(Args, Debug)]
@@ -221,10 +226,15 @@ impl Target {
 
 pub async fn run() -> Result<()> {
     let Cli { coord, json, cmd } = Cli::parse();
-    // Doctor reports a broken state dir or config instead of failing on it.
-    if let Cmd::Doctor = &cmd {
-        return run_doctor(coord, json).await;
-    }
+    let Some(cmd) = cmd else {
+        return home::run(coord, json, home::Mode::Full).await;
+    };
+    // Doctor and the hooks report a broken state dir or config instead of failing on it.
+    let cmd = match cmd {
+        Cmd::Doctor => return run_doctor(coord, json).await,
+        Cmd::Hooks(args) => return hooks::run(coord, args, json).await,
+        other => other,
+    };
     let paths = state::paths_from_env()?;
     let cmd = match cmd {
         Cmd::Init(args) => return run_init(&paths, args),
@@ -388,7 +398,8 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
         | Cmd::Statusline(_)
         | Cmd::Logs { .. }
         | Cmd::Inbox { .. }
-        | Cmd::Doctor => {
+        | Cmd::Doctor
+        | Cmd::Hooks(_) => {
             bail!("not a coordinator command")
         }
     };

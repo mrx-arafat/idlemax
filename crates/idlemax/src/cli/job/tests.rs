@@ -11,7 +11,7 @@ fn parse(args: &[&str]) -> Result<AddArgs, clap::Error> {
         .into_iter()
         .chain(args.iter().copied());
     match Cli::try_parse_from(argv)?.cmd {
-        Cmd::Job(JobCmd::Add(add)) => Ok(*add),
+        Some(Cmd::Job(JobCmd::Add(add))) => Ok(*add),
         other => panic!("parsed as {other:?}"),
     }
 }
