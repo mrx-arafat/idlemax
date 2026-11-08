@@ -14,6 +14,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 
 use crate::coord::api::http::{self, ApiFailure, BearerToken, JsonBody};
+use crate::coord::server::{self, Limits};
 
 /// How long `POST /v1/local/control` waits for the agent loop to apply the action.
 const CONTROL_WAIT: Duration = Duration::from_secs(5);
@@ -64,13 +65,25 @@ pub fn router(handle: LocalHandle, token: &str) -> Router {
         .with_state(handle)
 }
 
-/// Serves until the listener fails. The caller binds `config.agent.listen` (loopback).
+/// Serves until the process stops. The caller binds `config.agent.listen` (loopback). It
+/// runs on the coordinator's connection handling: header-read and request timeouts, and an
+/// accept loop that survives errors, so a silent local client cannot hold a connection forever.
 pub async fn serve(
     listener: TcpListener,
     handle: LocalHandle,
     token: String,
 ) -> std::io::Result<()> {
-    axum::serve(listener, router(handle, &token)).await
+    serve_limited(listener, handle, token, Limits::default()).await
+}
+
+async fn serve_limited(
+    listener: TcpListener,
+    handle: LocalHandle,
+    token: String,
+    limits: Limits,
+) -> std::io::Result<()> {
+    let app = router(handle, &token);
+    server::serve_with(listener, app, std::future::pending(), limits).await
 }
 
 async fn status(State(h): State<LocalHandle>) -> Json<LocalStatus> {
@@ -97,4 +110,33 @@ async fn control(
 
 fn loop_stopped() -> ApiFailure {
     ApiFailure::Unavailable("the agent loop is not running".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::io::AsyncReadExt;
+    use tokio::net::{TcpListener, TcpStream};
+
+    use super::*;
+
+    /// A client that opens a connection and says nothing must be dropped after the header
+    /// timeout, like on the coordinator, instead of holding a connection forever.
+    #[tokio::test]
+    async fn a_silent_client_is_closed_after_the_header_timeout() {
+        let (handle, _ports) = local_channel(LocalStatus::default());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let limits = Limits::new(Duration::from_millis(50), Duration::from_secs(5));
+        let server = tokio::spawn(serve_limited(listener, handle, "t".repeat(40), limits));
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let mut byte = [0_u8; 1];
+        let read = tokio::time::timeout(Duration::from_secs(2), client.read(&mut byte))
+            .await
+            .expect("the silent client was never dropped");
+        assert!(matches!(read, Ok(0) | Err(_)));
+        server.abort();
+    }
 }

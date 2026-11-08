@@ -21,9 +21,19 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy)]
-struct Limits {
+pub(crate) struct Limits {
     header_read: Duration,
     request: Duration,
+}
+
+impl Limits {
+    #[cfg(test)]
+    pub(crate) fn new(header_read: Duration, request: Duration) -> Self {
+        Self {
+            header_read,
+            request,
+        }
+    }
 }
 
 impl Default for Limits {
@@ -43,7 +53,7 @@ where
     serve_with(listener, app, shutdown, Limits::default()).await
 }
 
-async fn serve_with<F>(
+pub(crate) async fn serve_with<F>(
     listener: TcpListener,
     app: Router,
     shutdown: F,

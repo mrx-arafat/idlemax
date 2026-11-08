@@ -3,7 +3,7 @@
 
 pub mod api;
 mod schedule;
-mod server;
+pub(crate) mod server;
 pub mod store;
 mod sweep;
 pub mod web;
