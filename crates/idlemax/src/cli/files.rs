@@ -45,12 +45,27 @@ pub fn save(settings: &Path, before: Option<&str>, after: &str) -> Result<Option
     let target = std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
     let backup = before.map(|_| backup_path(&target));
     if let (Some(path), Some(old)) = (&backup, before) {
-        write_atomic(path, old.as_bytes(), None)
+        // The copy is exactly as private as the file it copies.
+        write_atomic(path, old.as_bytes(), mode_of(&target))
             .with_context(|| format!("backing up to {}", path.display()))?;
     }
     write_atomic(&target, after.as_bytes(), None)
         .with_context(|| format!("writing {}", target.display()))?;
     Ok(backup)
+}
+
+/// The permission bits of `path`, or None when it cannot be read or the platform has no modes.
+#[cfg(unix)]
+fn mode_of(path: &Path) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|m| m.permissions().mode() & 0o7777)
+}
+
+#[cfg(not(unix))]
+fn mode_of(_path: &Path) -> Option<u32> {
+    None
 }
 
 fn write_then_rename(tmp: &Path, path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
@@ -99,5 +114,20 @@ mod tests {
             1,
             "no temp file left"
         );
+    }
+
+    /// A private config file (Claude keeps `env` keys in settings.json) must not get a more
+    /// readable backup. 0400 is a mode no umask produces by accident, so this holds for any umask.
+    #[test]
+    fn the_backup_has_the_mode_of_the_file_it_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("settings.json");
+        std::fs::write(&file, "old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o400)).unwrap();
+        let backup = save(&file, Some("old"), "new").unwrap().unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "old");
+        assert_eq!(mode(&backup), 0o400, "backup mode");
+        assert_eq!(mode(&file), 0o400, "the file keeps its own mode");
     }
 }
