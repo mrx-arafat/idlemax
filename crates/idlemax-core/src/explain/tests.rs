@@ -214,6 +214,29 @@ fn device_mismatches_are_listed_per_device_with_the_setting_to_change() {
 }
 
 #[test]
+fn a_device_the_job_can_never_use_says_why_in_one_phrase_per_cause() {
+    let mut job = queued(1);
+    job.spec.devices = vec!["mac".into()];
+    job.spec.requires = vec!["cargo".into()];
+    job.spec.cost = CostClass::CpuHeavy;
+    let mut w = World::new(job);
+    w.devices[0].info.profile = DeviceProfile::MacosLaptop;
+    w.devices[0].info.capabilities.push("cargo".into());
+    let mut server = device("server");
+    server.info.profile = DeviceProfile::LinuxServer;
+    w.devices.push(server);
+    let e = w.explain();
+    assert!(e.devices[0].ineligible.is_empty(), "{e:?}");
+    assert_eq!(
+        e.devices[1].ineligible,
+        ["limited to mac", "no cargo", "does not take cpu_heavy jobs"]
+    );
+    // A guard pause is not a cause: it clears by itself, and the device stays eligible.
+    w.devices[0].guard = Some(run(0, 1024));
+    assert!(w.explain().devices[0].ineligible.is_empty());
+}
+
+#[test]
 fn guard_reasons_carry_the_config_key_and_slots_and_ram_are_counted() {
     let mut guard = Guard::new(GuardPolicy::macos_laptop());
     let on_battery = MetricsSnapshot {

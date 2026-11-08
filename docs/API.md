@@ -189,6 +189,7 @@ The device-side verdicts (guard, running jobs, slot and RAM budget) are as of th
  "reasons": [{"kind": "backoff", "message": "waiting out the retry delay: attempt 2 of 3 starts in 1m 10s (last error: lease expired on my-laptop)",
               "fix": null, "until_ms": 1730000070000}],
  "devices": [{"device": "my-laptop", "online": true, "last_seen_ms": 1730000000000, "ready": false,
+              "ineligible": [],
               "reasons": [{"kind": "guard", "message": "on battery (guard pause)",
                            "fix": "plug in, or set guard.require_ac_power = false", "until_ms": null}]}],
  "at_ms": 1730000001000}
@@ -197,6 +198,8 @@ The device-side verdicts (guard, running jobs, slot and RAM budget) are as of th
 - `state`: `ready` (a device leases it on its next heartbeat), `blocked` (queued or parked, with reasons), `active` (leased, running or paused) or `finished`.
 - `reasons` hold on every device (pauses, retry backoff, AI quota, a busy AI account, no online device).
   `devices[].reasons` hold for that device only; `ready` is true when the device has none and neither does the job.
+- `devices[].ineligible` lists, as short phrases, why a device can never take the job until the job spec or the device's config changes: `limited to mac` (the job's `devices` list), `no cargo` (a `requires` tool), `does not take cpu_heavy jobs` (the profile's cost classes), `ls is not on its allowlist`, `may not spend claude-max`.
+  It is empty for a device that only has to wait, and absent from a coordinator older than this field, so treat a missing list as eligible.
 - `kind` is a stable snake_case code for scripts: `global_pause`, `account_pause`, `job_pause`, `device_pause`, `local_pause`, `backoff`, `parked`, `no_device_online`, `offline`, `device_filter`, `missing_capability`, `cost_class`, `command_not_allowed`, `ai_no_account`, `ai_account_not_on_device`, `ai_quota`, `ai_account_busy`, `guard`, `no_slot`, `ram_budget`, `queue_order`.
   `message` is plain language, `fix` is the command or config key that clears it (null when it clears by itself), `until_ms` is set for `backoff`.
 - A `finished` job has no reasons, and a `parked` job has one `parked` reason carrying its last error.

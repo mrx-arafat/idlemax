@@ -100,6 +100,11 @@ pub struct DeviceExplanation {
     pub last_seen_ms: UnixMs,
     /// This device would lease the job on its next heartbeat.
     pub ready: bool,
+    /// Why this device can never take the job until the job spec or the device's config
+    /// changes, one short phrase per cause ("limited to mac", "no cargo"). Empty when it is
+    /// eligible: whatever else holds the job there clears by itself.
+    #[serde(default)]
+    pub ineligible: Vec<String>,
     pub reasons: Vec<Reason>,
 }
 
@@ -205,7 +210,9 @@ fn explain_device(
     job_wide: bool,
 ) -> DeviceExplanation {
     let job = input.job;
-    let mut reasons: Vec<Reason> = scheduler::device_blockers(&dv.info, job)
+    let fixed = scheduler::device_blockers(&dv.info, job);
+    let ineligible = reasons::ineligible_causes(&fixed, job);
+    let mut reasons: Vec<Reason> = fixed
         .iter()
         .filter_map(|b| blocker_reason(b, input, Some(&dv.info)))
         .collect();
@@ -232,6 +239,7 @@ fn explain_device(
         online: dv.online,
         last_seen_ms: dv.last_seen_ms,
         ready: dv.online && reasons.is_empty() && !job_wide,
+        ineligible,
         reasons,
     }
 }

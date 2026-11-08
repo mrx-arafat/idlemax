@@ -176,6 +176,33 @@ pub(super) fn blocker_reason(
     })
 }
 
+/// One short phrase per device-level blocker: what makes a device unable to ever take the
+/// job. These are the scheduler's static checks, so none of them clears by waiting.
+pub(super) fn ineligible_causes(blockers: &[Blocker], job: &Job) -> Vec<String> {
+    blockers
+        .iter()
+        .filter_map(|b| match b {
+            Blocker::DeviceNotAllowed => {
+                Some(format!("limited to {}", job.spec.devices.join(", ")))
+            }
+            Blocker::MissingCapability(c) => Some(format!("no {c}")),
+            Blocker::CostNotAllowed(c) => Some(format!("does not take {} jobs", cost_name(*c))),
+            Blocker::CommandNotAllowed(p) => Some(format!("{p} is not on its allowlist")),
+            Blocker::AccountNotOnDevice(a) => Some(format!("may not spend {a}")),
+            _ => None,
+        })
+        .collect()
+}
+
+fn cost_name(cost: CostClass) -> &'static str {
+    match cost {
+        CostClass::CpuLight => "cpu_light",
+        CostClass::CpuHeavy => "cpu_heavy",
+        CostClass::Io => "io",
+        CostClass::Ai => "ai",
+    }
+}
+
 fn cost_class(cost: CostClass, device: Option<&DeviceInfo>, on: &str) -> Reason {
     let profile = device.map_or(DeviceProfile::LinuxServer, |d| d.profile);
     let kind = format!("{cost:?}");
