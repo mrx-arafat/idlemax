@@ -261,6 +261,8 @@ It is `null` for an agent that predates the field, and such a device is not filt
   `resume_job` goes to reported paused jobs that no coordinator pause still holds.
 - `stop_all` pauses the scope and marks its active jobs `killed` (`last_error = "stop_all: <reason>"`).
   A reported job whose stored status is terminal, or that is leased to another device, gets `kill_job`.
+- `pause` and `stop_all` on a `device` that has never sent a heartbeat, or an `account` not in `[[quota.accounts]]`, are 400 and the error lists the known names, so a typo never reports success.
+  `resume` is never refused this way, so a flag under any name can always be removed.
 - `cancel` needs `job` scope (400 otherwise).
   A queued or active job becomes `cancelled` (active ones get `kill_job`); a finished job is 409.
 

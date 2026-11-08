@@ -5,7 +5,9 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use idlemax_core::control::{admit_job, global_paused, paused_accounts, plan_control};
+use idlemax_core::control::{
+    admit_job, global_paused, paused_accounts, plan_control, unknown_scope,
+};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::quota::{self, QuotaView, SpendContext, MINUTE_MS, WEEK_MINUTES};
 use idlemax_core::types::{
@@ -106,7 +108,7 @@ pub async fn cancel(
     let now = now_ms();
     let job = app
         .with_store(move |store, _| {
-            apply_control(store, &req, now)?;
+            apply_control(store, &req, &[], now)?;
             store
                 .get_job(id)?
                 .ok_or_else(|| ApiFailure::NotFound(format!("job {id} not found")))
@@ -129,7 +131,8 @@ pub async fn control(
     let now = now_ms();
     let status = app
         .with_store(move |store, cfg| {
-            apply_control(store, &req, now)?;
+            let accounts: Vec<String> = cfg.quota.accounts.iter().map(|a| a.name.clone()).collect();
+            apply_control(store, &req, &accounts, now)?;
             cluster_status(store, cfg, now)
         })
         .await?;
@@ -184,6 +187,7 @@ fn add_job_once(
 pub(super) fn apply_control(
     store: &mut Store,
     req: &ControlRequest,
+    accounts: &[String],
     now: UnixMs,
 ) -> Result<(), ApiFailure> {
     let mut jobs = store.active_jobs()?;
@@ -193,6 +197,19 @@ pub(super) fn apply_control(
         }
     }
     let plan = plan_control(req, &jobs, now)?;
+    if matches!(
+        req.scope,
+        ControlScope::Device(_) | ControlScope::Account(_)
+    ) {
+        let devices: Vec<String> = store
+            .devices(now, i64::MAX)?
+            .into_iter()
+            .map(|d| d.info.id)
+            .collect();
+        if let Some(why) = unknown_scope(req, &devices, accounts) {
+            return Err(ApiFailure::BadRequest(why));
+        }
+    }
     store.apply_control(&plan)?;
     let (device, job) = match &req.scope {
         ControlScope::Device(d) => (Some(d), None),

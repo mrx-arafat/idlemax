@@ -223,7 +223,7 @@ fn cancel_stale(store: &mut Store, ids: &[JobId], now: UnixMs) -> Result<usize, 
                 action: ControlAction::Cancel,
                 reason: Some("stale advisor AI pass".into()),
             };
-            apply_control(store, &req, now)?;
+            apply_control(store, &req, &[], now)?;
             cancelled += 1;
         }
     }

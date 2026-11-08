@@ -783,6 +783,14 @@ async fn names_and_payloads_that_enter_the_store_are_bounded() {
         .post("/v1/control", &pause("bad\u{1b}name", "resume"))
         .await;
     assert_eq!(res.status(), StatusCode::OK);
+    // A typo must not report success while the real device keeps leasing jobs.
+    let res = api.post("/v1/control", &pause("lapto", "pause")).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("unknown device `lapto`"));
 
     let big = AdvisorInputs {
         device: "mac".into(),
