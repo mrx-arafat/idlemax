@@ -440,25 +440,25 @@ The screen below is rendered with ratatui's `TestBackend` from placeholder data,
 ```text
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 1 running, 1 queued | advice: 1 open
- 1 Devices (2) │ 2 Jobs (3) │ 3 Quota (1) │ 4 Advice (1) │ 5 Events (0)
+ 1 Devices (2) │ 2 Jobs (3) │ 3 Quota (1) │ 4 Advice (1) │ 5 Events (0) │ 6 Schedules (0)
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
 │  DEVICE  STATE   GUARD                  IDLE  CPU  LOAD  MEM FREE  SWAP  DISK    POWER  JOBS     │
 │> laptop  online  run 1                  25m   9%   2.10  41% 5.0G  1.0G  120.0G  ac     1        │
 │  server  online  hold: load 1.70 > 1.5  -     9%   1.70  52% 5.0G  1.0G  120.0G  -      0        │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume device laptop  P/R all  s stop-all  tab/1-5 switch  q quit
+p/r pause/resume device laptop  P/R all  s stop-all  tab/1-6 switch  q quit
 ```
 
 | Key | Action |
 |---|---|
-| `1`-`5`, `Tab`, `Left`, `Right` | switch between Devices, Jobs, Quota, Advice and Events |
+| `1`-`6`, `Tab`, `Left`, `Right` | switch between Devices, Jobs, Quota, Advice, Events and Schedules |
 | `Up`, `Down` | select a row |
-| `p`, `r` | pause or resume the selected device, job or account |
+| `p`, `r` | pause or resume the selected device, job, account or schedule |
 | `P`, `R` | pause or resume everything |
 | `s` | stop-all everywhere (asks first) |
 | `k` | cancel the selected job (asks first) |
-| `a`, `d` | accept or dismiss the selected advice |
+| `a`, `d` | accept or dismiss the selected advice; on Schedules, `d` removes the selected schedule (asks first) |
 | `f` | re-run the advisor (Advice tab) |
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
 | `q`, `Esc`, `Ctrl-C` | quit |
@@ -466,9 +466,9 @@ p/r pause/resume device laptop  P/R all  s stop-all  tab/1-5 switch  q quit
 **Web dashboard.**
 The coordinator serves one self-contained page at `/` with no remote scripts, fonts or styles.
 It asks for the token once and keeps it in that browser's local storage until you press "Forget token".
-It refreshes every 5 s and shows devices with guard verdicts and metrics, jobs, AI quota per window, advice and events.
+It refreshes every 5 s and shows devices with guard verdicts and metrics, schedules, jobs, AI quota per window, advice and events.
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
-From it you can pause, resume, stop-all or cancel per scope, and accept or dismiss advice.
+From it you can pause, resume, stop-all or cancel per scope, pause, resume or remove a schedule, and accept or dismiss advice.
 
 **HTTP API.**
 Every call except `GET /healthz` and `GET /` needs `Authorization: Bearer <token>`, and errors are `{"error": "..."}`.
@@ -572,13 +572,14 @@ idlemax schedule rm 2
 ```
 
 ```text
-ID  NAME                   EVERY  STATE         LAST QUEUED
-1   repo-health-project-a  1d     job 2 queued  0s ago
-2   kb-refresh             12h    job 3 queued  0s ago
+ID  NAME                   EVERY  STATE         LAST RESULT
+1   repo-health-project-a  1d     job 2 queued  -
+2   kb-refresh             12h    job 3 queued  -
 ```
 
 An interval is a whole number and one unit, `s`, `m`, `h` or `d`, from `1m` to `365d`: write `90m`, not `1.5h`.
 `STATE` says what the schedule waits for: the job it queued (`job 2 queued`), `next in 5h41m`, `due now` or `paused`.
+`LAST RESULT` is how the last finished job ended (`succeeded 4s ago`), or `-` before one has.
 
 - A new schedule queues its first job at once.
   The coordinator checks every 15 s and queues the next job when the previous one has ended and a whole interval has passed since.
@@ -590,7 +591,7 @@ An interval is a whole number and one unit, `s`, `m`, `h` or `d`, from `1m` to `
   Each queued job also logs a `schedule_fired` event.
 
 There is no cron-style "at 03:00": the interval counts from the end of the last run, and the guard picks the time of day.
-The dashboard and TUI do not list schedules yet.
+The TUI (tab 6) and the web dashboard list schedules too, with pause, resume and remove.
 
 ## Deploying across devices
 
@@ -645,7 +646,7 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 | Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
 | AI pass | the advisor's `claude -p` pass has not run end to end, because that spends quota |
 | Claude quota | needs `idlemax statusline install`; until the first capture lands, Claude accounts are never spendable |
-| Schedules | no cron-style times, and the dashboard and TUI do not list them; they live in `coord.db`, so an older idlemax refuses a database a newer one wrote, and the CLI and TUI should match the coordinator's release |
+| Schedules | no cron-style times; they live in `coord.db`, so an older idlemax refuses a database a newer one wrote, and the CLI and TUI should match the coordinator's release |
 | macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap, and a job child that daemonizes escapes its sum |
 | Runtime limit | counts awake time only, tested with an injected clock; a real sleep test has not run |
 | Job updates | journaled before sending and replayed after a crash; if the agent dies after a job exits and before it is reaped, the lease expires and the job runs again |
