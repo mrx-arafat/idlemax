@@ -239,23 +239,6 @@ fn user_manager_socket_in(runtime_dir: &Path) -> bool {
         .any(|socket| runtime_dir.join(socket).exists())
 }
 
-#[cfg(test)]
-mod wrapper_tests {
-    use super::user_manager_socket_in;
-
-    #[test]
-    fn user_manager_is_found_by_either_socket_systemd_run_uses() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!user_manager_socket_in(dir.path()), "empty runtime dir");
-        std::fs::create_dir(dir.path().join("systemd")).unwrap();
-        std::fs::write(dir.path().join("systemd/private"), "").unwrap();
-        assert!(user_manager_socket_in(dir.path()), "private socket only");
-        let bus = tempfile::tempdir().unwrap();
-        std::fs::write(bus.path().join("bus"), "").unwrap();
-        assert!(user_manager_socket_in(bus.path()), "session bus only");
-    }
-}
-
 /// Resolves a bare program name on the agent's PATH.
 pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
@@ -435,4 +418,21 @@ fn group_of(pid: u32) -> Option<u32> {
 #[cfg(not(unix))]
 fn group_of(_pid: u32) -> Option<u32> {
     None
+}
+
+#[cfg(test)]
+mod wrapper_tests {
+    use super::user_manager_socket_in;
+
+    #[test]
+    fn user_manager_is_found_by_either_socket_systemd_run_uses() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!user_manager_socket_in(dir.path()), "empty runtime dir");
+        std::fs::create_dir(dir.path().join("systemd")).unwrap();
+        std::fs::write(dir.path().join("systemd/private"), "").unwrap();
+        assert!(user_manager_socket_in(dir.path()), "private socket only");
+        let bus = tempfile::tempdir().unwrap();
+        std::fs::write(bus.path().join("bus"), "").unwrap();
+        assert!(user_manager_socket_in(bus.path()), "session bus only");
+    }
 }
