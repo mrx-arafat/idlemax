@@ -13,7 +13,7 @@ body:
     attributes:
       label: idlemax version
       description: The output of `idlemax --version`.
-      placeholder: "idlemax 0.1.0"
+      placeholder: "0.2.0"
     validations:
       required: true
   - type: input

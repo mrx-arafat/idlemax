@@ -30,9 +30,9 @@ AI jobs spend only the quota above a reserve you choose, late in each window.
 - **One file stops everything, even offline.**
   `touch $IDLEMAX_HOME/PAUSE` pauses every job on that device within seconds.
 
-> **Status: v0.1.0.**
-> Built and tested on macOS (Apple Silicon).
-> The Linux server path and a live AI pass have not run yet, so treat both as unproven.
+> **Status: v0.2.0.**
+> Built and tested on macOS (Apple Silicon) and on Ubuntu 24.04, and CI runs the full suite on both.
+> A live AI pass and a production server rollout have not run yet, so treat both as unproven.
 > Details are in [Status and limits](#status-and-limits).
 
 <picture>
@@ -46,19 +46,23 @@ This capture is a real coordinator fed by scripted demo agents, with the job his
 
 ## Quickstart
 
-You need a Rust toolchain (built with 1.95) on macOS or Linux.
+It runs on macOS (Apple Silicon or Intel) and Linux (x86_64 or arm64).
 
-1. Build and install the binary:
+1. Install the binary into `~/.local/bin`, without sudo:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh -s -- --dry-run   # first look
+   curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh
+   ```
+
+   The script picks the latest release for this machine, checks its sha256 and finishes by telling you to run `idlemax setup`.
+   Prebuilt Linux binaries need a recent glibc; on an older distribution or on musl (Alpine), build from source with a Rust toolchain (built with 1.95):
 
    ```sh
    git clone https://github.com/mrx-arafat/idlemax
    cd idlemax
    cargo install --path crates/idlemax
    ```
-
-   Prebuilt binaries arrive with the first release.
-   `scripts/install.sh` will then install one into `~/.local/bin` without sudo, after checking its sha256, and finish by telling you to run `idlemax setup`.
-   Until a release exists the script stops with "no release has been published yet", so build from source for now.
 
 2. Set this device up with one command:
 
@@ -273,7 +277,7 @@ idlemax doctor
 It checks this device and prints one line per check, `ok`, `warn` or `fail`, with the exact fix under every warn and fail:
 
 ```text
-idlemax 0.1.0 doctor
+idlemax 0.2.0 doctor
 ok    home         /Users/you/.idlemax (default)
 ok    config       /Users/you/.idlemax/config.toml parses
 fail  token        /Users/you/.idlemax/token is mode 0644: group and others can read it
@@ -438,7 +442,7 @@ result: already paused (no-op)
 ```
 
 This covers `pause`, `resume` and `stop-all` (also under `local`), `job cancel` on a finished job, `advise dismiss` on dismissed advice, `schedule pause` and `resume`, and `job add --key` on a key that is already queued.
-`idlemax -V`, `-v` and `--version` print the bare version (`0.1.0`).
+`idlemax -V`, `-v` and `--version` print the bare version (`0.2.0`).
 
 ### Session hooks and the skill
 
@@ -1003,7 +1007,7 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 
 | Area | Limit |
 |---|---|
-| Linux | not yet run on Linux: the Linux parsers are tested on macOS with fixtures, but the Linux metrics call site, `loginctl` idle, the `systemd-run` wrapper and the systemd system and user units have not run |
+| Linux | verified on one Ubuntu 24.04 host with systemd 255 (`scripts/verify-linux.sh`: kernel signals, capped user scopes, a memory hog killed at `MemoryMax`, a CPU job held to its quota, `systemd-analyze verify` on both units), and CI runs the full suite on Ubuntu; a production server rollout has not run |
 | Service install | `idlemax service install` and `idlemax setup` are checked with `--dry-run` and against a stand-in service manager, but have not driven a real launchd or systemd yet |
 | Agent integrations | `idlemax hooks install` ran against temp copies of the Claude Code and Codex files; the OpenCode plugin passes `node --check` and ran under a fake plugin host, but OpenCode itself was not driven; installing the skill with `npx skills add` has not run |
 | Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
@@ -1012,7 +1016,7 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 | Schedules | no cron-style times; they live in `coord.db`, so an older idlemax refuses a database a newer one wrote, and the CLI and TUI should match the coordinator's release |
 | macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap, and a job child that daemonizes escapes its sum |
 | Runtime limit | counts awake time only, tested with an injected clock; a real sleep test has not run |
-| Job updates | journaled before sending and replayed after a crash; if the agent dies after a job exits and before it is reaped, the lease expires and the job runs again |
+| Job updates | journaled before sending and replayed after a crash; a supervisor records the job's exit, so a job that ends while the agent is down is reported with its real result; without the supervisor (its executable gone) the lease expires and the job runs again |
 | Dashboard | checked in Chrome only; Safari, Firefox and phones have not been checked |
 
 What comes next, with the reason and a "done when" for each item, is in [docs/ROADMAP.md](docs/ROADMAP.md).

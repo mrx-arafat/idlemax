@@ -1,6 +1,7 @@
 # idlemax roadmap
 
 v0.1.0 shipped the coordinator, the agent, the CLI, the TUI and the web dashboard, built and tested on macOS.
+v0.2.0 shipped everything in the status section below, with prebuilt binaries for macOS and Linux.
 This roadmap collects every gap found while building and reviewing it, every `SHORTCUT:` marker in `crates/`, and the open items from the design research.
 Each open item says why it matters, how to do it, and when it counts as done.
 Item numbers are stable, so commit messages and notes can refer to them.
@@ -48,9 +49,8 @@ The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 
 - Installing the statusline wrapper into the real Claude settings (item 4).
 - One supervised AI pass, which spends quota (item 7).
 - A real sleep test on the Mac (item 9).
-- Tagging v0.2.0, which builds the release binaries and makes `scripts/install.sh` work.
 
-## v0.2: run it for real on the Mac and the server
+## v0.3: run it for real on the Mac and the server
 
 ### 1. Verify the Linux agent on the production server
 
@@ -96,7 +96,7 @@ The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 
 - **How:** Open the dashboard in Safari and Firefox and on a real phone, including a job with many waiting reasons and a status filter that matches nothing.
 - **Done when:** No layout or control defect shows in any of them.
 
-## v0.3: learn from real runs and harden
+## v0.4: learn from real runs and harden
 
 ### 11. Learn token costs and tune quota reserves
 
