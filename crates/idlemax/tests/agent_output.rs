@@ -33,7 +33,11 @@ fn piped_output_is_bare_version_and_errors_with_a_fix_on_stdout() {
 
     for flag in ["-V", "-v", "--version"] {
         let r = idlemax(home, &[flag]);
-        assert_eq!((r.code, r.stdout.as_str()), (0, "0.1.0\n"), "{flag}");
+        assert_eq!(
+            (r.code, r.stdout.as_str()),
+            (0, concat!(env!("CARGO_PKG_VERSION"), "\n")),
+            "{flag}"
+        );
     }
 
     let r = idlemax(home, &["status"]);
