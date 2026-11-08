@@ -7,6 +7,7 @@ use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+use unicode_width::UnicodeWidthStr;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -195,14 +196,25 @@ fn app_with(data: Snapshot, tab: Tab) -> App {
     app
 }
 
-/// The screen as text: one line per row, trailing blanks trimmed.
+/// The screen as text: one line per row, trailing blanks trimmed. A wide character
+/// fills two cells, so the blank cell behind it is skipped and the text lines up.
 fn screen(app: &mut App, width: u16, height: u16) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
     terminal.draw(|f| view::render(f, app, NOW)).expect("draw");
     let buf = terminal.backend().buffer().clone();
     (0..height)
         .map(|y| {
-            let row: String = (0..width).map(|x| buf[(x, y)].symbol()).collect();
+            let mut row = String::new();
+            let mut covered = 0;
+            for x in 0..width {
+                if covered > 0 {
+                    covered -= 1;
+                    continue;
+                }
+                let symbol = buf[(x, y)].symbol();
+                covered = symbol.width().saturating_sub(1);
+                row.push_str(symbol);
+            }
             row.trim_end().to_string()
         })
         .collect::<Vec<_>>()
@@ -219,8 +231,11 @@ fn press(app: &mut App, c: char) {
 
 /// Every tab on its own screen, one after the other.
 fn all_tabs(data: fn() -> Snapshot, width: u16, height: u16) -> String {
-    Tab::ALL
-        .iter()
+    tabs_of(data, &Tab::ALL, width, height)
+}
+
+fn tabs_of(data: fn() -> Snapshot, tabs: &[Tab], width: u16, height: u16) -> String {
+    tabs.iter()
         .map(|tab| {
             let mut app = app_with(data(), *tab);
             format!(
@@ -267,6 +282,53 @@ have been removed from another terminal, so press tab to reload the list and try
     app.apply(Update::Failed(failure.into()), NOW);
     shot("flash after a failed action", &mut app);
     out
+}
+
+/// Names, hosts and messages in Japanese and with emoji: each takes two cells per character.
+fn wide_characters() -> Snapshot {
+    let mut data = fixture();
+    data.status = parse(json!({
+        "version": "0.1.0", "open_advice": 0, "jobs": {"queued": 1, "running": 1, "failed": 1},
+        "devices": [
+            {"info": {"id": "ビルドサーバー-東京-01", "os": "linux"}, "online": true, "last_seen_ms": NOW - 3_000,
+             "metrics": {"cpu_busy_pct": 12.0, "load_avg_1m": 0.8, "mem_free_pct": 60.0, "mem_available_bytes": 9_000_000_000u64},
+             "guard": {"action": {"kind": "run", "slots": 1, "mem_mib": 2048}, "reasons": ["run: すべて正常です"]},
+             "running": [{"id": 52, "name": "🚀 deploy-preview", "status": "running"}]},
+            {"info": {"id": "mac-🚀-dev", "os": "macos"}, "online": true, "last_seen_ms": NOW - 2_000,
+             "guard": {"action": {"kind": "pause"}, "reasons": ["pause: バッテリー残量が 28% で 40% を下回っています"]}}
+        ],
+    }));
+    data.jobs = parse(json!([
+        job(
+            53,
+            "日本語のレポート生成ジョブ-nightly-まとめ",
+            "queued",
+            json!({})
+        ),
+        job(
+            52,
+            "🚀 deploy-preview-🔥",
+            "running",
+            json!({"device": "ビルドサーバー-東京-01", "started_ms": NOW - 5 * MIN})
+        ),
+        job(
+            51,
+            "ascii-control",
+            "failed",
+            json!({"device": "mac-🚀-dev", "attempts": 3, "last_error": "ビルドに失敗しました: 終了コード 2 (メモリ不足)"})
+        ),
+    ]));
+    data.events = parse(json!([
+        {"id": 9, "at_ms": NOW - MIN, "kind": "error", "device": "ビルドサーバー-東京-01", "job": 51,
+         "message": "🔥 job 51 failed: ビルドに失敗しました。受信箱のメモで最後の 40 行を確認してください"},
+        {"id": 8, "at_ms": NOW - 2 * MIN, "kind": "job_started", "job": 52, "message": "🚀 started"},
+    ]));
+    data.schedules = parse(json!([
+        {"id": 1, "spec": {"name": "毎日のヘルスチェック-リポジトリ-A", "command": ["true"]}, "every": "1d",
+         "created_ms": 0, "last_fired_ms": NOW - HOUR, "last_job": 51, "decision": {"kind": "wait", "until_ms": NOW + 5 * HOUR},
+         "last_result": {"status": "failed", "exit_code": 2, "error": "メモリ不足で終了しました", "finished_ms": NOW - 3 * MIN}}
+    ]));
+    data
 }
 
 fn empty() -> Snapshot {
@@ -322,4 +384,13 @@ fn wide_terminal_keeps_every_column_and_count() {
         ));
     }
     check("wide-120x40", &out);
+}
+
+#[test]
+fn wide_characters_stay_inside_their_columns_at_80x24() {
+    let tabs = [Tab::Devices, Tab::Jobs, Tab::Events, Tab::Schedules];
+    check(
+        "wide-characters-80x24",
+        &tabs_of(wide_characters, &tabs, 80, 24),
+    );
 }

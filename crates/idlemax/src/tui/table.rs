@@ -5,7 +5,7 @@ use ratatui::style::{Modifier, Style, Stylize};
 use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, TableState, Wrap};
 use ratatui::Frame;
 
-use super::layout::{ellipsize, fit_columns};
+use super::layout::{ellipsize, fit_columns, text_width};
 use crate::cli::rows;
 
 /// How one tab's table behaves on a narrow terminal.
@@ -75,7 +75,7 @@ pub fn table(
     if rows.is_empty() {
         return empty_state(f, area, spec.empty);
     }
-    let cell_len = |cells: &[String], c: usize| cells.get(c).map_or(0, |s| s.chars().count());
+    let cell_len = |cells: &[String], c: usize| cells.get(c).map_or(0, |s| text_width(s));
     let natural: Vec<usize> = spec
         .header
         .iter()
@@ -83,7 +83,7 @@ pub fn table(
         .map(|(c, h)| {
             rows.iter()
                 .map(|(cells, _)| cell_len(cells, c))
-                .fold(h.len(), usize::max)
+                .fold(text_width(h), usize::max)
         })
         .collect();
     // Two columns go to the borders, two to the "> " marker, one keeps text off the right border.

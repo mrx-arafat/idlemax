@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use super::app::{App, Tab};
 use super::feed::Snapshot;
-use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, wrap_words};
+use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, text_width, wrap_words};
 use super::table::{self, empty_state, table};
 use crate::cli::print::summary_parts;
 use crate::cli::rows::{self, rel};
@@ -60,7 +60,7 @@ fn status_text(app: &App, width: usize) -> (Vec<String>, bool) {
         ),
         (None, Some(d)) => {
             let mut parts = summary_parts(&d.status);
-            if parts.join(" | ").chars().count() > width {
+            if text_width(&parts.join(" | ")) > width {
                 parts.remove(0);
             }
             (join_parts(&parts, width), false)
@@ -93,7 +93,7 @@ fn render_header(
         .map_or_else(|| "never".into(), |t| rel(t, now_ms));
     let updated = format!("  updated {updated}");
     // The state and age matter more than the address, so a long address gives way.
-    let fixed = "idlemax ".len() + state.width() + 2 + updated.chars().count();
+    let fixed = "idlemax ".len() + state.width() + 2 + text_width(&updated);
     let source = ellipsize(
         &app.source,
         usize::from(area.width).saturating_sub(fixed).max(12),
