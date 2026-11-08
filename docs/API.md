@@ -31,6 +31,11 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | POST | /v1/advice/refresh | | `[Recommendation]` after re-running the advisor |
 | POST | /v1/advice/{id}/accept | | `Job` queued from the suggested job |
 | POST | /v1/advice/{id}/dismiss | | `Recommendation` |
+| GET | /v1/schedules | | `[ScheduleView]`, oldest first |
+| POST | /v1/schedules | `NewSchedule` | `ScheduleView` |
+| DELETE | /v1/schedules/{id} | | `ScheduleView` as it was before removal |
+| POST | /v1/schedules/{id}/pause | | `ScheduleView` |
+| POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
 `POST /v1/jobs` returns 201; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`.
@@ -158,3 +163,53 @@ A coordinator older than this route answers 404; the agent logs a warning and tr
 `Recommendation.key` is a stable dedup key (for example `parked_job:42`), so a refresh does not repeat advice the owner already saw.
 Accepting queues `suggested_job`; nothing runs on the advisor's word alone, except job names listed in `advisor.auto_accept`.
 Suggested jobs come from templates in `$IDLEMAX_HOME/jobs/*.toml`.
+
+## Schedules
+
+A schedule repeats a job.
+Types live in `crates/idlemax-core/src/schedule/`.
+
+```json
+{"spec": {"name": "repo-health", "command": ["/path/to/repo-health.sh"], "cost": "cpu_heavy"}, "every": "1d"}
+```
+`NewSchedule`, the body of `POST /v1/schedules`.
+`spec` is a `JobSpec`.
+`every` is a whole number and one unit: `s`, `m`, `h` or `d`, for example `90m`, `6h` or `1d`.
+The minimum is `1m` and the maximum is `365d`.
+Responses write the interval in the largest unit that divides it evenly, so `24h` reads back as `1d`.
+
+```json
+{"id": 1, "spec": {"name": "repo-health", "...": "..."}, "every": "1d", "paused": false,
+ "created_ms": 1730000000000, "last_fired_ms": 1730000100000, "last_job": 41,
+ "decision": {"kind": "running", "job": 41, "status": "queued"}}
+```
+`ScheduleView` is the schedule with its current `decision`, which is one of:
+
+| `decision` | Meaning |
+|---|---|
+| `{"kind": "fire"}` | Due; the next sweep queues a job |
+| `{"kind": "wait", "until_ms": N}` | The interval has not passed; the next job is due at `N` |
+| `{"kind": "running", "job": N, "status": S}` | The last job is still `queued`, `leased`, `running` or `paused` |
+| `{"kind": "paused"}` | The schedule is paused |
+
+Semantics:
+
+- The coordinator checks every 15 s.
+  It queues one job when the schedule's previous job has ended and a whole interval has passed since it ended (since it was queued, if it never ran).
+  A job that is still queued, leased, running or paused blocks the next one, however long it takes.
+- The queued job is an ordinary job, so the guard and scheduler still decide when and where it runs.
+  "Every day" therefore means once a day, whenever the machine is idle.
+- After downtime or a long wait for an idle machine, one job is queued, never one per missed period.
+- A new schedule queues its first job at once, so the owner sees it work.
+- Failed, killed, cancelled and parked jobs do not stop the schedule; the next job follows after the interval.
+- `schedule_fired` events (kind `schedule_fired`) record each queued job.
+  Adding, pausing, resuming and removing a schedule log `control` events.
+  If a job cannot be queued (for example its `ai_account` was removed from `[[quota.accounts]]`), an `error` event says why and the schedule tries again after the next interval.
+- `POST /v1/schedules` answers 201.
+  It answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`, and 422 for a body that does not decode (including a bad `every`).
+  It answers 409 when a schedule with the same job name exists, so the same job cannot be added twice.
+- `DELETE /v1/schedules/{id}` leaves a job the schedule already queued alone; the returned `decision` names it.
+  Cancel it with `POST /v1/jobs/{id}/cancel`.
+- Pause, resume and delete answer 404 for an unknown id.
+- Operator responses never include `spec.stdin`.
+- A client older than this release cannot decode the `schedule_fired` event kind from a newer coordinator, so upgrade the CLI and TUI together with the coordinator.

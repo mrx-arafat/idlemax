@@ -1,6 +1,8 @@
 # MVP job 1a: fast-forward a notes or knowledge-base repo and report what changed.
 # Queue it: idlemax job add examples/jobs/kb-refresh.toml
+# Repeat it (four times a day, whenever the machine is idle): idlemax schedule add examples/jobs/kb-refresh.toml
 name = "kb-refresh"
+every = "6h"
 command = ["/path/to/idlemax/examples/scripts/kb-refresh.sh"]
 cost = "cpu_light"
 requires = ["git"]

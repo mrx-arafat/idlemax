@@ -84,3 +84,26 @@ fn examples_parse_validate_and_agree() {
         }
     }
 }
+
+#[test]
+fn recurring_examples_carry_a_valid_every_so_schedule_add_needs_no_flag() {
+    let every = |name: &str| -> Option<String> {
+        let text = std::fs::read_to_string(examples_dir().join("jobs").join(name)).unwrap();
+        let table: toml::Table = text.parse().unwrap();
+        table.get("every").map(|v| v.as_str().unwrap().to_string())
+    };
+    for (file, expected) in [
+        ("repo-health-project-a.toml", "1d"),
+        ("index-refresh.toml", "12h"),
+        ("kb-refresh.toml", "6h"),
+    ] {
+        let text = every(file).unwrap_or_else(|| panic!("{file}: no every"));
+        let parsed: idlemax_core::schedule::Every = text.parse().unwrap();
+        assert_eq!(parsed.to_string(), expected, "{file}");
+    }
+    assert_eq!(
+        every("pr-review-drafts-claude.toml"),
+        None,
+        "AI jobs stay one-shot"
+    );
+}

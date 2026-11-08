@@ -1,6 +1,8 @@
 # MVP job 1b: incremental CodeGraph sync of the active repos.
 # Queue it: idlemax job add examples/jobs/index-refresh.toml
+# Repeat it (twice a day, whenever the machine is idle): idlemax schedule add examples/jobs/index-refresh.toml
 name = "index-refresh"
+every = "12h"
 command = ["/path/to/idlemax/examples/scripts/index-refresh.sh"]
 cost = "cpu_heavy"
 requires = ["codegraph"]
