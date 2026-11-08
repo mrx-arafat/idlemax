@@ -123,7 +123,7 @@ async fn poll(c: &ApiClient, mut job: Job, timeout: Option<Duration>) -> Result<
         // The result follows a finished job, so only the steps before it are reported.
         if job.status != announced && !job.status.is_terminal() {
             announced = job.status;
-            eprintln!("{}", progress_text(&job));
+            eprintln!("{}", super::out::printable(&progress_text(&job)));
         }
     }
     Ok((job, false))

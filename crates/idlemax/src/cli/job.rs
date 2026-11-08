@@ -12,7 +12,7 @@ use idlemax_core::job_draft::{DraftError, JobDraft};
 use idlemax_core::types::{CostClass, Job, JobSpec};
 use idlemax_core::Paths;
 
-use super::out::{hints, views};
+use super::out::{hints, printable, views};
 use super::{job_wait, noop, print, schedule, why, ApiClient, CliError, Format, Out};
 
 const NOTHING_TO_RUN: &str = "nothing to run: give a spec file (`idlemax job add spec.toml`), \
@@ -218,11 +218,11 @@ fn announce(
 ) -> Result<()> {
     if waiting {
         // The result is coming, so the next steps would only be noise.
-        eprintln!("{}", queued_line(job, created));
+        eprintln!("{}", printable(&queued_line(job, created)));
         return Ok(());
     }
     if out.format() == Format::Json {
-        eprintln!("{}", queued_text(job, created));
+        eprintln!("{}", printable(&queued_text(job, created)));
     }
     let result = if created {
         "queued".to_string()
