@@ -29,6 +29,16 @@ pub struct InitReport {
 }
 
 pub fn init(paths: &Paths, opts: &InitOptions) -> Result<InitReport> {
+    if let Some(token) = &opts.token {
+        idlemax_core::config::parse_token(token)?;
+    }
+    if let Some(url) = &opts.coord_url {
+        let valid = reqwest::Url::parse(url.trim())
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some());
+        if !valid {
+            bail!("--coord-url must be an http:// or https:// URL with a host");
+        }
+    }
     state::ensure_dirs(paths)?;
     let config = write_config(paths, opts)?;
     let token = write_token_file(paths, opts.token.as_deref())?;
@@ -53,7 +63,7 @@ fn write_config(paths: &Paths, opts: &InitOptions) -> Result<Outcome> {
             .unwrap_or_else(|| DeviceProfile::default_for(Os::current())),
     );
     if let Some(url) = &opts.coord_url {
-        cfg.coordinator.url = url.trim_end_matches('/').to_string();
+        cfg.coordinator.url = url.trim().trim_end_matches('/').to_string();
     }
     write_new_config(paths, &cfg)?;
     Ok(Outcome::Created)
@@ -103,11 +113,47 @@ mod tests {
         let paths = Paths::new(tmp.path().join("state"));
         let opts = InitOptions {
             token: Some("a".into()),
+            coord_url: Some("http://127.0.0.1:18101".into()),
             ..InitOptions::default()
         };
         let err = init(&paths, &opts).unwrap_err().to_string();
         assert!(err.contains("at least 32"), "{err}");
         assert!(!paths.token_file().exists());
+        assert!(!paths.config_file().exists());
+        let retry = InitOptions {
+            token: Some("0123456789abcdef0123456789abcdef".into()),
+            ..opts
+        };
+        init(&paths, &retry).unwrap();
+        assert_eq!(
+            state::load_config(&paths).unwrap().coordinator.url,
+            "http://127.0.0.1:18101"
+        );
+    }
+
+    #[test]
+    fn init_rejects_invalid_coordinator_urls_before_writing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = Paths::new(tmp.path().join("state"));
+        for url in ["127.0.0.1:18101", "file:///tmp/coord", "http://"] {
+            let opts = InitOptions {
+                coord_url: Some(url.into()),
+                ..InitOptions::default()
+            };
+            let err = init(&paths, &opts).unwrap_err().to_string();
+            assert!(err.contains("--coord-url"), "{err}");
+            assert!(!paths.config_file().exists());
+            assert!(!paths.token_file().exists());
+        }
+        let opts = InitOptions {
+            coord_url: Some(" http://127.0.0.1:18101/ ".into()),
+            ..InitOptions::default()
+        };
+        init(&paths, &opts).unwrap();
+        assert_eq!(
+            state::load_config(&paths).unwrap().coordinator.url,
+            "http://127.0.0.1:18101"
+        );
     }
 
     #[test]
