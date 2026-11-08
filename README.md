@@ -1,130 +1,121 @@
 # idlemax
 
-idlemax runs useful background jobs on your devices' spare capacity and spends AI subscription quota before it resets unused.
+Run useful jobs on your devices' spare capacity, and spend your AI subscription quota before it resets, without getting in your way.
 
-Laptops and small servers sit idle for hours, and subscription quota windows reset whether you used them or not.
-idlemax queues work for those gaps (test suites, index rebuilds, draft reviews) and yields the moment you or your production services need the machine.
+An expensive Mac sits idle all night.
+A small server idles at a few percent CPU.
+A Claude or Codex subscription resets with most of its quota unused, and that quota is gone.
 
-## Features
+idlemax is a job queue for your own devices.
+You describe a job once: run the tests, rebuild an index, draft a review of a PR that is waiting on you.
+A coordinator hands it to a device that is idle right now.
+A guard on that device runs it at the lowest priority the OS offers, and stops it when you or your production services need the machine.
+AI jobs spend only the quota above a reserve you choose, late in each window.
 
-- One queue for every device: a coordinator leases jobs to per-device agents over your private network.
-- A guard on every device that pauses jobs at the first sign of contention and kills them if it persists.
-- Lowest-priority execution with hard caps: `taskpolicy` on macOS, a `systemd-run` cgroup scope on Linux.
-- An AI quota maximizer that spends only what is above your reserve, late in each window, one job per account.
-- An advisor that turns cluster state, open PRs and recent sessions into recommendations you accept or dismiss.
-- Four controls: CLI, terminal dashboard, web dashboard, and a kill switch file that works offline.
+**Why it is safe to leave running**
 
-## How it stays safe
+- **It backs off when you come back.**
+  Every device is checked every 30 seconds.
+  The first sign of contention pauses jobs: you at the keyboard, battery power, thermal throttling, memory pressure, swap, load or low disk.
+  A serious problem on two checks in a row kills them.
+- **It keeps servers safe.**
+  A server takes only light jobs (never CPU-heavy or AI), runs one at a time within 512 MiB, and pauses at a load average of 1.5.
+  Every job also has a memory cap, a runtime cap and a command allowlist.
+- **It treats your AI account carefully.**
+  AI jobs launch only the official CLIs, with your own login, on the device where you logged in.
+  idlemax never reads or copies credentials, never retries an AI job, and stops spending an account for the rest of the window after any limit message.
+  Consumer terms still restrict automated use, so read the [ban-risk stance](#ai-quota-maximizer) before you enable it.
+- **One file stops everything, even offline.**
+  `touch $IDLEMAX_HOME/PAUSE` pauses every job on that device within seconds.
 
-The agent samples its device every 30 s, and the guard turns each sample into one verdict: run, hold, pause or kill.
-A single breach pauses running jobs with SIGSTOP; kill-level breaches on 2 consecutive samples kill them (SIGTERM, then SIGKILL after 15 s).
-After a pause or kill, jobs resume only after 2 clear samples.
+> **Status: v0.1.0.**
+> Built and tested on macOS (Apple Silicon).
+> The Linux server path and a live AI pass have not run yet, so treat both as unproven.
+> Details are in [Status and limits](#status-and-limits).
 
-| Signal | `macos_laptop` pause | `macos_laptop` kill | `linux_server` pause | `linux_server` kill | `[guard]` keys |
-|---|---|---|---|---|---|
-| You are using the machine | idle < 600 s | | | | `user_idle_min_secs` |
-| Power | on battery, or battery < 40% | | | | `require_ac_power`, `min_battery_pct` |
-| Thermal throttling | any | | any | | `pause_on_thermal` |
-| macOS memory pressure | warn | critical | | | `memory_pressure_pause`, `memory_pressure_kill` |
-| Memory free | < 30% | < 20% | | | `mem_free_pct_pause`, `mem_free_pct_kill` |
-| MemAvailable | | | < 1024 MiB | < 768 MiB | `mem_available_mib_pause`, `mem_available_mib_kill` |
-| Swap growth | +256 MiB in 60 s | +1 GiB in 5 min | | | `swap_growth_pause`, `swap_growth_kill` |
-| Swap used | | | > 1536 MiB | > 2048 MiB | `swap_used_mib_pause`, `swap_used_mib_kill` |
-| Swap-in rate | | | > 100 pages/s for 60 s | | `swap_in_pages_per_sec_pause`, `swap_in_sustain_secs` |
-| PSI memory | | | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
-| PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
-| Load average, 1 min | > 6 | > 8 | > 1.5 | > 2.0 | `load_1m_pause`, `load_1m_kill` |
-| Disk free | < 15 GiB | < 10 GiB | < 10 GB | < 5 GB | `disk_free_mib_pause`, `disk_free_mib_kill` |
-| Capacity | 2 jobs, 1 GiB total | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboard-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/dashboard-light.png">
+  <img alt="The idlemax web dashboard: a MacBook and a server with guard verdicts and metrics, one queued and three running jobs, two pieces of advice, and Claude and Codex quota windows with the reserve marked on each bar" src="docs/assets/dashboard-light.png">
+</picture>
 
-The profile defaults to `macos_laptop` on macOS and `linux_server` elsewhere.
-A server never takes `cpu_heavy` or `ai` jobs.
-Each job sets `on_user_active`: `pause` (default), `continue` (only machine-health checks apply) or `kill`.
+The web dashboard follows your system theme.
+This capture is a real coordinator fed by scripted demo agents, so no real machine or account appears in it.
 
-Kill switch: `touch $IDLEMAX_HOME/PAUSE` pauses every job on that device without the network, and deleting the file resumes them.
-`idlemax local stop-all` kills every job on the device and holds new ones, even while the coordinator is down.
+## Quickstart
 
-Every job runs in its own process group at the lowest priority the OS offers:
+Try it on one machine with a throwaway state directory, so your real `~/.idlemax` is never touched.
+You need a Rust toolchain (built with 1.95) on macOS or Linux.
 
-| OS | Wrapper | Memory cap |
-|---|---|---|
-| macOS | `taskpolicy -c background -d throttle -b -m <mem_mb> -P kill nice -n 20 <command>` | the runner kills the job when its process-tree RSS exceeds `mem_mb`, because the `taskpolicy` limit is soft |
-| Linux, as root or with a systemd user bus | `systemd-run [--user] --scope --nice=19 -p CPUQuota=100% -p CPUWeight=10 -p IOWeight=10 -p MemoryHigh=<75%> -p MemoryMax=<mem_mb>M -p MemorySwapMax=0 -- <command>` | cgroup `MemoryMax`, no swap |
-| Linux, otherwise | `nice -n 19 ionice -c3 <command>` | the runner's RSS check, plus the agent unit's cgroup caps |
-| Windows | idle priority class | the runner's RSS check |
+1. Build and install the binary:
 
-The runner also kills a job after `max_runtime_secs` (default 1800) of awake, unpaused time.
-System sleep does not consume this runtime budget on macOS or Linux.
+   ```sh
+   git clone https://github.com/mrx-arafat/idlemax
+   cd idlemax
+   cargo install --path crates/idlemax
+   ```
 
-## AI quota maximizer
+2. Create a state directory with a demo config, then let `init` add the token and folders (it keeps an existing config):
 
-Each AI account lists its windows and the reserve kept for you:
+   ```sh
+   export IDLEMAX_HOME="$(mktemp -d)"
+   cat > "$IDLEMAX_HOME/config.toml" <<'EOF'
+   [agent]
+   sample_secs = 5
+   heartbeat_secs = 5
+   command_allowlist = ["/bin/echo"]
 
-| Provider | Default windows | Usage source |
-|---|---|---|
-| `claude` | 5-hour rolling (reserve 40%), weekly (reserve 30%) | Claude Code statusline capture |
-| `codex` | weekly (reserve 30%), plus a 5-hour window if Codex reports one | newest Codex session file |
-| `agy` | 5-hour rolling (40%), weekly (30%) | manual file |
-| `api` | none | manual file |
+   [guard]
+   # Demo only: let jobs start while you are at the keyboard and on battery.
+   user_idle_min_secs = 0
+   require_ac_power = false
+   min_battery_pct = 0.0
+   EOF
+   idlemax init
+   ```
 
-The weekly reserve drops to 15% in the last 24 h before the reset.
-An AI job runs only when all of these hold:
+3. Start the coordinator and the agent:
 
-1. The device lists the account in `agent.ai_accounts`.
-2. Every window is below `100 - reserve`, with headroom for the job's `token_class`.
-3. The shortest window is in its final third, or the weekly reset is less than 24 h away.
-4. You have not used that CLI interactively in the last 30 minutes.
-5. No other AI job holds a lease on the account on any device.
-6. No usage limit or HTTP 429 was seen in this window.
-7. The usage data is less than 6 hours old, and no AI job started on the account in the last 5 hours.
+   ```sh
+   idlemax coord >"$IDLEMAX_HOME/logs/coord.log" 2>&1 &
+   idlemax agent >"$IDLEMAX_HOME/logs/agent.log" 2>&1 &
+   sleep 2
+   idlemax status
+   ```
 
-Ban-risk stance: idlemax only launches the unmodified official CLIs (`claude -p`, `codex exec`, `agy -p`) with your own login, on the device where you logged in.
-It never copies credentials between devices, never fans out across devices or accounts, never retries an AI job, and stops spending an account for the rest of the window after any limit message.
-That keeps automated use close to ordinary individual use, but consumer terms still restrict automated access, so the risk is reduced, not zero.
-Metered API keys (`provider = "api"`) are the path providers designate for automation.
+4. Queue a job:
 
-Claude usage comes from the JSON that Claude Code passes to its statusline command.
-Put `packaging/claude-statusline-capture.sh` in front of your statusline in `~/.claude/settings.json`.
-Until it has written `$IDLEMAX_HOME/agent/claude-statusline.json`, Claude accounts are never spendable (fail closed).
+   ```sh
+   cat > "$IDLEMAX_HOME/hello.toml" <<'EOF'
+   name = "hello"
+   command = ["/bin/echo", "hello from idlemax"]
+   mem_mb = 64
+   max_runtime_secs = 60
+   EOF
+   idlemax job add "$IDLEMAX_HOME/hello.toml"
+   ```
 
-To install it, add or update the `statusLine` block in `~/.claude/settings.json`.
-Prepend the absolute path to `packaging/claude-statusline-capture.sh` in front of your existing command:
+5. Watch it with `idlemax tui` (press `2` for jobs, `q` to quit), or open `http://127.0.0.1:7878/` and paste the token from `$IDLEMAX_HOME/token`.
+   If the job stays queued, the GUARD column of `idlemax status` says why, for example `pause: disk free 13756.2 MiB < 15360 MiB`.
+   That is the guard protecting a busy machine.
+   For the demo, relax the key it names in `[guard]` (here `disk_free_mib_pause = 0` and `disk_free_mib_kill = 0`) and restart the agent.
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh <your existing statusline command>"
-  }
-}
-```
+6. Read the result, then try the kill switch:
 
-If you do not already run a custom statusline command, pass the wrapper alone:
+   ```sh
+   cat "$IDLEMAX_HOME"/inbox/*.md
+   idlemax stop-all --reason demo
+   idlemax resume
+   ```
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh"
-  }
-}
-```
+7. Clean up:
 
-The wrapper saves the snapshot atomically to `$IDLEMAX_HOME/agent/claude-statusline.json` before piping stdin through to your wrapped command.
-The visible output is byte-identical to the wrapped command, and capture errors are ignored so the statusline never breaks.
+   ```sh
+   kill %1 %2
+   rm -rf "$IDLEMAX_HOME"
+   ```
 
-## AI advisor
-
-The advisor reads coordinator state, your open PRs and review requests through `gh`, and metadata of recent Claude and Codex sessions (never message text).
-Each agent reads `gh` and the session files on its own device every 15 minutes and sends only that metadata to the coordinator, so the coordinator can run on a server that has neither.
-Its rules engine runs every 15 minutes and on `idlemax advise refresh`.
-It flags parked or failed jobs, offline devices, idle devices with an empty queue, quota about to reset unused, PRs waiting on you for 2+ days, and unfinished sessions.
-An AI pass runs as an ordinary `ai` job through `claude -p` with a strict JSON schema, only when `advisor.ai_account` is spendable under the rules above.
-Its prompt travels on stdin instead of argv; the run disables all hooks and starts none of your MCP servers.
-Suggested jobs can only name templates in `$IDLEMAX_HOME/jobs/`.
-Accepting a recommendation queues its job; nothing runs on the advisor's word alone, except templates listed in `advisor.auto_accept`.
-
-## Architecture
+## How it works
 
 ```mermaid
 flowchart LR
@@ -149,105 +140,151 @@ flowchart LR
   cli -- "idlemax local" --> local
 ```
 
-Dependencies point inward, and every decision is a pure function with unit tests:
+- **Coordinator** (`idlemax coord`): one per setup, usually on the server.
+  It keeps the job queue, leases, device registry, quota ledger and advice in SQLite, and serves the HTTP API and the web dashboard.
+  The systemd unit caps it at `MemoryMax=256M` and `CPUQuota=20%`.
+- **Agent** (`idlemax agent`): one per device.
+  It samples the machine, runs the guard, heartbeats to the coordinator, starts leased jobs under OS throttles and writes each result to an inbox note.
+  Its local API on loopback keeps working while the coordinator is down.
+- **Jobs are leased, not pushed.**
+  A lease that a heartbeat does not renew within 120 s is re-queued with backoff, and a job that fails `max_attempts` times is parked for you to look at.
+- **Job updates survive crashes.**
+  The agent journals each update before sending it and replays what the coordinator never acknowledged, and the coordinator applies each update once.
 
-| Layer | Where | Holds |
+## Safety model
+
+The agent samples its device every 30 s, and the guard turns each sample into one verdict: run, hold, pause or kill.
+A single breach pauses running jobs with SIGSTOP.
+Kill-level breaches on 2 consecutive samples kill them (SIGTERM, then SIGKILL after 15 s).
+After a pause or kill, jobs resume only after 2 clear samples.
+
+The profile defaults to `macos_laptop` on macOS and `linux_server` elsewhere.
+A server never takes `cpu_heavy` or `ai` jobs.
+Each job sets `on_user_active`: `pause` (default), `continue` (only machine-health checks apply) or `kill`.
+
+<details>
+<summary>Every guard threshold and the config key that changes it</summary>
+
+| Signal | `macos_laptop` pause | `macos_laptop` kill | `linux_server` pause | `linux_server` kill | `[guard]` keys |
+|---|---|---|---|---|---|
+| You are using the machine | idle < 600 s | | | | `user_idle_min_secs` |
+| Power | on battery, or battery < 40% | | | | `require_ac_power`, `min_battery_pct` |
+| Thermal throttling | any | | any | | `pause_on_thermal` |
+| macOS memory pressure | warn | critical | | | `memory_pressure_pause`, `memory_pressure_kill` |
+| Memory free | < 30% | < 20% | | | `mem_free_pct_pause`, `mem_free_pct_kill` |
+| MemAvailable | | | < 1024 MiB | < 768 MiB | `mem_available_mib_pause`, `mem_available_mib_kill` |
+| Swap growth | +256 MiB in 60 s | +1 GiB in 5 min | | | `swap_growth_pause`, `swap_growth_kill` |
+| Swap used | | | > 1536 MiB | > 2048 MiB | `swap_used_mib_pause`, `swap_used_mib_kill` |
+| Swap-in rate | | | > 100 pages/s for 60 s | | `swap_in_pages_per_sec_pause`, `swap_in_sustain_secs` |
+| PSI memory | | | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
+| PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
+| Load average, 1 min | > 6 | > 8 | > 1.5 | > 2.0 | `load_1m_pause`, `load_1m_kill` |
+| Disk free | < 15 GiB | < 10 GiB | < 10 GB | < 5 GB | `disk_free_mib_pause`, `disk_free_mib_kill` |
+| Capacity | 2 jobs, 1 GiB total | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
+
+</details>
+
+Every job runs in its own process group at the lowest priority the OS offers:
+
+| OS | Wrapper | Memory cap |
 |---|---|---|
-| Domain | `crates/idlemax-core` | types, wire protocol, config, guard, quota rules, scheduler, control semantics, agent reconcile, job-run and advice decisions; no I/O and no clock (time is a parameter) |
-| Adapters | `crates/idlemax/src/{agent,coord,advisor}`, `state.rs` | OS metrics, process runner, SQLite store, HTTP server and client, `gh` and session readers, the `claude -p` job builder |
-| Delivery | `cli.rs`, `tui/`, `coord/web.rs`, `main.rs` | argument parsing, one use-case call each, rendering |
+| macOS | `taskpolicy -c background -d throttle -b -m <mem_mb> -P kill nice -n 20 <command>` | the runner kills the job when its process-tree RSS exceeds `mem_mb`, because the `taskpolicy` limit is soft |
+| Linux, as root or with a systemd user bus | `systemd-run [--user] --scope --nice=19 -p CPUQuota=100% -p CPUWeight=10 -p IOWeight=10 -p MemoryHigh=<75%> -p MemoryMax=<mem_mb>M -p MemorySwapMax=0 -- <command>` | cgroup `MemoryMax`, no swap |
+| Linux, otherwise | `nice -n 19 ionice -c3 <command>` | the runner's RSS check, plus the agent unit's cgroup caps |
+| Windows | idle priority class | the runner's RSS check |
 
-Both crates are `#![forbid(unsafe_code)]`, errors are typed with `thiserror`, and `anyhow` appears only in `main.rs` and the CLI.
+The runner also kills a job after `max_runtime_secs` (default 1800) of awake, unpaused time.
+System sleep does not consume this runtime budget on macOS or Linux.
 
-## Quickstart on one machine
+**Kill switch.**
+`touch $IDLEMAX_HOME/PAUSE` pauses every job on that device within seconds and without the network, and deleting the file resumes them.
+`idlemax local stop-all` kills every job on the device and holds new ones, even while the coordinator is down.
 
-You need a Rust toolchain (built with 1.95) on macOS or Linux.
-Everything below lives in a throwaway state dir, so your real `~/.idlemax` is never touched.
+**Security.**
 
-1. Build and install the binary:
+- One bearer token (32 random bytes as hex, file mode 0600) guards every API call except `/healthz` and `/`, and is compared in constant time.
+- Anyone holding the token can run any allowlisted program with any arguments on your devices, so treat it like an SSH key and keep allowlists narrow: allowlisting `sh` or `python3` allows any code.
+- The coordinator refuses to bind `0.0.0.0` or `[::]`.
+  Its traffic is plain HTTP, so bind it to a private network such as a tailnet, which encrypts it.
+- The local agent API listens on loopback only.
+- Jobs run without a shell, as the agent's user, with `IDLEMAX_JOB_ID` but never the token, and loader variables (`LD_*`, `DYLD_*`) are refused.
+- AI CLIs run only on devices that list the account, with the login already on that device.
+- The web dashboard loads nothing remote, sends a strict Content-Security-Policy, writes every API string as text, never HTML, and keeps the token in the browser's local storage.
+- Quota probes only read the CLIs' files.
 
-   ```sh
-   cargo install --path crates/idlemax
-   ```
+## AI quota maximizer
 
-2. Create a state dir with a demo config, then let `init` add the token and directories (it keeps an existing config):
+Each AI account lists its windows and the reserve kept for you:
 
-   ```sh
-   export IDLEMAX_HOME="$(mktemp -d)"
-   cat > "$IDLEMAX_HOME/config.toml" <<'EOF'
-   [agent]
-   sample_secs = 5
-   heartbeat_secs = 5
-   command_allowlist = ["/bin/echo"]
+| Provider | Default windows | Usage source |
+|---|---|---|
+| `claude` | 5-hour rolling (reserve 40%), weekly (reserve 30%) | Claude Code statusline capture |
+| `codex` | weekly (reserve 30%), plus a 5-hour window if Codex reports one | newest Codex session file |
+| `agy` | 5-hour rolling (40%), weekly (30%) | manual file |
+| `api` | none | manual file |
 
-   [guard]
-   # Demo only: let jobs start while you are at the keyboard and on battery.
-   user_idle_min_secs = 0
-   require_ac_power = false
-   EOF
-   idlemax init
-   ```
+The weekly reserve drops to 15% in the last 24 h before the reset.
+An AI job runs only when all of these hold:
 
-3. Start the coordinator and the agent:
+1. The device lists the account in `agent.ai_accounts`.
+2. Every window is below `100 - reserve`, with headroom for the job's `token_class`.
+3. The shortest window is in its final third, or the weekly reset is less than 24 h away.
+4. You have not used that CLI interactively in the last 30 minutes.
+5. No other AI job holds a lease on the account on any device.
+6. No usage limit or HTTP 429 was seen in this window.
+7. The usage data is less than 6 hours old, and no AI job started on the account in the last 5 hours.
 
-   ```sh
-   idlemax coord >"$IDLEMAX_HOME/logs/coord.log" 2>&1 &
-   idlemax agent >"$IDLEMAX_HOME/logs/agent.log" 2>&1 &
-   idlemax status
-   ```
-
-4. Queue a job:
-
-   ```sh
-   cat > "$IDLEMAX_HOME/hello.toml" <<'EOF'
-   name = "hello"
-   command = ["/bin/echo", "hello from idlemax"]
-   mem_mb = 64
-   max_runtime_secs = 60
-   EOF
-   idlemax job add "$IDLEMAX_HOME/hello.toml"
-   ```
-
-5. Watch it with `idlemax tui` (press `2` for jobs, `q` to quit), or open `http://127.0.0.1:7878/` and paste the token from `$IDLEMAX_HOME/token`.
-   If the job stays queued, the GUARD column of `idlemax status` says why, for example `pause: disk free 13756.2 MiB < 15360 MiB`.
-   That is the guard protecting a busy machine; for the demo, relax that one key in `[guard]` (here `disk_free_mib_pause = 0` and `disk_free_mib_kill = 0`) and restart the agent.
-
-6. Read the result, then try the kill switch:
-
-   ```sh
-   cat "$IDLEMAX_HOME"/inbox/*.md
-   idlemax stop-all --reason demo
-   idlemax resume
-   ```
-
-7. Clean up:
-
-   ```sh
-   kill %1 %2
-   rm -rf "$IDLEMAX_HOME"
-   ```
-
-The terminal dashboard, rendered with ratatui's `TestBackend` (placeholder data, blank rows cropped):
+`idlemax quota` shows each window and says why an account is or is not spendable (demo data):
 
 ```text
-idlemax http://127.0.0.1:7878   running   updated 2s ago
-coordinator 0.1.0 | global: running | jobs: 1 running, 1 queued | advice: 1 open
- 1 Devices (2) │ 2 Jobs (3) │ 3 Quota (1) │ 4 Advice (1) │ 5 Events (0)
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  DEVICE  STATE   GUARD                  IDLE  CPU  LOAD  MEM FREE  SWAP  DISK    POWER  JOBS     │
-│> laptop  online  run 1                  25m   9%   2.10  41% 5.0G  1.0G  120.0G  ac     1        │
-│  server  online  hold: load 1.70 > 1.5  -     9%   1.70  52% 5.0G  1.0G  120.0G  -      0        │
-│                                                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume device laptop  P/R all  s stop-all  tab/1-5 switch  q quit
+ACCOUNT     WINDOW  USED  RESERVE  HEADROOM  RESETS     SPEND  WHY
+claude-max  5h      34%   40%      26%       in 1h19m   no     another AI job holds this account's lease; an AI job alre...
+claude-max  week    41%   30%      29%       in 3d4h    no     another AI job holds this account's lease; an AI job alre...
+codex-pro   week    31%   15%      54%       in 18h59m  yes    weekly window in its final third, resets in 18h 59m
 ```
 
-## Controls reference
+**Ban-risk stance.**
+idlemax only launches the unmodified official CLIs (`claude -p`, `codex exec`, `agy -p`) with your own login, on the device where you logged in.
+It never copies credentials between devices, never fans out across devices or accounts, never retries an AI job, and stops spending an account for the rest of the window after any limit message.
+That keeps automated use close to ordinary individual use, but consumer terms still restrict automated access, so the risk is reduced, not zero.
+Metered API keys (`provider = "api"`) are the path providers designate for automation.
 
-### CLI
+**Claude usage** comes from the JSON that Claude Code passes to its statusline command.
+Put `packaging/claude-statusline-capture.sh` in front of your statusline in `~/.claude/settings.json`.
+Until it has written `$IDLEMAX_HOME/agent/claude-statusline.json`, Claude accounts are never spendable (fail closed).
+
+Prepend the absolute path of the wrapper to your existing statusline command:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/idlemax/packaging/claude-statusline-capture.sh <your existing statusline command>"
+  }
+}
+```
+
+If you have no custom statusline, pass the wrapper alone as the `command`.
+The wrapper saves the snapshot atomically before piping stdin through to your wrapped command.
+The visible output is byte-identical to the wrapped command, and capture errors are ignored, so the statusline never breaks.
+
+## AI advisor
+
+The advisor turns cluster state, your open PRs and review requests, and your recent sessions into recommendations.
+You accept or dismiss each one, and nothing runs on the advisor's word alone, except templates listed in `advisor.auto_accept`.
+
+- Each agent reads `gh` and the metadata of recent Claude and Codex sessions (never message text) on its own device every 15 minutes, and sends only that metadata to the coordinator.
+  The coordinator can therefore run on a server that has neither.
+- The rules engine runs every 15 minutes and on `idlemax advise refresh`.
+  It flags parked or failed jobs, offline devices, idle devices with an empty queue, quota about to reset unused, PRs waiting on you for 2+ days, and unfinished sessions.
+- An AI pass runs as an ordinary `ai` job through `claude -p` with a strict JSON schema, only when `advisor.ai_account` is spendable under the rules above.
+  Its prompt travels on stdin instead of argv, and the run disables all hooks and starts none of your MCP servers.
+- Suggested jobs can only name templates in `$IDLEMAX_HOME/jobs/`.
+
+## Controls
 
 Every command reads `$IDLEMAX_HOME` (default `~/.idlemax`; set but empty is an error).
-Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`) and `--json`.
+Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`), and `--json` prints JSON for scripts.
 
 | Command | Does |
 |---|---|
@@ -267,7 +304,21 @@ Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`) and `--json`.
 | `idlemax tui` | terminal dashboard |
 | `idlemax local status \| pause \| resume \| stop-all` | this device's agent directly, on `agent.listen` |
 
-### TUI keys
+**Terminal dashboard.**
+The screen below is rendered with ratatui's `TestBackend` from placeholder data, with blank rows cropped:
+
+```text
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+coordinator 0.1.0 | global: running | jobs: 1 running, 1 queued | advice: 1 open
+ 1 Devices (2) │ 2 Jobs (3) │ 3 Quota (1) │ 4 Advice (1) │ 5 Events (0)
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  DEVICE  STATE   GUARD                  IDLE  CPU  LOAD  MEM FREE  SWAP  DISK    POWER  JOBS     │
+│> laptop  online  run 1                  25m   9%   2.10  41% 5.0G  1.0G  120.0G  ac     1        │
+│  server  online  hold: load 1.70 > 1.5  -     9%   1.70  52% 5.0G  1.0G  120.0G  -      0        │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume device laptop  P/R all  s stop-all  tab/1-5 switch  q quit
+```
 
 | Key | Action |
 |---|---|
@@ -282,48 +333,23 @@ Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`) and `--json`.
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
 | `q`, `Esc`, `Ctrl-C` | quit |
 
-### HTTP API
-
-Every call except `GET /healthz` and `GET /` needs `Authorization: Bearer <token>`, and errors are `{"error": "..."}`.
-Wire formats and semantics are in [docs/API.md](docs/API.md).
-
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| GET | `/healthz` | | `ok`, no auth |
-| GET | `/` | | web dashboard, no auth |
-| POST | `/v1/agent/heartbeat` | `Heartbeat` | `HeartbeatReply` |
-| POST | `/v1/agent/job-update` | `JobUpdate` | `JobUpdateReply` |
-| GET | `/v1/status` | | `ClusterStatus` |
-| GET | `/v1/jobs?status=&limit=` | | `[Job]` |
-| POST | `/v1/jobs` | `JobSpec` | `Job` (201) |
-| POST | `/v1/jobs/{id}/cancel` | | `Job` |
-| GET | `/v1/quota` | | `[QuotaView]` |
-| POST | `/v1/control` | `ControlRequest` | `ClusterStatus` |
-| GET | `/v1/events?limit=` | | `[Event]` |
-| GET | `/v1/advice` | | `[Recommendation]`, open first |
-| POST | `/v1/advice/refresh` | | `[Recommendation]` |
-| POST | `/v1/advice/{id}/accept` | | `Job` |
-| POST | `/v1/advice/{id}/dismiss` | | `Recommendation` |
-
-### Local agent API
-
-The agent serves these on `agent.listen` (default `127.0.0.1:7879`, loopback only) with the same bearer token, and they keep working while the coordinator is down:
-
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| GET | `/healthz` | | `ok`, no auth |
-| GET | `/v1/local/status` | | `LocalStatus` |
-| POST | `/v1/local/control` | `ControlRequest` with global scope: `pause`, `resume` or `stop_all` | `LocalStatus` |
-
-### Web dashboard
-
+**Web dashboard.**
 The coordinator serves one self-contained page at `/` with no remote scripts, fonts or styles.
 It asks for the token once and keeps it in that browser's local storage until you press "Forget token".
-It refreshes every 5 s, rebuilding a section only when its data changed, and shows devices with guard verdicts and metrics, jobs, AI quota per window, advice and events.
+It refreshes every 5 s and shows devices with guard verdicts and metrics, jobs, AI quota per window, advice and events.
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, and accept or dismiss advice.
 
-## Configuration reference
+**HTTP API.**
+Every call except `GET /healthz` and `GET /` needs `Authorization: Bearer <token>`, and errors are `{"error": "..."}`.
+The agent's local API (`agent.listen`, loopback only) uses the same token and keeps working while the coordinator is down.
+Routes, wire formats and semantics are in [docs/API.md](docs/API.md).
+
+```sh
+curl -H "Authorization: Bearer $(cat "$IDLEMAX_HOME/token")" http://127.0.0.1:7878/v1/status
+```
+
+## Configuration
 
 `config.toml` lives in `$IDLEMAX_HOME`, and every key is optional.
 Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) and [examples/config.server.toml](examples/config.server.toml) (a server).
@@ -444,21 +470,28 @@ Their paths (`/path/to/...`) and device id (`my-laptop`) are placeholders; repla
 | `idlemax-coord.service` | `MemoryHigh=192M`, `MemoryMax=256M`, `MemorySwapMax=0`, `CPUQuota=20%`, `CPUWeight=10`, `IOWeight=10`, a strict sandbox that writes only `/var/lib/idlemax`, restarts until the private IP exists |
 | `idlemax-agent.service` | `MemoryMax=640M` for the agent plus its one job, `MemorySwapMax=0`, `CPUQuota=100%`, `CPUWeight=10`, `IOWeight=10`, `Nice=19`, idle I/O class; jobs write only `/var/lib/idlemax` and a private `/tmp` |
 
-On the server, jobs run under `nice` and `ionice` inside the agent unit's cgroup unless the idlemax user has a systemd user manager; keep lingering off so every job stays inside those caps.
+On the server, jobs run under `nice` and `ionice` inside the agent unit's cgroup unless the idlemax user has a systemd user manager.
+Keep lingering off so every job stays inside those caps.
 Add `ReadWritePaths=` with `systemctl edit idlemax-agent` if a job needs to write elsewhere.
 
-## Security model
+## Status and limits
 
-- One bearer token (32 random bytes as hex, file mode 0600) guards every API call except `/healthz` and `/`, and is compared in constant time.
-- Anyone holding the token can run any allowlisted program with any arguments on your devices, so treat it like an SSH key and keep allowlists narrow: allowlisting `sh` or `python3` allows any code.
-- The coordinator refuses to bind `0.0.0.0` or `[::]`; its traffic is plain HTTP, so bind it to a private network such as a tailnet, which encrypts it.
-- The local agent API listens on loopback only.
-- Jobs run without a shell, as the agent's user, with `IDLEMAX_JOB_ID` but never the token, and loader variables (`LD_*`, `DYLD_*`) are refused.
-- AI CLIs run only on devices that list the account, with the login already on that device; idlemax never reads or copies AI credentials.
-- The web dashboard loads nothing remote, sends a strict Content-Security-Policy, writes every API string as text, never HTML, and keeps the token in the browser's local storage.
-- Quota probes only read the CLIs' files.
+Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, the end-to-end test (a coordinator and an agent running one job), live runs of the agent and coordinator in temporary state directories, and the web dashboard in Chrome.
 
-## Development
+| Area | Limit |
+|---|---|
+| Linux | not yet run on Linux: the Linux parsers are tested on macOS with fixtures, but the Linux metrics call site, `loginctl` idle, the `systemd-run` wrapper and the systemd units have not run |
+| Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
+| AI pass | the advisor's `claude -p` pass has not run end to end, because that spends quota |
+| Claude quota | needs the statusline capture wrapper; until it writes data, Claude accounts are never spendable |
+| macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap, and a job child that daemonizes escapes its sum |
+| Runtime limit | counts awake time only, tested with an injected clock; a real sleep test has not run |
+| Job updates | journaled before sending and replayed after a crash; if the agent dies after a job exits and before it is reaped, the lease expires and the job runs again |
+| Dashboard | checked in Chrome only; Safari, Firefox and phones have not been checked |
+
+What comes next, with the reason and a "done when" for each item, is in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Contributing
 
 ```text
 crates/idlemax-core/src/   domain: types, protocol, config, paths, guard, quota, scheduler,
@@ -471,6 +504,17 @@ packaging/                 launchd plists, systemd units, Claude statusline capt
 docs/                      API.md, ROADMAP.md
 ```
 
+Dependencies point inward, and every decision is a pure function with unit tests:
+
+| Layer | Where | Holds |
+|---|---|---|
+| Domain | `crates/idlemax-core` | types, wire protocol, config, guard, quota rules, scheduler, control semantics, agent reconcile, job-run and advice decisions; no I/O and no clock (time is a parameter) |
+| Adapters | `crates/idlemax/src/{agent,coord,advisor}`, `state.rs` | OS metrics, process runner, SQLite store, HTTP server and client, `gh` and session readers, the `claude -p` job builder |
+| Delivery | `cli.rs`, `tui/`, `coord/web.rs`, `main.rs` | argument parsing, one use-case call each, rendering |
+
+Both crates are `#![forbid(unsafe_code)]`, errors are typed with `thiserror`, and `anyhow` appears only in `main.rs` and the CLI.
+Deliberate shortcuts are marked `SHORTCUT:` in the code, and `grep -rnE '(#|//) ?SHORTCUT:' crates` lists them.
+
 Every change passes this gate:
 
 ```sh
@@ -481,24 +525,11 @@ cargo test -p idlemax --test e2e          # init, coordinator and agent run one 
 cargo test -p idlemax --test examples     # example configs and job specs stay valid
 ```
 
-The e2e test sets temp `HOME` and `IDLEMAX_HOME` and refuses to start against your real state dir; do the same whenever you run the agent or coordinator during development.
+The e2e test sets temp `HOME` and `IDLEMAX_HOME` and refuses to start against your real state dir.
+Do the same whenever you run the agent or coordinator during development.
 
 To add a job template, write a spec to `$IDLEMAX_HOME/jobs/<name>.toml` on the coordinator, allowlist its `argv[0]` on the devices that should run it, and queue it with `idlemax job add` or let the advisor suggest it.
 The advisor queues a template without asking only if its name is in `advisor.auto_accept`.
-
-## Status and limits
-
-Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, the e2e test, and live runs of the agent and coordinator in temp state dirs.
-
-| Area | Limit |
-|---|---|
-| Linux | not yet run on Linux: the Linux parsers are tested on macOS with fixtures, but the Linux metrics call site, `loginctl` idle, the `systemd-run` wrapper and the systemd units have not run |
-| Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
-| macOS memory cap | `taskpolicy -m` is soft; the runner's RSS check every 5 s is the real cap |
-| Claude quota | needs the statusline capture wrapper; until it writes data, Claude accounts are never spendable |
-| Advisor | the AI pass has not run end to end, because that spends quota |
-| Runtime limit | measured on the wall clock, so a laptop that sleeps past it kills the job on wake |
-| Job updates | queued in agent memory only; after an agent crash the lease expires and the job is retried |
 
 ## Docs
 
@@ -508,4 +539,4 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 
 ## License
 
-MIT, as declared in `Cargo.toml`.
+MIT, see [LICENSE](LICENSE).
