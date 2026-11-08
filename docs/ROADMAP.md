@@ -43,6 +43,16 @@ The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 
 | TUI | Every screen fits 80x24, display-width text, time-zone independent snapshots, `--utc` | `3057446`, `b170592` |
 | Community | CONTRIBUTING, SECURITY, issue forms, Dependabot, private vulnerability reporting | `ed051c9` |
 
+### Round 3 (2026-11-09): maximum use, properly
+
+Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0..` lists them. The main ones:
+
+- Guard: disk only holds new starts at 2 GiB and kills near 1 GiB; swap in use no longer stops Linux servers; load limits scale with CPU count and ignore the jobs' own load; the laptop takes half its CPUs and a quarter of its RAM.
+- Agent: a stuck mount no longer freezes the loop; a finished slot is refilled at once; sleep, restart, a second agent, an early exit or a clock step no longer lose, re-run or mislabel a job; outbox sequence numbers survive.
+- Coordinator: leases use `lease_secs` and are renewed by heartbeats only; unstarted leases return to the queue; unknown pause targets are refused; schedule, quota and pause-flag edge cases fixed.
+- CLI, setup and doctor: strict spec files, safe `init`, right recovery hints, `--fields` checked everywhere, Linux service restart, idle-agent and PATH checks in doctor.
+- CI skips docs-only pushes and cancels superseded runs.
+
 ### Needs the owner's OK before it runs
 
 - Running the Linux verification on the production server (item 1) and deploying on the tailnet (item 2).
@@ -95,6 +105,54 @@ The Linux agent was verified on an Ubuntu 24.04 host with systemd 255 (see item 
 - **Why:** The browser passes used Chrome only.
 - **How:** Open the dashboard in Safari and Firefox and on a real phone, including a job with many waiting reasons and a status filter that matches nothing.
 - **Done when:** No layout or control defect shows in any of them.
+
+### 21. Show how much capacity is used and how much sits idle
+
+- **Why:** The main goal is maximum use of every resource; round 3 made the guard and scheduler use far more of each machine, but a user still cannot see at a glance how many slots and how much RAM budget each device has free, or why a device with queued jobs is idle.
+- **How:** From data the API already returns (guard slots and `mem_mib`, running jobs, `why`), show per device "slots in use / allowed" and the top idle reason in `idlemax status`, `devices`, the TUI and the dashboard, and per AI account the quota left before reset.
+- **Done when:** On a busy cluster, each view answers "how much is used, how much is idle, and why" without running `why` per job.
+
+### 22. Never block the agent loop on a hung mount at job start
+
+- **Why:** The disk probe is now bounded, but `resolve_cwd` in `agent/runner/launch.rs` still calls `is_dir()` on the job's cwd inside the loop, so a job whose cwd sits on a hung network mount stalls the loop at start.
+- **How:** Check the cwd on a bounded blocking thread (as the sample does) and fail the start with a clear error when it times out.
+- **Done when:** A test with a cwd check that never returns starts no job, reports the cause, and keeps the loop responsive.
+
+### 23. Let the server preset scale with the host
+
+- **Why:** The laptop preset now takes half the CPUs and a quarter of the RAM, but `linux_server` stays at 1 job and 512 MiB to fit the packaged agent unit's `MemoryMax=640M`, so a big server idles most of its spare capacity.
+- **How:** Size the server preset from the host like the laptop one, with the site-protection reserve explicit, and derive the unit's `MemoryMax` from the same budget at install time.
+- **Done when:** A 16 GiB server runs several jobs by default while its own services keep their reserve, and the unit cap matches the budget.
+
+### 24. Bound every coordinator write path
+
+- **Why (audit, round 3):** a token holder can still grow `coord.db`: heartbeat `quota`, `running` and `interactive_use` lists are unbounded; snapshots under never-configured account names are never pruned; `JobUpdate.device` is stored unchecked; advisor-input device ids are uncapped; account-scope pause names are not syntax-checked; schedules have no count cap.
+- **How:** `name_problem` on those names, bounded lists, drop snapshots for accounts not in `[[quota.accounts]]`, count advisor-input devices against the device cap, a schedules cap.
+- **Done when:** Each path has a test that an oversized or over-count request is refused or trimmed.
+
+### 25. Serialize the advisor refresh
+
+- **Why (audit, round 3):** `run_refresh` reads and persists in two lock acquisitions, so a sweep refresh and `POST /v1/advice/refresh` can interleave: two AI passes queued, duplicate advice, an advice accepted mid-refresh set back to dismissed, or an auto-accepted advice whose job never queued.
+- **How:** One `tokio::Mutex` around refreshes in `AppState`, close only `WHERE status = 'open'`, persist in one transaction, give the AI pass an idempotency key. Test without a real AI pass.
+- **Done when:** Two concurrent refreshes in a test queue at most one pass and never change an accepted advice.
+
+### 26. Explain jobs outside the store lock
+
+- **Why (audit, round 3, unconfirmed):** `GET /v1/why` runs `explain` (which calls `scheduler::pick`) for up to 1000 jobs inside the store lock, so a dashboard poll on a big queue could delay heartbeats past the agent's 10 s timeout.
+- **How:** Time it first with 10,000 queued jobs and 2 devices; if slow, snapshot under the lock, explain outside it, and pick once per device.
+- **Done when:** `/v1/why?limit=1000` on that queue holds the lock for under 50 ms.
+
+### 27. Small CLI and setup leftovers
+
+- **Why (audit, round 3):** list hints suggest `--limit` values above the server's clamp of 1000, so an agent following them loops; `idlemax setup --coord-url <bad>` prints `help: idlemax job add --help` because setup reuses the job usage helper.
+- **How:** Cap suggested limits at 1000 and say when more exist; give setup its own help line.
+- **Done when:** Both have a focused test.
+
+### 28. Confirm two platform claims from the audit
+
+- **Why (audit, round 3, unconfirmed):** re-running `idlemax service install` on macOS while a job is stopping may make `bootstrap` fail after an ignored `bootout`; and the OpenCode plugin always goes to `$HOME/.config/opencode` although OpenCode reads `XDG_CONFIG_HOME` and `OPENCODE_CONFIG_DIR`.
+- **How:** Reproduce each in a throwaway home; fix only what reproduces.
+- **Done when:** Each is either fixed with a test or recorded here as not a bug.
 
 ## v0.4: learn from real runs and harden
 
