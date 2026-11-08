@@ -1,8 +1,10 @@
 //! Adapter: coordinator and local agent reachability, token and version checks.
 
+use std::path::Path;
+
 use idlemax_core::doctor::{version_mismatch, Check, Report};
 use idlemax_core::protocol::LocalStatus;
-use idlemax_core::{Config, VERSION};
+use idlemax_core::{Config, Paths, VERSION};
 
 use super::checks::AFTER_TOKEN;
 use crate::cli::{ApiClient, ClientError};
@@ -111,8 +113,13 @@ fn auth_rejected(e: &ClientError) -> bool {
     )
 }
 
-/// Check 4: the agent on this device answers its local API.
-pub async fn local_agent(report: &mut Report, cfg: &Config, token: Option<&str>) {
+/// Checks 4 and 4b: the agent on this device answers its local API, and nothing holds its jobs.
+pub async fn local_agent(
+    report: &mut Report,
+    cfg: &Config,
+    token: Option<&str>,
+    paths: Option<&Paths>,
+) {
     let url = format!("http://{}", cfg.agent.listen);
     let Some(token) = token else {
         report.push(Check::warn(
@@ -134,7 +141,11 @@ pub async fn local_agent(report: &mut Report, cfg: &Config, token: Option<&str>)
         }
     };
     match client.local_status().await {
-        Ok(status) => report.push(agent_status_check(&url, &status)),
+        Ok(status) => {
+            report.push(agent_status_check(&url, &status));
+            let file = paths.map_or_else(|| "$IDLEMAX_HOME/PAUSE".into(), Paths::pause_file);
+            report.push(pause_check(&status, &file));
+        }
         Err(e) => report.push(agent_error(&url, &e)),
     }
 }
@@ -162,6 +173,28 @@ pub(super) fn agent_status_check(url: &str, s: &LocalStatus) -> Check {
         );
     }
     Check::ok("agent", format!("{summary}, coordinator reachable"))
+}
+
+/// Jobs held on this device by the kill switch file or a local pause. Both pause the
+/// guard, so no job starts and the running ones are held until the hold is lifted.
+pub(super) fn pause_check(s: &LocalStatus, pause_file: &Path) -> Check {
+    let file = pause_file.display();
+    let remove = format!("rm {file}");
+    let resume = "idlemax local resume";
+    let (what, fix) = match (s.kill_switch, s.local_paused) {
+        (false, false) => return Check::ok("pause", "no kill switch file and no local pause"),
+        (true, false) => (format!("the kill switch file {file} exists"), remove),
+        (false, true) => ("a local pause is active".to_string(), resume.into()),
+        (true, true) => (
+            format!("the kill switch file {file} exists and a local pause is active"),
+            format!("{remove}, then {resume}"),
+        ),
+    };
+    Check::warn(
+        "pause",
+        format!("jobs on this device are held: {what}"),
+        fix,
+    )
 }
 
 fn agent_error(url: &str, e: &ClientError) -> Check {

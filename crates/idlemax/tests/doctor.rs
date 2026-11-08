@@ -225,6 +225,7 @@ async fn doctor_reports_healthy_and_every_broken_case() {
         "token",
         "coordinator",
         "agent",
+        "pause",
         "allowlist",
         "disk",
         "ai",
@@ -333,6 +334,33 @@ async fn doctor_reports_healthy_and_every_broken_case() {
         );
     }
 
+    // Held: the kill switch file warns with the exact rm, and a warn alone exits 0.
+    {
+        let pause_file = state.join("PAUSE");
+        std::fs::write(&pause_file, "").unwrap();
+        let report = wait_for("pause check to see PAUSE", Duration::from_secs(30), || {
+            let (home, state) = (home.clone(), state.clone());
+            async move {
+                let (code, report) = doctor(&home, &state, &[]);
+                (level(&report, "pause") == "warn").then_some((code, report))
+            }
+        })
+        .await;
+        assert_eq!(report.0, 0, "{}", report.1);
+        let pause = check(&report.1, "pause");
+        assert_eq!(
+            pause["fix"],
+            format!("rm {}", pause_file.display()),
+            "{pause}"
+        );
+        std::fs::remove_file(&pause_file).unwrap();
+        wait_for("pause check to clear", Duration::from_secs(30), || {
+            let (home, state) = (home.clone(), state.clone());
+            async move { (level(&doctor(&home, &state, &[]).1, "pause") == "ok").then_some(()) }
+        })
+        .await;
+    }
+
     // Broken: the coordinator is not there (port closed right after binding it).
     {
         let closed = free_port();
@@ -373,5 +401,5 @@ async fn doctor_reports_healthy_and_every_broken_case() {
     assert!(out.status.success(), "{text}");
     assert!(text.contains("warn  service"), "{text}");
     assert!(text.contains("fix: install packaging/"), "{text}");
-    assert!(text.contains("10 checks: 9 ok, 1 warn, 0 fail"), "{text}");
+    assert!(text.contains("11 checks: 10 ok, 1 warn, 0 fail"), "{text}");
 }

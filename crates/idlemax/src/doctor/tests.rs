@@ -309,3 +309,29 @@ fn agent_status_is_ok_only_with_this_version_and_a_reachable_coordinator() {
     assert_eq!(old.level, Level::Warn);
     assert!(old.fix.unwrap().contains("restart the agent"));
 }
+
+#[test]
+fn pause_check_names_each_hold_with_its_own_fix() {
+    let status = |kill_switch, local_paused| LocalStatus {
+        kill_switch,
+        local_paused,
+        ..LocalStatus::default()
+    };
+    let file = Path::new("/state/PAUSE");
+
+    let free = net::pause_check(&status(false, false), file);
+    assert_eq!((free.id.as_str(), free.level), ("pause", Level::Ok));
+
+    let switch = net::pause_check(&status(true, false), file);
+    assert_eq!(switch.level, Level::Warn);
+    assert!(switch.detail.contains("/state/PAUSE"), "{}", switch.detail);
+    assert_eq!(switch.fix.as_deref(), Some("rm /state/PAUSE"));
+
+    let local = net::pause_check(&status(false, true), file);
+    assert_eq!(local.level, Level::Warn);
+    assert_eq!(local.fix.as_deref(), Some("idlemax local resume"));
+
+    let both = net::pause_check(&status(true, true), file);
+    let fix = both.fix.unwrap();
+    assert!(fix.contains("rm /state/PAUSE") && fix.contains("idlemax local resume"));
+}

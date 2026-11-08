@@ -21,7 +21,7 @@ pub async fn run(coord_url: Option<String>) -> Report {
     let config = checks::config(&mut report, paths.as_ref());
     let token = checks::token(&mut report, paths.as_ref());
     net::coordinator(&mut report, &config, token.as_deref(), coord_url.as_deref()).await;
-    net::local_agent(&mut report, &config, token.as_deref()).await;
+    net::local_agent(&mut report, &config, token.as_deref(), paths.as_ref()).await;
     host::allowlist(&mut report, &config);
     host::disk(&mut report, &config).await;
     ai::accounts(&mut report, &config, paths.as_ref()).await;
