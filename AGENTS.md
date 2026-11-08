@@ -24,6 +24,7 @@ crates/idlemax/src/        agent/, coord/ (store/schema.rs holds the migrations)
                            doctor/ (adapters); cli.rs + cli/, tui/, coord/web.rs, main.rs (delivery)
 crates/idlemax/tests/      e2e.rs, examples.rs, doctor.rs, logs_inbox.rs and other integration tests
 examples/  packaging/  scripts/   example configs and jobs, service units, install and changelog scripts
+skills/                    the generated agent skill (see Traps)
 docs/                      API.md, ROADMAP.md, ROLLOUT.md, RELEASING.md
 ```
 
@@ -82,8 +83,8 @@ idlemax init
 ```
 
 - A set but empty `IDLEMAX_HOME` is an error by design (`IDLEMAX_HOME is set but empty`), so never export it empty.
-- Also set `HOME`: `idlemax service install` writes a LaunchAgent or systemd user unit under it, and `idlemax statusline install` edits Claude's `settings.json` there.
-  Run those only in the throwaway home.
+- Also set `HOME`: `idlemax service install` writes a LaunchAgent or systemd user unit under it, and `idlemax statusline install` and `idlemax hooks install` edit the settings of Claude Code, Codex and OpenCode there.
+  Run those only in the throwaway home, and unset `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, which would point them back at the real directories.
 - Use non-default ports in a dev config (`coordinator.listen`, `agent.listen`); a real agent may already hold 7878 or 7879.
 - Never configure an AI account or queue an `ai_account` job in a dev run: it would launch the real `claude -p`, `codex exec` or `agy -p` and spend quota.
 - Never run `launchctl` or `systemctl` against the real user session.
@@ -97,6 +98,8 @@ idlemax init
   Never edit it by hand; fix the commit history or the script.
 - `docs/PLAN.md`, `docs/status/` and `docs/contract-requests.md` are gitignored local notes.
   Stage files by name and never use `git add -f`.
+- `skills/idlemax/SKILL.md` is generated from the text in `crates/idlemax/src/cli/home/render.rs`.
+  After changing the description or command list there, run `idlemax skill > skills/idlemax/SKILL.md`; CI runs `idlemax skill --check`.
 - Wire formats and lease or control semantics live in `docs/API.md`; change the code and that file together.
   `README.md` is the user-facing doc: update the section a behaviour change makes wrong, and nothing else.
 
