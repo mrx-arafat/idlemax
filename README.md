@@ -845,6 +845,7 @@ Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) an
 |---|---|---|
 | `coordinator.listen` | `127.0.0.1:7878` | bind address; `0.0.0.0` and `[::]` are refused |
 | `coordinator.url` | `http://127.0.0.1:7878` | where agents and the CLI reach the coordinator |
+| `coordinator.allowed_hosts` | `[]` | host names it answers to besides IP addresses, `localhost` and the host of `url`, such as a MagicDNS name; any other `Host` header gets 421 |
 | `coordinator.lease_secs` | `120` | a lease not renewed by a heartbeat in this time is re-queued with backoff |
 | `coordinator.offline_after_secs` | `90` | a device is offline after this long without a heartbeat |
 | `coordinator.metrics_retention_days` | `7` | days of per-minute device metrics kept |
@@ -900,7 +901,9 @@ CARGO_BUILD_JOBS = "2"
 ```
 
 AI jobs also set `ai_account` and `token_class` (`small`, `medium`, `large`).
-Jobs get `IDLEMAX_JOB_ID` in their environment but never the API token, and `env` keys starting with `LD_` or `DYLD_` are refused.
+A job starts from a minimal environment, not the agent's: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `IDLEMAX_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, the `XDG_*` base dirs and `DBUS_SESSION_BUS_ADDRESS` carry over, then the spec's `env` and `IDLEMAX_JOB_ID`.
+So API keys, tokens and the ssh-agent socket in the agent's environment never reach a job; put what a job needs in its `env`.
+Jobs never get the API token, and `env` keys starting with `LD_` or `DYLD_` are refused.
 Use `on_user_active = "kill"` for jobs that hold a lock you need (a cargo target dir, an index, a git clone), because a paused job keeps holding it.
 
 [examples/jobs/](examples/jobs/) holds starter jobs, backed by scripts in [examples/scripts/](examples/scripts/):

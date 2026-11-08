@@ -152,6 +152,14 @@ listen = "100.x.y.z:7878"
 url = "http://100.x.y.z:7878"
 ```
 
+The coordinator answers only to IP addresses, `localhost` and the host of `url` (a defence against DNS rebinding).
+If a device reaches it by a MagicDNS name, list that name, or the device gets HTTP 421 (`idlemax doctor` names the fix):
+
+```toml
+[coordinator]
+allowed_hosts = ["server.tail1234.ts.net"]
+```
+
 Set `[agent] device_id` to the server name used in job specs, for example:
 
 ```toml
