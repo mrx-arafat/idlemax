@@ -74,6 +74,8 @@ pub struct AgentConfig {
     pub ai_accounts: Vec<String>,
     /// Allowed argv[0] values (bare names or absolute paths). Empty allows nothing.
     pub command_allowlist: Vec<String>,
+    /// Send desktop notification on job finish (macOS only, default false).
+    pub notify: bool,
 }
 
 impl Default for AgentConfig {
@@ -87,6 +89,7 @@ impl Default for AgentConfig {
             advisor_inputs_secs: 15 * 60,
             ai_accounts: Vec::new(),
             command_allowlist: Vec::new(),
+            notify: false,
         }
     }
 }
@@ -312,4 +315,18 @@ pub fn token_mode_is_private(mode: u32) -> bool {
 /// Lowercase hex of random bytes the adapter read from the OS RNG.
 pub fn encode_token(random: &[u8]) -> String {
     random.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_config_notify_flag() {
+        let default_cfg: Config = toml::from_str("").unwrap();
+        assert!(!default_cfg.agent.notify);
+
+        let custom_cfg: Config = toml::from_str("[agent]\nnotify = true\n").unwrap();
+        assert!(custom_cfg.agent.notify);
+    }
 }

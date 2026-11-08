@@ -38,6 +38,7 @@ impl Holds {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrackedJob {
     pub id: JobId,
+    pub name: String,
     pub mem_mb: u64,
     pub on_user_active: ActivePolicy,
     pub started_ms: UnixMs,
@@ -124,6 +125,11 @@ impl AgentState {
 
     pub fn jobs(&self) -> impl Iterator<Item = &TrackedJob> {
         self.jobs.values()
+    }
+
+    /// Looks up the spec name of a tracked job.
+    pub fn job_name(&self, id: JobId) -> Option<&str> {
+        self.jobs.get(&id).map(|j| j.name.as_str())
     }
 
     /// Updates holds and returns this tick's actions. Kills come first, starts last.
@@ -387,6 +393,7 @@ fn guard_reason(guard: &GuardDecision) -> String {
 fn tracked(job: &Job, now_ms: UnixMs) -> TrackedJob {
     TrackedJob {
         id: job.id,
+        name: job.spec.name.clone(),
         mem_mb: job.spec.mem_mb,
         on_user_active: job.spec.on_user_active,
         started_ms: now_ms,

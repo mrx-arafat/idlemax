@@ -1,6 +1,7 @@
 //! Domain: inbox note for a finished job (file name and markdown body). Pure.
 
 use chrono::{DateTime, FixedOffset};
+use serde::{Deserialize, Serialize};
 
 use crate::job_run::Outcome;
 use crate::types::{Job, JobId, UnixMs};
@@ -135,5 +136,223 @@ fn duration(ms: i64) -> String {
         (0, 0) => format!("{s}s"),
         (0, _) => format!("{m}m {s:02}s"),
         _ => format!("{h}h {m:02}m {s:02}s"),
+    }
+}
+
+/// Summary of a finished job note for inbox listings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxEntry {
+    pub time: String,
+    pub job_id: JobId,
+    pub name: String,
+    pub result: String,
+    pub file_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finished_ms: Option<UnixMs>,
+}
+
+/// Parses an inbox note's markdown body and filename into an [`InboxEntry`].
+pub fn parse_note(file_name: &str, content: &str) -> Option<InboxEntry> {
+    let mut title_name = None;
+    let mut title_status = None;
+    let mut job_id = None;
+    let mut finished_str = None;
+    let mut started_str = None;
+    let mut exit_code = None;
+    let mut error = None;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# ") && title_name.is_none() {
+            let rest = &trimmed[2..];
+            if let Some((name, status)) = rest.split_once(": ") {
+                title_name = Some(name.trim().to_string());
+                title_status = Some(status.trim().to_string());
+            } else {
+                title_name = Some(rest.trim().to_string());
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("- Job: ") {
+            let id_part = rest.split(|c: char| c.is_whitespace() || c == '(').next();
+            if let Some(id_str) = id_part {
+                if let Ok(id) = id_str.parse::<JobId>() {
+                    job_id = Some(id);
+                }
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("- Finished: ") {
+            finished_str = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("- Started: ") {
+            started_str = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("- Exit code: ") {
+            exit_code = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("- Error: ") {
+            error = Some(rest.trim().to_string());
+        }
+    }
+
+    let job_id = job_id.or_else(|| parse_id_from_filename(file_name))?;
+    let name = title_name.unwrap_or_else(|| format!("job {job_id}"));
+    let status_raw = title_status.unwrap_or_default();
+
+    let result = if let Some(err) = error {
+        if !err.is_empty() {
+            if !status_raw.is_empty() {
+                format!("{status_raw}: {err}")
+            } else {
+                err
+            }
+        } else {
+            status_raw
+        }
+    } else if let Some(ref code) = exit_code {
+        if code != "0" && code != "none" && !status_raw.is_empty() {
+            format!("{status_raw} (exit {code})")
+        } else if !status_raw.is_empty() {
+            status_raw
+        } else {
+            format!("exit {code}")
+        }
+    } else if !status_raw.is_empty() {
+        status_raw
+    } else {
+        "unknown".to_string()
+    };
+
+    let time = finished_str
+        .or(started_str)
+        .unwrap_or_else(|| parse_date_from_filename(file_name).unwrap_or_else(|| "unknown".into()));
+
+    let finished_ms = DateTime::parse_from_str(&time, "%Y-%m-%d %H:%M:%S %:z")
+        .ok()
+        .map(|dt| dt.timestamp_millis());
+
+    Some(InboxEntry {
+        time,
+        job_id,
+        name,
+        result,
+        file_name: file_name.to_string(),
+        finished_ms,
+    })
+}
+
+/// Tries to extract job ID from `<date>-<id>-<name>.md`.
+fn parse_id_from_filename(name: &str) -> Option<JobId> {
+    let clean = name.strip_suffix(".md").unwrap_or(name);
+    let parts: Vec<&str> = clean.split('-').collect();
+    if parts.len() >= 4 {
+        parts[3].parse().ok()
+    } else {
+        None
+    }
+}
+
+/// Tries to extract `YYYY-MM-DD` from `<date>-<id>-<name>.md`.
+fn parse_date_from_filename(name: &str) -> Option<String> {
+    let parts: Vec<&str> = name.split('-').collect();
+    if parts.len() >= 3 && parts[0].len() == 4 && parts[1].len() == 2 && parts[2].len() == 2 {
+        Some(format!("{}-{}-{}", parts[0], parts[1], parts[2]))
+    } else {
+        None
+    }
+}
+
+/// Sorts inbox entries newest first (descending finished timestamp, then descending ID).
+pub fn sort_entries(entries: &mut [InboxEntry]) {
+    entries.sort_by(|a, b| {
+        b.finished_ms
+            .cmp(&a.finished_ms)
+            .then_with(|| b.time.cmp(&a.time))
+            .then_with(|| b.job_id.cmp(&a.job_id))
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{CostClass, JobSpec, JobStatus};
+
+    #[test]
+    fn render_and_parse_roundtrip() {
+        let job = Job {
+            id: 42,
+            spec: JobSpec {
+                name: "echo test".into(),
+                command: vec!["/bin/echo".into(), "hello".into()],
+                cost: CostClass::CpuLight,
+                ..JobSpec::default()
+            },
+            attempts: 1,
+            ..Job::default()
+        };
+        let outcome = Outcome {
+            status: JobStatus::Succeeded,
+            exit_code: Some(0),
+            error: None,
+        };
+        let report = RunReport {
+            job: &job,
+            device: "laptop",
+            outcome: &outcome,
+            started_ms: 1730000000000,
+            finished_ms: 1730000001000,
+            active_ms: 1000,
+            wrapper: "taskpolicy",
+            log_path: "/tmp/42.log",
+            output: "hello\n",
+            utc_offset_secs: 0,
+        };
+        let rendered = render(&report);
+        let fname = file_name(job.id, &job.spec.name, report.finished_ms, 0);
+        let entry = parse_note(&fname, &rendered).expect("parse note");
+
+        assert_eq!(entry.job_id, 42);
+        assert_eq!(entry.name, "echo test");
+        assert_eq!(entry.result, "succeeded");
+        assert_eq!(entry.file_name, fname);
+        assert!(entry.finished_ms.is_some());
+    }
+
+    #[test]
+    fn parse_failed_with_error() {
+        let note = "# compile: failed\n\n- Job: 7 (attempt 2)\n- Exit code: 1\n- Error: out of memory\n- Finished: 2026-11-08 10:00:00 +00:00\n";
+        let entry = parse_note("2026-11-08-7-compile.md", note).expect("parse note");
+        assert_eq!(entry.job_id, 7);
+        assert_eq!(entry.name, "compile");
+        assert_eq!(entry.result, "failed: out of memory");
+        assert_eq!(entry.time, "2026-11-08 10:00:00 +00:00");
+    }
+
+    #[test]
+    fn sort_newest_first() {
+        let mut entries = vec![
+            InboxEntry {
+                time: "2026-11-08 09:00:00 +00:00".into(),
+                job_id: 1,
+                name: "first".into(),
+                result: "succeeded".into(),
+                file_name: "f1.md".into(),
+                finished_ms: Some(100),
+            },
+            InboxEntry {
+                time: "2026-11-08 11:00:00 +00:00".into(),
+                job_id: 3,
+                name: "third".into(),
+                result: "succeeded".into(),
+                file_name: "f3.md".into(),
+                finished_ms: Some(300),
+            },
+            InboxEntry {
+                time: "2026-11-08 10:00:00 +00:00".into(),
+                job_id: 2,
+                name: "second".into(),
+                result: "succeeded".into(),
+                file_name: "f2.md".into(),
+                finished_ms: Some(200),
+            },
+        ];
+        sort_entries(&mut entries);
+        assert_eq!(entries[0].job_id, 3);
+        assert_eq!(entries[1].job_id, 2);
+        assert_eq!(entries[2].job_id, 1);
     }
 }
