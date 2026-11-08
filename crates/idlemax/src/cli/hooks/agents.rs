@@ -85,12 +85,16 @@ pub fn install(which: &Which, dry_run: bool) -> Result<Report> {
     let (command, program, warning) = command()?;
     let chosen = selected(which, &places);
     if chosen.is_empty() {
-        bail!(
-            "no supported agent found ({}, {} or {}); pass --claude, --codex or --opencode to set one up",
-            places.claude.display(),
-            places.codex.display(),
-            places.opencode.display()
-        );
+        return Err(crate::cli::CliError::runtime(
+            format!(
+                "no supported agent found ({}, {} or {})",
+                places.claude.display(),
+                places.codex.display(),
+                places.opencode.display()
+            ),
+            "idlemax hooks install --claude (or --codex, --opencode) to set one up anyway",
+        )
+        .into());
     }
     let mut agents: Vec<AgentReport> = chosen
         .into_iter()

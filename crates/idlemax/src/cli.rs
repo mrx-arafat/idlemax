@@ -349,7 +349,7 @@ async fn execute(cli: Cli, out: &Out) -> Result<()> {
         Cmd::Logs { id, tail, follow } => {
             let log_path = paths.job_log_file(id);
             if log_path.exists() {
-                logs::run_logs_local(&log_path, tail, follow).await
+                logs::run_logs_local(&log_path, tail, follow, out).await
             } else {
                 let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
                 let client = ApiClient::new(&url, token(&paths)?)?;
@@ -481,7 +481,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
     match cmd {
         Cmd::Status => handlers::status(c, out, now).await,
         Cmd::Jobs { status, limit } => handlers::jobs(c, out, now, status, limit).await,
-        Cmd::Why { id } => out.emit(&c.why(id).await?, why::render, &[]),
+        Cmd::Why { id } => handlers::why(c, id, out).await,
         Cmd::Job(JobCmd::Cancel { id }) => handlers::cancel(c, id, out).await,
         Cmd::Schedule(cmd) => schedule::run(cmd, c, out, now).await,
         Cmd::Pause(t) => handlers::control(c, t.request(ControlAction::Pause), out).await,

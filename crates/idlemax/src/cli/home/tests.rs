@@ -148,6 +148,101 @@ help[1]: Run `idlemax` for the full view";
 }
 
 #[test]
+fn the_toon_home_view_and_hook_summary_of_a_busy_cluster_are_pinned() {
+    use super::view::of;
+    use crate::cli::out::toon::encode;
+
+    let h = home(busy());
+    let (full, hints) = of(&h, Mode::Full);
+    assert_eq!(
+        encode(&full),
+        "\
+bin: ~/.cargo/bin/idlemax
+description: Run useful jobs on spare device capacity and spend leftover AI quota before it resets
+coordinator: \"http://127.0.0.1:7878\"
+devices[4]{id,state,guard}:
+  mac,online,run 2
+  srv,online,\"pause: disk free 4 GiB\"
+  old,offline,null
+  pc,local-paused,null
+jobs:
+  running: 1
+  queued: 3
+  failed: 2
+advice_open: 2
+quota[2]{account,spendable}:
+  claude,true
+  codex,false"
+    );
+    assert_eq!(hints.len(), 4);
+    assert_eq!(
+        hints[0],
+        "Run `idlemax jobs --status failed` to see the 2 failed"
+    );
+
+    let (hook, hints) = of(&h, Mode::Hook);
+    assert_eq!(
+        encode(&hook),
+        "\
+devices[4]{id,state,guard}:
+  mac,online,run 2
+  srv,online,\"pause: disk free 4 GiB\"
+  old,offline,null
+  pc,local-paused,null
+jobs:
+  running: 1
+  queued: 3
+  failed: 2
+advice_open: 2
+quota[2]{account,spendable}:
+  claude,true
+  codex,false
+help: Run `idlemax` for the full view"
+    );
+    assert!(hints.is_empty());
+}
+
+#[test]
+fn the_toon_notes_for_a_missing_setup_or_coordinator_are_short() {
+    use super::view::of;
+    use crate::cli::out::toon::encode;
+
+    let down = home(State::Down {
+        reason: Reason::Unreachable,
+        detail: String::new(),
+    });
+    assert_eq!(
+        encode(&of(&down, Mode::Hook).0),
+        "idlemax: \"coordinator http://127.0.0.1:7878 is not reachable (run `idlemax doctor`)\""
+    );
+    let (full, hints) = of(&down, Mode::Full);
+    assert!(
+        encode(&full).ends_with("status: unreachable"),
+        "{}",
+        encode(&full)
+    );
+    assert!(hints[0].contains("`idlemax coord`"));
+
+    let fresh = home(State::Down {
+        reason: Reason::NotSetUp,
+        detail: String::new(),
+    });
+    assert_eq!(
+        encode(&of(&fresh, Mode::Hook).0),
+        "idlemax: not set up on this device (run `idlemax init`)"
+    );
+
+    let empty = home(State::Up(live(&ClusterStatus::default(), &[])));
+    let text = encode(&of(&empty, Mode::Full).0);
+    assert!(
+        text.contains("devices: none have sent a heartbeat yet"),
+        "{text}"
+    );
+    assert!(text.contains("jobs:\n  running: 0\n  queued: 0"), "{text}");
+    assert!(!text.contains("quota["), "{text}");
+}
+
+#[test]
 fn a_down_coordinator_is_one_short_note_with_the_next_step() {
     let unreachable = home(State::Down {
         reason: Reason::Unreachable,

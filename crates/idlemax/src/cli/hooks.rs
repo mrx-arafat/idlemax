@@ -13,6 +13,8 @@ use clap::{Args, Subcommand};
 use serde::Serialize;
 
 use super::home::{self, collapse_home, Mode};
+use super::out::toon::Node;
+use super::rows::snake;
 use super::{ExitWith, Out};
 
 #[derive(Args, Debug)]
@@ -112,7 +114,8 @@ pub async fn run(coord: Option<String>, args: HooksArgs, out: &Out) -> Result<()
         HooksCmd::Uninstall(c) => agents::uninstall(&c.which, c.dry_run)?,
         HooksCmd::Status(which) => status::run(&which)?,
     };
-    out.emit(&report, text, &[])?;
+    let hints: Vec<String> = next_step(&report).iter().map(|s| s.to_string()).collect();
+    out.emit_with(&report, text, || Ok(view(&report)), &hints)?;
     if report.agents.iter().any(|a| a.outcome == Outcome::Refused) {
         return Err(ExitWith(1).into());
     }
@@ -152,6 +155,52 @@ fn text(r: &Report) -> String {
     out.join("\n")
 }
 
+/// The TOON report: one row per agent, the notes and any dry-run diff under it.
+fn view(r: &Report) -> Node {
+    let home = dirs::home_dir();
+    let shown = |p: &std::path::Path| Node::Str(collapse_home(p, home.as_deref()));
+    let rows = r.agents.iter().map(|a| {
+        Node::obj([
+            ("agent", Node::str(a.agent)),
+            ("outcome", Node::str(snake(&a.outcome))),
+            ("path", shown(&a.path)),
+            ("backed_up", Node::Bool(a.backup.is_some())),
+        ])
+    });
+    let mut fields = vec![
+        ("action".to_string(), Node::str(r.action)),
+        ("dry_run".to_string(), Node::Bool(r.dry_run)),
+        ("agents".to_string(), Node::Arr(rows.collect())),
+    ];
+    let notes: Vec<Node> = r
+        .agents
+        .iter()
+        .flat_map(|a| {
+            a.notes
+                .iter()
+                .map(move |n| Node::Str(format!("{}: {n}", a.agent)))
+        })
+        .collect();
+    if !notes.is_empty() {
+        fields.push(("notes".into(), Node::Arr(notes)));
+    }
+    if !r.skipped.is_empty() {
+        let skipped = r.skipped.iter().map(|s| Node::str(*s)).collect();
+        fields.push(("skipped".into(), Node::Arr(skipped)));
+    }
+    let diff: Vec<Node> = r
+        .agents
+        .iter()
+        .filter(|_| r.dry_run)
+        .flat_map(|a| a.diff.trim_end().lines())
+        .map(|l| Node::obj([("line", Node::str(l))]))
+        .collect();
+    if !diff.is_empty() {
+        fields.push(("diff".into(), Node::Arr(diff)));
+    }
+    Node::Obj(fields)
+}
+
 fn next_step(r: &Report) -> Option<&'static str> {
     let any = |o: Outcome| r.agents.iter().any(|a| a.outcome == o);
     match r.action {
@@ -162,5 +211,44 @@ fn next_step(r: &Report) -> Option<&'static str> {
             Some("Run `idlemax hooks summary` to see what a new session will load")
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::out::toon::encode;
+
+    fn agent(name: &'static str, outcome: Outcome, notes: &[&str], diff: &str) -> AgentReport {
+        AgentReport {
+            agent: name,
+            outcome,
+            path: PathBuf::from(format!("/etc/{name}.json")),
+            backup: None,
+            notes: notes.iter().map(|n| n.to_string()).collect(),
+            diff: diff.into(),
+        }
+    }
+
+    #[test]
+    fn the_toon_report_is_one_row_per_agent_with_notes_and_a_dry_run_diff() {
+        let report = Report {
+            action: "install",
+            dry_run: true,
+            agents: vec![
+                agent("claude", Outcome::Installed, &[], "+ hook\n"),
+                agent("codex", Outcome::Stale, &["binary gone"], ""),
+            ],
+            skipped: vec!["opencode"],
+        };
+        assert_eq!(
+            encode(&view(&report)),
+            "action: install\ndry_run: true\n\
+             agents[2]{agent,outcome,path,backed_up}:\n  \
+             claude,installed,/etc/claude.json,false\n  \
+             codex,stale,/etc/codex.json,false\n\
+             notes[1]: \"codex: binary gone\"\nskipped[1]: opencode\n\
+             diff[1]{line}:\n  + hook"
+        );
     }
 }

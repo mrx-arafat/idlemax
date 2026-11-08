@@ -120,6 +120,12 @@ impl Out {
         ExitCode::from(err.code)
     }
 
+    /// Prints `view` as TOON whatever the format, for output that is only ever read by an
+    /// agent, such as the session hook summary.
+    pub fn emit_toon(&self, view: Node, hints: &[String]) -> Result<()> {
+        print_line(&self.toon(view, hints))
+    }
+
     /// Prints content the caller asked for verbatim (a log, a note), whatever the format.
     pub fn raw(&self, text: &str) -> Result<()> {
         print_line(text.strip_suffix('\n').unwrap_or(text))

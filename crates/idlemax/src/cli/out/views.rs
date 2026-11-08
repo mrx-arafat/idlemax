@@ -1,6 +1,7 @@
 //! Delivery: the small, decision-ready TOON shape of each response (AXI minimal schemas).
 //! The raw API value stays available as `--json`.
 
+use idlemax_core::explain::{DeviceExplanation, Explanation, Reason};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, JobCounts, LocalStatus};
 use idlemax_core::schedule::ScheduleView;
 use idlemax_core::types::{ControlAction, Job, JobStatus, Recommendation, UnixMs};
@@ -35,9 +36,8 @@ pub fn done(req: &ControlRequest) -> String {
     format!("{verb} {scope}")
 }
 
-/// The cluster in a few lines: pause state, job counts, open advice.
-pub fn summary(s: &ClusterStatus) -> Vec<(String, Node)> {
-    let j = &s.jobs;
+/// Job counts: running (leased included) and queued always, the rest only when not zero.
+pub fn job_counts(j: &JobCounts) -> Node {
     let mut counts = vec![("running", j.running + j.leased), ("queued", j.queued)];
     counts.extend(
         [
@@ -48,6 +48,11 @@ pub fn summary(s: &ClusterStatus) -> Vec<(String, Node)> {
         .into_iter()
         .filter(|(_, n)| *n > 0),
     );
+    Node::obj(counts.into_iter().map(|(k, n)| (k, Node::Uint(n))))
+}
+
+/// The cluster in a few lines: pause state, job counts, open advice.
+pub fn summary(s: &ClusterStatus) -> Vec<(String, Node)> {
     let paused_devices: Vec<&str> = s
         .devices
         .iter()
@@ -75,10 +80,7 @@ pub fn summary(s: &ClusterStatus) -> Vec<(String, Node)> {
             ));
         }
     }
-    fields.push((
-        "jobs".to_string(),
-        Node::obj(counts.into_iter().map(|(k, n)| (k, Node::Uint(n)))),
-    ));
+    fields.push(("jobs".to_string(), job_counts(&s.jobs)));
     fields.push(("advice_open".to_string(), Node::Uint(s.open_advice)));
     fields
 }
@@ -203,12 +205,97 @@ pub fn local(result: Option<&str>, s: &LocalStatus, now: UnixMs) -> Node {
     Node::Obj(fields)
 }
 
+/// `idlemax why`: the headline, then one row per blocker. A blocker with no device holds on
+/// every device; the devices that would take the job now are listed apart.
+pub fn why(e: &Explanation) -> Node {
+    let reason = |device: Option<&str>, r: &Reason| {
+        Node::obj([
+            ("device", device.map_or(Node::Null, Node::str)),
+            ("kind", Node::str(snake(&r.kind))),
+            ("message", Node::str(&r.message)),
+            ("fix", r.fix.as_deref().map_or(Node::Null, Node::str)),
+        ])
+    };
+    let mut blockers: Vec<Node> = e.reasons.iter().map(|r| reason(None, r)).collect();
+    for d in &e.devices {
+        blockers.extend(d.reasons.iter().map(|r| reason(Some(&d.device), r)));
+    }
+    let names = |keep: &dyn Fn(&DeviceExplanation) -> bool| {
+        Node::Arr(
+            e.devices
+                .iter()
+                .filter(|d| keep(d))
+                .map(|d| Node::str(&d.device))
+                .collect(),
+        )
+    };
+    let mut fields = vec![
+        ("job".to_string(), Node::Int(e.job)),
+        ("name".to_string(), Node::str(&e.name)),
+        ("status".to_string(), Node::str(e.status.to_string())),
+        ("state".to_string(), Node::str(snake(&e.state))),
+        ("summary".to_string(), Node::str(&e.summary)),
+    ];
+    if !blockers.is_empty() {
+        fields.push(("blockers".to_string(), Node::Arr(blockers)));
+    }
+    if e.devices.iter().any(|d| d.ready) {
+        fields.push(("ready_devices".to_string(), names(&|d| d.ready)));
+    }
+    if e.devices.iter().any(|d| !d.ready && d.reasons.is_empty()) {
+        fields.push((
+            "clear_devices".to_string(),
+            names(&|d| !d.ready && d.reasons.is_empty()),
+        ));
+    }
+    Node::Obj(fields)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cli::out::toon::encode;
     use idlemax_core::protocol::DeviceView;
     use idlemax_core::types::ControlScope;
+
+    #[test]
+    fn why_lists_one_blocker_per_row_and_the_devices_that_would_take_the_job() {
+        use idlemax_core::explain::{ExplainState, ReasonKind};
+        let reason = |message: &str, fix: Option<&str>| Reason {
+            kind: ReasonKind::Guard,
+            message: message.into(),
+            fix: fix.map(str::to_string),
+            until_ms: None,
+        };
+        let device = |name: &str, ready: bool, reasons: Vec<Reason>| DeviceExplanation {
+            device: name.into(),
+            online: true,
+            last_seen_ms: 5,
+            ready,
+            reasons,
+        };
+        let e = Explanation {
+            job: 7,
+            name: "index".into(),
+            status: JobStatus::Queued,
+            state: ExplainState::Blocked,
+            summary: "Job 7 (index) is queued but not starting.".into(),
+            reasons: vec![reason("paused globally", Some("idlemax resume"))],
+            devices: vec![
+                device("mac", false, vec![reason("disk low", None)]),
+                device("box", true, vec![]),
+                device("pc", false, vec![]),
+            ],
+            at_ms: 9,
+        };
+        assert_eq!(
+            encode(&why(&e)),
+            "job: 7\nname: index\nstatus: queued\nstate: blocked\n\
+             summary: Job 7 (index) is queued but not starting.\n\
+             blockers[2]{device,kind,message,fix}:\n  null,guard,paused globally,idlemax resume\n  \
+             mac,guard,disk low,null\nready_devices[1]: box\nclear_devices[1]: pc"
+        );
+    }
 
     #[test]
     fn the_job_total_follows_the_status_filter() {

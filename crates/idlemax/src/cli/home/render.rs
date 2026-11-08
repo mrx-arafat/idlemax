@@ -193,7 +193,7 @@ pub fn render(h: &Home, mode: Mode) -> String {
     out.join("\n")
 }
 
-fn down_line(h: &Home, reason: Reason, detail: &str) -> String {
+pub(super) fn down_line(h: &Home, reason: Reason, detail: &str) -> String {
     match reason {
         Reason::NotSetUp => "idlemax: not set up on this device".into(),
         Reason::Unreachable => format!("idlemax: coordinator {} is not reachable", h.coordinator),
@@ -243,7 +243,7 @@ fn quota(list: &[QuotaLine]) -> Vec<String> {
 }
 
 /// Next steps that follow from the live state; the static commands fill the rest.
-fn up_steps(live: &Live) -> Vec<String> {
+pub(super) fn up_steps(live: &Live) -> Vec<String> {
     let j = &live.jobs;
     let mut steps = Vec::new();
     if live.devices.is_empty() {
@@ -283,7 +283,7 @@ fn up_steps(live: &Live) -> Vec<String> {
     steps
 }
 
-fn down_steps(reason: Reason) -> Vec<String> {
+pub(super) fn down_steps(reason: Reason) -> Vec<String> {
     let first = match reason {
         Reason::NotSetUp => "Run `idlemax init` to create the config and the API token",
         Reason::Unreachable => "Run `idlemax coord` to start a coordinator on this machine",

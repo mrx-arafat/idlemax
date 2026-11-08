@@ -15,11 +15,16 @@ use super::{ApiClient, Out, Peer};
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 
 /// Runs `idlemax logs <job-id> [--tail N] [--follow]` on a local log file.
-pub async fn run_logs_local(path: &Path, tail: Option<usize>, follow: bool) -> Result<()> {
+pub async fn run_logs_local(
+    path: &Path,
+    tail: Option<usize>,
+    follow: bool,
+    out: &Out,
+) -> Result<()> {
     if follow {
-        follow_log(path, tail).await
+        follow_log(path, tail, out).await
     } else {
-        print_log(path, tail)
+        print_log(path, tail, out)
     }
 }
 
@@ -29,44 +34,29 @@ pub async fn run_logs_remote(client: &ApiClient, id: JobId, out: &Out) -> Result
 }
 
 /// Print the current content of the log file, optionally tailing the last N lines.
-fn print_log(path: &Path, tail: Option<usize>) -> Result<()> {
+fn print_log(path: &Path, tail: Option<usize>, out: &Out) -> Result<()> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("reading log at {}", path.display()))?;
-    if let Some(n) = tail {
-        let text = tail_lines(&content, n);
-        print!("{text}");
-        if !text.ends_with('\n') && !text.is_empty() {
-            println!();
-        }
-    } else {
-        print!("{content}");
-        if !content.ends_with('\n') && !content.is_empty() {
-            println!();
-        }
+    print_text(&content, tail, out)
+}
+
+/// The text, or its last `tail` lines, as it is; an empty log prints nothing.
+fn print_text(content: &str, tail: Option<usize>, out: &Out) -> Result<()> {
+    let text = tail.map_or(content, |n| tail_lines(content, n));
+    if text.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    out.raw(text)
 }
 
 /// Streams new bytes from `path` until the job exit footer is seen or interrupted.
-async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
+async fn follow_log(path: &Path, tail: Option<usize>, out: &Out) -> Result<()> {
     let mut file =
         File::open(path).with_context(|| format!("opening log at {}", path.display()))?;
     let mut initial_content = String::new();
     file.read_to_string(&mut initial_content)?;
 
-    if let Some(n) = tail {
-        let text = tail_lines(&initial_content, n);
-        print!("{text}");
-        if !text.ends_with('\n') && !text.is_empty() {
-            println!();
-        }
-    } else {
-        print!("{initial_content}");
-        if !initial_content.ends_with('\n') && !initial_content.is_empty() {
-            println!();
-        }
-    }
-    std::io::stdout().flush()?;
+    print_text(&initial_content, tail, out)?;
 
     if initial_content.contains("=== idlemax:") {
         return Ok(());
@@ -77,8 +67,10 @@ async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
         let n = file.read(&mut buf)?;
         if n > 0 {
             let chunk = &buf[..n];
-            std::io::stdout().write_all(chunk)?;
-            std::io::stdout().flush()?;
+            match write_chunk(chunk) {
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => return Ok(()),
+                other => other?,
+            }
             let text = String::from_utf8_lossy(chunk);
             if text.contains("=== idlemax:") {
                 break;
@@ -94,6 +86,12 @@ async fn follow_log(path: &Path, tail: Option<usize>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn write_chunk(chunk: &[u8]) -> std::io::Result<()> {
+    let mut stdout = std::io::stdout();
+    stdout.write_all(chunk)?;
+    stdout.flush()
 }
 
 /// When the local log file is absent, asks the coordinator which device ran the job.

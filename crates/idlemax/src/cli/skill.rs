@@ -2,7 +2,7 @@
 //! home view uses, or with `--check` compares the committed copy to it so CI fails when the
 //! two drift. The skill carries no live state: only the hook and the home view can show that.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::Args;
@@ -11,7 +11,8 @@ use serde::Serialize;
 
 use super::files::read_optional;
 use super::home::{COMMANDS, DESCRIPTION};
-use super::{ExitWith, Format, Out};
+use super::out::toon::Node;
+use super::{ExitWith, Out};
 
 /// Where the skill is committed, relative to the repository root.
 pub const DEFAULT_PATH: &str = "skills/idlemax/SKILL.md";
@@ -71,11 +72,12 @@ pub fn run(args: SkillArgs, out: &Out) -> Result<()> {
         current,
     };
     let text = check_text(&path, committed.as_deref(), &generated);
-    if out.format() == Format::Json {
-        out.emit(&verdict, |_| text.clone(), &[])?;
-    } else {
-        out.raw(&text)?;
-    }
+    out.emit_with(
+        &verdict,
+        |_| text.clone(),
+        || Ok(check_view(&path, committed.as_deref(), &generated)),
+        &[],
+    )?;
     if !current {
         return Err(ExitWith(1).into());
     }
@@ -83,7 +85,7 @@ pub fn run(args: SkillArgs, out: &Out) -> Result<()> {
 }
 
 /// The verdict as lines: `skill: ... is current`, or `error:` with the diff and the fix.
-fn check_text(path: &std::path::Path, committed: Option<&str>, generated: &str) -> String {
+fn check_text(path: &Path, committed: Option<&str>, generated: &str) -> String {
     let shown = path.display();
     match committed {
         Some(old) if old == generated => format!("skill: {shown} is current"),
@@ -94,6 +96,39 @@ fn check_text(path: &std::path::Path, committed: Option<&str>, generated: &str) 
             "error: {shown} is out of date\n{}\nhelp: Run `idlemax skill > {shown}` to regenerate it",
             line_diff(old, generated, 2).trim_end()
         ),
+    }
+}
+
+/// The same verdict as TOON, the diff as one row per line.
+fn check_view(path: &Path, committed: Option<&str>, generated: &str) -> Node {
+    let shown = path.display();
+    let line = |key: &str, text: String| (key.to_string(), Node::Str(text));
+    match committed {
+        Some(old) if old == generated => {
+            Node::Obj(vec![line("skill", format!("{shown} is current"))])
+        }
+        None => Node::Obj(vec![
+            line("error", format!("{shown} does not exist")),
+            line(
+                "help",
+                format!("Run `idlemax skill > {shown}` to create it"),
+            ),
+        ]),
+        Some(old) => {
+            let diff = line_diff(old, generated, 2);
+            let rows = diff
+                .trim_end()
+                .lines()
+                .map(|l| Node::obj([("line", Node::str(l))]));
+            Node::Obj(vec![
+                line("error", format!("{shown} is out of date")),
+                ("diff".to_string(), Node::Arr(rows.collect())),
+                line(
+                    "help",
+                    format!("Run `idlemax skill > {shown}` to regenerate it"),
+                ),
+            ])
+        }
     }
 }
 

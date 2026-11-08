@@ -36,10 +36,7 @@ fn home_view_and_hook_summary_explain_a_missing_setup_and_a_missing_coordinator(
     let (out, text) = run(&home, &state, &[]);
     assert!(out.status.success(), "{text}");
     assert!(text.contains("description: "), "{text}");
-    assert!(
-        text.contains("idlemax: not set up on this device"),
-        "{text}"
-    );
+    assert!(text.contains("status: not_set_up"), "{text}");
     assert!(text.contains("`idlemax init`"), "{text}");
     let (out, text) = run(&home, &state, &["hooks", "summary"]);
     assert!(out.status.success(), "{text}");
@@ -57,10 +54,9 @@ fn home_view_and_hook_summary_explain_a_missing_setup_and_a_missing_coordinator(
     assert!(out.status.success());
     let (out, text) = run(&home, &state, &[]);
     assert!(out.status.success(), "{text}");
+    assert!(text.contains("status: unreachable"), "{text}");
     assert!(
-        text.contains(&format!(
-            "coordinator http://127.0.0.1:{port} is not reachable"
-        )),
+        text.contains(&format!("coordinator: \"http://127.0.0.1:{port}\"")),
         "{text}"
     );
     let (out, text) = run(&home, &state, &["hooks", "summary"]);

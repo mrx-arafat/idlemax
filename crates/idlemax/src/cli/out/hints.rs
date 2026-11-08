@@ -42,6 +42,15 @@ pub fn jobs(shown: usize, total: Option<u64>, filter: Option<JobStatus>) -> Vec<
     hints
 }
 
+/// A job that is running or over has output to read; one that waits has its fixes inline.
+pub fn why(e: &idlemax_core::explain::Explanation) -> Vec<String> {
+    use idlemax_core::explain::ExplainState::{Active, Finished};
+    match e.state {
+        Active | Finished => vec![run(&format!("idlemax logs {}", e.job), "read its output")],
+        _ => Vec::new(),
+    }
+}
+
 pub fn job_added(id: JobId) -> Vec<String> {
     vec![
         run(&format!("idlemax why {id}"), "see when it will start"),

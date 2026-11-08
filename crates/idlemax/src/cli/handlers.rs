@@ -21,6 +21,16 @@ pub async fn status(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
     )
 }
 
+pub async fn why(c: &ApiClient, id: JobId, out: &Out) -> Result<()> {
+    let e = c.why(id).await?;
+    out.emit_with(
+        &e,
+        super::why::render,
+        || Ok(views::why(&e)),
+        &hints::why(&e),
+    )
+}
+
 pub async fn jobs(
     c: &ApiClient,
     out: &Out,

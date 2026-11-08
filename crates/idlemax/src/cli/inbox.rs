@@ -3,13 +3,13 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use idlemax_core::job_run::inbox::{parse_note, sort_entries, InboxEntry};
 use idlemax_core::types::JobId;
 use idlemax_core::Paths;
 
 use super::out::{hints, lists};
-use super::{print, Out};
+use super::{print, CliError, Out};
 
 /// Reads all notes from `$IDLEMAX_HOME/inbox`, returning them sorted newest first.
 pub fn load_notes(inbox_dir: &Path) -> Result<Vec<InboxEntry>> {
@@ -78,7 +78,11 @@ pub fn run_show(paths: &Paths, job_id: JobId, out: &Out) -> Result<()> {
     let entries = load_notes(&paths.inbox_dir())?;
     let matching = entries.into_iter().find(|e| e.job_id == job_id);
     let Some(entry) = matching else {
-        bail!("no inbox note found for job {job_id}");
+        return Err(CliError::runtime(
+            format!("no inbox note found for job {job_id}"),
+            "idlemax inbox (lists the notes there are)",
+        )
+        .into());
     };
     let note_path = paths.inbox_dir().join(&entry.file_name);
     let content = fs::read_to_string(&note_path)

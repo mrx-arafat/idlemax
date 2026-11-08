@@ -4,13 +4,14 @@
 mod render;
 #[cfg(test)]
 mod tests;
+mod view;
 
 use std::time::Duration;
 
 use anyhow::Result;
 use idlemax_core::DEFAULT_COORD_URL;
 
-use super::{ApiClient, ClientError, Format, Out};
+use super::{ApiClient, ClientError, Out};
 use crate::state::{self, StateError};
 pub use render::{collapse_home, Mode, COMMANDS, DESCRIPTION};
 use render::{Home, Reason, State};
@@ -21,10 +22,11 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 /// Prints the home view or, in hook mode, the compact session summary.
 pub async fn run(coord: Option<String>, out: &Out, mode: Mode) -> Result<()> {
     let home = gather(coord).await;
-    if out.format() == Format::Json && mode == Mode::Full {
-        return out.emit(&home, |h| render::render(h, mode), &[]);
+    let (node, hints) = view::of(&home, mode);
+    if mode == Mode::Hook {
+        return out.emit_toon(node, &hints);
     }
-    out.raw(&render::render(&home, mode))
+    out.emit_with(&home, |h| render::render(h, mode), || Ok(node), &hints)
 }
 
 async fn gather(coord: Option<String>) -> Home {
