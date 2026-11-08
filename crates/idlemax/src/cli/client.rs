@@ -4,6 +4,7 @@ mod schedules;
 
 use std::time::Duration;
 
+use idlemax_core::explain::Explanation;
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::quota::QuotaView;
 use idlemax_core::types::{Event, Job, JobId, JobSpec, JobStatus, Recommendation};
@@ -113,6 +114,10 @@ impl ApiClient {
     pub async fn cancel_job(&self, id: JobId) -> Result<Job> {
         self.post(&format!("/v1/jobs/{id}/cancel"), None::<&()>)
             .await
+    }
+
+    pub async fn why(&self, id: JobId) -> Result<Explanation> {
+        self.get(&format!("/v1/jobs/{id}/why")).await
     }
 
     pub async fn quota(&self) -> Result<Vec<QuotaView>> {

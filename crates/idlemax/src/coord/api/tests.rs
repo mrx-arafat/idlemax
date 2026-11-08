@@ -4,6 +4,7 @@
 use idlemax_core::advice::{
     AdvisorInputs, GhItem, GithubSnapshot, GithubStatus, SessionMeta, SessionSignal,
 };
+use idlemax_core::explain::{ExplainState, Explanation, ReasonKind};
 use idlemax_core::protocol::{
     AgentCommand, ClusterStatus, Heartbeat, HeartbeatReply, JobUpdate, RunningJob,
 };
@@ -341,4 +342,49 @@ async fn schedules_queue_their_first_job_and_reject_duplicates_pause_and_remove(
         .await
         .unwrap();
     assert_eq!(jobs.len(), 1, "removing a schedule leaves its queued job");
+}
+
+#[tokio::test]
+async fn why_names_the_guard_reason_of_a_queued_job_and_404s_for_an_unknown_job() {
+    let api = Api::start().await;
+    let spec = JobSpec {
+        name: "waiting".into(),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+    let job: Job = api.post("/v1/jobs", &spec).await.json().await.unwrap();
+    let mut hb = mac_heartbeat(Vec::new());
+    hb.guard = GuardDecision {
+        action: GuardAction::Pause,
+        reasons: vec!["pause: on battery".into()],
+        ..GuardDecision::default()
+    };
+    assert_eq!(
+        api.post("/v1/agent/heartbeat", &hb).await.status(),
+        StatusCode::OK
+    );
+
+    let get = |path: String| {
+        api.http
+            .get(format!("{}{path}", api.base))
+            .bearer_auth(TOKEN)
+            .send()
+    };
+    let why: Explanation = get(format!("/v1/jobs/{}/why", job.id))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(why.state, ExplainState::Blocked);
+    let reason = &why.devices[0].reasons[0];
+    assert_eq!(reason.kind, ReasonKind::Guard);
+    assert!(reason
+        .fix
+        .as_deref()
+        .unwrap_or_default()
+        .contains("guard.require_ac_power"));
+
+    let missing = get("/v1/jobs/999/why".into()).await.unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
 }

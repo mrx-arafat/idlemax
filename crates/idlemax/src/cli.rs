@@ -10,6 +10,7 @@ pub mod rows;
 mod schedule;
 mod service;
 mod statusline;
+mod why;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -66,6 +67,8 @@ enum Cmd {
     /// Repeat a job on an interval, such as every night
     #[command(subcommand)]
     Schedule(schedule::ScheduleCmd),
+    /// Explain why a job is not running, and what to change
+    Why { id: JobId },
     /// Pause jobs everywhere, or on one device, account or job
     Pause(Target),
     /// Resume paused jobs
@@ -337,12 +340,8 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
             .jobs(status, limit)
             .await
             .map(|j| out(json, &j, |j| print::jobs(j, now))),
-        Cmd::Job(JobCmd::Add { spec }) => {
-            let spec = read_spec(&spec)?;
-            c.add_job(&spec)
-                .await
-                .map(|j| out(json, &j, print::job_line))
-        }
+        Cmd::Job(JobCmd::Add { spec }) => why::add(c, &read_spec(&spec)?, json).await,
+        Cmd::Why { id } => c.why(id).await.map(|e| out(json, &e, why::render)),
         Cmd::Job(JobCmd::Cancel { id }) => c
             .cancel_job(id)
             .await
