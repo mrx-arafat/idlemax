@@ -6,6 +6,7 @@ pub mod api;
 pub mod client;
 mod event_loop;
 pub mod metrics;
+pub mod notify;
 mod outbox;
 mod probes;
 pub mod quota_probe;
@@ -106,6 +107,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         advisor_inputs_every: (config.agent.advisor_inputs_secs > 0)
             .then(|| Duration::from_secs(config.agent.advisor_inputs_secs)),
         device_refresh_every: Duration::from_secs(3600),
+        notify: config.agent.notify,
     });
     agent.run(shutdown, ports.control).await;
     tracing::info!("agent stopped");

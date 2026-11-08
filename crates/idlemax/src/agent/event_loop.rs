@@ -49,6 +49,7 @@ pub struct Wiring {
     /// How often to send the advisor inputs; None sends nothing.
     pub advisor_inputs_every: Option<Duration>,
     pub device_refresh_every: Duration,
+    pub notify: bool,
 }
 
 pub struct Agent {
@@ -63,6 +64,7 @@ pub struct Agent {
     heartbeat_every: Duration,
     advisor_inputs_every: Option<Duration>,
     device_refresh_every: Duration,
+    notify: bool,
     state: AgentState,
     outbox: DurableOutbox,
     reading: Reading,
@@ -88,6 +90,7 @@ impl Agent {
             heartbeat_every: w.heartbeat_every,
             advisor_inputs_every: w.advisor_inputs_every,
             device_refresh_every: w.device_refresh_every,
+            notify: w.notify,
             state: AgentState::default(),
             outbox: w.outbox,
             reading: Reading::default(),
@@ -290,8 +293,13 @@ impl Agent {
             return;
         };
         for u in updates {
+            let name = self.state.job_name(u.id).map(str::to_string);
             let u = self.state.finished(u);
             info!(job = u.id, status = %u.status, exit_code = ?u.exit_code, error = ?u.error, "job ended");
+            if self.notify {
+                let name = name.as_deref().unwrap_or("job");
+                super::notify::notify_job_finish(name, u.status, u.exit_code, u.error.as_deref());
+            }
             self.outbox.push(u);
         }
     }
