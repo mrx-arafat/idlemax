@@ -1,5 +1,7 @@
 //! Adapter: typed HTTP client for the coordinator API and the local agent API.
 
+mod schedules;
+
 use std::time::Duration;
 
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};

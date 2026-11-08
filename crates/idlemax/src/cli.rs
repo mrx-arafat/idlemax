@@ -4,6 +4,7 @@ mod client;
 mod init;
 pub mod print;
 pub mod rows;
+mod schedule;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -57,6 +58,9 @@ enum Cmd {
     /// Add or cancel a job
     #[command(subcommand)]
     Job(JobCmd),
+    /// Repeat a job on an interval, such as every night
+    #[command(subcommand)]
+    Schedule(schedule::ScheduleCmd),
     /// Pause jobs everywhere, or on one device, account or job
     Pause(Target),
     /// Resume paused jobs
@@ -291,6 +295,7 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
             .cancel_job(id)
             .await
             .map(|j| out(json, &j, print::job_line)),
+        Cmd::Schedule(cmd) => return schedule::run(cmd, c, json, now).await,
         Cmd::Pause(t) => control(c, t.request(ControlAction::Pause), json).await,
         Cmd::Resume(t) => control(c, t.request(ControlAction::Resume), json).await,
         Cmd::StopAll(t) => control(c, t.request(ControlAction::StopAll), json).await,
@@ -363,6 +368,13 @@ fn read_spec(path: &Path) -> Result<JobSpec> {
         toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     spec.validate()
         .with_context(|| format!("invalid job spec {}", path.display()))?;
+    if schedule::sets_every(&text) {
+        eprintln!(
+            "note: `every` is ignored by `job add`, so this queues one run; \
+             to repeat it, use `idlemax schedule add {}`",
+            path.display()
+        );
+    }
     Ok(spec)
 }
 
