@@ -84,7 +84,7 @@ pub(super) fn write_token_file(paths: &Paths, given: Option<&str>) -> Result<Out
         return Ok(Outcome::Kept);
     }
     let token = match given {
-        Some(t) => t.to_string(),
+        Some(t) => idlemax_core::config::parse_token(t)?,
         None => state::generate_token()?,
     };
     state::write_token(paths, &token)?;
@@ -96,6 +96,19 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
+
+    #[test]
+    fn a_shared_token_that_is_too_short_is_refused_and_nothing_is_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = Paths::new(tmp.path().join("state"));
+        let opts = InitOptions {
+            token: Some("a".into()),
+            ..InitOptions::default()
+        };
+        let err = init(&paths, &opts).unwrap_err().to_string();
+        assert!(err.contains("at least 32"), "{err}");
+        assert!(!paths.token_file().exists());
+    }
 
     #[test]
     fn init_writes_a_private_config_and_token() {

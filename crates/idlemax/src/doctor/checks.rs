@@ -152,10 +152,10 @@ pub fn token(report: &mut Report, paths: Option<&Paths>) -> Option<String> {
                 ));
                 Some(token)
             }
-            Err(_) => {
+            Err(e) => {
                 report.push(Check::fail(
                     "token",
-                    format!("{TOKEN_ENV} is set but empty"),
+                    format!("{TOKEN_ENV}: {e}"),
                     format!("unset {TOKEN_ENV}, or set it to the shared coordinator token"),
                 ));
                 None
@@ -208,11 +208,11 @@ pub fn token_file(report: &mut Report, path: &Path) -> Option<String> {
             ));
             Some(token)
         }
-        Ok(Err(_)) => {
+        Ok(Err(e)) => {
             report.push(Check::fail(
                 "token",
-                format!("{} is empty", path.display()),
-                format!("write the shared token to {}, or remove it and run `idlemax init --token-stdin`", path.display()),
+                format!("{}: {e}", path.display()),
+                format!("write the shared token (at least 32 characters) to {}, or remove the file and run `idlemax init` (add `--token-stdin` to take another device's token)", path.display()),
             ));
             None
         }

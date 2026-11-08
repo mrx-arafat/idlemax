@@ -18,7 +18,13 @@ pub enum ConfigError {
     Quota(#[from] QuotaConfigError),
     #[error("token is empty")]
     EmptyToken,
+    #[error("token is too short ({len} of at least {MIN_TOKEN_CHARS} characters; `idlemax init` makes 64)")]
+    WeakToken { len: usize },
 }
+
+/// Shortest token accepted. The token is the only thing between the network and a command
+/// runner, and `idlemax init` generates 64 characters (32 random bytes as hex).
+pub const MIN_TOKEN_CHARS: usize = 32;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -309,11 +315,16 @@ fn guard_error(e: &toml::de::Error) -> ConfigError {
     })
 }
 
-/// Token text from the env var or the token file, trimmed; empty is an error.
+/// Token text from the env var or the token file, trimmed; empty or shorter than
+/// `MIN_TOKEN_CHARS` is an error.
 pub fn parse_token(text: &str) -> Result<String, ConfigError> {
     let token = text.trim();
     if token.is_empty() {
         return Err(ConfigError::EmptyToken);
+    }
+    let len = token.chars().count();
+    if len < MIN_TOKEN_CHARS {
+        return Err(ConfigError::WeakToken { len });
     }
     Ok(token.to_string())
 }
@@ -331,6 +342,24 @@ pub fn encode_token(random: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_token_must_be_long_enough_to_resist_guessing() {
+        assert!(matches!(parse_token(" \n"), Err(ConfigError::EmptyToken)));
+        assert!(matches!(
+            parse_token("a\n"),
+            Err(ConfigError::WeakToken { len: 1 })
+        ));
+        let short = "x".repeat(MIN_TOKEN_CHARS - 1);
+        assert!(matches!(
+            parse_token(&short),
+            Err(ConfigError::WeakToken { len }) if len == MIN_TOKEN_CHARS - 1
+        ));
+        let enough = "x".repeat(MIN_TOKEN_CHARS);
+        assert_eq!(parse_token(&format!("  {enough}\n")).unwrap(), enough);
+        // What `idlemax init` generates is accepted.
+        assert!(parse_token(&encode_token(&[0xab; 32])).is_ok());
+    }
 
     #[test]
     fn agent_config_notify_flag() {

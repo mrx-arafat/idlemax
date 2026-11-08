@@ -63,6 +63,24 @@ fn token_missing_public_and_private() {
 }
 
 #[test]
+fn token_file_too_short_is_a_fail_that_says_how_long_it_must_be() {
+    let tmp = state_dir();
+    let paths = paths_in(&tmp);
+    write_token(&paths, 0o600);
+    std::fs::write(paths.token_file(), "a\n").unwrap();
+    let mut report = Report::new("t", None);
+    assert_eq!(checks::token_file(&mut report, &paths.token_file()), None);
+    let token = one(&report, "token");
+    assert_eq!(token.level, Level::Fail);
+    assert!(
+        token.detail.contains("1 characters") || token.detail.contains("at least 32"),
+        "{}",
+        token.detail
+    );
+    assert!(token.fix.unwrap().contains("idlemax init"));
+}
+
+#[test]
 fn token_file_empty_is_a_fail() {
     let tmp = state_dir();
     let paths = paths_in(&tmp);

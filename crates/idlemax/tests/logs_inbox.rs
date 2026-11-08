@@ -39,7 +39,11 @@ impl TempHome {
             "[coordinator]\nlisten = \"127.0.0.1:{port}\"\nurl = \"http://127.0.0.1:{port}\"\n"
         );
         fs::write(paths.config_file(), config).unwrap();
-        fs::write(paths.token_file(), "testtoken\n").unwrap();
+        fs::write(
+            paths.token_file(),
+            "testtoken-0123456789abcdef-0123456789\n",
+        )
+        .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

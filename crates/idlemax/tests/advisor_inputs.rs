@@ -14,7 +14,7 @@ use idlemax_core::types::Recommendation;
 use reqwest::{header, Client};
 
 const BIN: &str = env!("CARGO_BIN_EXE_idlemax");
-const TOKEN: &str = "advisor-inputs-test-token";
+const TOKEN: &str = "advisor-inputs-test-token-0123456789abcdef";
 const PR_TITLE: &str = "Review owner/app#7: Add retries";
 const SESSION_TITLE: &str = "Session 'Fix login' in myproj still has failing tests";
 

@@ -154,9 +154,15 @@ fn a_different_token_on_stdin_is_refused_and_the_same_one_is_a_no_op() {
         let plan = plan_setup(&paths, &req).unwrap().unwrap();
         execute(&plan, &with_token(token))
     };
-    assert_eq!(run("shared-secret")[1].status, Status::Done);
-    assert_eq!(run("shared-secret")[1].status, Status::AlreadyDone);
-    let other = run("another-secret");
+    assert_eq!(
+        run("shared-secret-0123456789abcdef-0123")[1].status,
+        Status::Done
+    );
+    assert_eq!(
+        run("shared-secret-0123456789abcdef-0123")[1].status,
+        Status::AlreadyDone
+    );
+    let other = run("another-secret-0123456789abcdef-012");
     assert_eq!(other[1].status, Status::Failed);
     assert!(
         other[1].detail.contains("different token"),
@@ -165,6 +171,6 @@ fn a_different_token_on_stdin_is_refused_and_the_same_one_is_a_no_op() {
     );
     assert_eq!(
         std::fs::read_to_string(paths.token_file()).unwrap().trim(),
-        "shared-secret"
+        "shared-secret-0123456789abcdef-0123"
     );
 }
