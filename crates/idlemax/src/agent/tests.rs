@@ -19,6 +19,26 @@ use super::ring::MetricsRing;
 use super::runner::Runner;
 
 #[tokio::test]
+async fn occupied_agent_port_does_not_rewrite_the_live_outbox() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = Paths::new(tmp.path());
+    crate::state::ensure_dirs(&paths).unwrap();
+    crate::state::write_token(&paths, &"t".repeat(40)).unwrap();
+    let journal = paths.agent_state_dir().join("outbox.jsonl");
+    let before = "{\"ack\":123}\n{\"update\":";
+    std::fs::write(&journal, before).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = idlemax_core::Config::default();
+    config.agent.listen = listener.local_addr().unwrap().to_string();
+    config.agent.advisor_inputs_secs = 0;
+    assert!(matches!(
+        super::run(paths, config).await,
+        Err(super::AgentError::Bind { .. })
+    ));
+    assert_eq!(std::fs::read_to_string(journal).unwrap(), before);
+}
+
+#[tokio::test]
 async fn device_info_refreshes_on_ticker() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = Paths::new(tmp.path());
