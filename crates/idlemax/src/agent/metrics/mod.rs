@@ -126,6 +126,7 @@ impl Sampler {
             ai_accounts: cfg.ai_accounts.clone(),
             agent_version: idlemax_core::VERSION.to_string(),
             profile: cfg.profile_or_default(os),
+            command_allowlist: Some(cfg.command_allowlist.clone()),
         }
     }
 }

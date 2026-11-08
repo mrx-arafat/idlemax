@@ -12,6 +12,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use crate::job_run::allows_program;
 use crate::protocol::{JobUpdate, RunningJob};
 use crate::quota::QuotaView;
 use crate::types::{
@@ -49,6 +50,8 @@ pub enum Blocker {
     DeviceNotAllowed,
     MissingCapability(String),
     CostNotAllowed(CostClass),
+    /// The device reported an `agent.command_allowlist` that lacks the job's argv[0].
+    CommandNotAllowed(String),
     NoAiAccount,
     AccountNotOnDevice(String),
     AccountPaused(String),
@@ -68,6 +71,9 @@ impl fmt::Display for Blocker {
             Blocker::DeviceNotAllowed => f.write_str("device not in the job's device list"),
             Blocker::MissingCapability(c) => write!(f, "device lacks {c}"),
             Blocker::CostNotAllowed(c) => write!(f, "cost class {c:?} not allowed on this profile"),
+            Blocker::CommandNotAllowed(p) => {
+                write!(f, "command {p} is not in the device's command_allowlist")
+            }
             Blocker::NoAiAccount => f.write_str("ai job without ai_account"),
             Blocker::AccountNotOnDevice(a) => write!(f, "account {a} not allowed on this device"),
             Blocker::AccountPaused(a) => write!(f, "account {a} is paused"),
@@ -126,59 +132,90 @@ pub fn ai_leased_accounts(jobs: &[Job]) -> BTreeSet<&str> {
         .collect()
 }
 
-/// Why `job` may not be leased to `ctx.device` now; None when it may.
+/// The first reason `job` may not be leased to `ctx.device` now; None when it may.
 pub fn blocker(ctx: &SchedContext<'_>, jobs: &[Job], job: &Job) -> Option<Blocker> {
-    let dev = ctx.device;
-    let spec = &job.spec;
-    if job.status != JobStatus::Queued {
-        return Some(Blocker::NotQueued(job.status));
-    }
-    if let Some(until_ms) = job.not_before_ms.filter(|t| *t > ctx.now_ms) {
-        return Some(Blocker::BackingOff { until_ms });
-    }
-    if !spec.devices.is_empty() && !spec.devices.contains(&dev.id) {
-        return Some(Blocker::DeviceNotAllowed);
-    }
-    if let Some(miss) = spec.requires.iter().find(|r| !dev.capabilities.contains(r)) {
-        return Some(Blocker::MissingCapability(miss.clone()));
-    }
-    if !cost_allowed(dev.profile, spec.cost) {
-        return Some(Blocker::CostNotAllowed(spec.cost));
-    }
-    if spec.cost == CostClass::Ai {
-        return ai_blocker(ctx, jobs, job);
-    }
-    None
+    blockers(ctx, jobs, job).into_iter().next()
 }
 
-fn ai_blocker(ctx: &SchedContext<'_>, jobs: &[Job], job: &Job) -> Option<Blocker> {
+/// Every reason `job` may not be leased to `ctx.device` now; empty when it may.
+pub fn blockers(ctx: &SchedContext<'_>, jobs: &[Job], job: &Job) -> Vec<Blocker> {
+    if job.status != JobStatus::Queued {
+        return vec![Blocker::NotQueued(job.status)];
+    }
+    let mut out = job_blockers(ctx.now_ms, ctx.quota, ctx.paused_accounts, jobs, job);
+    out.extend(device_blockers(ctx.device, job));
+    out
+}
+
+/// Reasons a queued job waits on every device alike: retry backoff and AI account state.
+pub fn job_blockers(
+    now_ms: UnixMs,
+    quota: &[QuotaView],
+    paused_accounts: &[String],
+    jobs: &[Job],
+    job: &Job,
+) -> Vec<Blocker> {
+    let mut out = Vec::new();
+    if let Some(until_ms) = job.not_before_ms.filter(|t| *t > now_ms) {
+        out.push(Blocker::BackingOff { until_ms });
+    }
+    if job.spec.cost != CostClass::Ai {
+        return out;
+    }
     let Some(account) = job.spec.ai_account.as_deref() else {
-        return Some(Blocker::NoAiAccount);
+        out.push(Blocker::NoAiAccount);
+        return out;
     };
     let owned = || account.to_string();
-    if !ctx.device.ai_accounts.iter().any(|a| a == account) {
-        return Some(Blocker::AccountNotOnDevice(owned()));
+    if paused_accounts.iter().any(|a| a == account) {
+        out.push(Blocker::AccountPaused(owned()));
     }
-    if ctx.paused_accounts.iter().any(|a| a == account) {
-        return Some(Blocker::AccountPaused(owned()));
-    }
-    let headroom_pct = spendable_headroom(ctx.quota, account);
+    let headroom_pct = spendable_headroom(quota, account);
     let needs_pct = token_class_pct(job.spec.token_class);
     if headroom_pct < needs_pct {
-        return Some(Blocker::QuotaShort {
+        out.push(Blocker::QuotaShort {
             account: owned(),
             headroom_pct,
             needs_pct,
         });
     }
     if ai_leased_accounts(jobs).contains(account) {
-        return Some(Blocker::AccountLeased(owned()));
+        out.push(Blocker::AccountLeased(owned()));
     }
-    None
+    out
+}
+
+/// Reasons a queued job cannot run on this particular device.
+pub fn device_blockers(dev: &DeviceInfo, job: &Job) -> Vec<Blocker> {
+    let spec = &job.spec;
+    let mut out = Vec::new();
+    if !spec.devices.is_empty() && !spec.devices.contains(&dev.id) {
+        out.push(Blocker::DeviceNotAllowed);
+    }
+    let missing = spec
+        .requires
+        .iter()
+        .filter(|r| !dev.capabilities.contains(r));
+    out.extend(missing.map(|r| Blocker::MissingCapability(r.clone())));
+    if !cost_allowed(dev.profile, spec.cost) {
+        out.push(Blocker::CostNotAllowed(spec.cost));
+    }
+    if let (Some(list), Some(program)) = (&dev.command_allowlist, spec.command.first()) {
+        if !allows_program(list, program) {
+            out.push(Blocker::CommandNotAllowed(program.clone()));
+        }
+    }
+    if let Some(account) = spec.ai_account.as_deref() {
+        if !dev.ai_accounts.iter().any(|a| a == account) {
+            out.push(Blocker::AccountNotOnDevice(account.to_string()));
+        }
+    }
+    out
 }
 
 /// Slots and MiB left after jobs leased to this device that the agent has not started yet.
-fn start_budget(ctx: &SchedContext<'_>, jobs: &[Job]) -> Option<(u32, u64)> {
+/// None unless the guard lets new jobs start.
+pub fn start_budget(ctx: &SchedContext<'_>, jobs: &[Job]) -> Option<(u32, u64)> {
     let GuardAction::Run { slots, mem_mib } = ctx.guard.action else {
         return None;
     };
@@ -201,7 +238,7 @@ pub fn pick(ctx: &SchedContext<'_>, jobs: &[Job]) -> Vec<JobId> {
     };
     let mut cands: Vec<&Job> = jobs
         .iter()
-        .filter(|j| blocker(ctx, jobs, j).is_none())
+        .filter(|j| blockers(ctx, jobs, j).is_empty())
         .collect();
     cands.sort_by(|a, b| start_order(a, b));
     let mut picked = Vec::new();

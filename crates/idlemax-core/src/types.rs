@@ -103,6 +103,9 @@ pub struct DeviceInfo {
     pub ai_accounts: Vec<String>,
     pub agent_version: String,
     pub profile: DeviceProfile,
+    /// Config `agent.command_allowlist`: the only argv[0] values this device runs.
+    /// None means the agent predates the field, so the coordinator cannot tell.
+    pub command_allowlist: Option<Vec<String>>,
 }
 
 /// What a job does when the user becomes active on its device.

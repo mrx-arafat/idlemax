@@ -237,3 +237,41 @@ fn failures_back_off_then_park_ai_never_retries_and_owner_stops_are_final() {
         [(Queued, Some(121_000))]
     );
 }
+
+#[test]
+fn a_device_that_reports_an_allowlist_only_gets_commands_on_it() {
+    let with_command = |id: JobId, program: &str| {
+        let mut j = job(id, 0, CostClass::CpuLight, 100);
+        j.spec.command = vec![program.into(), "arg".into()];
+        j
+    };
+    let jobs = [with_command(1, "git"), with_command(2, "make")];
+    let guard = GuardDecision {
+        action: GuardAction::Run {
+            slots: 2,
+            mem_mib: 1024,
+        },
+        ..Default::default()
+    };
+    let pick_on = |allowlist: Option<Vec<String>>| {
+        let device = DeviceInfo {
+            id: "mac".into(),
+            command_allowlist: allowlist,
+            ..Default::default()
+        };
+        let ctx = SchedContext {
+            now_ms: 1_000,
+            device: &device,
+            guard: &guard,
+            running: &[],
+            quota: &[],
+            paused: false,
+            paused_accounts: &[],
+        };
+        pick(&ctx, &jobs)
+    };
+    assert_eq!(pick_on(Some(vec!["git".into()])), [1]);
+    assert_eq!(pick_on(Some(Vec::new())), Vec::<JobId>::new());
+    // An agent that predates the field reports nothing, so nothing is filtered.
+    assert_eq!(pick_on(None), [1, 2]);
+}

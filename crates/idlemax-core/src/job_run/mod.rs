@@ -27,13 +27,18 @@ pub enum AdmitError {
     ForbiddenEnv(String),
 }
 
+/// True when `program` (argv[0]) equals an allowlist entry. Empty allows nothing.
+pub fn allows_program(allowlist: &[String], program: &str) -> bool {
+    allowlist.iter().any(|a| a == program)
+}
+
 /// Checks a spec against the device allowlist; argv[0] must equal an entry.
 pub fn admit(spec: &JobSpec, allowlist: &[String]) -> Result<(), AdmitError> {
     let program = spec.command.first().map(String::as_str).unwrap_or_default();
     if program.trim().is_empty() {
         return Err(AdmitError::EmptyCommand);
     }
-    if !allowlist.iter().any(|a| a == program) {
+    if !allows_program(allowlist, program) {
         return Err(AdmitError::NotAllowed(program.to_string()));
     }
     match spec.env.keys().find(|k| forbidden_env(k)) {
