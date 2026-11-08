@@ -284,6 +284,40 @@ fn only_causes_that_are_not_the_jobs_fault_are_retried() {
     assert_eq!(outcome(expired(1, Ai)), [(Parked, None)]);
 }
 
+/// Back to the queue, never parked (not even an AI job) and with no backoff. The attempt number
+/// stays, so a result from that lease that arrives late still matches and finishes the job once.
+#[test]
+fn an_unstarted_lease_expiry_requeues_without_parking_or_backoff() {
+    let unstarted = |cost| {
+        let mut j = active(job(1, 0, cost, 100), JobStatus::Leased, "mac");
+        j.attempts = 1;
+        j.lease_expires_ms = Some(500);
+        j
+    };
+    let expired_ai = expire_leases(&[unstarted(CostClass::Ai)], 1_000).remove(0);
+    assert_eq!(expired_ai.status, JobStatus::Queued);
+    assert_eq!(expired_ai.attempts, 1);
+    assert_eq!(expired_ai.device, None);
+    assert_eq!(expired_ai.lease_expires_ms, None);
+    assert_eq!(expired_ai.not_before_ms, None);
+
+    let expired_cpu = expire_leases(&[unstarted(CostClass::CpuLight)], 1_000).remove(0);
+    assert_eq!(expired_cpu.status, JobStatus::Queued);
+    assert_eq!(expired_cpu.attempts, 1);
+    assert_eq!(expired_cpu.device, None);
+    assert_eq!(expired_cpu.lease_expires_ms, None);
+    assert_eq!(expired_cpu.not_before_ms, None);
+}
+
+/// A lease proves the device is alive; max runtime counts awake time and the agent enforces it.
+/// A laptop that slept mid-job is past `started + max_runtime` on the wall clock while the job
+/// still has awake time left, so every renewal must reach `lease_secs` ahead of now.
+#[test]
+fn a_lease_always_renews_lease_secs_ahead_even_after_a_long_sleep() {
+    // A 600 s job that started at 1_000 ms, renewed 20 minutes of sleep later.
+    assert_eq!(lease_deadline(120, 2_000_000), 2_000_000 + 120_000);
+}
+
 #[test]
 fn a_device_that_reports_an_allowlist_only_gets_commands_on_it() {
     let with_command = |id: JobId, program: &str| {

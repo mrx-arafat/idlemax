@@ -174,6 +174,7 @@ pub fn reconcile_heartbeat(
     reported: &[RunningJob],
     stored: &[Job],
     paused: &[ControlScope],
+    lease_secs: u64,
     now_ms: UnixMs,
 ) -> HeartbeatPlan {
     let mut plan = HeartbeatPlan::default();
@@ -195,7 +196,7 @@ pub fn reconcile_heartbeat(
         } else if r.status == JobStatus::Paused {
             plan.commands.push(AgentCommand::ResumeJob { id: r.id });
         }
-        let mut renewed = sync_reported(job, r, now_ms);
+        let mut renewed = sync_reported(job, r, lease_secs, now_ms);
         renewed.device = Some(device.to_string());
         renewed.not_before_ms = None;
         plan.renewed.push(renewed);
@@ -204,13 +205,13 @@ pub fn reconcile_heartbeat(
 }
 
 /// The agent is the source of truth for a job it holds: Running or Paused, started time.
-fn sync_reported(job: &Job, r: &RunningJob, now_ms: UnixMs) -> Job {
+fn sync_reported(job: &Job, r: &RunningJob, lease_secs: u64, now_ms: UnixMs) -> Job {
     let mut job = job.clone();
     if matches!(r.status, JobStatus::Running | JobStatus::Paused) {
         job.status = r.status;
     }
     job.started_ms = job.started_ms.or(Some(r.started_ms));
-    job.lease_expires_ms = Some(lease_deadline(&job, now_ms));
+    job.lease_expires_ms = Some(lease_deadline(lease_secs, now_ms));
     job
 }
 

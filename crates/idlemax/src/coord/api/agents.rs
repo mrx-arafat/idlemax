@@ -97,7 +97,14 @@ pub(super) fn on_heartbeat(
     for r in &hb.running {
         stored.extend(store.get_job(r.id)?);
     }
-    let plan = reconcile_heartbeat(device, &hb.running, &stored, &paused, now);
+    let plan = reconcile_heartbeat(
+        device,
+        &hb.running,
+        &stored,
+        &paused,
+        cfg.coordinator.lease_secs,
+        now,
+    );
     store.update_jobs(&plan.renewed)?;
     for job in &plan.renewed {
         if let Some(before) = stored.iter().find(|j| j.id == job.id) {
@@ -149,11 +156,24 @@ fn assign_jobs(
         paused_accounts: &accounts,
     };
     let mut leased = Vec::new();
+    if !ctx.paused {
+        for job in &jobs {
+            if job.status == JobStatus::Leased
+                && job.device.as_deref() == Some(device)
+                && !is_held(paused, job)
+                && !hb.running.iter().any(|r| r.id == job.id)
+            {
+                leased.push(job.clone());
+            }
+        }
+    }
     for id in pick(&ctx, &jobs) {
-        let Some(job) = jobs.iter().find(|j| j.id == id) else {
-            continue;
-        };
-        match store.lease_job(id, device, lease_deadline(job, now), now) {
+        match store.lease_job(
+            id,
+            device,
+            lease_deadline(cfg.coordinator.lease_secs, now),
+            now,
+        ) {
             Ok(Some(job)) => {
                 let msg = format!(
                     "{} leased to {device} (attempt {})",

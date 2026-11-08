@@ -32,7 +32,14 @@ fn waking_agent_recovers_its_unreplaced_expired_run() {
             started_ms: 100,
             ..RunningJob::default()
         };
-        let plan = reconcile_heartbeat("mac", &[reported], std::slice::from_ref(&job), &[], 2_000);
+        let plan = reconcile_heartbeat(
+            "mac",
+            &[reported],
+            std::slice::from_ref(&job),
+            &[],
+            120,
+            2_000,
+        );
         assert!(!plan
             .commands
             .contains(&AgentCommand::KillJob { id: job.id }));

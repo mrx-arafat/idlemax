@@ -893,6 +893,33 @@ async fn the_dashboard_runs_one_same_origin_script_and_the_policy_forbids_inline
     }
 }
 
+#[tokio::test]
+async fn heartbeat_resends_unstarted_leased_job_and_uses_lease_secs() {
+    let mut cfg = Config::default();
+    cfg.coordinator.lease_secs = 60;
+    let api = Api::start_with(cfg).await;
+    let spec = JobSpec {
+        name: "test-lease".into(),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+    let add_res = api.post("/v1/jobs", &spec).await;
+    assert_eq!(add_res.status(), StatusCode::CREATED);
+    let job: Job = add_res.json().await.unwrap();
+
+    let before_beat = now_ms();
+    let reply1 = api.heartbeat(Vec::new()).await;
+    assert_eq!(reply1.assign.len(), 1);
+    assert_eq!(reply1.assign[0].id, job.id);
+    let expires = reply1.assign[0].lease_expires_ms.unwrap();
+    assert!(expires >= before_beat + 60_000);
+    assert!(expires <= before_beat + 65_000);
+
+    let reply2 = api.heartbeat(Vec::new()).await;
+    assert_eq!(reply2.assign.len(), 1);
+    assert_eq!(reply2.assign[0].id, job.id);
+}
+
 fn which_node() -> Result<std::path::PathBuf, ()> {
     let path = std::env::var_os("PATH").ok_or(())?;
     std::env::split_paths(&path)

@@ -19,6 +19,8 @@ pub const MAX_CWD_BYTES: usize = 4096;
 /// Entries in `requires` and `devices`, and the length of each; also `ai_account`.
 pub const MAX_LIST_ENTRIES: usize = 64;
 pub const MAX_LIST_ITEM_CHARS: usize = 128;
+/// Maximum allowed runtime: 30 days.
+pub const MAX_RUNTIME_SECS: usize = 30 * 86_400;
 
 fn over(field: &'static str, limit: usize, unit: &'static str) -> SpecError {
     SpecError::OverLimit { field, limit, unit }
@@ -31,6 +33,9 @@ pub fn check(spec: &JobSpec) -> Result<(), SpecError> {
     }
     if spec.name.chars().count() > MAX_NAME_CHARS {
         return Err(over("name", MAX_NAME_CHARS, "characters"));
+    }
+    if spec.max_runtime_secs > MAX_RUNTIME_SECS as u64 {
+        return Err(over("max_runtime_secs", MAX_RUNTIME_SECS, "seconds"));
     }
     command(&spec.command)?;
     env(spec)?;
@@ -157,5 +162,12 @@ mod tests {
         let mut account = spec();
         account.ai_account = Some("a".repeat(MAX_LIST_ITEM_CHARS + 1));
         assert!(check(&account).is_err());
+
+        let mut long_job = spec();
+        long_job.max_runtime_secs = MAX_RUNTIME_SECS as u64 + 1;
+        assert_eq!(
+            check(&long_job),
+            Err(over("max_runtime_secs", MAX_RUNTIME_SECS, "seconds"))
+        );
     }
 }
