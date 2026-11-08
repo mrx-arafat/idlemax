@@ -64,6 +64,13 @@ fn job(id: i64, argv: &[&str], mem_mb: u64) -> Job {
 /// Waits return the moment the condition holds, so a generous limit costs nothing when green.
 pub(super) const STARVED: Duration = Duration::from_secs(60);
 
+/// A memory-cap kill, whoever enforced it: the runner's poll ("N MiB over the C MiB cap") or,
+/// when the job runs in a systemd scope, the kernel ("killed by the C MiB memory cap").
+pub(super) fn is_cap_kill(error: &str, cap_mib: u64) -> bool {
+    error.ends_with(&format!("MiB over the {cap_mib} MiB cap"))
+        || error == format!("killed by the {cap_mib} MiB memory cap")
+}
+
 /// Polls `cond` until it holds; panics naming `what` after `within`. No fixed sleeps.
 pub(super) fn wait_until(what: &str, within: Duration, mut cond: impl FnMut() -> bool) {
     let deadline = Instant::now() + within;
@@ -147,15 +154,15 @@ fn pause_freezes_the_group_kill_ends_it_and_the_memory_cap_kills_the_tree() {
     assert_eq!((u.status, u.error), (JobStatus::Killed, None));
 
     // `; echo` keeps sh as the parent, so the hog is a grandchild of the job root.
-    // Random data: macOS compresses idle uniform pages out of the resident size the cap reads.
-    let hog =
-        r#"$b = pack("L*", map { int rand 4294967296 } 1 .. 16384); $x = $b x 1536; sleep 60"#;
+    // Random data, every page touched every 50 ms: macOS compresses or swaps idle pages out
+    // of the resident size the cap reads.
+    let hog = r#"$b = pack("L*", map { int rand 4294967296 } 1 .. 16384); $x = $b x 1536; while (1) { vec($x, $_ * 4096, 8) ^= 1 for 0 .. 24575; select(undef, undef, undef, 0.05) }"#;
     let script = format!("perl -e '{hog}'; echo done");
     r.start(&job(4, &["sh", "-c", &script], 32)).unwrap();
     let u = wait_ended(&mut r, STARVED);
     assert_eq!(u.status, JobStatus::Killed, "{u:?}");
     let error = u.error.unwrap_or_default();
-    assert!(error.ends_with("MiB over the 32 MiB cap"), "{error}");
+    assert!(is_cap_kill(&error, 32), "{error}");
 }
 
 #[test]

@@ -12,7 +12,7 @@ use idlemax_core::Paths;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 use super::os;
-use super::tests::{wait_until, STARVED};
+use super::tests::{is_cap_kill, wait_until, STARVED};
 use super::Runner;
 
 const ROLE: &str = "IDLEMAX_TEST_ROLE";
@@ -186,7 +186,7 @@ fn a_daemonized_hog_counts_against_the_cap_and_is_killed_with_the_job() {
         };
         let error = update.error.clone().unwrap_or_default();
         assert_eq!(update.status, JobStatus::Killed, "{update:?}");
-        assert!(error.ends_with("MiB over the 64 MiB cap"), "{error}");
+        assert!(is_cap_kill(&error, 64), "{error}");
 
         let hog = read_pid(&pid_file).expect("the hog wrote its pid before it was capped");
         assert!(
