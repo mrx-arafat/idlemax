@@ -15,7 +15,7 @@ use idlemax_core::install::statusline::{
 use idlemax_core::Paths;
 use serde::Serialize;
 
-use super::files::write_atomic;
+use super::files::{backup_path, read_optional, save, write_atomic};
 
 #[derive(Args, Debug)]
 pub struct StatuslineArgs {
@@ -124,45 +124,12 @@ pub fn run(paths: &Paths, args: StatuslineArgs, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// `settings.json.idlemax.bak`: the file as it was before the last change idlemax made.
-/// It sits next to the file the path really points to, so a symlinked settings.json works.
-fn backup_path(settings: &Path) -> PathBuf {
-    let target = std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
-    let mut name = target.file_name().unwrap_or_default().to_os_string();
-    name.push(".idlemax.bak");
-    target.with_file_name(name)
-}
-
-fn read_settings(path: &Path) -> Result<Option<String>> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
-    }
-}
-
-/// Writes `after` over `settings` (following a symlink) after copying the old file aside.
-fn save(settings: &Path, before: Option<&str>, after: &str) -> Result<Option<PathBuf>> {
-    if let Some(dir) = settings.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    }
-    let target = std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
-    let backup = before.map(|_| backup_path(&target));
-    if let (Some(path), Some(old)) = (&backup, before) {
-        write_atomic(path, old.as_bytes(), None)
-            .with_context(|| format!("backing up to {}", path.display()))?;
-    }
-    write_atomic(&target, after.as_bytes(), None)
-        .with_context(|| format!("writing {}", target.display()))?;
-    Ok(backup)
-}
-
 fn install(p: &Places, dry_run: bool) -> Result<ChangeReport> {
     let script = p
         .wrapper
         .to_str()
         .context("the wrapper path is not valid UTF-8")?;
-    let before = read_settings(&p.settings)?;
+    let before = read_optional(&p.settings)?;
     let after = plan_install(before.as_deref(), &p.wrapper_spec(script))
         .with_context(|| p.settings.display().to_string())?;
     let changed = before.as_deref() != Some(after.as_str());
@@ -217,8 +184,8 @@ fn install_wrapper(path: &Path) -> Result<()> {
 }
 
 fn uninstall(p: &Places, dry_run: bool) -> Result<ChangeReport> {
-    let before = read_settings(&p.settings)?;
-    let backup_text = read_settings(&backup_path(&p.settings))?;
+    let before = read_optional(&p.settings)?;
+    let backup_text = read_optional(&backup_path(&p.settings))?;
     let after = match &before {
         Some(text) => plan_uninstall(text, backup_text.as_deref())
             .with_context(|| p.settings.display().to_string())?,
@@ -249,7 +216,7 @@ fn uninstall(p: &Places, dry_run: bool) -> Result<ChangeReport> {
 }
 
 fn status(p: &Places) -> Result<StatusReport> {
-    let text = read_settings(&p.settings)?;
+    let text = read_optional(&p.settings)?;
     let mut report = StatusReport {
         settings: p.settings.clone(),
         state: "no_settings",
