@@ -3,7 +3,8 @@
 <!--
   idlemax coordinator as a per-user LaunchAgent, for a Mac-only setup.
   In production the coordinator runs on the server (packaging/linux/idlemax-coord.service).
-  Render the @BIN@ and @HOME@ placeholders before loading (see README "Install on macOS").
+  Template for `idlemax service install coord`, which fills in the binary, state dir and environment.
+  Do not load it directly.
 -->
 <plist version="1.0">
 <dict>
@@ -15,6 +16,8 @@
 		<string>@BIN@</string>
 		<string>coord</string>
 	</array>
+
+@ENVIRONMENT@
 
 	<key>RunAtLoad</key>
 	<true/>
@@ -37,8 +40,8 @@
 	<integer>20</integer>
 
 	<key>StandardOutPath</key>
-	<string>@HOME@/.idlemax/logs/coord.log</string>
+	<string>@STATE@/logs/coord.log</string>
 	<key>StandardErrorPath</key>
-	<string>@HOME@/.idlemax/logs/coord.log</string>
+	<string>@STATE@/logs/coord.log</string>
 </dict>
 </plist>

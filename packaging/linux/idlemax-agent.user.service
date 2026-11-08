@@ -1,0 +1,33 @@
+# idlemax device agent as a systemd user unit.
+# Template for `idlemax service install`, which fills in the binary and environment.
+# The caps match idlemax-agent.service. They bind only when the user manager delegates the
+# cgroup controllers; the sandboxing of the system unit is left out because a user unit cannot
+# rely on it. To start at boot without a login session, run `loginctl enable-linger $USER`.
+
+[Unit]
+Description=idlemax agent
+
+[Service]
+Type=simple
+Environment=RUST_LOG=info
+@ENVIRONMENT@
+ExecStart=@BIN@ agent
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+
+MemoryHigh=576M
+MemoryMax=640M
+MemorySwapMax=0
+CPUQuota=100%
+CPUWeight=10
+IOWeight=10
+Nice=19
+IOSchedulingClass=idle
+TasksMax=256
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

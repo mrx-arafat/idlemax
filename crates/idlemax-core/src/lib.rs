@@ -6,6 +6,7 @@ pub mod advice;
 pub mod config;
 pub mod control;
 pub mod guard;
+pub mod install;
 pub mod job_run;
 pub mod paths;
 pub mod protocol;

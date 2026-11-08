@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   idlemax device agent, per-user LaunchAgent.
-  Render the @BIN@, @HOME@ and @PATH@ placeholders before loading (see README "Install on macOS").
-  Run `idlemax init` first so @HOME@/.idlemax/logs exists.
+  Template for `idlemax service install`, which fills in the binary, state dir and environment.
+  Do not load it directly.
 -->
 <plist version="1.0">
 <dict>
@@ -16,12 +16,7 @@
 		<string>agent</string>
 	</array>
 
-	<key>EnvironmentVariables</key>
-	<dict>
-		<!-- launchd starts agents with a bare PATH; capability detection and jobs need the shell's PATH. -->
-		<key>PATH</key>
-		<string>@PATH@</string>
-	</dict>
+@ENVIRONMENT@
 
 	<key>RunAtLoad</key>
 	<true/>
@@ -50,8 +45,8 @@
 	<integer>30</integer>
 
 	<key>StandardOutPath</key>
-	<string>@HOME@/.idlemax/logs/agent.log</string>
+	<string>@STATE@/logs/agent.log</string>
 	<key>StandardErrorPath</key>
-	<string>@HOME@/.idlemax/logs/agent.log</string>
+	<string>@STATE@/logs/agent.log</string>
 </dict>
 </plist>

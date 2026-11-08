@@ -1,0 +1,29 @@
+# idlemax coordinator as a systemd user unit, for a single-user setup.
+# Template for `idlemax service install coord`, which fills in the binary and environment.
+# In production the coordinator runs on the server (idlemax-coord.service) with the same caps.
+# Bind it to a private address in $IDLEMAX_HOME/config.toml, never a public one.
+
+[Unit]
+Description=idlemax coordinator
+
+[Service]
+Type=simple
+Environment=RUST_LOG=info
+@ENVIRONMENT@
+ExecStart=@BIN@ coord
+Restart=on-failure
+RestartSec=10
+
+MemoryHigh=192M
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=20%
+CPUWeight=10
+IOWeight=10
+Nice=10
+TasksMax=64
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target
