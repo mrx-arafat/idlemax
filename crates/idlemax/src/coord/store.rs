@@ -223,6 +223,12 @@ impl Store {
                 [jobs_cutoff],
             )?,
         };
+        tx.execute(
+            "DELETE FROM controls
+             WHERE scope_type = 'job'
+               AND scope_id NOT IN (SELECT CAST(id AS TEXT) FROM jobs)",
+            [],
+        )?;
         tx.commit()?;
         self.conn.execute_batch("PRAGMA incremental_vacuum")?;
         Ok(report)

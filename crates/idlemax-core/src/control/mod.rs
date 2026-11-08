@@ -158,12 +158,7 @@ pub fn plan_control(
             }
             Ok(pause_plan(req, true))
         }
-        (ControlAction::Resume, scope) => {
-            if let ControlScope::Job(id) = scope {
-                target(*id, jobs)?;
-            }
-            Ok(pause_plan(req, false))
-        }
+        (ControlAction::Resume, _scope) => Ok(pause_plan(req, false)),
     }
 }
 

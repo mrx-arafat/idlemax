@@ -199,6 +199,12 @@ pub(super) fn update_jobs(conn: &Connection, jobs: &[Job]) -> StoreResult<()> {
         if changed == 0 {
             return Err(StoreError::JobNotFound(job.id));
         }
+        if job.status.is_terminal() {
+            conn.execute(
+                "DELETE FROM controls WHERE scope_type = 'job' AND scope_id = ?1",
+                [job.id.to_string()],
+            )?;
+        }
     }
     Ok(())
 }

@@ -324,6 +324,33 @@ fn pause_flags_over_the_cap_are_refused_and_resuming_still_works() {
 }
 
 #[test]
+fn job_pause_flags_cleared_on_terminal_and_prune() {
+    use idlemax_core::control::ControlPlan;
+    use idlemax_core::types::ControlScope;
+    let mut s = Store::open_in_memory().unwrap();
+    let job1 = s.insert_job(&spec("job1", None), T0).unwrap();
+    let job2 = s.insert_job(&spec("job2", None), T0).unwrap();
+
+    let pause = |id: i64, paused| ControlPlan {
+        pause: Some((ControlScope::Job(id), paused)),
+        jobs: Vec::new(),
+        summary: String::new(),
+    };
+    s.apply_control(&pause(job1.id, true)).unwrap();
+    s.apply_control(&pause(job2.id, true)).unwrap();
+    assert_eq!(s.paused_scopes().unwrap().len(), 2);
+
+    let mut finished = job1;
+    finished.status = JobStatus::Succeeded;
+    finished.finished_ms = Some(T0 + 1000);
+    s.update_jobs(&[finished]).unwrap();
+
+    let paused = s.paused_scopes().unwrap();
+    assert_eq!(paused.len(), 1);
+    assert_eq!(paused[0], ControlScope::Job(job2.id));
+}
+
+#[test]
 fn prune_forgets_silent_devices_and_old_finished_jobs_but_keeps_parked_and_scheduled_ones() {
     const DAY: i64 = 86_400_000;
     let mut s = Store::open_in_memory().unwrap();
