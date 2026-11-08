@@ -9,8 +9,11 @@ use crate::config::{GuardPolicy, SwapGrowth};
 use crate::protocol::RunningJob;
 use crate::types::{GuardAction, GuardDecision, JobStatus, MetricsSnapshot, UnixMs};
 
+mod findings;
 #[cfg(test)]
 mod tests;
+
+use findings::{Findings, Level};
 
 /// Run with no limit; combined with capacity via `GuardAction::max`.
 const UNLIMITED: GuardAction = GuardAction::Run {
@@ -20,69 +23,6 @@ const UNLIMITED: GuardAction = GuardAction::Run {
 
 fn mib(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Level {
-    Hold,
-    Pause,
-    Kill,
-}
-
-impl Level {
-    fn label(self) -> &'static str {
-        match self {
-            Level::Hold => "hold",
-            Level::Pause => "pause",
-            Level::Kill => "kill",
-        }
-    }
-}
-
-/// Breaches found in one sample.
-#[derive(Debug, Default)]
-struct Findings(Vec<(Level, String)>);
-
-impl Findings {
-    fn add(&mut self, level: Level, reason: String) {
-        self.0.push((level, reason));
-    }
-
-    fn has(&self, level: Level) -> bool {
-        self.0.iter().any(|(l, _)| *l == level)
-    }
-
-    /// Kill-level when `value < kill`, else pause when `value < pause`.
-    fn below(&mut self, what: &str, value: f64, limits: (Option<f64>, Option<f64>), unit: &str) {
-        self.below_with(Level::Pause, what, value, limits, unit);
-    }
-
-    /// Like `below`, with `soft` as the level of the first line.
-    fn below_with(
-        &mut self,
-        soft: Level,
-        what: &str,
-        value: f64,
-        limits: (Option<f64>, Option<f64>),
-        unit: &str,
-    ) {
-        let (first, kill) = limits;
-        if let Some(k) = kill.filter(|k| value < *k) {
-            self.add(Level::Kill, format!("{what} {value:.1}{unit} < {k}{unit}"));
-        } else if let Some(p) = first.filter(|p| value < *p) {
-            self.add(soft, format!("{what} {value:.1}{unit} < {p}{unit}"));
-        }
-    }
-
-    /// Kill-level when `value > kill`, else pause when `value > pause`.
-    fn above(&mut self, what: &str, value: f64, limits: (Option<f64>, Option<f64>), unit: &str) {
-        let (pause, kill) = limits;
-        if let Some(k) = kill.filter(|k| value > *k) {
-            self.add(Level::Kill, format!("{what} {value:.1}{unit} > {k}{unit}"));
-        } else if let Some(p) = pause.filter(|p| value > *p) {
-            self.add(Level::Pause, format!("{what} {value:.1}{unit} > {p}{unit}"));
-        }
-    }
 }
 
 /// CPUs' worth of load the running jobs add: their measured CPU use, paused jobs excluded.
