@@ -6,10 +6,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use idlemax_core::job_run::{scope_unit, Wrapper};
-use idlemax_core::types::{Job, UnixMs};
+use idlemax_core::types::{Job, JobId, UnixMs};
 use idlemax_core::{Paths, TOKEN_ENV};
 
-use super::{wrapper, RunnerError};
+use tracing::warn;
+
+use super::{pidfile, wrapper, RunnerError};
 
 /// Env var every job gets with its own id.
 pub const JOB_ID_ENV: &str = "IDLEMAX_JOB_ID";
@@ -25,6 +27,7 @@ pub struct Launched {
 pub fn launch(
     paths: &Paths,
     wrapper: &Wrapper,
+    supervisor: Option<&[String]>,
     job: &Job,
     started_ms: UnixMs,
 ) -> Result<Launched, RunnerError> {
@@ -35,6 +38,7 @@ pub fn launch(
         .ok_or(RunnerError::EmptyCommand)?;
     let mut argv = vec![resolve_program(program)?];
     argv.extend(args.iter().cloned());
+    let argv = supervised(paths, supervisor, job.id, argv);
     let cwd = resolve_cwd(spec.cwd.as_deref())?;
     let (log, log_path, log_offset) = open_log(paths, job, started_ms, wrapper.name())?;
     let full = wrapper.wrap(&argv, spec.mem_mb, &scope_unit(job.id, started_ms));
@@ -62,6 +66,33 @@ pub fn launch(
         log_path,
         log_offset,
     })
+}
+
+/// Puts the job behind the supervisor, which records its exit for an agent that may die first.
+/// Without one (no executable to re-run) the job runs bare and a crash falls back to the lease.
+fn supervised(
+    paths: &Paths,
+    supervisor: Option<&[String]>,
+    id: JobId,
+    argv: Vec<String>,
+) -> Vec<String> {
+    let Some(prefix) = supervisor else {
+        return argv;
+    };
+    if !prefix.first().is_some_and(|exe| Path::new(exe).is_file()) {
+        warn!(
+            job = id,
+            "job supervisor executable is gone; the job runs unsupervised"
+        );
+        return argv;
+    }
+    let marker = pidfile::marker_path(paths, id)
+        .to_string_lossy()
+        .into_owned();
+    let mut full = prefix.to_vec();
+    full.extend(["--marker".into(), marker, "--".into()]);
+    full.extend(argv);
+    full
 }
 
 /// Hands the job its input without waiting for it. `start` runs on the agent loop under the

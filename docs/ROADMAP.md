@@ -123,15 +123,18 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
   Nothing outlives the agent to record how the job ended, and the exit code of a process that was reparented cannot be read afterwards.
   Landed so far: a replayed result that arrives after its lease expired is applied when the job has not been leased since, a failed journal write is repaired by rewriting the journal from memory, and a replayed AI pass whose advice was never recorded is ingested again.
   The macOS journal sync needed no change, because std runs `fcntl(F_FULLFSYNC)` for `sync_data` and `sync_all` on Apple targets.
-- **How:** Put a small supervisor between the OS throttle wrapper and the job: `idlemax job-wrap --marker <path> -- <argv>`.
-  It runs the job in the same process group, forwards `SIGTERM` and `SIGINT` to it, writes `{exit_code, signal}` to the marker with a temp file, fsync and rename, then exits with the job's own status (re-raising its signal), so the agent sees the same `ExitStatus` as today.
-  The pid file gains the attempt number.
-  On start, `pidfile::reap_orphans` reads the marker of each pid file whose process is gone and builds the terminal update from it: the same `finish` path (log footer, inbox note, `JobUpdate` with the recorded attempt), pushed into the journal before the pid file and marker are removed, so a second crash repeats the update, which the coordinator applies once.
-  A pid file with no marker and no live process stays what it is today: the lease expiry decides.
-  It touches `agent/runner/{launch,pidfile}.rs` and `job_run/wrap.rs`, so it waits for the daemon work in the runner (item 14) to land.
-- **Done when:** A `SIGKILL` of the agent between a job's exit and its reap still delivers the terminal update once, with the real exit code, and a test kills a helper process that owns a supervised job to prove it.
-
-## Later
+- **How:** A small supervisor sits between the OS throttle wrapper and the job: `idlemax job-wrap --marker <path> -- <argv>`, handled in `main` before the async runtime and the CLI parser start.
+  It runs the job in the same process group and, when the job ends, writes `{code, signal, pid, ended_ms}` to `agent/jobs/<id>.exit` (temp file, fsync, rename), then exits with the job's own status; a job that died of a signal is re-raised on the supervisor, so the agent sees the same `ExitStatus` as before and `outcome` is unchanged.
+  It does not forward `SIGTERM` or `SIGINT`: the group already delivers them to the job, and a second delivery makes many programs quit instead of shutting down.
+  It holds those two signals after the job is spawned, so a group stop cannot end it before the exit is recorded; the job must be spawned first because std's `posix_spawn` path does not reset the signal mask in the child.
+  The pid file gains a scrubbed copy of the job (no stdin, no env), the log offset, the wrapper name and the memory cap, so a restarted agent can build the update through the normal `finish` path.
+  On start `reap_orphans` asks the pure `orphan_verdict` (core) what each pid file means: a marker written by the recorded root is reported as the job's real exit, a live root with no marker was killed here, anything else is left to the lease.
+  A job's files are removed one `poll` after its update is handed out (the caller journals it in between), so a second crash repeats the report, which the coordinator applies once.
+  If the agent's executable is gone (Linux, replaced while running) the job runs unsupervised and the lease decides after a crash.
+- **Cost:** The supervisor counts in the job's memory: about 5 to 7 MiB resident in a debug build.
+- **Done when:** Met on macOS: `kill -9` of the agent mid-job, the job finishing alone, and a restart delivered the job's real exit once (attempt 1, `exit code 7`); a second restart changed nothing.
+  A `SIGKILL` of the whole group (power cut) leaves no marker, so the lease decides.
+  Not run on Linux.
 
 ### 16. Roll out to more devices
 

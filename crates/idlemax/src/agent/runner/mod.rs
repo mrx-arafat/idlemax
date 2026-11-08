@@ -26,9 +26,11 @@ use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Paths;
 use tracing::{info, warn};
 
+use super::supervise;
 use crate::state::now_ms;
 use finish::Ended;
 use os::{ProcTable, Sig, Usage};
+use pidfile::Saved;
 use stop::{enforce, stop, Stop};
 
 /// Minimum gap between process table refreshes, however often `poll` runs.
@@ -82,8 +84,13 @@ pub struct Runner {
     wrapper: Wrapper,
     procs: Option<ProcTable>,
     usage_at_ms: UnixMs,
+    /// Argv prefix that starts a job supervisor, when this platform has one.
+    supervisor: Option<Vec<String>>,
     slots: HashMap<JobId, Slot>,
     pending: Vec<JobUpdate>,
+    /// Jobs whose updates the last `poll` handed out: their files go at the next `poll`,
+    /// by which time the caller has journaled those updates.
+    settle: Vec<JobId>,
     awake_origin: Instant,
 }
 
@@ -101,8 +108,9 @@ struct Slot {
 }
 
 impl Runner {
-    /// Detects the throttle and kills jobs orphaned by a previous agent process;
-    /// their Killed updates come out of the first `poll`.
+    /// Detects the throttle and settles jobs left by a previous agent process: orphans are
+    /// killed, and a job that ended while no agent ran is reported with its real exit.
+    /// Their updates come out of the first `poll`.
     pub fn new(paths: Paths, device: DeviceId, config: AgentConfig) -> Self {
         let wrapper = wrapper::detect_wrapper();
         let mut procs = ProcTable::new();
@@ -118,8 +126,10 @@ impl Runner {
             wrapper,
             procs,
             usage_at_ms: 0,
+            supervisor: supervise::command(),
             slots: HashMap::new(),
             pending,
+            settle: Vec::new(),
             awake_origin: Instant::now(),
         }
     }
@@ -141,8 +151,17 @@ impl Runner {
             return Err(RunnerError::AlreadyRunning(job.id));
         }
         job_run::admit(&job.spec, &self.allowlist)?;
-        let launched = launch::launch(&self.paths, &self.wrapper, job, started_ms)?;
-        if let Err(e) = pidfile::write(&self.paths, job.id, launched.pid, started_ms) {
+        // An exit record left by an earlier attempt must not pass for this one's.
+        pidfile::clear_marker(&self.paths, job.id);
+        let supervisor = self.supervisor.as_deref();
+        let launched = launch::launch(&self.paths, &self.wrapper, supervisor, job, started_ms)?;
+        let saved = Saved {
+            job: job.clone(),
+            log_offset: launched.log_offset,
+            wrapper: self.wrapper.name().to_string(),
+            memory_cap_mib: self.memory_cap_mib(job),
+        };
+        if let Err(e) = pidfile::write(&self.paths, job.id, launched.pid, started_ms, saved) {
             warn!(job = job.id, error = %e, "cannot write job pid file");
         }
         info!(job = job.id, pid = launched.pid, "job started");
@@ -210,13 +229,26 @@ impl Runner {
     }
 
     fn poll_at(&mut self, now: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
+        self.settle_handed_out();
         self.refresh_usage(now);
         for slot in self.slots.values_mut() {
             enforce(slot, now, awake_ms);
         }
         let mut updates = std::mem::take(&mut self.pending);
         updates.extend(self.reap(now, awake_ms));
+        self.settle = updates.iter().map(|u| u.id).collect();
         updates
+    }
+
+    /// Removes the files of jobs reported by the previous `poll`. Until then they stay, so an
+    /// agent that dies before journaling an update reports the same exit again on restart.
+    fn settle_handed_out(&mut self) {
+        for id in std::mem::take(&mut self.settle) {
+            // A retry of the same job may already run again: its files are the new attempt's.
+            if !self.slots.contains_key(&id) {
+                pidfile::remove(&self.paths, id);
+            }
+        }
     }
 
     // Rust's Instant uses CLOCK_UPTIME_RAW on macOS and CLOCK_MONOTONIC on Linux.
@@ -273,15 +305,18 @@ impl Runner {
             .collect()
     }
 
+    /// The hard OS memory limit this job runs under, if its wrapper enforces one.
+    fn memory_cap_mib(&self, job: &Job) -> Option<u64> {
+        self.wrapper
+            .enforces_memory_cap()
+            .then_some(job.spec.mem_mb)
+    }
+
     fn close(&self, slot: Slot, status: ExitStatus, now: UnixMs, awake_ms: i64) -> JobUpdate {
         if let Err(e) = os::kill_leftovers(slot.pid, &slot.outside) {
             warn!(job = slot.job.id, error = %e, "cannot kill leftover job processes");
         }
-        pidfile::remove(&self.paths, slot.job.id);
-        let memory_cap_mib = self
-            .wrapper
-            .enforces_memory_cap()
-            .then_some(slot.job.spec.mem_mb);
+        let memory_cap_mib = self.memory_cap_mib(&slot.job);
         let ended = Ended {
             job: slot.job,
             exit: exit_info(status),
@@ -341,7 +376,7 @@ impl Slot {
     }
 }
 
-fn exit_info(status: ExitStatus) -> ExitInfo {
+pub(crate) fn exit_info(status: ExitStatus) -> ExitInfo {
     #[cfg(unix)]
     let signal = std::os::unix::process::ExitStatusExt::signal(&status);
     #[cfg(not(unix))]

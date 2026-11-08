@@ -119,7 +119,7 @@ fn a_job_that_ignores_stdin_does_not_block_start_and_one_that_reads_gets_every_b
     let home = tempfile::tempdir().unwrap();
     let mut r = runner(home.path(), &["sh"]);
 
-    let mut idle = job(3, &["sh", "-c", "sleep 30"], 64);
+    let mut idle = job(71, &["sh", "-c", "sleep 30"], 64);
     idle.spec.stdin = Some("x".repeat(MIB));
     let began = Instant::now();
     r.start(&idle).unwrap();
@@ -128,10 +128,10 @@ fn a_job_that_ignores_stdin_does_not_block_start_and_one_that_reads_gets_every_b
         "start waited {:?} for a job that does not read stdin",
         began.elapsed()
     );
-    r.kill(3).unwrap();
+    r.kill(71).unwrap();
     wait_ended(&mut r, STARVED);
 
-    let mut reader = job(4, &["sh", "-c", "wc -c"], 64);
+    let mut reader = job(72, &["sh", "-c", "wc -c"], 64);
     reader.spec.stdin = Some("y".repeat(MIB));
     r.start(&reader).unwrap();
     let update = wait_ended(&mut r, STARVED);
@@ -149,12 +149,12 @@ fn job_logs_and_inbox_notes_are_private() {
     use std::os::unix::fs::PermissionsExt;
     let home = tempfile::tempdir().unwrap();
     let mut r = runner(home.path(), &["sh"]);
-    r.start(&job(5, &["sh", "-c", "echo secret output"], 64))
+    r.start(&job(73, &["sh", "-c", "echo secret output"], 64))
         .unwrap();
     let update = wait_ended(&mut r, STARVED);
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     let paths = Paths::new(home.path());
-    let log = paths.job_log_file(5);
+    let log = paths.job_log_file(73);
     let note = Path::new(update.output_path.as_deref().expect("a note was written"));
     assert_eq!(mode(&log), 0o600, "job log");
     assert_eq!(mode(note), 0o600, "inbox note");
@@ -162,47 +162,75 @@ fn job_logs_and_inbox_notes_are_private() {
     assert_eq!(mode(&paths.inbox_dir()), 0o700, "inbox");
 }
 
-/// True once the OS reports `pid` as stopped (SIGSTOP has taken effect).
-fn stopped(pid: u32) -> bool {
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
-    let (mut sys, pid) = (System::new().unwrap(), Pid::from_u32(pid));
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[pid]),
-        true,
-        ProcessRefreshKind::nothing(),
-    );
-    sys.process(pid)
-        .is_some_and(|p| p.status() == ProcessStatus::Stop)
+/// `pid state command` of every process in group `pgid`, from `ps`. The state is that of the
+/// process's threads: the status the kernel sets when SIGSTOP is sent says "stopped" before a
+/// starved process has acted on it.
+fn group_states(pgid: u32) -> Vec<String> {
+    let out = std::process::Command::new("ps")
+        .args(["-axo", "pgid=,pid=,stat=,command="])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (group, rest) = line.trim_start().split_once(' ')?;
+            (group.parse() == Ok(pgid)).then(|| rest.trim().to_string())
+        })
+        .collect()
+}
+
+/// True once every live process of group `pgid` has stopped running.
+fn group_stopped(pgid: u32) -> bool {
+    let states = group_states(pgid);
+    let live: Vec<_> = states
+        .iter()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .filter(|state| !state.starts_with('Z'))
+        .collect();
+    !live.is_empty() && live.iter().all(|state| state.starts_with('T'))
+}
+
+/// Pause freezes the job's group, resume thaws it, and a kill ends it as `Killed`.
+fn pause_resume_and_kill(home: &Path, r: &mut Runner, id: i64) {
+    r.start(&job(
+        id,
+        &["sh", "-c", "while :; do echo tick; sleep 0.05; done"],
+        64,
+    ))
+    .unwrap();
+    let root = r.running()[0].pid.unwrap();
+    let log = Paths::new(home).job_log_file(id);
+    let len = || std::fs::metadata(&log).map_or(0, |m| m.len());
+    wait_until("the job to write", STARVED, || len() > 0);
+    r.pause(id).unwrap();
+    // SIGSTOP lands when each process is next scheduled: wait for the OS to say that all of
+    // them stopped, then the job must stay silent however busy the machine is.
+    let deadline = Instant::now() + STARVED;
+    while !group_stopped(root) {
+        let states = group_states(root);
+        assert!(
+            Instant::now() < deadline,
+            "the paused group did not stop: {states:#?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let frozen = len();
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(len(), frozen, "paused job kept writing");
+    assert_eq!(r.running()[0].status, JobStatus::Paused);
+    r.resume(id).unwrap();
+    wait_until("the resumed job to write", STARVED, || len() > frozen);
+    r.pause(id).unwrap();
+    r.kill(id).unwrap();
+    let u = wait_ended(r, STARVED);
+    assert_eq!((u.status, u.error), (JobStatus::Killed, None));
 }
 
 #[test]
 fn pause_freezes_the_group_kill_ends_it_and_the_memory_cap_kills_the_tree() {
     let home = tempfile::tempdir().unwrap();
     let mut r = runner(home.path(), &["sh"]);
-    r.start(&job(
-        3,
-        &["sh", "-c", "while :; do echo tick; sleep 0.05; done"],
-        64,
-    ))
-    .unwrap();
-    let root = r.running()[0].pid.unwrap();
-    let log = Paths::new(home.path()).job_log_file(3);
-    let len = || std::fs::metadata(&log).map_or(0, |m| m.len());
-    wait_until("the job to write", STARVED, || len() > 0);
-    r.pause(3).unwrap();
-    // SIGSTOP lands when the job is next scheduled: wait for the OS to say so, then it
-    // must stay silent. A stopped job cannot write, however busy the machine is.
-    wait_until("the paused job to stop", STARVED, || stopped(root));
-    let frozen = len();
-    std::thread::sleep(Duration::from_millis(400));
-    assert_eq!(len(), frozen, "paused job kept writing");
-    assert_eq!(r.running()[0].status, JobStatus::Paused);
-    r.resume(3).unwrap();
-    wait_until("the resumed job to write", STARVED, || len() > frozen);
-    r.pause(3).unwrap();
-    r.kill(3).unwrap();
-    let u = wait_ended(&mut r, STARVED);
-    assert_eq!((u.status, u.error), (JobStatus::Killed, None));
+    pause_resume_and_kill(home.path(), &mut r, 3);
 
     // `; echo` keeps sh as the parent, so the hog is a grandchild of the job root.
     // Random data, every page touched every 50 ms: macOS compresses or swaps idle pages out
@@ -230,4 +258,94 @@ fn signalling_a_group_of_unreaped_zombies_is_not_an_error() {
     os::signal_group(pgid, Sig::Term).unwrap();
     os::signal_group(pgid, Sig::Kill).unwrap();
     root.wait().unwrap();
+}
+
+/// Not a test by itself: a supervised job re-runs this test binary in this role (`supervised`).
+#[test]
+fn supervisor_role() {
+    let args: Vec<_> = std::env::args_os()
+        .skip_while(|a| a != "--marker")
+        .collect();
+    if !args.is_empty() {
+        std::process::exit(i32::from(crate::agent::supervise::run(&args)));
+    }
+}
+
+/// Runs the runner's jobs behind a supervisor, like the agent does. The test binary stands in for
+/// `idlemax job-wrap`; libtest keeps everything after its own `--` for the supervisor.
+/// It proves the runner's side (files, exit, restart). How the real supervisor treats stop
+/// signals is tested on the real binary in `tests/job_wrap.rs`: libtest runs this one on a thread.
+fn supervised(r: &mut Runner) {
+    let exe = std::env::current_exe().unwrap();
+    let mut command = vec![exe.to_string_lossy().into_owned()];
+    command.extend(
+        [
+            "agent::runner::tests::supervisor_role",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+            "--",
+        ]
+        .map(String::from),
+    );
+    r.supervisor = Some(command);
+}
+
+#[test]
+fn a_supervised_job_pauses_and_stops_like_a_bare_one() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    supervised(&mut r);
+    pause_resume_and_kill(home.path(), &mut r, 63);
+}
+
+#[test]
+fn a_supervised_job_killed_by_a_signal_still_reads_as_a_signal() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    supervised(&mut r);
+    r.start(&job(62, &["sh", "-c", "kill -KILL $$"], 64))
+        .unwrap();
+    let u = wait_ended(&mut r, STARVED);
+    // The supervisor must not turn the signal into an ordinary exit 137.
+    assert_eq!(u.exit_code, None, "{u:?}");
+    let error = u.error.unwrap_or_default();
+    assert!(
+        error.contains("SIGKILL") || error.contains("memory cap"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_job_that_ended_while_the_agent_was_down_is_reported_with_its_real_exit() {
+    let home = tempfile::tempdir().unwrap();
+    let jobs = Paths::new(home.path()).agent_state_dir().join("jobs");
+    let (marker, pid_file) = (jobs.join("61.exit"), jobs.join("61.pid"));
+    let mut first = runner(home.path(), &["sh"]);
+    supervised(&mut first);
+    let mut task = job(61, &["sh", "-c", "echo from the job; exit 7"], 64);
+    task.attempts = 2;
+    first.start(&task).unwrap();
+    wait_until("the supervisor to record the exit", STARVED, || {
+        marker.exists()
+    });
+    // The agent dies before it reaps the job: nothing cleans up, the files stay.
+    std::mem::forget(first);
+
+    let mut restarted = runner(home.path(), &["sh"]);
+    let updates = restarted.poll();
+    let [u] = updates.as_slice() else {
+        panic!("expected the job's report, got {updates:?}");
+    };
+    assert_eq!((u.id, u.attempt, u.status), (61, 2, JobStatus::Failed));
+    assert_eq!(u.exit_code, Some(7));
+    assert!(u
+        .output_tail
+        .as_deref()
+        .unwrap_or("")
+        .contains("from the job"));
+    // The files stay until the report has gone out; a second crash would repeat it.
+    assert!(pid_file.exists() && marker.exists());
+    assert!(restarted.poll().is_empty());
+    assert!(!pid_file.exists() && !marker.exists());
 }

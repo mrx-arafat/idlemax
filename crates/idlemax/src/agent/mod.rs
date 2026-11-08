@@ -12,6 +12,7 @@ mod probes;
 pub mod quota_probe;
 mod ring;
 pub mod runner;
+pub mod supervise;
 #[cfg(test)]
 mod tests;
 mod uplink;
