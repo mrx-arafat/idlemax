@@ -1,5 +1,7 @@
 # idlemax
 
+[![CI](https://github.com/mrx-arafat/idlemax/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mrx-arafat/idlemax/actions/workflows/ci.yml)
+
 Run useful jobs on your devices' spare capacity, and spend your AI subscription quota before it resets, without getting in your way.
 
 An expensive Mac sits idle all night.
@@ -44,7 +46,6 @@ This capture is a real coordinator fed by scripted demo agents, with the job his
 
 ## Quickstart
 
-Try it on one machine with a throwaway state directory, so your real `~/.idlemax` is never touched.
 You need a Rust toolchain (built with 1.95) on macOS or Linux.
 
 1. Build and install the binary:
@@ -56,51 +57,52 @@ You need a Rust toolchain (built with 1.95) on macOS or Linux.
    ```
 
    Prebuilt binaries arrive with the first release.
-   `scripts/install.sh` will then install one into `~/.local/bin` without sudo, after checking its sha256.
+   `scripts/install.sh` will then install one into `~/.local/bin` without sudo, after checking its sha256, and finish by telling you to run `idlemax setup`.
    Until a release exists the script stops with "no release has been published yet", so build from source for now.
 
-2. Create a state directory with a demo config, then let `init` add the token and folders (it keeps an existing config):
+2. Set this device up with one command:
 
    ```sh
-   export IDLEMAX_HOME="$(mktemp -d)"
-   cat > "$IDLEMAX_HOME/config.toml" <<'EOF'
+   idlemax setup --dry-run   # first look: every file it would write, every command it would run
+   idlemax setup
+   ```
+
+   `setup` creates `~/.idlemax/config.toml` and a token, installs the coordinator and the agent as background services (a LaunchAgent on macOS, systemd user units on Linux), and runs `idlemax doctor`.
+   It never overwrites anything, so running it again is safe and says `already done`.
+   [Set up a device](#set-up-a-device) has the roles, the flags and the output.
+
+3. Say which programs jobs may run.
+   The allowlist starts empty on purpose, so no job can start until you name one, and `idlemax doctor` tells you so.
+   Add it to `~/.idlemax/config.toml`, then restart the agent with `idlemax service install agent`:
+
+   ```toml
    [agent]
-   sample_secs = 5
-   heartbeat_secs = 5
    command_allowlist = ["/bin/echo"]
-
-   [guard]
-   # Demo only: let jobs start while you are at the keyboard and on battery.
-   user_idle_min_secs = 0
-   require_ac_power = false
-   min_battery_pct = 0.0
-   EOF
-   idlemax init
    ```
 
-3. Start the coordinator and the agent:
+4. Queue a job and wait for it:
 
    ```sh
-   idlemax coord >"$IDLEMAX_HOME/logs/coord.log" 2>&1 &
-   idlemax agent >"$IDLEMAX_HOME/logs/agent.log" 2>&1 &
-   sleep 2
-   idlemax status
+   idlemax job add --wait --timeout 60 -- /bin/echo "hello from idlemax"
    ```
 
-4. Queue a job:
+   On an idle machine it prints the result within seconds (the first log line differs on Linux):
 
-   ```sh
-   cat > "$IDLEMAX_HOME/hello.toml" <<'EOF'
-   name = "hello"
-   command = ["/bin/echo", "hello from idlemax"]
-   mem_mb = 64
-   max_runtime_secs = 60
-   EOF
-   idlemax job add "$IDLEMAX_HOME/hello.toml"
+   ```text
+   job 1 queued: echo
+   job 1 succeeded: echo
+   exit code: 0
+   ran: 1.0s on laptop
+   log (last 20 lines):
+   === idlemax job 1 attempt 1 started 2026-11-08T08:56:30.195+00:00 via taskpolicy ===
+   hello from idlemax
+
+   === idlemax: succeeded (exit 0) ===
    ```
 
-5. Watch it with `idlemax jobs`, `idlemax tui` (press `2` for jobs, `q` to quit), or open `http://127.0.0.1:7878/` and paste the token from `$IDLEMAX_HOME/token`.
-   If the job stays queued, ask why:
+   The guard may hold the job instead: you are at the keyboard, the laptop is on battery, or the machine is busy.
+   After 60 seconds the command exits with code 124 and the job keeps its place in the queue.
+   Ask why:
 
    ```sh
    idlemax why 1
@@ -108,42 +110,138 @@ You need a Rust toolchain (built with 1.95) on macOS or Linux.
 
    It lists every reason with its fix, for example a guard pause such as `disk free 13756.2 MiB < 15360 MiB`.
    That is the guard protecting a busy machine.
-   For the demo, relax the key it names in `[guard]` (here `disk_free_mib_pause = 0` and `disk_free_mib_kill = 0`) and restart the agent.
+   To see the demo through anyway, relax the key it names in `[guard]` (here `disk_free_mib_pause = 0` and `disk_free_mib_kill = 0`) and restart the agent.
 
-6. Read the result, then try the kill switch:
+5. Look around, then try the kill switch:
 
    ```sh
+   idlemax jobs
+   idlemax tui               # 2 for jobs, w for a job's reasons, q to quit
    idlemax logs 1
-   idlemax inbox
    idlemax inbox show 1
    idlemax stop-all --reason demo
    idlemax resume
    ```
 
-   `idlemax logs 1` prints the job's output (the first line differs on Linux):
+   The web dashboard is at `http://127.0.0.1:7878/`: paste the token from `~/.idlemax/token`.
 
-   ```text
-   === idlemax job 1 attempt 1 started 2026-11-08T07:27:25.617+00:00 via taskpolicy ===
-   hello from idlemax
+<details>
+<summary>Try it first in a throwaway directory, with no service</summary>
 
-   === idlemax: succeeded (exit 0) ===
-   ```
+This leaves your real `~/.idlemax` alone and runs the coordinator and the agent in your shell.
+The demo config relaxes the guard so the job can start while you are at the keyboard.
 
-7. Clean up, and unset `IDLEMAX_HOME` so the next section does not pick up the deleted directory:
+```sh
+export IDLEMAX_HOME="$(mktemp -d)"
+cat > "$IDLEMAX_HOME/config.toml" <<'EOF'
+[agent]
+sample_secs = 5
+heartbeat_secs = 5
+command_allowlist = ["/bin/echo"]
 
-   ```sh
-   kill %1 %2
-   rm -rf "$IDLEMAX_HOME"
-   unset IDLEMAX_HOME
-   ```
+[guard]
+# Demo only: let jobs start while you are at the keyboard and on battery.
+user_idle_min_secs = 0
+require_ac_power = false
+min_battery_pct = 0.0
+EOF
+idlemax init
+idlemax coord >"$IDLEMAX_HOME/logs/coord.log" 2>&1 &
+idlemax agent >"$IDLEMAX_HOME/logs/agent.log" 2>&1 &
+sleep 2
+idlemax status
+idlemax job add --wait --timeout 60 -- /bin/echo "hello from idlemax"
+```
+
+If the job stays queued, `idlemax why 1` names the `[guard]` key that holds it.
+Relax that key in the config and restart the agent.
+
+Clean up, and unset `IDLEMAX_HOME` so later commands do not pick up the deleted directory:
+
+```sh
+kill %1 %2
+rm -rf "$IDLEMAX_HOME"
+unset IDLEMAX_HOME
+```
+
+</details>
+
+## Set up a device
+
+`idlemax setup` takes a device from an installed binary to a working one:
+
+```sh
+idlemax setup [--role agent|coord|both] [--coord-url URL] [--token-stdin] [--statusline] [--no-service] [--dry-run]
+```
+
+It runs `init` (never overwriting), writes `config.toml` for the role, installs the services through the same code as `idlemax service install`, optionally wires the Claude Code statusline, and runs `idlemax doctor`.
+Every step is `done`, `already done`, `skipped`, `would do` (a dry run) or `FAILED`, with the exact command that does the same by hand:
+
+```text
+$ idlemax setup --dry-run
+dry run: nothing is written or run
+idlemax setup, role both
+would do      config          coordinator.url http://127.0.0.1:7878, coordinator.listen 127.0.0.1:7878, agent.profile macos_laptop
+                              would write: ~/.idlemax/config.toml
+                              by hand: idlemax init
+would do      token           a new random token, mode 0600
+                              would write: ~/.idlemax/token
+                              by hand: idlemax init
+would do      service coord   new, then started
+                              would write: ~/Library/LaunchAgents/com.idlemax.coord.plist
+                              would run: launchctl bootout gui/501/com.idlemax.coord  # a failure here is fine
+                              would run: launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.idlemax.coord.plist
+                              by hand: idlemax service install coord
+would do      service agent   new, then started
+                              ...
+skipped       statusline      not asked for: add --statusline
+                              by hand: idlemax statusline install
+would do      doctor          checks the whole setup once it is written
+                              would run: idlemax doctor
+                              by hand: idlemax doctor
+
+dry run only: run the same command without --dry-run to apply it
+```
+
+| Role | What it does | Services installed |
+|---|---|---|
+| `both` (default) | A coordinator and an agent on this device | coordinator, then agent |
+| `coord` | The queue only; this device runs no jobs | coordinator |
+| `agent` | Runs jobs for a coordinator on another device | agent |
+
+```sh
+idlemax setup --role coord --coord-url http://100.64.0.10:7878
+ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http://100.64.0.10:7878 --token-stdin
+```
+
+- `--coord-url` is the address agents and the CLI use to reach the coordinator, and a coordinator listens there too: the example above makes it listen on `100.64.0.10:7878`.
+  Without it the coordinator listens on `127.0.0.1:7878`.
+- An agent needs `--coord-url` (not a loopback address) and the coordinator's token on stdin with `--token-stdin`.
+  Without them it stops with exit code 2 and the fix, before it writes anything.
+- `--statusline` also runs `idlemax statusline install`, for the roles that run an agent.
+  `--no-service` writes the files but installs no service.
+- The guard profile comes from the OS: `macos_laptop` on macOS and `linux_server` on Linux.
+- Nothing existing is overwritten.
+  A `--coord-url` that disagrees with the existing `config.toml`, or a `--token-stdin` token that differs from the existing token file, is refused with the fix.
+- A service file is rewritten and reloaded only when its content would change, for example after the binary moved.
+- The first failing step stops the run, and the steps after it say they were not run.
+  After it installs services it waits up to 15 seconds for their ports, then runs doctor and prints the report.
+- Exit code 1 means a step failed, or services were asked for and doctor still finds a failing check.
+  With `--no-service` doctor's findings are printed but do not change the exit code, because nothing is running yet by design.
+  Exit code 2 means flags that cannot work.
+- `--json` prints one report with `steps[]`, `changed`, `ok` and doctor's report.
+
+`setup` does not set `agent.command_allowlist`, `agent.ai_accounts` or `[[quota.accounts]]`: those are your decisions, and doctor says what is missing.
+`idlemax init` cannot set `coordinator.listen`, so the by-hand command for a coordinator on a non-default address needs that one line added to `config.toml`; the report says so.
 
 ## Keep it running
 
-The quickstart runs everything in your shell.
-To keep the agent running in the background, let idlemax write the service file for your OS:
+`idlemax setup` already installs the services.
+These are the commands underneath, for installing, checking or removing one by hand.
+idlemax writes the service file for your OS:
 
 ```sh
-idlemax init                        # config.toml and the token, once
+idlemax init                        # config.toml and the token, once (setup does this too)
 idlemax service install --dry-run   # prints the file and the exact launchctl or systemctl commands
 idlemax service install             # writes it and starts the agent
 idlemax service status
@@ -213,7 +311,37 @@ my-laptop (online, heartbeat 2s ago):
 - `--json` prints the same data for scripts; the route is `GET /v1/jobs/{id}/why` in [docs/API.md](docs/API.md).
 - Every agent reports its allowlist, so the scheduler never leases a job to a device that would refuse its command, and `idlemax job add` warns on stderr when no device allows it.
 - Guard, slot and RAM verdicts are as of that device's last heartbeat (`agent.heartbeat_secs`, default 30), shown in its header.
-  The TUI and dashboard have no `why` view yet.
+- For a job that already ended it says how, for example `Job 4 (sh) failed (exit 3). It will not run again by itself.`
+- You do not have to ask.
+  The web dashboard puts a `waiting:` line with the headline reason on every queued, leased or paused job, and opens it to the full list.
+  The TUI's Jobs tab does the same in its last column and with `w`, see [Controls](#controls).
+  Both read `GET /v1/why`, which answers for every waiting job in one request, and fetch the full list for one job only when you ask.
+
+### What a job's status means
+
+| Status | Meaning |
+|---|---|
+| `queued` | Waiting for a device. `idlemax why <id>` says what for. After a retryable ending it waits out a backoff first. |
+| `leased` | A device has claimed it and is about to start it. |
+| `running` | The process is running. |
+| `paused` | Stopped (SIGSTOP) because the machine is busy or you paused it. It resumes by itself. |
+| `succeeded` | The process exited 0. |
+| `failed` | The process ended on its own with a non-zero exit, a signal or a crash. It is final and is not run again. |
+| `killed` | idlemax stopped it for its own limits (the `mem_mb` cap, `max_runtime_secs`) or because you ran `stop-all`. It is final. |
+| `cancelled` | You cancelled it with `idlemax job cancel`. |
+| `parked` | It was interrupted `max_attempts` times in a row (default 3) for reasons that are not its fault. It needs you to look and queue it again. |
+
+`idlemax status` prints a count for each of parked, failed and killed when there are any.
+
+A job's own result is final, and only an ending that is not the job's fault is retried, after a backoff of 2 minutes, then 4, 8 and so on (at most 1 hour):
+
+- Retried: the lease was lost or expired (the agent is gone, the device went offline, the coordinator restarted), the guard killed the job because you came back or the machine came under pressure, the agent was shutting down or restarted, or the agent could not start the process.
+- Not retried: a non-zero exit, a signal or a crash (`failed`), a kill for the job's own memory cap or runtime limit (`killed`), `stop-all` and `job cancel`.
+  A failing test suite has given its answer, and running it again would waste the spare capacity idlemax exists to use.
+- AI jobs (`cost = "ai"`) get one attempt: their own failure ends `failed`, and an interruption parks them at once.
+
+To run a failing job again on purpose, queue it again with `idlemax job add`.
+Upgrade agents together with the coordinator: an older agent cannot mark its guard kills or start failures as retryable, so with a newer coordinator they end `killed` or `failed` instead of being retried.
 
 ### What did it do?
 
@@ -227,6 +355,192 @@ idlemax inbox show 1       # the note: start and finish, run time, exit code, th
 `logs` reads `$IDLEMAX_HOME/logs/jobs/<id>.log` on this device.
 If the job ran elsewhere it says so (`job 12 ran on server; run this there`).
 Set `agent.notify = true` for a macOS notification with the job name and outcome when a job finishes.
+
+## Use it from an AI agent
+
+idlemax is built to be driven from a shell by an agent such as Claude Code or Codex.
+Nothing here is required, and each piece removes a guess the agent would otherwise make.
+
+- **A home view.**
+  `idlemax` with no arguments prints live state instead of a usage error: each device with its guard verdict, job counts, open advice, which AI accounts are spendable now, and the next commands that fit what it sees.
+  It waits at most 3 seconds for the coordinator and exits 0.
+  When the device is not set up or the coordinator is down it prints one note with the fix (`idlemax setup`, `idlemax coord`, `idlemax doctor`).
+  On a terminal it prints text, through a pipe it prints [TOON](#output-an-agent-can-read), and `--json` prints JSON.
+- **A session hook.**
+  `idlemax hooks install` makes every Claude Code, Codex and OpenCode session start with a few lines of that state, so the agent knows what is running before it does anything.
+  It runs only when you ask, never from another command.
+- **A skill.**
+  `skills/idlemax/SKILL.md` is a generated [Agent Skill](https://agentskills.io) for agents without hooks, or for anyone who prefers loading it on demand.
+  The hook and the skill reach the same goal, so you need only one.
+- **One line to hand work to idle capacity:** `idlemax job add --wait -- <command>`.
+
+### Output an agent can read
+
+Every command prints in one of three formats, chosen with the global `--format table|toon|json`:
+
+| Format | Default when | For |
+|---|---|---|
+| `table` | stdout is a terminal | people; the tables look as they always did |
+| `toon` | stdout is a pipe or a file | agents and scripts that read text |
+| `json` | you ask; `--json` is the same as `--format json` | scripts that parse; the API body, unchanged |
+
+[TOON](https://toonformat.dev) states a table's shape once instead of repeating every key, which takes about 40% fewer tokens than the same data as JSON:
+
+```text
+$ idlemax jobs | cat
+count: 5
+jobs[5]{id,name,status,device}:
+  5,sh,failed,laptop
+  4,sh,failed,laptop
+  3,echo,succeeded,laptop
+  2,echo,succeeded,laptop
+  1,echo,succeeded,laptop
+help[3]:
+  - Run `idlemax why <id>` to see why a job is not running
+  - Run `idlemax logs <id>` to read a job's output
+  - Run `idlemax job cancel <id>` to stop a job
+```
+
+- Lists show a few columns: `--fields cost,age,result` adds some and `--fields all` adds every one.
+- A list longer than what is shown says so (`count: 2 of 8` for `idlemax jobs --limit 2`), and an empty list says what is empty (`jobs: 0 queued jobs`).
+- Text longer than 500 characters is cut and ends with `(truncated, 700 chars total)`; `--full` prints it all.
+- `help[N]:` lists complete next commands, with `<id>` standing for a value you choose.
+  Tables never show hints, and `--json` prints the API body untouched.
+- `idlemax logs <id>` and `idlemax inbox show <id>` print the file as it is, whatever the format.
+- `--format`, `--json`, `--fields`, `--full` and `--utc` are global flags and work before or after the command.
+
+Errors are two lines, with the command that fixes them, and go to stdout in `toon` and `json` so the reader of the output sees them (in `table` they go to stderr):
+
+```text
+$ idlemax status | cat
+error: "coordinator unreachable at http://127.0.0.1:7878"
+help: idlemax coord (or pass --coord <URL> for a running one); `idlemax local stop-all` works without it
+```
+
+A mistyped flag or command lists the valid ones in the same reply, so one more call is not needed.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | success, including "nothing to do" |
+| 1 | runtime error: the server is down, the job is not found, the command failed |
+| 2 | usage error: an unknown flag or command, a missing argument, a bad `--fields` |
+
+`idlemax job add --wait` keeps its own exit codes, which mirror the job (below).
+
+Repeating a command is safe: doing what is already done is not an error.
+It answers `already <state> (no-op)` and exits 0:
+
+```text
+$ idlemax pause | grep result
+result: paused global
+$ idlemax pause | grep result
+result: already paused (no-op)
+```
+
+This covers `pause`, `resume` and `stop-all` (also under `local`), `job cancel` on a finished job, `advise dismiss` on dismissed advice, `schedule pause` and `resume`, and `job add --key` on a key that is already queued.
+`idlemax -V`, `-v` and `--version` print the bare version (`0.1.0`).
+
+### Session hooks and the skill
+
+```sh
+idlemax hooks install --dry-run   # shows the diff, writes nothing
+idlemax hooks install
+idlemax hooks status              # per agent: installed, stale, not installed or not found
+idlemax hooks uninstall           # removes only idlemax's entry
+idlemax skill --check             # exit 1, with the fix, when skills/idlemax/SKILL.md is stale
+```
+
+| Agent | File | What is added |
+|---|---|---|
+| Claude Code | `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`) | a `hooks.SessionStart` entry running `idlemax hooks summary` |
+| Codex | `~/.codex/hooks.json` (or `$CODEX_HOME`) | the same entry, plus `[features] hooks = true` in `config.toml` |
+| OpenCode | `~/.config/opencode/plugins/idlemax.js` | a managed plugin that adds the summary to the system prompt |
+
+- With no flag `hooks install` acts on the agents whose config directory exists and names the others as skipped; `--claude`, `--codex` and `--opencode` act on exactly the ones you name.
+- It edits only its own entry, byte for byte, and keeps the old file as `<file>.idlemax.bak`.
+  Running it again changes nothing, and it repairs the command if the binary moved.
+- A file it cannot understand (invalid JSON, a `hooks` key that is not an object) is reported as `refused` and left alone, and the exit code is 1.
+- `hooks summary` is what the hook prints: a few lines, always exit 0, and one line with the fix when idlemax is not running.
+- The hook command is the bare `idlemax hooks summary` when `idlemax` on `PATH` is this very executable, and the absolute path otherwise.
+- `idlemax skill` prints the skill, and `idlemax skill > skills/idlemax/SKILL.md` regenerates it from the same description and command list as the home view.
+  CI runs `idlemax skill --check`, so the committed skill cannot drift from the CLI.
+
+### Run a command on idle capacity
+
+```sh
+idlemax job add --wait --timeout 600 --key pr-42-tests -- /bin/echo "tests passed"
+```
+
+Replace `/bin/echo` with your command, for example `cargo test` once it is in `agent.command_allowlist`.
+The command after `--` is argv: it runs directly, never through a shell, so use `-- sh -c '...'` for pipes or `&&`.
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--name N` | Job name | the command's file name |
+| `--cost cpu_light\|cpu_heavy\|io\|ai` | Kind of load | `cpu_light`, or `ai` with `--ai-account` |
+| `--device D` | Run only on this device, repeatable | any device |
+| `--requires X` | Tool the device must have, repeatable | none |
+| `--mem MIB` | Memory the job may use | 512 |
+| `--max-runtime SECS` | Longest run before it is killed | 1800 |
+| `--priority P` | Higher runs first, may be negative | 0 |
+| `--ai-account A` | AI account to spend, from `[[quota.accounts]]` | none |
+| `--cwd PATH` | Directory to run in | the device's default |
+| `--key K` | Idempotency key, see below | none |
+| `--wait` | Wait for the result | off |
+| `--timeout SECS` | With `--wait`, stop waiting after this long | no limit |
+
+- `--cwd .` becomes an absolute path on the machine where you type the command, and it must exist on the device that runs the job: pair it with `--device` when the checkout exists on one machine only.
+- Flags that describe the job (`--name` through `--cwd`) cannot be combined with a spec file or `-`; mixing them, or `--cost ai` without `--ai-account`, is a usage error with exit code 2.
+  `--key`, `--wait` and `--timeout` work with a spec file and with stdin (`idlemax job add - [flags]`) too.
+- Flags cannot set `env`, `stdin`, `on_user_active` or `max_attempts`; use a [spec file](#job-specs) for those.
+
+With `--wait` the command blocks until the job ends, prints how it went, and exits with a code that mirrors the job.
+The queued line and the progress lines go to stderr, and the result goes to stdout, with the end of the log when it is on this device.
+A coordinator that is down for up to 2 minutes is waited out.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | the job succeeded |
+| 1 | the job ended any other way (failed, killed, cancelled, parked), or idlemax itself failed |
+| 2 | usage error |
+| 124 | `--timeout` passed first; the job stays queued and keeps its place |
+
+Piped, the reply is TOON, and the result is the first line:
+
+```text
+$ idlemax job add --wait --mem 64 -- /bin/echo "hello from idlemax" | cat
+result: succeeded
+job:
+  id: 1
+  name: echo
+  status: succeeded
+  device: laptop
+exit_code: 0
+ran: 1.0s on laptop
+log_tail[4]{line}:
+  "=== idlemax job 1 attempt 1 started 2026-11-08T09:01:45.874+00:00 via taskpolicy ==="
+  hello from idlemax
+  ""
+  "=== idlemax: succeeded (exit 0) ==="
+help[1]:
+  - Run `idlemax jobs` to list the remaining jobs
+```
+
+A timeout reads `result: still running after waiting 2s` and exits 124.
+`--wait --json` prints one object: `{"job": {...}, "log_tail": [...], "timed_out": false}`.
+
+Agents retry, so a key keeps a retry from queueing a duplicate:
+
+```text
+$ idlemax job add --key pr-42-tests -- /bin/sleep 20 | grep result
+result: queued
+$ idlemax job add --key pr-42-tests -- /bin/sleep 20 | grep result
+result: already queued (no-op)
+```
+
+While a job with the key is queued, leased, running or paused, adding the same key returns that job and exits 0, even with different flags.
+Once it has finished the key is free again.
+A key is 1 to 128 characters; a spec file sets it with `key = "..."`.
 
 ## How it works
 
@@ -260,7 +574,8 @@ flowchart LR
   It samples the machine, runs the guard, heartbeats to the coordinator, starts leased jobs under OS throttles and writes each result to an inbox note.
   Its local API on loopback keeps working while the coordinator is down.
 - **Jobs are leased, not pushed.**
-  A lease that a heartbeat does not renew within 120 s is re-queued with backoff, and a job that fails `max_attempts` times is parked for you to look at.
+  A lease that a heartbeat does not renew within 120 s is re-queued with backoff.
+  A job that fails or exceeds its own limits is final (`failed`, `killed`), while a job interrupted `max_attempts` times for reasons that are not its fault (lease lost, guard kill, agent shutdown) is parked for you to look at, see [job states](#what-a-jobs-status-means).
 - **Job updates survive crashes.**
   The agent journals each update before sending it and replays what the coordinator never acknowledged, and the coordinator applies each update once.
 
@@ -412,16 +727,19 @@ You accept or dismiss each one, and nothing runs on the advisor's word alone, ex
 ## Controls
 
 Every command reads `$IDLEMAX_HOME` (default `~/.idlemax`; set but empty is an error).
-Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`), and `--json` prints JSON for scripts.
+Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`).
+Output flags work on every command: `--format table|toon|json` (`--json` is `--format json`), `--fields` and `--full` for agents ([details](#output-an-agent-can-read)), and `--utc` to show event times in UTC instead of this machine's zone.
 
 | Command | Does |
 |---|---|
+| `idlemax` | live state and the next commands to try, see [Use it from an AI agent](#use-it-from-an-ai-agent) |
+| `idlemax setup [--role agent\|coord\|both] [--coord-url URL] [--token-stdin] [--statusline] [--no-service] [--dry-run]` | set this device up in one command and run `doctor`, see [Set up a device](#set-up-a-device) |
 | `idlemax agent` | run the device agent |
 | `idlemax coord` | run the coordinator |
 | `idlemax init [--profile macos-laptop\|linux-server] [--coord-url URL] [--token-stdin]` | create the state dirs, `config.toml` and a 0600 token; never overwrites, and refuses the flags when a config already exists |
 | `idlemax status` | cluster summary and devices |
 | `idlemax jobs [--status S] [--limit N]` | list jobs (default limit 50) |
-| `idlemax job add <spec.toml>` | validate and queue a job spec |
+| `idlemax job add [flags] -- <argv...> \| <spec.toml> \| -` | queue a job from flags, a spec file or stdin; `--wait [--timeout S]` waits for the result and `--key K` makes a retry safe, see [Run a command on idle capacity](#run-a-command-on-idle-capacity) |
 | `idlemax job cancel <id>` | cancel a job, killing it if it runs |
 | `idlemax schedule add <spec.toml> [--every I] \| list \| pause <id> \| resume <id> \| rm <id>` | repeat a job on an interval, see [Recurring jobs](#recurring-jobs) |
 | `idlemax doctor` | check this device's setup, with the fix for every problem; exit 1 on a failed check |
@@ -436,11 +754,14 @@ Coordinator commands accept `--coord URL` (or `IDLEMAX_COORD`), and `--json` pri
 | `idlemax advise [list \| accept <id> \| dismiss <id> \| refresh]` | advisor recommendations (default `list`) |
 | `idlemax service install \| uninstall \| status [agent\|coord]` | run the agent (or the coordinator) as a background service, see [Keep it running](#keep-it-running); `--dry-run` previews `install` and `uninstall` |
 | `idlemax statusline install \| uninstall \| status` | wire Claude's statusline into the quota probe; `--dry-run` previews `install` and `uninstall` |
+| `idlemax hooks install \| uninstall \| status [--claude] [--codex] [--opencode]` | start every agent session with idlemax's state, see [Session hooks and the skill](#session-hooks-and-the-skill); `--dry-run` previews |
+| `idlemax skill [--check]` | print the generated agent skill, or check the committed copy is current |
 | `idlemax tui` | terminal dashboard |
 | `idlemax local status \| pause \| resume \| stop-all` | this device's agent directly, on `agent.listen` |
 
 **Terminal dashboard.**
-The screen below is rendered with ratatui's `TestBackend` from placeholder data, with blank rows cropped:
+The screens below are rendered with ratatui's `TestBackend` from placeholder data, with blank rows cropped.
+The layout is built for 80x24 and up: long names and errors are cut with an ellipsis, narrow screens drop the least useful columns first, and Japanese text and emoji are measured in terminal cells.
 
 ```text
 idlemax http://127.0.0.1:7878   running   updated 2s ago
@@ -450,10 +771,37 @@ coordinator 0.1.0 | global: running | jobs: 1 running, 1 queued | advice: 1 open
 │  DEVICE  STATE   GUARD                  IDLE  CPU  LOAD  MEM FREE  SWAP  DISK    POWER  JOBS     │
 │> laptop  online  run 1                  25m   9%   2.10  41% 5.0G  1.0G  120.0G  ac     1        │
 │  server  online  hold: load 1.70 > 1.5  -     9%   1.70  52% 5.0G  1.0G  120.0G  -      0        │
-│                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 p/r pause/resume device laptop  P/R all  s stop-all  tab/1-6 switch  q quit
 ```
+
+The last Jobs column, `RESULT / WHY`, says why a waiting job waits.
+`w` opens the full reasons for the selected job under the table, with the fix for each, and `PgUp` and `PgDn` scroll a long list:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME           STATUS     DEVICE  COST       PRIO  TRIES  AGE     RESULT / WHY              │
+│> 3   nightly-make   queued     -       cpu_light  0     0/3    3m ago  "make" is not in laptop'… │
+│  2   index-refresh  running    laptop  cpu_light  0     1/3    2m ago  running 12m               │
+│  1   repo-health    succeeded  laptop  cpu_light  0     0/3    1m ago  exit 0                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ why job 3 (nightly-make) ────────────────────────────────────────────────────────────────────────┐
+│Job 3 (nightly-make) is queued but not starting.                                                  │
+│                                                                                                  │
+│laptop (online, heartbeat 2s ago):                                                                │
+│  - "make" is not in laptop's agent.command_allowlist, so it would refuse the job                 │
+│    fix: add "make" to agent.command_allowlist in config.toml on laptop and restart its agent     │
+│  - all 1 job slots are taken, by job 2 (index-refresh)                                           │
+│                                                                                                  │
+│server (online, heartbeat 3s ago):                                                                │
+│  - load 1m 1.70 > 1.5 (guard hold)                                                               │
+│    fix: wait for the load to drop; threshold is guard.load_1m_pause                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 3  k cancel job  w close  PgUp/PgDn scroll  s stop-all  tab/1-6 switch  q quit
+```
+
+The pane asks for one job's reasons only when it opens, when you move to another job, or when that job's headline changed in the last refresh.
+An empty tab says what to run next, for example `idlemax job add <spec.toml>`.
 
 | Key | Action |
 |---|---|
@@ -463,6 +811,8 @@ p/r pause/resume device laptop  P/R all  s stop-all  tab/1-6 switch  q quit
 | `P`, `R` | pause or resume everything |
 | `s` | stop-all everywhere (asks first) |
 | `k` | cancel the selected job (asks first) |
+| `w` | on the Jobs tab, show or hide the reasons for the selected waiting job |
+| `PgUp`, `PgDn` | scroll the reasons |
 | `a`, `d` | accept or dismiss the selected advice; on Schedules, `d` removes the selected schedule (asks first) |
 | `f` | re-run the advisor (Advice tab) |
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
@@ -472,6 +822,8 @@ p/r pause/resume device laptop  P/R all  s stop-all  tab/1-6 switch  q quit
 The coordinator serves one self-contained page at `/` with no remote scripts, fonts or styles.
 It asks for the token once and keeps it in that browser's local storage until you press "Forget token".
 It refreshes every 5 s and shows devices with guard verdicts and metrics, schedules, jobs, AI quota per window, advice and events.
+Every queued, leased or paused job carries a `waiting:` line with its headline reason (`+N more` when there are others); click it to open the full list of reasons and fixes across the job's whole row, with the devices that could take the job first.
+The page reads `GET /v1/why` once per refresh for all of them and asks for one job's full list only when you open it.
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, pause, resume or remove a schedule, and accept or dismiss advice.
 
@@ -540,7 +892,8 @@ priority = 3                # higher runs first
 mem_mb = 1024               # default 512, counted against the device RAM budget
 max_runtime_secs = 1500     # default 1800
 on_user_active = "kill"     # pause (default), continue or kill
-max_attempts = 3            # default 3; ai jobs always get 1
+max_attempts = 3            # default 3: tries for interruptions that are not the job's fault; a failing command is never retried; ai jobs always get 1
+key = "repo-health-a"       # optional: adding the same key again returns the job that holds it
 
 [env]
 CARGO_BUILD_JOBS = "2"
@@ -618,16 +971,17 @@ The TUI (tab 6) and the web dashboard list schedules too, with pause, resume and
 
    Edit `listen`, `url` and `device_id` in `/var/lib/idlemax/config.toml` before enabling the units.
 
-3. On every other device, share the coordinator's token and point the agent at it:
+3. On every other device, share the coordinator's token and point the agent at it, which also installs the agent as a per-user service (macOS LaunchAgent, Linux systemd user unit):
 
    ```sh
-   ssh <server> sudo cat /var/lib/idlemax/token | idlemax init --coord-url http://<tailnet-ip>:7878 --token-stdin
+   ssh <server> sudo cat /var/lib/idlemax/token | idlemax setup --role agent --coord-url http://<tailnet-ip>:7878 --token-stdin
    ```
 
-   Then set `device_id`, `ai_accounts` and `command_allowlist` in `~/.idlemax/config.toml`, and keep `[[quota.accounts]]` identical on every host.
+   Add `--dry-run` first to see every file and command.
+   Then set `device_id`, `ai_accounts` and `command_allowlist` in `~/.idlemax/config.toml`, keep `[[quota.accounts]]` identical on every host, and restart the agent with `idlemax service install agent`.
 
-4. On a Mac (or a Linux desktop), run the agent as a per-user service with `idlemax service install`, as described in [Keep it running](#keep-it-running).
-   It fills in your binary, `PATH` and state dir, which the templates in `packaging/` leave as placeholders.
+4. `setup` fills in your binary, `PATH` and state dir, which the templates in `packaging/` leave as placeholders; [Keep it running](#keep-it-running) describes the service commands it uses.
+   On a machine that should run the coordinator for production, keep the system units from step 2 instead: `idlemax setup --role coord` installs a per-user service.
 
 | Unit | Caps and settings |
 |---|---|
@@ -642,12 +996,13 @@ Add `ReadWritePaths=` with `systemctl edit idlemax-agent` if a job needs to writ
 
 ## Status and limits
 
-Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, the end-to-end test (a coordinator and an agent running one job), live runs of the agent and coordinator in temporary state directories (including `why`, `logs`, `inbox`, `schedule` and `statusline` against them), and the web dashboard in Chrome.
+Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, the end-to-end test (a coordinator and an agent running one job), live runs of the agent and coordinator in temporary state directories (including `job add --wait`, `why`, `logs`, `inbox`, `schedule`, `statusline`, `hooks` and `setup` against them), the TUI in a terminal emulator at 80x24 and 120x40, and the web dashboard in Chrome.
 
 | Area | Limit |
 |---|---|
 | Linux | not yet run on Linux: the Linux parsers are tested on macOS with fixtures, but the Linux metrics call site, `loginctl` idle, the `systemd-run` wrapper and the systemd system and user units have not run |
-| Service install | `idlemax service install` is checked with `--dry-run` and against a stand-in `launchctl`, but has not driven a real launchd or systemd yet |
+| Service install | `idlemax service install` and `idlemax setup` are checked with `--dry-run` and against a stand-in service manager, but have not driven a real launchd or systemd yet |
+| Agent integrations | `idlemax hooks install` ran against temp copies of the Claude Code and Codex files; the OpenCode plugin passes `node --check` and ran under a fake plugin host, but OpenCode itself was not driven; installing the skill with `npx skills add` has not run |
 | Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
 | AI pass | the advisor's `claude -p` pass has not run end to end, because that spends quota |
 | Claude quota | needs `idlemax statusline install`; until the first capture lands, Claude accounts are never spendable |
@@ -666,8 +1021,10 @@ crates/idlemax-core/src/   domain: types, protocol, config, paths, guard, quota,
                            control, reconcile, job_run, advice, explain, install, notify (pure, unit tested)
 crates/idlemax/src/        adapters and delivery: agent/, coord/, advisor/, cli/, tui/, state.rs
 crates/idlemax/assets/     dashboard.html
-crates/idlemax/tests/      integration tests: e2e.rs (coordinator plus agent), examples.rs (example configs and specs)
+crates/idlemax/tests/      integration tests that run the real binary in a temp home: e2e.rs (coordinator plus agent),
+                           setup.rs, hooks.rs, skill.rs, doctor.rs and more
 examples/                  configs, job specs, job scripts
+skills/                    the generated agent skill (idlemax/SKILL.md)
 packaging/                 launchd plists, systemd units, Claude statusline capture script
 scripts/                   install.sh, changelog.sh, verify-linux.sh
 docs/                      API.md, ROLLOUT.md, RELEASING.md, ROADMAP.md
@@ -692,6 +1049,8 @@ Every change passes `cargo fmt --all --check`, `cargo clippy --workspace --all-t
 
 - To report a bug or ask for a feature, use the issue forms under [Issues](https://github.com/mrx-arafat/idlemax/issues/new/choose).
 - For a security problem, do not open a public issue; follow [SECURITY.md](SECURITY.md).
+- `skills/idlemax/SKILL.md` is generated.
+  After you change the command list or the description, run `idlemax skill > skills/idlemax/SKILL.md`; CI fails on a stale copy (`idlemax skill --check`).
 - Run the agent or coordinator in a temp `HOME` and `IDLEMAX_HOME` during development, never your real state dir.
   The e2e test does this and refuses to start against your real one.
 
@@ -701,6 +1060,7 @@ Every change passes `cargo fmt --all --check`, `cargo clippy --workspace --all-t
 - [docs/ROLLOUT.md](docs/ROLLOUT.md): runbook to verify the Linux agent, then deploy the coordinator on a tailnet
 - [docs/RELEASING.md](docs/RELEASING.md): how a release is cut
 - [docs/ROADMAP.md](docs/ROADMAP.md): what comes next
+- [skills/idlemax/SKILL.md](skills/idlemax/SKILL.md): the generated agent skill
 - [CONTRIBUTING.md](CONTRIBUTING.md): development loop, gates and commit style
 - [SECURITY.md](SECURITY.md): how to report a vulnerability, and what is in scope
 - [CHANGELOG.md](CHANGELOG.md): release notes
