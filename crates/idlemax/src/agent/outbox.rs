@@ -46,7 +46,7 @@ impl DurableOutbox {
             Err(e) => {
                 error!(path = %path.display(), error = %e, "cannot read the outbox journal, job updates will not survive a crash");
                 return Self {
-                    queue: Outbox::new(cap),
+                    queue: Outbox::restore(cap, u64::try_from(now_ms).unwrap_or(1), Vec::new()),
                     path: None,
                     journal: None,
                 };
@@ -249,6 +249,17 @@ mod tests {
         let mut reopened = DurableOutbox::open(dir.path(), 10, NOW - 60_000);
         reopened.push(finished(999));
         assert!(reopened.pending(1)[0].seq >= NOW as u64 + COMPACT_MIN_DEAD as u64);
+    }
+
+    #[test]
+    fn an_unreadable_journal_does_not_restart_sequences_at_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        std::fs::create_dir(&path).unwrap();
+        let mut outbox = DurableOutbox::open(dir.path(), 10, NOW);
+        outbox.push(finished(1));
+        assert_eq!(outbox.pending(1)[0].seq, NOW as u64);
+        assert!(path.is_dir(), "unreadable journal must remain untouched");
     }
 
     #[test]
