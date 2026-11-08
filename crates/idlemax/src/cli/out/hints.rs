@@ -1,7 +1,8 @@
 //! Delivery: next-step hints for TOON replies (AXI contextual disclosure). A few complete
 //! commands that follow from what was just shown; `<id>` stands for a value the reader picks.
 
-use idlemax_core::types::{JobId, JobStatus};
+use idlemax_core::protocol::ControlRequest;
+use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
 fn run(cmd: &str, to: &str) -> String {
     format!("Run `{cmd}` to {to}")
@@ -63,11 +64,21 @@ pub fn job_changed() -> Vec<String> {
     vec![run("idlemax jobs", "list the remaining jobs")]
 }
 
-pub fn control(resumed: bool) -> Vec<String> {
-    if resumed {
-        vec![run("idlemax jobs", "see what is running")]
-    } else {
-        vec![run("idlemax resume", "let jobs run again")]
+pub fn control(req: &ControlRequest) -> Vec<String> {
+    if req.action == ControlAction::Resume {
+        return vec![run("idlemax jobs", "see what is running")];
+    }
+    vec![run(&resume_command(&req.scope), "let jobs run again")]
+}
+
+/// `idlemax resume` for the scope that was just held: a bare resume leaves a held
+/// device, account or job held.
+fn resume_command(scope: &ControlScope) -> String {
+    match scope {
+        ControlScope::Global => "idlemax resume".into(),
+        ControlScope::Device(d) => format!("idlemax resume --device {d}"),
+        ControlScope::Account(a) => format!("idlemax resume --account {a}"),
+        ControlScope::Job(j) => format!("idlemax resume --job {j}"),
     }
 }
 
@@ -148,6 +159,45 @@ pub fn then(cmd: &str, to: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scoped_hold_is_resumed_on_the_same_scope() {
+        let req = |action, scope| ControlRequest {
+            action,
+            scope,
+            reason: None,
+        };
+        // Resuming the same scope is the only command that lets those jobs run again.
+        assert_eq!(
+            control(&req(
+                ControlAction::Pause,
+                ControlScope::Device("mac".into())
+            )),
+            ["Run `idlemax resume --device mac` to let jobs run again"]
+        );
+        assert_eq!(
+            control(&req(
+                ControlAction::StopAll,
+                ControlScope::Account("claude".into())
+            )),
+            ["Run `idlemax resume --account claude` to let jobs run again"]
+        );
+        assert_eq!(
+            control(&req(ControlAction::StopAll, ControlScope::Job(7))),
+            ["Run `idlemax resume --job 7` to let jobs run again"]
+        );
+        assert_eq!(
+            control(&req(ControlAction::Pause, ControlScope::Global)),
+            ["Run `idlemax resume` to let jobs run again"]
+        );
+        assert_eq!(
+            control(&req(
+                ControlAction::Resume,
+                ControlScope::Device("mac".into())
+            )),
+            ["Run `idlemax jobs` to see what is running"]
+        );
+    }
 
     #[test]
     fn a_truncated_job_list_says_how_to_see_all_of_it_with_the_same_filter() {

@@ -69,7 +69,7 @@ pub async fn control(c: &ApiClient, req: ControlRequest, out: &Out) -> Result<()
         &s,
         |s| format!("ok: {label}\n{}", print::summary(s)),
         || Ok(views::control(&result, &s)),
-        &hints::control(req.action == ControlAction::Resume),
+        &hints::control(&req),
     )
 }
 
