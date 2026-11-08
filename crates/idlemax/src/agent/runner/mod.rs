@@ -2,6 +2,8 @@
 //! logs and inbox notes. Decisions live in `idlemax_core::job_run`. Sync and
 //! `Send + 'static`: the agent drives it from `spawn_blocking` and calls `poll` every few seconds.
 
+#[cfg(all(test, unix))]
+mod daemon_tests;
 mod finish;
 mod launch;
 mod os;
@@ -16,7 +18,7 @@ use std::process::{Child, ExitStatus};
 use std::time::Instant;
 
 use idlemax_core::config::AgentConfig;
-use idlemax_core::job_run::{self, AdmitError, ExitInfo, RunClock, StopReason, Wrapper};
+use idlemax_core::job_run::{self, AdmitError, ExitInfo, JobKey, RunClock, StopReason, Wrapper};
 use idlemax_core::protocol::{JobUpdate, RunningJob};
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Paths;
@@ -90,6 +92,8 @@ struct Slot {
     log_path: PathBuf,
     log_offset: u64,
     usage: Option<Usage>,
+    /// Members outside the job's process group, signalled by pid.
+    outside: Vec<u32>,
     stop: Option<Stop>,
 }
 
@@ -153,6 +157,7 @@ impl Runner {
             log_path: launched.log_path,
             log_offset: launched.log_offset,
             usage: None,
+            outside: Vec::new(),
             stop: None,
         };
         self.slots.insert(job.id, slot);
@@ -168,7 +173,7 @@ impl Runner {
         if slot.stop.is_some() || slot.clock.is_paused() {
             return Ok(());
         }
-        os::signal_group(slot.pid, Sig::Stop)
+        os::signal_job(slot.pid, &slot.outside, Sig::Stop)
             .map_err(|source| RunnerError::Signal { id, source })?;
         slot.clock.pause(awake_ms);
         Ok(())
@@ -183,7 +188,7 @@ impl Runner {
         if !slot.clock.is_paused() {
             return Ok(());
         }
-        os::signal_group(slot.pid, Sig::Cont)
+        os::signal_job(slot.pid, &slot.outside, Sig::Cont)
             .map_err(|source| RunnerError::Signal { id, source })?;
         slot.clock.resume(awake_ms);
         Ok(())
@@ -238,10 +243,14 @@ impl Runner {
         };
         procs.refresh();
         self.usage_at_ms = now;
-        let roots: Vec<u32> = self.slots.values().map(|s| s.pid).collect();
-        let usages = procs.usages(&roots);
+        let jobs: Vec<JobKey> = self.slots.values().map(Slot::key).collect();
+        let mut found = procs.usages(&jobs);
         for slot in self.slots.values_mut() {
-            slot.usage = usages.get(&slot.pid).copied();
+            slot.usage = None;
+            if let Some(mine) = found.remove(&slot.pid) {
+                slot.usage = Some(mine.usage);
+                slot.outside = mine.outside_group;
+            }
         }
     }
 
@@ -268,7 +277,7 @@ impl Runner {
     }
 
     fn close(&self, slot: Slot, status: ExitStatus, now: UnixMs, awake_ms: i64) -> JobUpdate {
-        if let Err(e) = os::kill_leftovers(slot.pid) {
+        if let Err(e) = os::kill_leftovers(slot.pid, &slot.outside) {
             warn!(job = slot.job.id, error = %e, "cannot kill leftover job processes");
         }
         pidfile::remove(&self.paths, slot.job.id);
@@ -296,7 +305,7 @@ impl Runner {
 impl Drop for Runner {
     fn drop(&mut self) {
         for (id, slot) in &self.slots {
-            match os::signal_group(slot.pid, Sig::Kill) {
+            match os::signal_job(slot.pid, &slot.outside, Sig::Kill) {
                 Ok(()) => pidfile::remove(&self.paths, *id),
                 Err(e) => warn!(job = *id, error = %e, "cannot kill job on runner drop"),
             }
@@ -305,6 +314,14 @@ impl Drop for Runner {
 }
 
 impl Slot {
+    fn key(&self) -> JobKey {
+        JobKey {
+            id: self.job.id,
+            root: self.pid,
+            started_ms: self.clock.started_ms(),
+        }
+    }
+
     fn view(&self) -> RunningJob {
         let spec = &self.job.spec;
         let status = if self.clock.is_paused() {
@@ -331,7 +348,7 @@ fn enforce(slot: &mut Slot, now: UnixMs, awake_ms: i64) {
     let id = slot.job.id;
     if let Some(stop) = slot.stop.as_mut() {
         if !stop.kill_sent && job_run::kill_due(stop.term_sent_ms, now) {
-            match os::signal_group(slot.pid, Sig::Kill) {
+            match os::signal_job(slot.pid, &slot.outside, Sig::Kill) {
                 Ok(()) => stop.kill_sent = true,
                 Err(e) => warn!(job = id, error = %e, "cannot SIGKILL job"),
             }
@@ -351,7 +368,7 @@ fn stop(slot: &mut Slot, reason: StopReason, now: UnixMs, awake_ms: i64) -> io::
     if slot.stop.is_some() {
         return Ok(());
     }
-    os::signal_group(slot.pid, Sig::Term)?;
+    os::signal_job(slot.pid, &slot.outside, Sig::Term)?;
     slot.stop = Some(Stop {
         reason,
         term_sent_ms: now,
@@ -359,7 +376,7 @@ fn stop(slot: &mut Slot, reason: StopReason, now: UnixMs, awake_ms: i64) -> io::
     });
     if slot.clock.is_paused() {
         // A stopped process acts on SIGTERM only once continued.
-        os::signal_group(slot.pid, Sig::Cont)?;
+        os::signal_job(slot.pid, &slot.outside, Sig::Cont)?;
         slot.clock.resume(awake_ms);
     }
     Ok(())

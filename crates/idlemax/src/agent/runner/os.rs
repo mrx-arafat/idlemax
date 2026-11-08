@@ -1,12 +1,18 @@
 //! Adapter: per-OS process control for jobs (throttle detection, group signals, tree usage).
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use idlemax_core::job_run::{supports_scope_oom_policy, Wrapper};
-use idlemax_core::types::UnixMs;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+pub use idlemax_core::job_run::Usage;
+use idlemax_core::job_run::{
+    could_belong, job_procs, supports_scope_oom_policy, JobKey, JobProcs, ProcFact, Wrapper,
+};
+use idlemax_core::types::{JobId, UnixMs};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+use super::launch::JOB_ID_ENV;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sig {
@@ -19,24 +25,66 @@ pub enum Sig {
 /// Signals a job's process group; its pgid is the root pid. A gone group is not an error.
 #[cfg(unix)]
 pub fn signal_group(pgid: u32, sig: Sig) -> io::Result<()> {
-    use nix::sys::signal::{killpg, Signal};
-    // pgid 0 is our own group and 1 is init: never signal those.
-    let raw = i32::try_from(pgid).ok().filter(|p| *p > 1).ok_or_else(|| {
+    let raw = signalable(pgid, "group")?;
+    allow_gone(nix::sys::signal::killpg(
+        nix::unistd::Pid::from_raw(raw),
+        unix_signal(sig),
+    ))
+}
+
+#[cfg(unix)]
+fn signal_pid(pid: u32, sig: Sig) -> io::Result<()> {
+    let raw = signalable(pid, "process")?;
+    allow_gone(nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(raw),
+        unix_signal(sig),
+    ))
+}
+
+/// pid 0 is our own group and 1 is init: never signal those.
+#[cfg(unix)]
+fn signalable(id: u32, what: &str) -> io::Result<i32> {
+    i32::try_from(id).ok().filter(|p| *p > 1).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("refusing to signal group {pgid}"),
+            format!("refusing to signal {what} {id}"),
         )
-    })?;
-    let signal = match sig {
+    })
+}
+
+#[cfg(unix)]
+fn unix_signal(sig: Sig) -> nix::sys::signal::Signal {
+    use nix::sys::signal::Signal;
+    match sig {
         Sig::Stop => Signal::SIGSTOP,
         Sig::Cont => Signal::SIGCONT,
         Sig::Term => Signal::SIGTERM,
         Sig::Kill => Signal::SIGKILL,
-    };
-    match killpg(nix::unistd::Pid::from_raw(raw), signal) {
+    }
+}
+
+#[cfg(unix)]
+fn allow_gone(result: nix::Result<()>) -> io::Result<()> {
+    match result {
         Ok(()) | Err(nix::errno::Errno::ESRCH) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Signals everything a job runs: its group, plus the members that left the group
+/// (`setsid` daemons). Every target is tried; the first error is returned.
+#[cfg(unix)]
+pub fn signal_job(pgid: u32, outside: &[u32], sig: Sig) -> io::Result<()> {
+    outside.iter().fold(signal_group(pgid, sig), |first, &pid| {
+        let this = signal_pid(pid, sig);
+        first.and(this)
+    })
+}
+
+/// Windows kills the whole tree with `taskkill /T`, so there is no outside set.
+#[cfg(windows)]
+pub fn signal_job(pid: u32, _outside: &[u32], sig: Sig) -> io::Result<()> {
+    signal_group(pid, sig)
 }
 
 #[cfg(windows)]
@@ -57,15 +105,15 @@ pub fn signal_group(pid: u32, sig: Sig) -> io::Result<()> {
     }
 }
 
-/// SIGKILLs processes left in a job's group after its root exited.
+/// SIGKILLs processes left over after a job's root exited: its group and `outside`.
 #[cfg(unix)]
-pub fn kill_leftovers(pgid: u32) -> io::Result<()> {
-    signal_group(pgid, Sig::Kill)
+pub fn kill_leftovers(pgid: u32, outside: &[u32]) -> io::Result<()> {
+    signal_job(pgid, outside, Sig::Kill)
 }
 
 /// No-op: Windows reuses pids at once, so killing by pid after exit is unsafe.
 #[cfg(windows)]
-pub fn kill_leftovers(_pid: u32) -> io::Result<()> {
+pub fn kill_leftovers(_pid: u32, _outside: &[u32]) -> io::Result<()> {
     Ok(())
 }
 
@@ -204,21 +252,22 @@ fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Memory and CPU of a job's whole process tree.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Usage {
-    pub rss_bytes: u64,
-    pub cpu_pct: f64,
-}
+/// A process this old with an unreadable env is final: its env stays hidden.
+const ENV_SETTLE_SECS: u64 = 5;
 
 /// OS process table, refreshed for memory and CPU only.
 pub struct ProcTable {
     sys: System,
+    /// Job id from each process's env, read once per process: pid to (start, tag).
+    tags: HashMap<u32, (u64, Option<JobId>)>,
 }
 
 impl ProcTable {
     pub fn new() -> Option<Self> {
-        System::new().ok().map(|sys| Self { sys })
+        System::new().ok().map(|sys| Self {
+            sys,
+            tags: HashMap::new(),
+        })
     }
 
     pub fn refresh(&mut self) {
@@ -240,36 +289,97 @@ impl ProcTable {
         i64::try_from(secs).ok().map(|s| s.saturating_mul(1000))
     }
 
-    /// Tree usage per live root pid, from the last refresh.
-    pub fn usages(&self, roots: &[u32]) -> HashMap<u32, Usage> {
-        let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
-        for (pid, process) in self.sys.processes() {
-            if let Some(parent) = process.parent() {
-                children.entry(parent).or_default().push(*pid);
-            }
+    /// Processes of each live job, keyed by root pid, from the last refresh.
+    pub fn usages(&mut self, jobs: &[JobKey]) -> HashMap<u32, JobProcs> {
+        let mut facts = self.facts();
+        self.read_tags(jobs, &facts);
+        for fact in &mut facts {
+            fact.tag = self
+                .tags
+                .get(&fact.pid)
+                .and_then(|&(start, tag)| tag.filter(|_| start == fact.start_secs));
         }
-        roots
-            .iter()
-            .filter_map(|&root| self.tree(Pid::from_u32(root), &children).map(|u| (root, u)))
+        jobs.iter()
+            .filter_map(|job| job_procs(job, &facts).map(|found| (job.root, found)))
             .collect()
     }
 
-    // SHORTCUT: walks the parent tree, so a job child that reparents (daemonizes) is not
-    // counted; switch to a pgid or cgroup scan if a job ever does that.
-    fn tree(&self, root: Pid, children: &HashMap<Pid, Vec<Pid>>) -> Option<Usage> {
-        self.sys.process(root)?;
-        let mut usage = Usage::default();
-        let (mut stack, mut seen) = (vec![root], HashSet::new());
-        while let Some(pid) = stack.pop() {
-            if !seen.insert(pid) {
-                continue;
-            }
-            if let Some(process) = self.sys.process(pid) {
-                usage.rss_bytes += process.memory();
-                usage.cpu_pct += f64::from(process.cpu_usage());
-            }
-            stack.extend(children.get(&pid).into_iter().flatten());
-        }
-        Some(usage)
+    fn facts(&self) -> Vec<ProcFact> {
+        self.sys
+            .processes()
+            .iter()
+            .map(|(pid, process)| ProcFact {
+                pid: pid.as_u32(),
+                ppid: process.parent().map(Pid::as_u32),
+                pgid: group_of(pid.as_u32()),
+                start_secs: process.start_time(),
+                tag: None,
+                rss_bytes: process.memory(),
+                cpu_pct: f64::from(process.cpu_usage()),
+            })
+            .collect()
     }
+
+    /// Reads the job-id env of processes that started since a job did and sit outside
+    /// every job group. Each process is read once, so a steady table costs nothing.
+    fn read_tags(&mut self, jobs: &[JobKey], facts: &[ProcFact]) {
+        let live: HashMap<u32, u64> = facts.iter().map(|f| (f.pid, f.start_secs)).collect();
+        self.tags
+            .retain(|pid, (start, _)| live.get(pid) == Some(start));
+        let Some(since_ms) = jobs.iter().map(|j| j.started_ms).min() else {
+            return;
+        };
+        let roots: HashSet<u32> = jobs.iter().map(|j| j.root).collect();
+        let fresh: Vec<Pid> = facts
+            .iter()
+            .filter(|f| !self.tags.contains_key(&f.pid))
+            .filter(|f| could_belong(f.start_secs, since_ms))
+            .filter(|f| f.pgid.is_none_or(|g| !roots.contains(&g)))
+            .map(|f| Pid::from_u32(f.pid))
+            .collect();
+        if fresh.is_empty() {
+            return;
+        }
+        let kind = ProcessRefreshKind::nothing()
+            .with_environ(UpdateKind::OnlyIfNotSet)
+            .without_tasks();
+        self.sys
+            .refresh_processes_specifics(ProcessesToUpdate::Some(&fresh), false, kind);
+        for pid in fresh {
+            if let Some(process) = self.sys.process(pid) {
+                let tag = job_tag(process.environ());
+                // A young process may be caught mid-exec with no env yet: read it again.
+                let settled = process.run_time() >= ENV_SETTLE_SECS;
+                if tag.is_some() || !process.environ().is_empty() || settled {
+                    self.tags.insert(pid.as_u32(), (process.start_time(), tag));
+                }
+            }
+        }
+    }
+}
+
+// SHORTCUT: macOS hides the env of Apple-signed binaries, so a setsid daemon built from one
+// is not attributed to its job; use kqueue NOTE_TRACK or Endpoint Security if a job does that.
+/// The job id the runner put in a process's env (`IDLEMAX_JOB_ID=<id>`).
+fn job_tag(environ: &[OsString]) -> Option<JobId> {
+    environ.iter().find_map(|entry| {
+        let value = entry
+            .to_str()?
+            .strip_prefix(JOB_ID_ENV)?
+            .strip_prefix('=')?;
+        value.parse().ok()
+    })
+}
+
+/// Process group of `pid`; `None` when the process is gone or on Windows.
+#[cfg(unix)]
+fn group_of(pid: u32) -> Option<u32> {
+    let raw = i32::try_from(pid).ok()?;
+    let group = nix::unistd::getpgid(Some(nix::unistd::Pid::from_raw(raw))).ok()?;
+    u32::try_from(group.as_raw()).ok()
+}
+
+#[cfg(not(unix))]
+fn group_of(_pid: u32) -> Option<u32> {
+    None
 }

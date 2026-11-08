@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use idlemax_core::guard::Guard;
+use idlemax_core::job_run;
 use idlemax_core::protocol::{AgentCommand, Heartbeat, HeartbeatReply, LocalStatus, RunningJob};
 use idlemax_core::reconcile::{fail_safe_decision, AgentAction, AgentState, TickInput};
 use idlemax_core::types::{ControlAction, DeviceInfo, GuardDecision, Job, UnixMs};
@@ -26,8 +27,6 @@ use super::probes::{Probes, Reading};
 use super::runner::Runner;
 use super::uplink::{self, Trip};
 
-/// Runner reaps exits and escalates kills this often.
-const REAP_EVERY: Duration = Duration::from_secs(5);
 const UPDATES_PER_TRIP: usize = 50;
 /// Waiting for jobs to exit on shutdown, plus one last flush: above the runner's 15 s
 /// SIGKILL escalation and within launchd's default 20 s exit timeout.
@@ -111,7 +110,8 @@ impl Agent {
         tokio::pin!(shutdown);
         let mut sample = ticker(self.sample_every, false);
         let mut beat = ticker(self.heartbeat_every, true);
-        let mut reap = ticker(REAP_EVERY, false);
+        let mut reap_every = job_run::POLL_RELAXED;
+        let mut reap = ticker(reap_every, false);
         let mut refresh_device = ticker(self.device_refresh_every, false);
         let mut trip: Option<JoinHandle<Trip>> = None;
         let mut beat_due = false;
@@ -121,6 +121,12 @@ impl Agent {
         let mut feed_due = false;
         self.on_sample().await;
         loop {
+            // The runner reaps exits and checks memory caps; faster while a job nears its cap.
+            let want = job_run::poll_every(self.running.iter().map(|j| (j.rss_bytes, j.mem_mb)));
+            if want != reap_every {
+                reap_every = want;
+                reap = ticker(want, false);
+            }
             tokio::select! {
                 biased;
                 () = &mut shutdown => break,
