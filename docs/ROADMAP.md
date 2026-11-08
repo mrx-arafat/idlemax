@@ -28,6 +28,8 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
 
 - Item 14 (daemonizing job children): the accounting, the runner change, the restart reap and the reliable tests are committed.
   The runner tests passed 15 of 15 runs under four busy-loop processes on macOS; the Linux scope path was not run (see item 14).
+- Item 10 (split the agent event loop): `agent/event_loop.rs` is 255 lines, with `sample`, `jobs` and `coord` beside it holding what one tick does.
+  It is a code move only, checked by comparing every function body with the original, and the agent tests and the end-to-end test are unchanged and green.
 - Items 1 and 2 (Linux verification and tailnet rollout): `scripts/verify-linux.sh` with a fixture self-test, `docs/ROLLOUT.md`, a battery parser fix and four Linux parser tests exist.
   It also adds `--expand-environment=no` to the systemd scope wrapper, which must be checked on the server before landing (see item 1).
 
@@ -83,13 +85,6 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
   A real sleep has not been tried.
 - **How:** Start a job with a short `max_runtime_secs`, let the Mac sleep for longer than that, wake it, and watch the job.
 - **Done when:** The job is still running after wake and is killed only once its awake runtime passes the limit.
-
-### 10. Split the agent event loop
-
-- **Why:** `agent/event_loop.rs` is 476 lines, over the 400-line guideline, after the outbox, advisor feed and device refresh wiring landed.
-- **How:** Split it by responsibility, for example the feed and refresh tickers apart from the heartbeat and job loop.
-  Move code only, with no behaviour change.
-- **Done when:** `event_loop.rs` is under 400 lines and the agent tests are unchanged and green.
 
 ### 14. Catch daemonizing job children
 
