@@ -64,7 +64,7 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
 ### 4. Install and verify the Claude statusline capture
 
 - **Why:** The wrapper and its README step are done and tested, but it is not installed, so no Claude snapshot is written and Claude accounts stay unspendable (fail closed).
-- **How:** Put the wrapper in front of the existing statusline command in the real Claude settings, following the README.
+- **How:** Run `idlemax statusline install --dry-run`, check the diff, then `idlemax statusline install` against the real Claude settings.
 - **Done when:** A Claude account shows a fresh snapshot in `idlemax quota` within a minute of interactive use.
   The visible statusline output is unchanged.
 
