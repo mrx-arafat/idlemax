@@ -221,12 +221,14 @@ fn service_step(kind: ServiceKind, plan: &SetupPlan, env: &Env<'_>) -> StepRepor
     };
     let existing = std::fs::read_to_string(&unit.path).ok();
     let how = match unit_change(existing.as_deref(), &unit.content) {
-        UnitChange::Same => {
-            let detail = format!("{} is current", unit.path.display());
+        UnitChange::Same if is_running(ctx, env, kind) => {
+            let detail = format!("{} is current and running", unit.path.display());
             return report(Status::AlreadyDone, detail);
         }
+        // A first run whose start failed leaves the right file and no running service.
+        UnitChange::Same => "current, but not running: started",
         UnitChange::Create => "new, then started",
-        UnitChange::Update => "changed, then reloaded",
+        UnitChange::Update => "changed, then restarted",
     };
     let detail = how.to_string();
     match service::install(ctx, env.paths, env.runner, &[kind], env.dry_run) {
@@ -249,6 +251,15 @@ fn service_step(kind: ServiceKind, plan: &SetupPlan, env: &Env<'_>) -> StepRepor
         }
         Err(e) => report(Status::Failed, format!("{e:#}")),
     }
+}
+
+/// Whether the service manager reports the service loaded and running. Read-only, and it
+/// asks nothing for a unit that is not installed.
+fn is_running(ctx: &Ctx, env: &Env<'_>, kind: ServiceKind) -> bool {
+    let state = service::status(ctx, env.runner, &[kind]);
+    state
+        .first()
+        .is_some_and(|s| s.loaded == Some(true) && s.running == Some(true))
 }
 
 /// A dry run has not made the token yet, so the install's "no token" warning would mislead.

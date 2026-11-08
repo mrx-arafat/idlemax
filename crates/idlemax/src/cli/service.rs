@@ -345,7 +345,7 @@ fn uninstall(
     Ok(reports)
 }
 
-fn status(ctx: &Ctx, runner: &dyn Runner, kinds: &[ServiceKind]) -> Vec<ServiceStatus> {
+pub(super) fn status(ctx: &Ctx, runner: &dyn Runner, kinds: &[ServiceKind]) -> Vec<ServiceStatus> {
     kinds
         .iter()
         .map(|&kind| {

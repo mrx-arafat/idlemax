@@ -11,16 +11,23 @@ use crate::cli::service::{Output, Runner};
 struct Fake {
     seen: RefCell<Vec<String>>,
     fail_on: Option<&'static str>,
+    /// What `systemctl show` answers.
+    active: &'static str,
 }
 
 impl Runner for Fake {
     fn run(&self, step: &idlemax_core::install::service::Step) -> std::io::Result<Output> {
         let line = step.argv.join(" ");
         let fail = self.fail_on.is_some_and(|f| line.contains(f));
+        let stdout = if line.contains(" show ") {
+            format!("LoadState=loaded\nActiveState={}\n", self.active)
+        } else {
+            String::new()
+        };
         self.seen.borrow_mut().push(line);
         Ok(Output {
             ok: !fail,
-            stdout: String::new(),
+            stdout,
             stderr: if fail { "boom".into() } else { String::new() },
         })
     }
@@ -30,6 +37,7 @@ fn fake(fail_on: Option<&'static str>) -> Fake {
     Fake {
         seen: RefCell::default(),
         fail_on,
+        active: "active",
     }
 }
 
@@ -98,10 +106,10 @@ fn a_dry_run_changes_nothing_and_a_second_run_changes_nothing_again() {
 
     let second = execute(&plan_both(&paths), &env(dir.path(), &paths, &runner, false));
     assert_eq!(statuses(&second)[..4], [Status::AlreadyDone; 4]);
-    assert_eq!(
-        runner.seen.borrow().len(),
-        ran,
-        "a current unit is not reloaded"
+    let after: Vec<String> = runner.seen.borrow()[ran..].to_vec();
+    assert!(
+        after.iter().all(|c| c.contains(" show ")),
+        "a current, running unit is only asked about: {after:?}"
     );
     assert!(!finish(&plan_both(&paths), false, second, None).changed);
 }
@@ -172,5 +180,37 @@ fn a_different_token_on_stdin_is_refused_and_the_same_one_is_a_no_op() {
     assert_eq!(
         std::fs::read_to_string(paths.token_file()).unwrap().trim(),
         "shared-secret-0123456789abcdef-0123"
+    );
+}
+
+#[test]
+fn a_current_unit_that_is_not_running_is_started_instead_of_reported_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths::new(dir.path().join("state"));
+    let healthy = fake(None);
+    execute(
+        &plan_both(&paths),
+        &env(dir.path(), &paths, &healthy, false),
+    );
+
+    // The first run wrote the files but the service never came up.
+    let stopped = Fake {
+        active: "inactive",
+        ..fake(None)
+    };
+    let again = execute(
+        &plan_both(&paths),
+        &env(dir.path(), &paths, &stopped, false),
+    );
+    assert_eq!(
+        statuses(&again)[2..4],
+        [Status::Done; 2],
+        "the two services"
+    );
+    let seen = stopped.seen.borrow();
+    assert!(
+        seen.iter()
+            .any(|c| c == "systemctl --user start idlemax-agent.service"),
+        "{seen:?}"
     );
 }

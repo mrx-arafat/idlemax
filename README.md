@@ -227,7 +227,8 @@ ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http:
 - The guard profile comes from the OS: `macos_laptop` on macOS and `linux_server` on Linux.
 - Nothing existing is overwritten.
   A `--coord-url` that disagrees with the existing `config.toml`, or a `--token-stdin` token that differs from the existing token file, is refused with the fix.
-- A service file is rewritten and reloaded only when its content would change, for example after the binary moved.
+- A service file is rewritten and the service restarted only when its content would change, for example after the binary moved.
+  A current file whose service is not running is started, so a re-run after a failed start fixes it.
 - The first failing step stops the run, and the steps after it say they were not run.
   After it installs services it waits up to 15 seconds for their ports, then runs doctor and prints the report.
 - Exit code 1 means a step failed, or services were asked for and doctor still finds a failing check.
