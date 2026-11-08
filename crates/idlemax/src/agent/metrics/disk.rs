@@ -1,7 +1,10 @@
-//! Adapter: free and total bytes of the root filesystem (`df -kP /`, no unsafe statfs).
+//! Adapter: free and total bytes of the root filesystem using sysinfo (no subprocess spawn).
+
+use std::path::Path;
 
 /// (available, total) bytes from POSIX `df -kP` output. Parses from the right so
-/// filesystem names with spaces still work.
+/// filesystem names with spaces still work. Kept for POSIX df fixture testing.
+#[allow(dead_code)]
 pub fn parse_df_kp(out: &str) -> Option<(u64, u64)> {
     let line = out.lines().skip(1).find(|l| !l.trim().is_empty())?;
     let toks: Vec<&str> = line.split_whitespace().collect();
@@ -12,22 +15,33 @@ pub fn parse_df_kp(out: &str) -> Option<(u64, u64)> {
     Some((avail.saturating_mul(1024), total.saturating_mul(1024)))
 }
 
-#[cfg(unix)]
-pub fn read_root() -> Option<(u64, u64)> {
-    use super::cmd::{run, PROBE_TIMEOUT};
-    run("/bin/df", &["-kP", "/"], PROBE_TIMEOUT)
-        .as_deref()
-        .and_then(parse_df_kp)
-}
-
-// SHORTCUT: Windows measures the disk with the largest total; pick the system drive
-// when a Windows device joins.
-#[cfg(not(unix))]
+/// Reads free and total bytes of the root filesystem without spawning a subprocess.
 pub fn read_root() -> Option<(u64, u64)> {
     let disks = sysinfo::Disks::new_with_refreshed_list().ok()?;
-    disks
-        .list()
+    let root = disks
         .iter()
-        .max_by_key(|d| d.total_space())
-        .map(|d| (d.available_space(), d.total_space()))
+        .find(|d| d.mount_point() == Path::new("/"))
+        .or_else(|| disks.iter().max_by_key(|d| d.total_space()))?;
+    Some((root.available_space(), root.total_space()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_df_sample() {
+        let sample = "Filesystem 1024-blocks      Used Available Capacity Mounted on\n\
+                      /dev/disk3s1s1 239362496 15000000 123456780      11% /";
+        let (avail, total) = parse_df_kp(sample).expect("parse failed");
+        assert_eq!(total, 239362496 * 1024);
+        assert_eq!(avail, 123456780 * 1024);
+    }
+
+    #[test]
+    fn read_root_returns_positive_space() {
+        let (avail, total) = read_root().expect("root disk space readable");
+        assert!(total > 0);
+        assert!(avail <= total);
+    }
 }
