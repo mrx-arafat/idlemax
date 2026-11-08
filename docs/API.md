@@ -40,7 +40,12 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
-`POST /v1/jobs` returns 201; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`.
+`POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`.
+A spec may carry `key`, an idempotency key of 1 to 128 characters.
+While a job with that key is queued, leased, running or paused, `POST /v1/jobs` queues nothing and answers 200 with that job, so a client may retry safely.
+Once the job has finished the key is free again.
+The first spec wins: a retry with a changed spec still returns the original job.
+An unset `key` is left out of the JSON, and a coordinator or agent that predates it ignores the field.
 `POST /v1/jobs/{id}/cancel` answers 404 for an unknown job and 409 for a finished one.
 `GET /v1/jobs/{id}/why` answers 404 for an unknown job (see [Why a job is not running](#why-a-job-is-not-running)).
 A job update for an unknown job is 404.
