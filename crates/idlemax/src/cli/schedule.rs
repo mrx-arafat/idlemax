@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use idlemax_core::schedule::{Decision, Every, NewSchedule, ScheduleId, ScheduleView};
-use idlemax_core::types::{JobSpec, UnixMs};
+use idlemax_core::types::UnixMs;
 use serde::Deserialize;
 
 use super::out::{hints, lists, views};
@@ -112,8 +112,7 @@ struct RepeatKey {
 fn read_new_schedule(path: &Path, flag: Option<Every>) -> Result<NewSchedule> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let spec: JobSpec =
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let spec = super::job::parse_file_spec(&text, &path.display().to_string())?;
     spec.validate()
         .with_context(|| format!("invalid job spec {}", path.display()))?;
     let in_file = toml::from_str::<RepeatKey>(&text)
@@ -198,6 +197,16 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+    #[test]
+    fn a_schedule_rejects_misspelled_resource_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = spec_file(dir.path(), "every = '1h'\nmax_runtime = 60\n");
+        let err = read_new_schedule(&path, None).unwrap_err();
+        let error = err.downcast_ref::<CliError>().expect("usage error");
+        assert_eq!(error.code, 2);
+        assert!(error.what.contains("max_runtime"), "{error}");
     }
 
     #[test]

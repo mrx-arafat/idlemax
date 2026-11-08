@@ -893,6 +893,8 @@ Environment: `IDLEMAX_HOME` (state dir), `IDLEMAX_TOKEN` (overrides the token fi
 ### Job specs
 
 A job spec is TOML, and `command` is an argv list that never goes through a shell.
+`job add` and `schedule add` reject unknown spec keys with exit code 2, so a misspelled resource limit cannot silently use the default.
+Use `mem_mb` and `max_runtime_secs` in files; `--mem` and `--max-runtime` are CLI flags.
 
 ```toml
 name = "repo-health"

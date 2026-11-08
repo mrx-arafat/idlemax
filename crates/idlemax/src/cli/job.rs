@@ -195,7 +195,7 @@ fn read_stdin() -> Result<String> {
 /// Parses and validates TOML. `origin` names it in errors; `schedule_arg` is what the
 /// `every` note tells the user to pass to `schedule add`.
 fn parse_spec(text: &str, origin: &str, schedule_arg: &str) -> Result<JobSpec> {
-    let spec: JobSpec = toml::from_str(text).with_context(|| format!("parsing {origin}"))?;
+    let spec = parse_file_spec(text, origin)?;
     spec.validate()
         .with_context(|| format!("invalid job spec {origin}"))?;
     if schedule::sets_every(text) {
@@ -205,6 +205,27 @@ fn parse_spec(text: &str, origin: &str, schedule_arg: &str) -> Result<JobSpec> {
         );
     }
     Ok(spec)
+}
+
+/// File input is strict, while HTTP job specs retain their forward-compatible schema.
+pub(super) fn parse_file_spec(text: &str, origin: &str) -> Result<JobSpec> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FileSpec {
+        #[serde(flatten)]
+        spec: JobSpec,
+        #[serde(rename = "every")]
+        _every: Option<toml::Value>,
+    }
+    toml::from_str::<FileSpec>(text)
+        .map(|file| file.spec)
+        .map_err(|e| {
+            CliError::usage(
+                format!("parsing {origin}: {e}"),
+                "fix the spec key or value; memory is `mem_mb`, runtime is `max_runtime_secs`",
+            )
+            .into()
+        })
 }
 
 /// Says the coordinator has the job and what to run next. Stdout carries it unless the

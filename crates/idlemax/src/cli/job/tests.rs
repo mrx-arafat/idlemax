@@ -18,6 +18,23 @@ fn parse(args: &[&str]) -> Result<AddArgs, clap::Error> {
 }
 
 #[test]
+fn file_specs_reject_misspelled_resource_limits() {
+    for key in ["mem", "max_runtime"] {
+        let text = format!("name = 'test'\ncommand = ['/bin/echo']\n{key} = 2048\n");
+        let err = parse_spec(&text, "stdin", "<file>").unwrap_err();
+        let error = err.downcast_ref::<CliError>().expect("usage error");
+        assert_eq!(error.code, 2);
+        assert!(error.what.contains(key), "{error}");
+    }
+    assert!(parse_spec(
+        "name = 'test'\ncommand = ['/bin/echo']\nevery = '1h'\nmem_mb = 64\n",
+        "stdin",
+        "<file>"
+    )
+    .is_ok());
+}
+
+#[test]
 fn flags_a_spec_file_and_stdin_are_three_ways_to_say_the_same_thing() {
     let flags = parse(&[
         "--name",
