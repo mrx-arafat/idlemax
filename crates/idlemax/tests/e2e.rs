@@ -292,6 +292,55 @@ async fn coord_and_agent_run_a_tiny_job() {
         inbox.display()
     );
 
+    // Verify CLI logs command
+    let logs_out = Command::new(BIN)
+        .args(["logs", &job.id.to_string()])
+        .env("HOME", &home)
+        .env("IDLEMAX_HOME", &state)
+        .output()
+        .unwrap();
+    assert!(
+        logs_out.status.success(),
+        "logs command failed: {}",
+        String::from_utf8_lossy(&logs_out.stderr)
+    );
+    let logs_str = String::from_utf8_lossy(&logs_out.stdout);
+    assert!(logs_str.contains(MARKER));
+    assert!(logs_str.contains("=== idlemax: succeeded (exit 0) ==="));
+
+    // Verify CLI inbox list command
+    let inbox_out = Command::new(BIN)
+        .args(["inbox"])
+        .env("HOME", &home)
+        .env("IDLEMAX_HOME", &state)
+        .output()
+        .unwrap();
+    assert!(
+        inbox_out.status.success(),
+        "inbox command failed: {}",
+        String::from_utf8_lossy(&inbox_out.stderr)
+    );
+    let inbox_str = String::from_utf8_lossy(&inbox_out.stdout);
+    assert!(inbox_str.contains(&job.id.to_string()));
+    assert!(inbox_str.contains("e2e-echo"));
+    assert!(inbox_str.contains("succeeded"));
+
+    // Verify CLI inbox show command
+    let show_out = Command::new(BIN)
+        .args(["inbox", "show", &job.id.to_string()])
+        .env("HOME", &home)
+        .env("IDLEMAX_HOME", &state)
+        .output()
+        .unwrap();
+    assert!(
+        show_out.status.success(),
+        "inbox show command failed: {}",
+        String::from_utf8_lossy(&show_out.stderr)
+    );
+    let show_str = String::from_utf8_lossy(&show_out.stdout);
+    assert!(show_str.contains("# e2e-echo: succeeded"));
+    assert!(show_str.contains(MARKER));
+
     let agent_api = Api {
         http,
         base: format!("http://127.0.0.1:{agent_port}"),

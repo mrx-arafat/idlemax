@@ -2,7 +2,9 @@
 
 mod client;
 mod files;
+mod inbox;
 mod init;
+mod logs;
 pub mod print;
 pub mod rows;
 mod schedule;
@@ -77,6 +79,22 @@ enum Cmd {
         #[arg(long, default_value_t = 50)]
         limit: u32,
     },
+    /// Print the job log from this device
+    Logs {
+        /// Job ID
+        id: JobId,
+        /// Number of lines to show from the end of the log
+        #[arg(long)]
+        tail: Option<usize>,
+        /// Follow new log output
+        #[arg(short, long)]
+        follow: bool,
+    },
+    /// List or show job result notes from the inbox (default: list)
+    Inbox {
+        #[command(subcommand)]
+        cmd: Option<InboxCmd>,
+    },
     /// AI advisor recommendations (default: list)
     Advise {
         #[command(subcommand)]
@@ -127,6 +145,17 @@ enum JobCmd {
     Add { spec: PathBuf },
     /// Cancel a job (kills it if running)
     Cancel { id: JobId },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum InboxCmd {
+    /// List notes in the inbox (default)
+    List,
+    /// Print the note markdown for a job
+    Show {
+        /// Job ID
+        id: JobId,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -208,6 +237,20 @@ pub async fn run() -> Result<()> {
             run_local(cmd, &client, json)
                 .await
                 .map_err(|e| hint(e, LOCAL_DOWN))
+        }
+        Cmd::Inbox { cmd } => match cmd.unwrap_or(InboxCmd::List) {
+            InboxCmd::List => inbox::run_list(&paths, json),
+            InboxCmd::Show { id } => inbox::run_show(&paths, id),
+        },
+        Cmd::Logs { id, tail, follow } => {
+            let log_path = paths.job_log_file(id);
+            if log_path.exists() {
+                logs::run_logs_local(&log_path, tail, follow).await
+            } else {
+                let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
+                let client = ApiClient::new(&url, token(&paths)?)?;
+                logs::run_logs_remote(&client, &log_path, id).await
+            }
         }
         cmd => {
             let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
@@ -320,7 +363,9 @@ async fn run_coord(cmd: Cmd, c: &ApiClient, json: bool) -> Result<()> {
         | Cmd::Init(_)
         | Cmd::Local(_)
         | Cmd::Service(_)
-        | Cmd::Statusline(_) => {
+        | Cmd::Statusline(_)
+        | Cmd::Logs { .. }
+        | Cmd::Inbox { .. } => {
             bail!("not a coordinator command")
         }
     };
