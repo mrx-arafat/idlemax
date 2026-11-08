@@ -25,6 +25,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 | GET | /v1/jobs/{id} | | `Job` |
 | POST | /v1/jobs | `JobSpec` | `Job` |
 | POST | /v1/jobs/{id}/cancel | | `Job` |
+| GET | /v1/jobs/{id}/why | | `Explanation` |
 | GET | /v1/quota | | `[quota::QuotaView]` |
 | POST | /v1/control | `ControlRequest` | `ClusterStatus` |
 | GET | /v1/events?limit= | | `[Event]` |
@@ -41,6 +42,7 @@ Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
 `POST /v1/jobs` returns 201; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`.
 `POST /v1/jobs/{id}/cancel` answers 404 for an unknown job and 409 for a finished one.
+`GET /v1/jobs/{id}/why` answers 404 for an unknown job (see [Why a job is not running](#why-a-job-is-not-running)).
 A job update for an unknown job is 404.
 `coordinator.listen` on `0.0.0.0` or `[::]` is refused at startup.
 
@@ -140,6 +142,34 @@ A torn last line from a crash is skipped.
 The coordinator answers 4xx (other than 401, 403, 408 and 429) only when an update can never succeed, such as an unknown job id or a job leased to another device; the agent then drops it.
 Auth failures, timeouts and 5xx keep the update queued for retry.
 The agent sends heartbeats from their own task, so a slow coordinator delays heartbeats but never local controls or guard actions.
+
+## Why a job is not running
+
+`GET /v1/jobs/{id}/why` returns an `Explanation` (`idlemax why <id>` prints it, `--json` prints this body).
+It is computed from the coordinator's current state with the scheduler's own checks, so it cannot disagree with what the scheduler does.
+The device-side verdicts (guard, running jobs, slot and RAM budget) are as of that device's last heartbeat, shown in `devices[].last_seen_ms`.
+
+```json
+{"job": 7, "name": "nightly-make", "status": "queued", "state": "blocked",
+ "summary": "Job 7 (nightly-make) is queued but not starting.",
+ "reasons": [{"kind": "backoff", "message": "waiting out the retry delay: attempt 2 of 3 starts in 1m 10s (last error: exit code 1)",
+              "fix": null, "until_ms": 1730000070000}],
+ "devices": [{"device": "my-laptop", "online": true, "last_seen_ms": 1730000000000, "ready": false,
+              "reasons": [{"kind": "guard", "message": "on battery (guard pause)",
+                           "fix": "plug in, or set guard.require_ac_power = false", "until_ms": null}]}],
+ "at_ms": 1730000001000}
+```
+
+- `state`: `ready` (a device leases it on its next heartbeat), `blocked` (queued or parked, with reasons), `active` (leased, running or paused) or `finished`.
+- `reasons` hold on every device (pauses, retry backoff, AI quota, a busy AI account, no online device).
+  `devices[].reasons` hold for that device only; `ready` is true when the device has none and neither does the job.
+- `kind` is a stable snake_case code for scripts: `global_pause`, `account_pause`, `job_pause`, `device_pause`, `local_pause`, `backoff`, `parked`, `no_device_online`, `offline`, `device_filter`, `missing_capability`, `cost_class`, `command_not_allowed`, `ai_no_account`, `ai_account_not_on_device`, `ai_quota`, `ai_account_busy`, `guard`, `no_slot`, `ram_budget`, `queue_order`.
+  `message` is plain language, `fix` is the command or config key that clears it (null when it clears by itself), `until_ms` is set for `backoff`.
+- A `finished` job has no reasons, and a `parked` job has one `parked` reason carrying its last error.
+
+`DeviceInfo.command_allowlist` is the agent's `agent.command_allowlist`, sent with every heartbeat.
+The scheduler leases a job only to a device whose list contains the job's `argv[0]`, because the agent would refuse it otherwise.
+It is `null` for an agent that predates the field, and such a device is not filtered.
 
 ## Control semantics (coordinator)
 
