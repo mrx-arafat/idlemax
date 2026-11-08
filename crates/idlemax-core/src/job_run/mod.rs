@@ -4,7 +4,7 @@
 pub mod inbox;
 mod wrap;
 
-pub use wrap::{scope_unit, Wrapper};
+pub use wrap::{scope_unit, supports_scope_oom_policy, Wrapper};
 
 use crate::types::{CostClass, JobSpec, JobStatus, UnixMs};
 
@@ -172,15 +172,23 @@ pub struct Outcome {
 const SIGKILL: i32 = 9;
 
 /// Terminal status for an ended job. A stop the runner sent always reads as Killed.
-pub fn outcome(exit: ExitInfo, stop: Option<&StopReason>) -> Outcome {
+/// `memory_cap_mib` is the hard OS memory limit the job ran under, if any: there a SIGKILL
+/// nobody sent is the kernel enforcing it.
+pub fn outcome(exit: ExitInfo, stop: Option<&StopReason>, memory_cap_mib: Option<u64>) -> Outcome {
     let (status, error) = match (stop, exit.code, exit.signal) {
         (Some(reason), _, _) => (JobStatus::Killed, reason.message()),
         (None, Some(0), _) => (JobStatus::Succeeded, None),
         (None, Some(code), _) => (JobStatus::Failed, Some(format!("exit code {code}"))),
-        (None, None, Some(SIGKILL)) => (
-            JobStatus::Failed,
-            Some("killed by SIGKILL (memory cap or OOM killer)".into()),
-        ),
+        (None, None, Some(SIGKILL)) => match memory_cap_mib {
+            Some(cap) => (
+                JobStatus::Killed,
+                Some(format!("killed by the {cap} MiB memory cap")),
+            ),
+            None => (
+                JobStatus::Failed,
+                Some("killed by SIGKILL (memory cap or OOM killer)".into()),
+            ),
+        },
         (None, None, Some(sig)) => (
             JobStatus::Failed,
             Some(format!("terminated by signal {sig}")),
@@ -262,6 +270,36 @@ mod tests {
             admit(&s, &allow),
             Err(AdmitError::ForbiddenEnv("DYLD_INSERT_LIBRARIES".into()))
         );
+    }
+
+    #[test]
+    fn a_sigkill_under_a_hard_memory_cap_reads_as_killed_by_the_cap() {
+        let sigkill = ExitInfo {
+            code: None,
+            signal: Some(9),
+        };
+        let capped = outcome(sigkill, None, Some(128));
+        assert_eq!(capped.status, JobStatus::Killed);
+        assert_eq!(
+            capped.error.as_deref(),
+            Some("killed by the 128 MiB memory cap")
+        );
+
+        // Without a hard cap the cause is unknown, and a stop the runner sent wins.
+        let unknown = outcome(sigkill, None, None);
+        assert_eq!(unknown.status, JobStatus::Failed);
+        assert!(unknown.error.unwrap().contains("SIGKILL"));
+        let stopped = outcome(sigkill, Some(&StopReason::Requested), Some(128));
+        assert_eq!((stopped.status, stopped.error), (JobStatus::Killed, None));
+        let exited = outcome(
+            ExitInfo {
+                code: Some(2),
+                signal: None,
+            },
+            None,
+            Some(128),
+        );
+        assert_eq!(exited.error.as_deref(), Some("exit code 2"));
     }
 
     #[test]

@@ -272,6 +272,10 @@ impl Runner {
             warn!(job = slot.job.id, error = %e, "cannot kill leftover job processes");
         }
         pidfile::remove(&self.paths, slot.job.id);
+        let memory_cap_mib = self
+            .wrapper
+            .enforces_memory_cap()
+            .then_some(slot.job.spec.mem_mb);
         let ended = Ended {
             job: slot.job,
             exit: exit_info(status),
@@ -280,6 +284,7 @@ impl Runner {
             active_ms: slot.clock.active_ms(awake_ms),
             log_path: slot.log_path,
             log_offset: slot.log_offset,
+            memory_cap_mib,
         };
         let update = finish::finish(&self.paths, &self.device, self.wrapper.name(), ended, now);
         info!(job = update.id, status = %update.status, "job ended");

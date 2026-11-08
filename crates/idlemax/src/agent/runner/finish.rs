@@ -23,6 +23,8 @@ pub struct Ended {
     pub active_ms: i64,
     pub log_path: PathBuf,
     pub log_offset: u64,
+    /// The hard OS memory limit the job ran under, if its wrapper enforces one.
+    pub memory_cap_mib: Option<u64>,
 }
 
 pub fn finish(
@@ -32,7 +34,7 @@ pub fn finish(
     ended: Ended,
     now_ms: UnixMs,
 ) -> JobUpdate {
-    let outcome = job_run::outcome(ended.exit, ended.stop.as_ref());
+    let outcome = job_run::outcome(ended.exit, ended.stop.as_ref(), ended.memory_cap_mib);
     let output = read_tail(&ended.log_path, ended.log_offset).unwrap_or_else(|e| {
         warn!(job = ended.job.id, error = %e, "cannot read job log");
         String::new()
