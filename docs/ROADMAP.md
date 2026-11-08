@@ -120,15 +120,20 @@ Re-harvest the shortcut ledger with `grep -rnE '(#|//) ?SHORTCUT:' crates` befor
 - **Done when:** The scheduler uses measured costs and the SHORTCUT is gone.
   A week of night runs never pushes interactive use into a provider limit.
 
-### 18. Close the remaining outbox gaps
+### 18. Close the last outbox gap
 
-- **Why:** The journal covers the common crash, but a few windows still lose work.
-  If the agent dies after a job exits and before it is reaped, no update is produced and the lease expiry re-runs the job.
-  If the lease expires while the agent is down, the replayed update is ignored and the job re-runs.
-  The AI pass output is ingested after the transaction, so a coordinator crash in between loses that one advisor output.
-  A failed journal write turns persistence off until restart (SHORTCUT in `agent/outbox.rs`), and the journal is synced with `sync_data`, which survives `kill -9` but not necessarily a power cut on macOS.
-- **How:** Write a job-ended marker from something that outlives the agent, accept a replayed terminal update after lease expiry when the job has not run again, ingest the AI output inside the transaction, retry a failed journal write with a rewrite, and use `F_FULLFSYNC` on macOS.
-- **Done when:** A `SIGKILL` between a job's exit and its reap still delivers the terminal update once, and the outbox SHORTCUT is gone.
+- **Why:** The journal now covers the crash windows except one.
+  If the agent dies after a job exits and before it is reaped, no update is produced, and the lease expiry re-runs the job once `max_runtime_secs` plus the grace has passed.
+  Nothing outlives the agent to record how the job ended, and the exit code of a process that was reparented cannot be read afterwards.
+  Landed so far: a replayed result that arrives after its lease expired is applied when the job has not been leased since, a failed journal write is repaired by rewriting the journal from memory, and a replayed AI pass whose advice was never recorded is ingested again.
+  The macOS journal sync needed no change, because std runs `fcntl(F_FULLFSYNC)` for `sync_data` and `sync_all` on Apple targets.
+- **How:** Put a small supervisor between the OS throttle wrapper and the job: `idlemax job-wrap --marker <path> -- <argv>`.
+  It runs the job in the same process group, forwards `SIGTERM` and `SIGINT` to it, writes `{exit_code, signal}` to the marker with a temp file, fsync and rename, then exits with the job's own status (re-raising its signal), so the agent sees the same `ExitStatus` as today.
+  The pid file gains the attempt number.
+  On start, `pidfile::reap_orphans` reads the marker of each pid file whose process is gone and builds the terminal update from it: the same `finish` path (log footer, inbox note, `JobUpdate` with the recorded attempt), pushed into the journal before the pid file and marker are removed, so a second crash repeats the update, which the coordinator applies once.
+  A pid file with no marker and no live process stays what it is today: the lease expiry decides.
+  It touches `agent/runner/{launch,pidfile}.rs` and `job_run/wrap.rs`, so it waits for the daemon work in the runner (item 14) to land.
+- **Done when:** A `SIGKILL` of the agent between a job's exit and its reap still delivers the terminal update once, with the real exit code, and a test kills a helper process that owns a supervised job to prove it.
 
 ## Later
 

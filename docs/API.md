@@ -140,6 +140,8 @@ Each update carries `seq`, a per-device number that is unique across restarts (i
 The coordinator stores `(device, seq)` in the same transaction as the job state, its event and any quota effect, and a replay of a stored `seq` changes nothing and is acked again.
 The reply is `{"acked_seq": <seq>}`; `seq` 0 (an agent without the outbox) is applied without deduplication and answered without an ack, and an old coordinator's `{}` counts as an ack of the update just sent.
 A stale non-terminal update after a terminal one never reopens the job.
+The advisor's AI pass ingests its output after storing the result and acks the update only afterwards.
+If the coordinator dies in between, the replayed update finds the job already succeeded but no Advice event naming it, and ingests the output again.
 The journal holds at most 1000 updates; when it is full the oldest non-terminal update goes first, so exit codes survive a long outage, and the file is compacted when it is about twice that size.
 A torn last line from a crash is skipped.
 The coordinator answers 4xx (other than 401, 403, 408 and 429) only when an update can never succeed, such as an unknown job id or a job leased to another device; the agent then drops it.
