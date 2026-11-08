@@ -275,6 +275,11 @@ The profile defaults to `macos_laptop` on macOS and `linux_server` elsewhere.
 A server never takes `cpu_heavy` or `ai` jobs.
 Each job sets `on_user_active`: `pause` (default), `continue` (only machine-health checks apply) or `kill`.
 
+**How heavy is it?**
+Measured over 10 minutes on one Apple Silicon Mac, idle, with no jobs: the coordinator and the agent each used about 0% CPU and 16 to 18 MB of memory (mean RSS; peaks of about 20 and 22 MB).
+Each 30 s sample runs about 3.5 short macOS system probes (`ioreg`, `pmset` and `sysctl`), about 74 ms in total.
+Linux and a busy machine have not been measured.
+
 <details>
 <summary>Every guard threshold and the config key that changes it</summary>
 
