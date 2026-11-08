@@ -1,6 +1,14 @@
 //! The agent event loop: sample and guard, reconcile jobs with the runner, trips to the
 //! coordinator, local controls, shutdown. Adapter layer around the domain `Guard`,
 //! `AgentState` and the durable outbox; it decides nothing itself.
+//!
+//! This file owns the loop, the agent's state and shutdown. What one tick does lives in
+//! the children: `sample` (guard verdict, device info), `jobs` (reconcile, reap, local
+//! controls) and `coord` (heartbeat trips, replies, the online flag, the advisor feed).
+
+mod coord;
+mod jobs;
+mod sample;
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -9,9 +17,9 @@ use std::time::Duration;
 
 use idlemax_core::guard::Guard;
 use idlemax_core::job_run;
-use idlemax_core::protocol::{AgentCommand, Heartbeat, HeartbeatReply, LocalStatus, RunningJob};
-use idlemax_core::reconcile::{fail_safe_decision, AgentAction, AgentState, TickInput};
-use idlemax_core::types::{ControlAction, DeviceInfo, GuardDecision, Job, UnixMs};
+use idlemax_core::protocol::{LocalStatus, RunningJob};
+use idlemax_core::reconcile::AgentState;
+use idlemax_core::types::{ControlAction, DeviceInfo, GuardDecision, UnixMs};
 use idlemax_core::VERSION;
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinError, JoinHandle};
@@ -20,7 +28,6 @@ use tracing::{error, info, warn};
 
 use crate::state::now_ms;
 
-use super::advisor_feed;
 use super::client::CoordClient;
 use super::outbox::DurableOutbox;
 use super::probes::{Probes, Reading};
@@ -163,223 +170,6 @@ impl Agent {
         self.shutdown().await;
     }
 
-    async fn on_sample(&mut self) {
-        self.reap().await;
-        let decision = match blocking(&self.probes, Probes::read).await {
-            Ok(reading) => {
-                self.reading = reading;
-                self.guard.evaluate(
-                    &self.reading.metrics,
-                    &self.running,
-                    self.reading.kill_switch,
-                    self.state.local_paused(),
-                )
-            }
-            Err(e) => {
-                error!("sample worker failed: {e}");
-                fail_safe_decision("metrics sample failed", now_ms())
-            }
-        };
-        if decision.action != self.decision.action {
-            info!(action = ?decision.action, reasons = ?decision.reasons, "guard verdict changed");
-        }
-        self.decision = decision;
-        self.reconcile(&[], &[], &[]).await;
-    }
-
-    async fn on_refresh_device_info(&mut self) {
-        match blocking(&self.probes, Probes::refresh_device_info).await {
-            Ok(device) => {
-                if device.capabilities != self.device.capabilities {
-                    info!(
-                        old = ?self.device.capabilities,
-                        new = ?device.capabilities,
-                        "device capabilities refreshed"
-                    );
-                }
-                self.device = device;
-            }
-            Err(e) => error!("refresh device info failed: {e}"),
-        }
-    }
-
-    async fn on_local_controls(
-        &mut self,
-        first: ControlAction,
-        control: &mut mpsc::UnboundedReceiver<ControlAction>,
-    ) {
-        let mut controls = vec![first];
-        while let Ok(c) = control.try_recv() {
-            controls.push(c);
-        }
-        info!(?controls, "local control");
-        self.reconcile(&[], &controls, &[]).await;
-    }
-
-    async fn on_trip(&mut self, done: Result<Trip, JoinError>) {
-        let trip = match done {
-            Ok(t) => t,
-            Err(e) => {
-                error!("uplink task failed: {e}");
-                return;
-            }
-        };
-        if let Some(seq) = trip.acked {
-            self.outbox.ack(seq);
-        }
-        if let Some(e) = trip.flush_error {
-            self.set_online(false, &e.to_string());
-        }
-        match trip.beat {
-            Some(Ok(reply)) => {
-                self.set_online(true, "");
-                self.last_heartbeat_ms = Some(now_ms());
-                self.apply_reply(reply).await;
-            }
-            Some(Err(e)) => self.set_online(false, &e.to_string()),
-            None => {}
-        }
-    }
-
-    async fn apply_reply(&mut self, reply: HeartbeatReply) {
-        if !reply.assign.is_empty() {
-            // Re-check the kill switch at start time, not only once per sample.
-            let present = tokio::fs::try_exists(&self.pause_file)
-                .await
-                .unwrap_or(true);
-            self.reading.kill_switch = present;
-        }
-        self.reconcile(&reply.commands, &[], &reply.assign).await;
-    }
-
-    /// Plans with the domain state, runs the actions in the runner, queues the updates.
-    async fn reconcile(
-        &mut self,
-        commands: &[AgentCommand],
-        local: &[ControlAction],
-        assign: &[Job],
-    ) {
-        let input = TickInput {
-            guard: &self.decision,
-            kill_switch: self.reading.kill_switch,
-            online: self.online,
-            commands,
-            local_controls: local,
-            assign,
-            shutting_down: self.stopping,
-        };
-        let actions = self.state.plan(&input);
-        if actions.is_empty() {
-            return;
-        }
-        let outcomes = self.with_runner(move |r| {
-            actions
-                .into_iter()
-                .map(|a| {
-                    let outcome = execute(r, &a);
-                    (a, outcome)
-                })
-                .collect::<Vec<_>>()
-        });
-        let Some(outcomes) = outcomes.await else {
-            return;
-        };
-        let now = now_ms();
-        for (action, outcome) in outcomes {
-            log_action(&action, &outcome);
-            if let Some(u) = self.state.applied(&action, outcome, &self.device.id, now) {
-                self.outbox.push(u);
-            }
-        }
-    }
-
-    /// Reaps finished jobs into the outbox.
-    async fn reap(&mut self) {
-        let Some(updates) = self.with_runner(Runner::poll).await else {
-            return;
-        };
-        for u in updates {
-            let name = self.state.job_name(u.id).map(str::to_string);
-            let u = self.state.finished(u);
-            info!(job = u.id, status = %u.status, exit_code = ?u.exit_code, error = ?u.error, "job ended");
-            if self.notify {
-                let name = name.as_deref().unwrap_or("job");
-                super::notify::notify_job_finish(name, u.status, u.exit_code, u.error.as_deref());
-            }
-            self.outbox.push(u);
-        }
-    }
-
-    /// Runs `f` on the runner off the async threads and refreshes the running list.
-    async fn with_runner<R: Send + 'static>(
-        &mut self,
-        f: impl FnOnce(&mut Runner) -> R + Send + 'static,
-    ) -> Option<R> {
-        let done = blocking(&self.runner, move |r| {
-            let out = f(r);
-            (out, r.running())
-        });
-        match done.await {
-            Ok((out, running)) => {
-                self.running = running;
-                Some(out)
-            }
-            Err(e) => {
-                error!("runner worker failed: {e}");
-                None
-            }
-        }
-    }
-
-    /// A heartbeat trip when one is due, else a flush when online with updates waiting.
-    fn next_trip(&mut self, beat_due: &mut bool) -> Option<JoinHandle<Trip>> {
-        let heartbeat = if *beat_due {
-            Some(self.heartbeat())
-        } else {
-            None
-        };
-        if heartbeat.is_none() && (!self.online || self.outbox.is_empty()) {
-            return None;
-        }
-        *beat_due = false;
-        let pending = self.outbox.pending(UPDATES_PER_TRIP);
-        Some(tokio::spawn(uplink::trip(
-            self.client.clone(),
-            pending,
-            heartbeat,
-        )))
-    }
-
-    /// Sends the advisor inputs in its own task, so slow `gh` or session reads never stall the loop.
-    fn spawn_feed(&self) -> JoinHandle<()> {
-        let (client, device) = (self.client.clone(), self.device.id.clone());
-        tokio::spawn(advisor_feed::run(client, device))
-    }
-
-    fn heartbeat(&self) -> Heartbeat {
-        Heartbeat {
-            device: self.device.clone(),
-            metrics: self.reading.metrics.clone(),
-            guard: self.decision.clone(),
-            running: self.running.clone(),
-            quota: self.reading.quota.clone(),
-            interactive_use: self.reading.interactive_use.clone(),
-            local_paused: self.reading.kill_switch || self.state.local_paused(),
-        }
-    }
-
-    fn set_online(&mut self, online: bool, why: &str) {
-        if online && !self.online {
-            info!("coordinator reachable");
-        } else if !online && self.online {
-            warn!(
-                error = why,
-                "coordinator unreachable: no new jobs, still guarding running ones"
-            );
-        }
-        self.online = online;
-    }
-
     fn publish(&self) {
         self.status.send_replace(LocalStatus {
             device: self.device.id.clone(),
@@ -418,31 +208,6 @@ impl Agent {
             );
         }
         self.publish();
-    }
-}
-
-fn execute(runner: &mut Runner, action: &AgentAction) -> Result<(), String> {
-    let done = match action {
-        AgentAction::Start(job) => runner.start(job),
-        AgentAction::Pause(id) => runner.pause(*id),
-        AgentAction::Resume(id) => runner.resume(*id),
-        AgentAction::Kill { id, .. } => runner.kill(*id),
-        AgentAction::Return { .. } => return Ok(()),
-    };
-    done.map_err(|e| e.to_string())
-}
-
-fn log_action(action: &AgentAction, outcome: &Result<(), String>) {
-    let job = action.job_id();
-    match (action, outcome) {
-        (AgentAction::Start(j), Ok(())) => info!(job, name = %j.spec.name, "job started"),
-        (AgentAction::Return { reason, .. }, _) => info!(job, %reason, "lease returned"),
-        (AgentAction::Pause(_), Ok(())) => info!(job, "job paused"),
-        (AgentAction::Resume(_), Ok(())) => info!(job, "job resumed"),
-        (AgentAction::Kill { order, .. }, Ok(())) => {
-            warn!(job, reason = %order.reason, owner_stop = order.owner_stop, "killing job");
-        }
-        (_, Err(e)) => warn!(job, error = %e, "runner action failed"),
     }
 }
 
