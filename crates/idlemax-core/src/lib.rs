@@ -11,6 +11,7 @@ pub mod guard;
 pub mod install;
 pub mod job_draft;
 pub mod job_run;
+pub mod job_wait;
 pub mod notify;
 pub mod paths;
 pub mod protocol;
