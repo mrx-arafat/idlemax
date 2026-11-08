@@ -262,6 +262,7 @@ idlemax doctor                      # then check the whole setup
   Change one and run `idlemax service install` again, which rewrites the file and reloads the service, so it restarts the agent and its running jobs.
 - The agent's log is `<state dir>/logs/agent.log` on macOS and `journalctl --user -u idlemax-agent` on Linux.
 - `idlemax service uninstall [agent|coord]` stops the service and deletes its file; with no name it removes every installed one.
+  If a loaded service cannot be stopped, the file is kept and the command says what failed; a service that is not loaded is simply removed.
 
 Linux user units run while you are logged in; run `loginctl enable-linger $USER` yourself to run from boot.
 Windows has no service command yet.

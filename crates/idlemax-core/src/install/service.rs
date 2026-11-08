@@ -298,20 +298,21 @@ pub fn install_steps(
     }
 }
 
-/// Commands that stop the service around deleting its file.
+/// Commands that stop the service around deleting its file. The caller runs `before` only for
+/// a loaded service, and a failure of it must keep the file: the service is still running.
 pub fn removal(platform: Platform, kind: ServiceKind, env: &ServiceEnv) -> Removal {
     match platform {
         Platform::Launchd => Removal {
             before: vec![Step::new(
                 &["launchctl", "bootout", &launchd_target(kind, env)],
-                true,
+                false,
             )],
             after: Vec::new(),
         },
         Platform::SystemdUser => Removal {
             before: vec![Step::new(
                 &["systemctl", "--user", "disable", "--now", &kind.unit()],
-                true,
+                false,
             )],
             after: vec![Step::new(&["systemctl", "--user", "daemon-reload"], false)],
         },

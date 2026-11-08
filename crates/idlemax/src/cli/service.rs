@@ -264,7 +264,7 @@ pub(super) fn install(
                 write_atomic(&unit.path, unit.content.as_bytes(), Some(0o644))
                     .with_context(|| format!("writing {}", unit.path.display()))?;
             }
-            run_steps(runner, &commands, &unit.path)?;
+            run_steps(runner, &commands, &unit.path, File::InPlace)?;
         }
         reports.push(InstallReport {
             kind,
@@ -295,7 +295,14 @@ fn install_notes(ctx: &Ctx, paths: &Paths, kind: ServiceKind) -> Vec<String> {
     notes
 }
 
-fn run_steps(runner: &dyn Runner, steps: &[Step], file: &Path) -> Result<()> {
+/// What the unit file is like when a step fails, which decides what the error tells you.
+#[derive(Clone, Copy)]
+enum File {
+    InPlace,
+    Deleted,
+}
+
+fn run_steps(runner: &dyn Runner, steps: &[Step], file: &Path, state: File) -> Result<()> {
     for step in steps {
         let failure = match runner.run(step) {
             Ok(out) if out.ok => continue,
@@ -305,10 +312,15 @@ fn run_steps(runner: &dyn Runner, steps: &[Step], file: &Path) -> Result<()> {
         if step.ignore_failure {
             continue;
         }
-        bail!(
-            "`{step}` failed: {failure}\nthe service file {} is in place; fix the problem and run the command again",
-            file.display()
-        );
+        let file = file.display();
+        match state {
+            File::InPlace => bail!(
+                "`{step}` failed: {failure}\nthe service file {file} is in place; fix the problem and run the command again"
+            ),
+            File::Deleted => bail!(
+                "`{step}` failed: {failure}\nthe service file {file} is already deleted; fix the problem and run `{step}` yourself"
+            ),
+        }
     }
     Ok(())
 }
@@ -328,10 +340,14 @@ fn uninstall(
             let steps = removal(ctx.platform, kind, &ctx.env);
             commands = [steps.before.clone(), steps.after.clone()].concat();
             if !dry_run {
-                run_steps(runner, &steps.before, &file)?;
+                // A service that is not loaded has nothing to stop; any other failure to stop
+                // it keeps the file, because deleting it would leave the service running.
+                if status(ctx, runner, &[kind])[0].loaded != Some(false) {
+                    run_steps(runner, &steps.before, &file, File::InPlace)?;
+                }
                 std::fs::remove_file(&file)
                     .with_context(|| format!("deleting {}", file.display()))?;
-                run_steps(runner, &steps.after, &file)?;
+                run_steps(runner, &steps.after, &file, File::Deleted)?;
             }
         }
         reports.push(UninstallReport {

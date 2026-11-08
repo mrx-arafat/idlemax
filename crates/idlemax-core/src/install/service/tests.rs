@@ -162,7 +162,7 @@ fn commands_per_platform() {
     let r = removal(Platform::SystemdUser, ServiceKind::Coord, &e);
     assert_eq!(
         show(r.before),
-        ["systemctl --user disable --now idlemax-coord.service  # a failure here is fine"]
+        ["systemctl --user disable --now idlemax-coord.service"]
     );
     assert_eq!(show(r.after), ["systemctl --user daemon-reload"]);
     assert_eq!(

@@ -173,3 +173,52 @@ fn installing_again_restarts_a_changed_unit_and_only_starts_an_unchanged_one() {
         "{steps:?}"
     );
 }
+
+/// An installed agent unit in a temp home.
+fn installed() -> (Ctx, tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let (ctx, paths) = ctx(dir.path());
+    let done = install(&ctx, &paths, &fake(None), &[ServiceKind::Agent], false).unwrap();
+    let file = done[0].file.clone();
+    (ctx, dir, file)
+}
+
+#[test]
+fn uninstall_keeps_the_file_when_a_loaded_service_cannot_be_stopped() {
+    let runner = fake(Some("disable --now"));
+    let (ctx, _dir, file) = installed();
+    let err = uninstall(&ctx, &runner, &[ServiceKind::Agent], false)
+        .err()
+        .expect("a failed stop must be an error")
+        .to_string();
+    assert!(file.exists(), "the service would be left running unmanaged");
+    assert!(
+        err.contains("disable --now") && err.contains("in place"),
+        "{err}"
+    );
+}
+
+#[test]
+fn uninstall_skips_the_stop_for_a_service_that_is_not_loaded() {
+    let runner = Fake {
+        show: "LoadState=not-found\nActiveState=inactive\n",
+        ..fake(Some("disable --now"))
+    };
+    let (ctx, _dir, file) = installed();
+    let gone = uninstall(&ctx, &runner, &[ServiceKind::Agent], false).unwrap();
+    assert!(gone[0].installed && !file.exists());
+    let seen = runner.seen.borrow();
+    assert!(!seen.iter().any(|c| c.contains("disable")), "{seen:?}");
+}
+
+#[test]
+fn a_failure_after_the_file_is_deleted_says_it_is_gone() {
+    let runner = fake(Some("daemon-reload"));
+    let (ctx, _dir, file) = installed();
+    let err = uninstall(&ctx, &runner, &[ServiceKind::Agent], false)
+        .err()
+        .expect("the reload failed")
+        .to_string();
+    assert!(!file.exists());
+    assert!(err.contains("already deleted"), "{err}");
+}
