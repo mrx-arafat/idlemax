@@ -9,16 +9,21 @@
 //!
 //! Keep decisions out of here: callers pass finished values and finished hint strings.
 
+mod failure;
 mod shape;
 pub mod toon;
+mod usage;
 
 use std::io::{ErrorKind, Write};
+use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::ValueEnum;
 use serde::Serialize;
 
+pub use failure::{unreachable, CliError, Peer};
 use toon::Node;
+pub use usage::{sniff_format, usage_error};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Format {
@@ -82,6 +87,22 @@ impl Out {
         print_line(&text)
     }
 
+    /// Prints the error for `e` in the active format and returns the exit code: machine
+    /// formats on stdout where the caller reads it, the table format on stderr.
+    pub fn fail(&self, e: &anyhow::Error) -> ExitCode {
+        self.report(&CliError::from_error(e))
+    }
+
+    pub fn report(&self, err: &CliError) -> ExitCode {
+        let text = err.render(self.format);
+        if self.format == Format::Table {
+            eprintln!("{text}");
+        } else {
+            let _ = print_line(&text);
+        }
+        ExitCode::from(err.code)
+    }
+
     /// Prints content the caller asked for verbatim (a log, a note), whatever the format.
     pub fn raw(&self, text: &str) -> Result<()> {
         print_line(text.strip_suffix('\n').unwrap_or(text))
@@ -113,7 +134,7 @@ impl Out {
 }
 
 /// One line to stdout; a closed pipe (`| head`) ends output quietly instead of panicking.
-fn print_line(text: &str) -> Result<()> {
+pub fn print_line(text: &str) -> Result<()> {
     match writeln!(std::io::stdout().lock(), "{text}") {
         Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
         other => other.context("writing to stdout"),

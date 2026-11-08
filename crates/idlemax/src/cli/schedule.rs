@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::Subcommand;
 use idlemax_core::schedule::{Decision, Every, NewSchedule, ScheduleId, ScheduleView};
 use idlemax_core::types::{JobSpec, UnixMs};
@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use super::print::table;
 use super::rows;
-use super::{hint, ApiClient, Out, COORD_DOWN};
+use super::{hint, ApiClient, CliError, Out, Peer};
 
 #[derive(Subcommand, Debug)]
 pub enum ScheduleCmd {
@@ -55,7 +55,7 @@ pub async fn run(cmd: ScheduleCmd, c: &ApiClient, out: &Out, now: UnixMs) -> Res
         }
     }
     .await;
-    result.map_err(|e| hint(e, COORD_DOWN))
+    result.map_err(|e| hint(e, Peer::Coordinator))
 }
 
 /// The one key a spec file may carry beyond a `JobSpec`.
@@ -77,10 +77,14 @@ fn read_new_schedule(path: &Path, flag: Option<Every>) -> Result<NewSchedule> {
         .every;
     match flag.or(in_file) {
         Some(every) => Ok(NewSchedule { spec, every }),
-        None => bail!(
-            "no interval: pass --every (for example --every 1d) or add `every = \"1d\"` to {}",
-            path.display()
-        ),
+        None => Err(CliError::usage(
+            format!(
+                "no interval: pass --every (for example --every 1d) or add `every = \"1d\"` to {}",
+                path.display()
+            ),
+            format!("idlemax schedule add {} --every 1d", path.display()),
+        )
+        .into()),
     }
 }
 

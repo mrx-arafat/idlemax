@@ -20,9 +20,10 @@ mod statusline;
 pub mod why;
 
 use std::io::{IsTerminal, Read};
+use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, DeviceProfile, JobId, JobStatus};
 use idlemax_core::Paths;
@@ -32,13 +33,16 @@ use crate::state::{self, now_ms};
 
 pub use client::{ApiClient, ClientError};
 pub use job::ExitWith;
-pub use out::{Format, Out};
+pub use out::{CliError, Format, Out, Peer};
+
+/// The bare version, what `-V`, `-v` and `--version` print.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Debug)]
 #[command(
     name = "idlemax",
-    version,
-    about = "Run useful jobs on spare device capacity"
+    about = "Run useful jobs on spare device capacity",
+    disable_version_flag = true
 )]
 struct Cli {
     /// Coordinator URL [default: coordinator.url in config.toml]
@@ -56,6 +60,9 @@ struct Cli {
     /// Do not cut long text in toon output
     #[arg(long, global = true)]
     full: bool,
+    /// Print the version
+    #[arg(short = 'V', short_alias = 'v', long, global = true)]
+    version: bool,
     /// Without a command, print the live home view
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -241,40 +248,71 @@ impl Target {
     }
 }
 
-pub async fn run() -> Result<()> {
+/// Parses the command line, runs the command and returns the process exit code:
+/// 0 success (no-ops included), 1 runtime error, 2 usage error.
+pub async fn run() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => return usage_exit(e, &args),
+    };
+    if cli.version {
+        let _ = out::print_line(VERSION);
+        return ExitCode::SUCCESS;
+    }
+    let format = Format::resolve(cli.format, cli.json, std::io::stdout().is_terminal());
+    let out = Out::new(format, cli.full);
+    match execute(cli, &out).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => match e.downcast_ref::<ExitWith>() {
+            // The command already printed its result; the code is the message.
+            Some(ExitWith(code)) => ExitCode::from(*code),
+            None => out.fail(&e),
+        },
+    }
+}
+
+/// A parse failure. Help and version output, and a person at a terminal, get clap's own
+/// message; a pipe gets `error:` and the valid flags on stdout.
+fn usage_exit(e: clap::Error, args: &[String]) -> ExitCode {
+    let format = out::sniff_format(args, std::io::stdout().is_terminal());
+    if !e.use_stderr() || format == Format::Table {
+        e.exit();
+    }
+    let err = out::usage_error(&e, &mut Cli::command(), args);
+    Out::new(format, false).report(&err)
+}
+
+/// True when the whole command line is one version flag, so it can skip everything else.
+pub fn is_version_probe(args: &[String]) -> bool {
+    matches!(args, [a] if matches!(a.as_str(), "-V" | "-v" | "--version"))
+}
+
+async fn execute(cli: Cli, out: &Out) -> Result<()> {
     let Cli {
-        coord,
-        format,
-        json,
-        full,
-        utc,
-        cmd,
-    } = Cli::parse();
+        coord, cmd, utc, ..
+    } = cli;
     let zone = if utc {
         rows::Zone::Utc
     } else {
         rows::Zone::Local
     };
-    let out = Out::new(
-        Format::resolve(format, json, std::io::stdout().is_terminal()),
-        full,
-    );
     let Some(cmd) = cmd else {
-        return home::run(coord, &out, home::Mode::Full).await;
+        return home::run(coord, out, home::Mode::Full).await;
     };
     // Doctor and the hooks report a broken state dir or config instead of failing on it.
     let cmd = match cmd {
-        Cmd::Doctor => return run_doctor(coord, &out).await,
-        Cmd::Hooks(args) => return hooks::run(coord, args, &out).await,
-        Cmd::Skill(args) => return skill::run(args, &out),
+        Cmd::Doctor => return run_doctor(coord, out).await,
+        Cmd::Hooks(args) => return hooks::run(coord, args, out).await,
+        Cmd::Skill(args) => return skill::run(args, out),
         other => other,
     };
     let paths = state::paths_from_env()?;
     let cmd = match cmd {
-        Cmd::Init(args) => return run_init(&paths, args, &out),
-        Cmd::Setup(args) => return setup::run(&paths, args, coord, &out).await,
-        Cmd::Service(args) => return service::run(&paths, args, &out),
-        Cmd::Statusline(args) => return statusline::run(&paths, args, &out),
+        Cmd::Init(args) => return run_init(&paths, args, out),
+        Cmd::Setup(args) => return setup::run(&paths, args, coord, out).await,
+        Cmd::Service(args) => return service::run(&paths, args, out),
+        Cmd::Statusline(args) => return statusline::run(&paths, args, out),
         other => other,
     };
     let config = state::load_config(&paths)?;
@@ -290,18 +328,18 @@ pub async fn run() -> Result<()> {
         Cmd::Local(cmd) => {
             let client =
                 ApiClient::new(&format!("http://{}", config.agent.listen), token(&paths)?)?;
-            run_local(cmd, &client, &out)
+            run_local(cmd, &client, out)
                 .await
-                .map_err(|e| hint(e, LOCAL_DOWN))
+                .map_err(|e| hint(e, Peer::Agent))
         }
         Cmd::Inbox { cmd } => match cmd.unwrap_or(InboxCmd::List) {
-            InboxCmd::List => inbox::run_list(&paths, &out),
-            InboxCmd::Show { id } => inbox::run_show(&paths, id, &out),
+            InboxCmd::List => inbox::run_list(&paths, out),
+            InboxCmd::Show { id } => inbox::run_show(&paths, id, out),
         },
         Cmd::Job(JobCmd::Add(args)) => {
             let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
             let client = ApiClient::new(&url, token(&paths)?)?;
-            job::add(&client, &paths, *args, &out).await
+            job::add(&client, &paths, *args, out).await
         }
         Cmd::Logs { id, tail, follow } => {
             let log_path = paths.job_log_file(id);
@@ -316,7 +354,7 @@ pub async fn run() -> Result<()> {
         cmd => {
             let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
             let client = ApiClient::new(&url, token(&paths)?)?;
-            run_coord(cmd, &client, &out, zone).await
+            run_coord(cmd, &client, out, zone).await
         }
     }
 }
@@ -401,7 +439,13 @@ fn read_token_stdin() -> Result<String> {
 }
 
 fn token(paths: &Paths) -> Result<String> {
-    state::load_token(paths).context("no API token; run `idlemax init` or set IDLEMAX_TOKEN")
+    state::load_token(paths).map_err(|e| {
+        CliError::runtime(
+            format!("no API token ({e})"),
+            "idlemax init (or set IDLEMAX_TOKEN)",
+        )
+        .into()
+    })
 }
 
 fn init_tracing() {
@@ -414,28 +458,19 @@ fn init_tracing() {
         .try_init();
 }
 
-const COORD_DOWN: &str =
-    "coordinator unreachable; `idlemax local stop-all` still works on this device";
-const LOCAL_DOWN: &str =
-    "local agent unreachable; is `idlemax agent` running? touch $IDLEMAX_HOME/PAUSE to pause it";
-
-/// Adds a next step when the server is not there at all.
-fn hint(e: impl Into<anyhow::Error>, msg: &'static str) -> anyhow::Error {
+/// Replaces "cannot connect" with what to start, since the server is not there at all.
+fn hint(e: impl Into<anyhow::Error>, peer: Peer) -> anyhow::Error {
     let e: anyhow::Error = e.into();
-    if matches!(
-        e.downcast_ref::<ClientError>(),
-        Some(ClientError::Unreachable { .. })
-    ) {
-        e.context(msg)
-    } else {
-        e
+    match e.downcast_ref::<ClientError>() {
+        Some(ClientError::Unreachable { url, .. }) => out::unreachable(peer, url).into(),
+        _ => e,
     }
 }
 
 async fn run_coord(cmd: Cmd, c: &ApiClient, out: &Out, zone: rows::Zone) -> Result<()> {
     dispatch(cmd, c, out, now_ms(), zone)
         .await
-        .map_err(|e| hint(e, COORD_DOWN))
+        .map_err(|e| hint(e, Peer::Coordinator))
 }
 
 async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone) -> Result<()> {

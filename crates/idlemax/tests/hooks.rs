@@ -234,7 +234,8 @@ fn with_no_agent_installed_the_error_names_where_it_looked_and_what_to_pass() {
         .stdin(Stdio::null())
         .output()
         .unwrap();
-    let err = String::from_utf8_lossy(&out.stderr);
+    // Piped, the error is on stdout where an agent reads it.
+    let err = String::from_utf8_lossy(&out.stdout);
     assert_eq!(out.status.code(), Some(1), "{err}");
     assert!(
         err.contains("no supported agent found") && err.contains("--claude"),

@@ -7,13 +7,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use clap::error::ErrorKind;
 use clap::{Args, ValueEnum};
 use idlemax_core::job_draft::{DraftError, JobDraft};
 use idlemax_core::types::{CostClass, Job, JobSpec};
 use idlemax_core::Paths;
 
-use super::{job_wait, print, schedule, why, ApiClient, Format, Out};
+use super::{job_wait, print, schedule, why, ApiClient, CliError, Format, Out};
 
 const NOTHING_TO_RUN: &str = "nothing to run: give a spec file (`idlemax job add spec.toml`), \
     `-` to read the spec from stdin, or a command after `--` (`idlemax job add -- cargo test`)\n";
@@ -110,7 +109,7 @@ pub async fn add(c: &ApiClient, paths: &Paths, args: AddArgs, out: &Out) -> Resu
     let (job, created) = c
         .add_job(&spec)
         .await
-        .map_err(|e| super::hint(e, super::COORD_DOWN))?;
+        .map_err(|e| super::hint(e, super::Peer::Coordinator))?;
     announce(&job, created, out, wait)?;
     why::warn_if_unrunnable(c, &spec).await;
     if wait {
@@ -126,12 +125,12 @@ impl AddArgs {
         let mut spec = match self.spec.as_deref() {
             Some(p) if p == Path::new("-") => parse_spec(&read_stdin()?, "stdin", "<file>")?,
             Some(p) => read_spec(p)?,
-            None if self.argv.is_empty() => usage_error(NOTHING_TO_RUN),
+            None if self.argv.is_empty() => return Err(usage_error(NOTHING_TO_RUN)),
             None => {
                 let here = std::env::current_dir().context("cannot read the current directory")?;
                 return self.draft().into_spec(&here).map_err(|e| match e {
                     DraftError::AccountNeedsAiCost | DraftError::AiCostNeedsAccount => {
-                        usage_error(&format!("{e}\n"))
+                        usage_error(&e.to_string())
                     }
                     other => other.into(),
                 });
@@ -161,9 +160,13 @@ impl AddArgs {
     }
 }
 
-/// Prints `message` as a command line mistake and exits 2, like clap's own errors.
-pub(super) fn usage_error(message: &str) -> ! {
-    clap::Error::raw(ErrorKind::ArgumentConflict, message).exit()
+/// A command line mistake: exit 2, with the part after the first ": " as the fix.
+pub(super) fn usage_error(message: &str) -> anyhow::Error {
+    let message = message.trim_end();
+    let (what, help) = message
+        .split_once(": ")
+        .unwrap_or((message, "idlemax job add --help"));
+    CliError::usage(what, help).into()
 }
 
 fn read_spec(path: &Path) -> Result<JobSpec> {

@@ -82,7 +82,10 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
         service: !args.no_service,
         statusline: args.statusline,
     };
-    let plan = plan_setup(paths, &request)?.unwrap_or_else(|e| usage_error(&format!("{e}\n")));
+    let plan = match plan_setup(paths, &request)? {
+        Ok(plan) => plan,
+        Err(e) => return Err(usage_error(&e.to_string())),
+    };
     let env = Env {
         paths,
         svc: service_ctx(paths, &plan)?,

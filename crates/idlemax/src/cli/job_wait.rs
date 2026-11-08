@@ -106,7 +106,7 @@ async fn poll(c: &ApiClient, mut job: Job, timeout: Option<Duration>) -> Result<
             {
                 eprintln!("coordinator unreachable, still waiting for job {}", job.id);
             }
-            Err(e) => return Err(super::hint(e, super::COORD_DOWN)),
+            Err(e) => return Err(super::hint(e, super::Peer::Coordinator)),
         }
         // The result follows a finished job, so only the steps before it are reported.
         if job.status != announced && !job.status.is_terminal() {
