@@ -15,10 +15,17 @@ pub fn notify_job_finish(
         return;
     }
     let notif = notify::job_finish_notification(name, status, exit_code, error);
-    let script = notify::render_applescript(&notif);
     match std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
+        .args([
+            "-e",
+            "on run argv",
+            "-e",
+            "display notification (item 1 of argv) with title (item 2 of argv)",
+            "-e",
+            "end run",
+        ])
+        .arg(&notif.message)
+        .arg(&notif.title)
         .spawn()
     {
         Ok(_) => {}

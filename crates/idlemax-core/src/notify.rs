@@ -1,4 +1,4 @@
-//! Domain: job finish notification decisions and AppleScript rendering. Pure.
+//! Domain: job finish notification decisions. Pure.
 
 use crate::types::JobStatus;
 
@@ -36,28 +36,6 @@ pub fn job_finish_notification(
     }
 }
 
-/// Renders AppleScript for macOS `display notification`.
-pub fn render_applescript(notif: &Notification) -> String {
-    let title = escape_applescript(&notif.title);
-    let msg = escape_applescript(&notif.message);
-    format!("display notification \"{msg}\" with title \"{title}\"")
-}
-
-/// Escapes characters for an AppleScript string literal.
-pub fn escape_applescript(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            other => out.push(other),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,10 +45,6 @@ mod tests {
         let n = job_finish_notification("echo test", JobStatus::Succeeded, Some(0), None);
         assert_eq!(n.title, "idlemax: echo test");
         assert_eq!(n.message, "succeeded");
-        assert_eq!(
-            render_applescript(&n),
-            "display notification \"succeeded\" with title \"idlemax: echo test\""
-        );
     }
 
     #[test]
@@ -88,19 +62,7 @@ mod tests {
             Some(1),
             Some("connection timeout"),
         );
+        assert_eq!(n.title, "idlemax: fetch");
         assert_eq!(n.message, "failed: connection timeout");
-    }
-
-    #[test]
-    fn escape_quotes_and_backslashes() {
-        let n = Notification {
-            title: "idlemax: \"quote\" & \\slash\\".into(),
-            message: "line 1\nline 2".into(),
-        };
-        let script = render_applescript(&n);
-        assert_eq!(
-            script,
-            "display notification \"line 1\\nline 2\" with title \"idlemax: \\\"quote\\\" & \\\\slash\\\\\""
-        );
     }
 }
