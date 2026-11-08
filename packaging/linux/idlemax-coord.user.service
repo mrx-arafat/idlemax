@@ -1,6 +1,6 @@
-# idlemax coordinator as a systemd user unit, for a single-user setup.
-# Template for `idlemax service install coord`, which fills in the binary and environment.
-# In production the coordinator runs on the server (idlemax-coord.service) with the same caps.
+# idlemax coordinator as a systemd user unit, written by `idlemax service install coord`.
+# Re-running it overwrites this file; keep your changes in a drop-in (`systemctl --user edit idlemax-coord`).
+# For a single-user setup. In production the coordinator runs on the server (idlemax-coord.service) with the same caps.
 # Bind it to a private address in $IDLEMAX_HOME/config.toml, never a public one.
 
 [Unit]

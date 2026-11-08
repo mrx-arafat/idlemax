@@ -3,8 +3,7 @@
 <!--
   idlemax coordinator as a per-user LaunchAgent, for a Mac-only setup.
   In production the coordinator runs on the server (packaging/linux/idlemax-coord.service).
-  Template for `idlemax service install coord`, which fills in the binary, state dir and environment.
-  Do not load it directly.
+  Written by `idlemax service install coord`; re-running it overwrites this file.
 -->
 <plist version="1.0">
 <dict>

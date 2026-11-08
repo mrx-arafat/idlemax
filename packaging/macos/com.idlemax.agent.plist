@@ -2,8 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   idlemax device agent, per-user LaunchAgent.
-  Template for `idlemax service install`, which fills in the binary, state dir and environment.
-  Do not load it directly.
+  Written by `idlemax service install`; re-running it overwrites this file.
 -->
 <plist version="1.0">
 <dict>
