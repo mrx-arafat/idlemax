@@ -3,14 +3,22 @@
 //! The agent adapter feeds each tick's guard verdict, kill switch, coordinator commands,
 //! local controls and new leases into [`AgentState::plan`], runs the returned actions, and
 //! reports each outcome back through [`AgentState::applied`].
+//!
+//! This file holds the state types and the tick API (`plan`, `applied`, `finished`). The
+//! children hold what `plan` calls: `controls` (local controls and coordinator commands)
+//! and `starts` (which leases fit, and why one is handed back).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
+mod controls;
 mod journal;
 mod outbox;
+mod starts;
 
 pub use journal::{encode_ack, encode_update, replay, Replayed};
 pub use outbox::Outbox;
+
+use self::starts::{guard_reason, start_blocker};
 
 use crate::protocol::{AgentCommand, JobUpdate};
 use crate::types::{
@@ -236,111 +244,7 @@ impl AgentState {
     fn set_paused(&mut self, id: JobId, paused: bool) -> bool {
         self.jobs.get_mut(&id).map(|j| j.paused = paused).is_some()
     }
-
-    fn apply_local_controls(&mut self, controls: &[ControlAction], kills: &mut Kills) {
-        for c in controls {
-            match c {
-                ControlAction::Pause => self.local_paused = true,
-                ControlAction::Resume => self.local_paused = false,
-                ControlAction::StopAll => {
-                    self.local_paused = true;
-                    self.kill_all(&KillOrder::new("stop_all from local control", true), kills);
-                }
-                // Not a Global-scope action; the local API rejects it.
-                ControlAction::Cancel => {}
-            }
-        }
-    }
-
-    /// Returns true when the coordinator sent StopAll.
-    fn apply_commands(&mut self, commands: &[AgentCommand], kills: &mut Kills) -> bool {
-        let mut stop_all = false;
-        for c in commands {
-            match c {
-                AgentCommand::PauseJob { id } => self.set_command_hold(*id, true),
-                AgentCommand::ResumeJob { id } => self.set_command_hold(*id, false),
-                AgentCommand::KillJob { id } if self.jobs.contains_key(id) => {
-                    kills
-                        .entry(*id)
-                        .or_insert_with(|| KillOrder::new("killed by coordinator", false));
-                }
-                AgentCommand::KillJob { .. } => {}
-                AgentCommand::StopAll => {
-                    stop_all = true;
-                    let order = KillOrder::new("stop_all from coordinator", false);
-                    self.kill_all(&order, kills);
-                }
-                AgentCommand::ResumeAll => {
-                    self.jobs.values_mut().for_each(|j| j.holds.command = false);
-                }
-            }
-        }
-        stop_all
-    }
-
-    fn set_command_hold(&mut self, id: JobId, hold: bool) {
-        if let Some(job) = self.jobs.get_mut(&id) {
-            job.holds.command = hold;
-        }
-    }
-
-    fn kill_all(&self, order: &KillOrder, kills: &mut Kills) {
-        for id in self.jobs.keys() {
-            kills.entry(*id).or_insert_with(|| order.clone());
-        }
-    }
-
-    /// Starts leases while slots and RAM remain; returns the rest.
-    fn plan_starts(&self, input: &TickInput<'_>, blocked: Option<String>) -> Vec<AgentAction> {
-        let (mut slots, mut mem_mib) = self.budget_left(input.guard);
-        let mut seen = BTreeSet::new();
-        let mut actions = Vec::new();
-        for job in input.assign {
-            // Already running here or listed twice: never start or return it twice.
-            if self.jobs.contains_key(&job.id) || !seen.insert(job.id) {
-                continue;
-            }
-            let reason = match &blocked {
-                Some(r) => Some(r.clone()),
-                None if slots == 0 => Some("no free job slot".to_string()),
-                None if job.spec.mem_mb > mem_mib => Some(format!(
-                    "needs {} MiB, guard allows {mem_mib} MiB",
-                    job.spec.mem_mb
-                )),
-                None => None,
-            };
-            match reason {
-                Some(reason) => actions.push(AgentAction::Return { id: job.id, reason }),
-                None => {
-                    slots -= 1;
-                    mem_mib -= job.spec.mem_mb;
-                    actions.push(AgentAction::Start(Box::new(job.clone())));
-                }
-            }
-        }
-        actions
-    }
-
-    /// Guard slots and RAM minus jobs started since the guard sampled.
-    fn budget_left(&self, guard: &GuardDecision) -> (u32, u64) {
-        let GuardAction::Run { slots, mem_mib } = guard.action else {
-            return (0, 0);
-        };
-        let since: Vec<&TrackedJob> = self
-            .jobs
-            .values()
-            .filter(|j| j.started_ms >= guard.at_ms)
-            .collect();
-        let used_mem: u64 = since.iter().map(|j| j.mem_mb).sum();
-        let used_slots = u32::try_from(since.len()).unwrap_or(u32::MAX);
-        (
-            slots.saturating_sub(used_slots),
-            mem_mib.saturating_sub(used_mem),
-        )
-    }
 }
-
-type Kills = BTreeMap<JobId, KillOrder>;
 
 const SHUTDOWN_REASON: &str = "agent shutting down";
 
@@ -362,33 +266,6 @@ pub fn fail_safe_decision(reason: &str, at_ms: UnixMs) -> GuardDecision {
         user_active: false,
         reasons: vec![reason.to_string()],
         at_ms,
-    }
-}
-
-fn start_blocker(input: &TickInput<'_>, local: bool, stop_all: bool) -> Option<String> {
-    let reason = if input.shutting_down {
-        SHUTDOWN_REASON
-    } else if !input.online {
-        "coordinator unreachable"
-    } else if input.kill_switch {
-        "kill switch file present"
-    } else if local {
-        "paused locally"
-    } else if stop_all {
-        "stop_all from coordinator"
-    } else if !input.guard.action.may_start() {
-        return Some(guard_reason(input.guard));
-    } else {
-        return None;
-    };
-    Some(reason.to_string())
-}
-
-fn guard_reason(guard: &GuardDecision) -> String {
-    if guard.reasons.is_empty() {
-        format!("guard: {:?}", guard.action)
-    } else {
-        format!("guard: {}", guard.reasons.join("; "))
     }
 }
 
