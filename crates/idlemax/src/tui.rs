@@ -3,6 +3,8 @@
 mod app;
 mod feed;
 mod layout;
+#[cfg(test)]
+mod snapshots;
 mod table;
 mod view;
 

@@ -1,0 +1,175 @@
+##### connecting
+idlemax http://127.0.0.1:7878   connecting   updated never
+
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│waiting for the coordinator...                                                │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume selection  P/R all  s stop-all  tab/1-6 switch  q quit
+##### unreachable, nothing loaded yet
+idlemax http://127.0.0.1:7878   unreachable   updated never
+coordinator unreachable: cannot reach http://127.0.0.1:7878: error sending
+request for url (http://127.0.0.1:7878/v1/status): client error (Connect): tcp
+connect error: Connection refused (os error 61)
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│waiting for the coordinator...                                                │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume selection  P/R all  s stop-all  tab/1-6 switch  q quit
+##### unreachable, showing the last data
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+coordinator unreachable: cannot reach http://127.0.0.1:7878: error sending
+request for url (http://127.0.0.1:7878/v1/status): client error (Connect): tcp
+connect error: Connection refused (os error 61)
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT                   │
+│> 46  index-refresh              queued     46m ago  -                        │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  s stop-all  tab/1-6 switch  q quit
+##### confirm stop all
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT                   │
+│> 46  index-refresh              queued     46m ago  -                        │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  41  i┌ confirm ─────────────────────────────────────────────────────┐       │
+│  40  n│Stop ALL jobs on every device and hold new ones?              │       │
+│       │                                                              │       │
+│       │y confirm, any other key cancels                              │       │
+│       └──────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume job 46  k cancel job  s stop-all  tab/1-6 switch  q quit
+##### confirm remove a schedule with a long name
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       EVERY  STATE          LAST RESULT            │
+│  1   index-refresh              12h    job 46 queued  -                      │
+│> 2   repo-health-project-a-wi…  1d     paused         failed (exit 2) 3m ago │
+│  3   kb-refresh                 6h     next in 5h41m  succeeded 19m ago      │
+│       ┌ confirm ─────────────────────────────────────────────────────┐       │
+│       │Remove schedule 2                                             │       │
+│       │(repo-health-project-a-with-a-long-schedule-name-here)? A job │       │
+│       │it already queued keeps running.                              │       │
+│       │                                                              │       │
+│       │y confirm, any other key cancels                              │       │
+│       └──────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume schedule  d remove  P/R all  s stop-all  tab/1-6 switch  q quit
+##### flash after an action
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT                   │
+│> 46  index-refresh              queued     46m ago  -                        │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ok: pause schedule 3
+##### flash after a failed action
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT                   │
+│> 46  index-refresh              queued     46m ago  -                        │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  running 30m              │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+remove schedule 3: /v1/schedules/3: HTTP 404: no schedule with id 3; it may have
+been removed from another terminal, so press tab to reload the list and try
+again
