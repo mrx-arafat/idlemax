@@ -129,7 +129,8 @@ impl Store {
             .conn
             .execute(
                 "UPDATE jobs SET status = 'leased', device = ?2, lease_expires_ms = ?3,
-                   attempts = attempts + 1, not_before_ms = NULL
+                   attempts = attempts + 1, not_before_ms = NULL,
+                   started_ms = NULL, finished_ms = NULL, exit_code = NULL, output_path = NULL
                  WHERE id = ?1 AND status = 'queued'
                    AND (not_before_ms IS NULL OR not_before_ms <= ?4)",
                 params![id, device, expires_ms, now],

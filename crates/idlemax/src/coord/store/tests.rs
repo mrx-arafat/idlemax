@@ -197,6 +197,32 @@ fn lease_is_compare_and_set_with_one_ai_lease_per_account() {
     assert_eq!(s.job_counts().unwrap().leased, 1);
 }
 
+#[test]
+fn lease_resets_attempt_fields_on_retry() {
+    let mut s = Store::open_in_memory().unwrap();
+    let job = s.insert_job(&spec("retry-me", None), T0).unwrap();
+    let retried = Job {
+        status: JobStatus::Queued,
+        attempts: 1,
+        started_ms: Some(T0 + 1000),
+        finished_ms: Some(T0 + 2000),
+        exit_code: Some(1),
+        output_path: Some("/tmp/out".into()),
+        ..job
+    };
+    s.update_jobs(&[retried]).unwrap();
+
+    let leased = s
+        .lease_job(job.id, "mac", T0 + 120_000, T0 + 3000)
+        .unwrap()
+        .unwrap();
+    assert_eq!(leased.attempts, 2);
+    assert_eq!(leased.started_ms, None);
+    assert_eq!(leased.finished_ms, None);
+    assert_eq!(leased.exit_code, None);
+    assert_eq!(leased.output_path, None);
+}
+
 fn capped(caps: Caps) -> Store {
     Store::open_in_memory().unwrap().with_caps(caps)
 }
