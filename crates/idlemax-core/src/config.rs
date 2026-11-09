@@ -6,9 +6,13 @@ use crate::quota::{QuotaConfig, QuotaConfigError};
 use crate::types::{DeviceProfile, Os};
 use crate::{DEFAULT_AGENT_LISTEN, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
 
+mod edit;
 mod guard_policy;
+mod settings;
 
+pub use edit::{set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, SwapGrowth};
+pub use settings::{list_settings, show_value, Setting};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ConfigError {
