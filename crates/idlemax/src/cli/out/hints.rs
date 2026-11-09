@@ -161,6 +161,27 @@ pub fn inbox(shown: usize) -> Vec<String> {
     vec![run("idlemax inbox show <job-id>", "read a result note")]
 }
 
+pub fn config_list(all: bool) -> Vec<String> {
+    let mut hints = vec![run("idlemax config set <setting> <value>", "change one")];
+    if !all {
+        hints.push(run(
+            "idlemax config list --all",
+            "see every setting and its default",
+        ));
+    }
+    hints
+}
+
+pub fn config_changed(key: &str) -> Vec<String> {
+    vec![
+        run(
+            &format!("idlemax config unset {key}"),
+            "go back to the default",
+        ),
+        run("idlemax config list", "see what you changed"),
+    ]
+}
+
 pub fn init() -> Vec<String> {
     vec![
         run("idlemax coord", "start the coordinator (one machine)"),

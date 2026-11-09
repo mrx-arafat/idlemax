@@ -43,7 +43,7 @@ pub struct Edit {
 /// Sets `key` (`section.name`) to `raw`. A list setting takes `git,cargo` or `["git", "cargo"]`;
 /// a text setting takes the bare word; anything else is read as a TOML value.
 pub fn set_setting(text: &str, key: &str, raw: &str, os: Os) -> Result<Edit, EditError> {
-    let current = lookup(text, key, os)?;
+    let current = find_setting(text, key, os)?;
     let mut doc = parse_doc(text)?;
     let (section, name) = split(key)?;
     let table = table_of(&mut doc, section)?;
@@ -67,7 +67,7 @@ pub fn set_setting(text: &str, key: &str, raw: &str, os: Os) -> Result<Edit, Edi
 /// pinned is the default. A key the file does not set is already at its default, and nothing
 /// changes.
 pub fn unset_setting(text: &str, key: &str, os: Os) -> Result<Edit, EditError> {
-    let current = lookup(text, key, os)?;
+    let current = find_setting(text, key, os)?;
     if !current.from_file {
         return Ok(Edit {
             text: text.to_string(),
@@ -82,7 +82,9 @@ pub fn unset_setting(text: &str, key: &str, os: Os) -> Result<Edit, EditError> {
     finish(text, doc.to_string(), key, "unset", os, &current, true)
 }
 
-fn lookup(text: &str, key: &str, os: Os) -> Result<Setting, EditError> {
+/// The setting named `key`, or the error `set` would give: unknown (with the nearest real
+/// name) or not editable.
+pub fn find_setting(text: &str, key: &str, os: Os) -> Result<Setting, EditError> {
     let all = list_settings(text, os).map_err(EditError::Current)?;
     let found = all.iter().find(|s| s.key == key).cloned();
     if NOT_EDITABLE.contains(&key) {

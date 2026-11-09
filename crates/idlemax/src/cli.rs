@@ -2,6 +2,7 @@
 
 mod client;
 mod commands;
+mod config_cmd;
 mod dispatch;
 mod files;
 mod handlers;

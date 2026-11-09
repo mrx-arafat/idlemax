@@ -5,7 +5,7 @@ use clap::{Args, Subcommand};
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
-use super::{hooks, init_cmd, job, schedule, service, setup, skill, statusline};
+use super::{config_cmd, hooks, init_cmd, job, schedule, service, setup, skill, statusline};
 
 #[derive(Subcommand, Debug)]
 pub(super) enum Cmd {
@@ -69,6 +69,8 @@ pub(super) enum Cmd {
         #[command(subcommand)]
         cmd: Option<AdviseCmd>,
     },
+    /// Show or change settings in config.toml and apply them to the running agent
+    Config(config_cmd::ConfigArgs),
     /// Set this device up in one command: init, the background service, then doctor (safe to repeat)
     Setup(setup::SetupArgs),
     /// Install or remove the background service (LaunchAgent or systemd user unit)

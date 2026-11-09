@@ -71,17 +71,24 @@ fn auto_value() -> Value {
     Value::String("auto".into())
 }
 
-/// Text for a value the way `config.toml` writes it: `false`, `40`, `"git"`, `["git", "make"]`;
-/// `off` for a check that is disabled.
+/// A value as people read it: `false`, `40`, `macos_laptop`, `["git", "make"]`; `off` for a
+/// check that is disabled. Text is shown bare, except inside a list.
 pub fn show_value(value: &Value) -> String {
     match value {
         Value::Null => "off".into(),
-        Value::String(s) if s == "auto" => "auto".into(),
+        Value::String(text) => text.clone(),
         Value::Array(items) => {
-            let items: Vec<String> = items.iter().map(show_value).collect();
+            let items: Vec<String> = items.iter().map(show_item).collect();
             format!("[{}]", items.join(", "))
         }
         other => other.to_string(),
+    }
+}
+
+fn show_item(item: &Value) -> String {
+    match item {
+        Value::String(text) => format!("{text:?}"),
+        other => show_value(other),
     }
 }
 

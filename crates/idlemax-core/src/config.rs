@@ -11,7 +11,7 @@ mod guard_policy;
 mod reload;
 mod settings;
 
-pub use edit::{set_setting, unset_setting, Edit, EditError};
+pub use edit::{find_setting, set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, SwapGrowth};
 pub use reload::{plan_reload, ReloadReport};
 pub use settings::{list_settings, show_value, Setting};

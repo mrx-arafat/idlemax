@@ -4,6 +4,7 @@ mod schedules;
 
 use std::time::Duration;
 
+use idlemax_core::config::ReloadReport;
 use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::quota::QuotaView;
@@ -194,6 +195,11 @@ impl ApiClient {
 
     pub async fn local_control(&self, req: &ControlRequest) -> Result<LocalStatus> {
         self.post("/v1/local/control", Some(req)).await
+    }
+
+    /// Asks the agent to re-read `config.toml` and apply what it can without a restart.
+    pub async fn local_reload(&self) -> Result<ReloadReport> {
+        self.post("/v1/local/reload", None::<&()>).await
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {

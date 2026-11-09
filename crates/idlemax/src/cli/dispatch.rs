@@ -8,8 +8,8 @@ use idlemax_core::Paths;
 use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd};
 use super::init_cmd::run_init;
 use super::{
-    handlers, home, hooks, inbox, job, logs, out, print, rows, schedule, service, setup, skill,
-    statusline, ApiClient, Cli, CliError, ClientError, ExitWith, Out, Peer,
+    config_cmd, handlers, home, hooks, inbox, job, logs, out, print, rows, schedule, service,
+    setup, skill, statusline, ApiClient, Cli, CliError, ClientError, ExitWith, Out, Peer,
 };
 use crate::state::{self, now_ms};
 
@@ -35,6 +35,7 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
     let paths = state::paths_from_env()?;
     let cmd = match cmd {
         Cmd::Init(args) => return run_init(&paths, args, out),
+        Cmd::Config(args) => return config_cmd::run(&paths, args, out).await,
         Cmd::Setup(args) => return setup::run(&paths, args, coord, out).await,
         Cmd::Service(args) => return service::run(&paths, args, out),
         Cmd::Statusline(args) => return statusline::run(&paths, args, out),
@@ -94,7 +95,7 @@ async fn run_doctor(coord: Option<String>, out: &Out) -> Result<()> {
     Ok(())
 }
 
-fn token(paths: &Paths) -> Result<String> {
+pub(super) fn token(paths: &Paths) -> Result<String> {
     state::load_token(paths).map_err(|e| {
         let help = match &e {
             state::StateError::TokenNotPrivate(path) => format!(
@@ -159,6 +160,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         | Cmd::Agent
         | Cmd::Coord
         | Cmd::Init(_)
+        | Cmd::Config(_)
         | Cmd::Local(_)
         | Cmd::Setup(_)
         | Cmd::Service(_)
