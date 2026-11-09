@@ -21,7 +21,7 @@ pub fn allowlist(report: &mut Report, cfg: &Config, service_path: Option<&str>) 
         report.push(Check::warn(
             "allowlist",
             "agent.command_allowlist is empty: no job can start",
-            "list the programs jobs may run, e.g. [\"git\", \"/usr/bin/make\"]",
+            "list the programs jobs may run: idlemax config set agent.command_allowlist git,/usr/bin/make",
         ));
         return;
     }

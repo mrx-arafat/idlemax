@@ -33,6 +33,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "see why a job is not running and what to change",
     ),
     (
+        "idlemax config set <setting> <value>",
+        "change a setting, such as the guard rules or the program allowlist, with no restart",
+    ),
+    (
         "idlemax quota",
         "see AI account windows and the headroom to spend",
     ),

@@ -251,7 +251,7 @@ fn guard_reasons_carry_the_config_key_and_slots_and_ram_are_counted() {
     assert!(battery.message.starts_with("on battery"), "{battery:?}");
     assert_eq!(
         battery.fix.as_deref(),
-        Some("plug in, or set guard.require_ac_power = false")
+        Some("plug in, or run `idlemax config set guard.require_ac_power false`")
     );
 
     w.devices[0].guard = Some(run(0, 1024));

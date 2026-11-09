@@ -77,11 +77,10 @@ It runs on macOS (Apple Silicon or Intel) and Linux (x86_64 or arm64).
 
 3. Say which programs jobs may run.
    The allowlist starts empty on purpose, so no job can start until you name one, and `idlemax doctor` tells you so.
-   Add it to `~/.idlemax/config.toml`, then restart the agent with `idlemax service install agent`:
+   One command saves it, and the running agent picks it up at once with no restart:
 
-   ```toml
-   [agent]
-   command_allowlist = ["/bin/echo"]
+   ```sh
+   idlemax config set agent.command_allowlist /bin/echo
    ```
 
 4. Queue a job and wait for it:
@@ -310,7 +309,7 @@ Blocked on every device:
 
 my-laptop (online, heartbeat 2s ago):
   - "make" is not in my-laptop's agent.command_allowlist, so it would refuse the job
-    fix: add "make" to agent.command_allowlist in config.toml on my-laptop and restart its agent
+    fix: on my-laptop, run `idlemax config set agent.command_allowlist <programs>` and list "make" with every program it may already run
 ```
 
 - Reasons that hold on every device come first, then each device's own reasons under its name.
@@ -755,6 +754,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax agent` | run the device agent |
 | `idlemax coord` | run the coordinator |
 | `idlemax init [--profile macos-laptop\|linux-server] [--coord-url URL] [--token-stdin]` | create the state dirs, `config.toml` and a 0600 token; never overwrites, and refuses the flags when a config already exists |
+| `idlemax config [list [--all] \| get KEY \| set KEY VALUE \| unset KEY]` | show or change a setting in `config.toml` and apply it to the running agent without a restart; see [Change a setting](#change-a-setting) |
 | `idlemax status` | cluster summary and devices |
 | `idlemax jobs [--status S] [--limit N]` | list jobs (default limit 50) |
 | `idlemax job add [flags] -- <argv...> \| <spec.toml> \| -` | queue a job from flags, a spec file or stdin; `--wait [--timeout S]` waits for the result and `--key K` makes a retry safe, see [Run a command on idle capacity](#run-a-command-on-idle-capacity) |
@@ -808,7 +808,7 @@ The last Jobs column, `RESULT / WHY`, says why a waiting job waits.
 │                                                                                                  │
 │laptop (online, heartbeat 2s ago):                                                                │
 │  - "make" is not in laptop's agent.command_allowlist, so it would refuse the job                 │
-│    fix: add "make" to agent.command_allowlist in config.toml on laptop and restart its agent     │
+│    fix: on laptop, run `idlemax config set agent.command_allowlist <programs>` and list "make" w…│
 │  - all 1 job slots are taken, by job 2 (index-refresh)                                           │
 │                                                                                                  │
 │server (online, heartbeat 3s ago):                                                                │
@@ -857,6 +857,25 @@ curl -H "Authorization: Bearer $(cat "$IDLEMAX_HOME/token")" http://127.0.0.1:78
 ## Configuration
 
 `config.toml` lives in `$IDLEMAX_HOME`, and every key is optional.
+
+### Change a setting
+
+You do not have to edit the file by hand:
+
+```sh
+idlemax config                                    # what you changed
+idlemax config list --all                         # every setting, its default and where the value comes from
+idlemax config get guard.require_ac_power
+idlemax config set guard.require_ac_power false   # run on battery too; the 40% battery floor still applies
+idlemax config set agent.command_allowlist git,cargo
+idlemax config unset guard.require_ac_power       # back to the default
+```
+
+`set` checks the value the way startup does and refuses one that would stop the agent from starting, keeps your comments, saves the previous file as `config.toml.idlemax.bak`, and asks the running agent to reload.
+Every `[guard]` key, `agent.command_allowlist` and `agent.notify` apply at once.
+The reply says when a setting is read only at start, and which process to restart.
+`set` replaces a list, so name every program the device may run.
+`[[quota.accounts]]` is a list of tables and stays a hand edit.
 Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) and [examples/config.server.toml](examples/config.server.toml) (a server).
 
 | Key | Default | Meaning |

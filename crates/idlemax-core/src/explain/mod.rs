@@ -370,9 +370,9 @@ pub fn allowlist_warning(spec: &JobSpec, devices: &[DeviceInfo]) -> Option<Strin
     all_refuse.then(|| {
         let names: Vec<&str> = candidates.iter().map(|d| d.id.as_str()).collect();
         format!(
-            "no device allows \"{program}\" (checked: {}). Add it to agent.command_allowlist in \
-             config.toml on the device that should run it and restart that agent, or the job \
-             will wait in the queue.",
+            "no device allows \"{program}\" (checked: {}). On the device that should run it, run \
+             `idlemax config set agent.command_allowlist <programs>` (list every program it may \
+             run), or the job will wait in the queue.",
             names.join(", ")
         )
     })

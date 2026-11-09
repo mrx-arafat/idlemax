@@ -154,7 +154,7 @@ pub(super) fn blocker_reason(
             format!("\"{p}\" is not in {on}'s agent.command_allowlist, so it would refuse the job"),
         )
         .fix(format!(
-            "add \"{p}\" to agent.command_allowlist in config.toml on {on} and restart its agent"
+            "on {on}, run `idlemax config set agent.command_allowlist <programs>` and list \"{p}\" with every program it may already run"
         )),
         Blocker::NoAiAccount => {
             Reason::new(ReasonKind::AiNoAccount, "this AI job names no ai_account")

@@ -56,12 +56,12 @@ const TABLE: &[(&str, ReasonKind, Fix)] = &[
     (
         "on battery",
         ReasonKind::Guard,
-        Fix::Text("plug in, or set guard.require_ac_power = false"),
+        Fix::Text("plug in, or run `idlemax config set guard.require_ac_power false`"),
     ),
     (
         "power source unknown",
         ReasonKind::Guard,
-        Fix::Text("the agent cannot read the power source; set guard.require_ac_power = false if this device is always on mains"),
+        Fix::Text("the agent cannot read the power source; run `idlemax config set guard.require_ac_power false` if this device is always on mains"),
     ),
     (
         "battery",
@@ -71,7 +71,7 @@ const TABLE: &[(&str, ReasonKind, Fix)] = &[
     (
         "thermal limited",
         ReasonKind::Guard,
-        Fix::Text("let the device cool down, or set guard.pause_on_thermal = false"),
+        Fix::Text("let the device cool down, or run `idlemax config set guard.pause_on_thermal false`"),
     ),
     (
         "user active",
@@ -85,7 +85,7 @@ const TABLE: &[(&str, ReasonKind, Fix)] = &[
     (
         "user idle time unknown",
         ReasonKind::Guard,
-        Fix::Text("this device cannot report idle time; set guard.user_idle_min_secs = 0 to start jobs without checking for the user"),
+        Fix::Text("this device cannot report idle time; run `idlemax config set guard.user_idle_min_secs 0` to start jobs without checking for the user"),
     ),
     (
         "kill switch file PAUSE present",

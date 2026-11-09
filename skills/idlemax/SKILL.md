@@ -15,6 +15,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 - `idlemax jobs --status <status>`: list jobs, for example failed or parked
 - `idlemax job add <spec.toml>`: queue a job from a TOML spec, or a command after `--`
 - `idlemax why <id>`: see why a job is not running and what to change
+- `idlemax config set <setting> <value>`: change a setting, such as the guard rules or the program allowlist, with no restart
 - `idlemax quota`: see AI account windows and the headroom to spend
 - `idlemax advise`: review the advisor's recommendations
 - `idlemax pause`: hold jobs everywhere, or on one `--device`, `--account` or `--job`
