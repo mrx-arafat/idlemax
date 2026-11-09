@@ -63,6 +63,7 @@ async fn device_info_refreshes_on_ticker() {
     };
     let (status_tx, mut status_rx) = watch::channel(initial_status);
     let (_control_tx, control_rx) = mpsc::unbounded_channel();
+    let (_reload_tx, reload_rx) = mpsc::unbounded_channel();
 
     let initial_device = DeviceInfo {
         id: "initial-device-id".into(),
@@ -83,6 +84,8 @@ async fn device_info_refreshes_on_ticker() {
         advisor_inputs_every: None,
         device_refresh_every: Duration::from_millis(50),
         notify: false,
+        paths: paths.clone(),
+        config: idlemax_core::config::Config::default(),
     };
 
     let agent = Agent::new(wiring);
@@ -94,6 +97,7 @@ async fn device_info_refreshes_on_ticker() {
                     let _ = shutdown_rx.await;
                 },
                 control_rx,
+                reload_rx,
             )
             .await;
     });

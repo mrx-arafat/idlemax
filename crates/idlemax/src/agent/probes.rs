@@ -51,6 +51,11 @@ impl Probes {
         }
     }
 
+    /// Takes the agent settings of a config reload, so the next device info reports them.
+    pub fn set_agent_config(&mut self, cfg: AgentConfig) {
+        self.agent_cfg = cfg;
+    }
+
     pub fn device_info(&mut self, cfg: &AgentConfig) -> DeviceInfo {
         self.sampler.device_info(cfg)
     }

@@ -15,7 +15,7 @@ use crate::state::now_ms;
 
 /// Longest the loop waits for one batch of probes. Each probe command is capped at 2 s, so a
 /// healthy batch is far under this; only a stuck filesystem call can reach it.
-const PROBE_LIMIT: Duration = Duration::from_secs(10);
+pub(super) const PROBE_LIMIT: Duration = Duration::from_secs(10);
 
 impl Agent {
     pub(super) async fn on_sample(&mut self) {

@@ -7,6 +7,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{middleware, Json, Router};
+use idlemax_core::config::ReloadReport;
 use idlemax_core::control::local_paused_after;
 use idlemax_core::host::AllowedHosts;
 use idlemax_core::protocol::{ControlRequest, LocalStatus};
@@ -19,12 +20,16 @@ use crate::coord::server::{self, Limits};
 
 /// How long `POST /v1/local/control` waits for the agent loop to apply the action.
 const CONTROL_WAIT: Duration = Duration::from_secs(5);
+/// How long `POST /v1/local/reload` waits. A reload is milliseconds; this stays under the
+/// CLI's 15 s request timeout so the agent's own explanation reaches the user.
+const RELOAD_WAIT: Duration = Duration::from_secs(12);
 
 /// The API side of the agent loop's channels.
 #[derive(Clone)]
 pub struct LocalHandle {
     status: watch::Receiver<LocalStatus>,
     control: mpsc::UnboundedSender<LocalControl>,
+    reload: mpsc::UnboundedSender<ReloadRequest>,
 }
 
 #[derive(Debug)]
@@ -33,25 +38,36 @@ pub struct LocalControl {
     pub applied: oneshot::Sender<()>,
 }
 
+/// A request to re-read `config.toml`. The loop answers with what it applied, or with why the
+/// file could not be used (the agent then keeps running on the settings it has).
+#[derive(Debug)]
+pub struct ReloadRequest {
+    pub reply: oneshot::Sender<Result<ReloadReport, String>>,
+}
+
 /// The agent loop side: publish `status` after every change and drain `control` promptly.
 #[derive(Debug)]
 pub struct LocalPorts {
     pub status: watch::Sender<LocalStatus>,
     pub control: mpsc::UnboundedReceiver<LocalControl>,
+    pub reload: mpsc::UnboundedReceiver<ReloadRequest>,
 }
 
 pub fn local_channel(initial: LocalStatus) -> (LocalHandle, LocalPorts) {
     let (status_tx, status_rx) = watch::channel(initial);
     let (control_tx, control_rx) = mpsc::unbounded_channel();
+    let (reload_tx, reload_rx) = mpsc::unbounded_channel();
     let handle = LocalHandle {
         status: status_rx,
         control: control_tx,
+        reload: reload_tx,
     };
     (
         handle,
         LocalPorts {
             status: status_tx,
             control: control_rx,
+            reload: reload_rx,
         },
     )
 }
@@ -60,6 +76,7 @@ pub fn router(handle: LocalHandle, token: &str) -> Router {
     let v1 = Router::new()
         .route("/v1/local/status", get(status))
         .route("/v1/local/control", post(control))
+        .route("/v1/local/reload", post(reload))
         .route_layer(middleware::from_fn_with_state(
             BearerToken::new(token),
             http::require_bearer,
@@ -122,6 +139,23 @@ async fn control(
     }
 }
 
+/// 200 with what the agent applied from `config.toml`, 400 with the reason when the file is
+/// not usable (the agent keeps its current settings).
+async fn reload(State(h): State<LocalHandle>) -> Result<Json<ReloadReport>, ApiFailure> {
+    let (reply, received) = oneshot::channel();
+    h.reload
+        .send(ReloadRequest { reply })
+        .map_err(|_| loop_stopped())?;
+    match tokio::time::timeout(RELOAD_WAIT, received).await {
+        Ok(Ok(Ok(report))) => Ok(Json(report)),
+        Ok(Ok(Err(why))) => Err(ApiFailure::BadRequest(why)),
+        Ok(Err(_closed)) => Err(loop_stopped()),
+        Err(_elapsed) => Err(ApiFailure::Unavailable(
+            "the agent did not finish reloading in time; check its log and retry".into(),
+        )),
+    }
+}
+
 fn loop_stopped() -> ApiFailure {
     ApiFailure::Unavailable(
         "the agent could not apply this control; check its log and retry".into(),
@@ -136,6 +170,26 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
 
     use super::*;
+
+    #[tokio::test]
+    async fn reload_answers_with_what_the_loop_applied_or_why_it_could_not() {
+        let (handle, mut ports) = local_channel(LocalStatus::default());
+        let applied = tokio::spawn(reload(State(handle.clone())));
+        let request = ports.reload.recv().await.unwrap();
+        let report = ReloadReport {
+            applied: vec!["guard.require_ac_power".into()],
+            ..ReloadReport::default()
+        };
+        request.reply.send(Ok(report.clone())).unwrap();
+        let Json(answer) = applied.await.unwrap().unwrap();
+        assert_eq!(answer, report);
+
+        let refused = tokio::spawn(reload(State(handle)));
+        let request = ports.reload.recv().await.unwrap();
+        request.reply.send(Err("config.toml: bad".into())).unwrap();
+        let failure = refused.await.unwrap().unwrap_err();
+        assert!(matches!(failure, ApiFailure::BadRequest(why) if why == "config.toml: bad"));
+    }
 
     #[tokio::test]
     async fn stop_all_waits_for_this_control_even_when_already_paused() {

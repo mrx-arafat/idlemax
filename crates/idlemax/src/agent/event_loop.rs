@@ -11,6 +11,9 @@ mod coord;
 mod jobs;
 #[cfg(test)]
 mod refill_tests;
+mod reload;
+#[cfg(test)]
+mod reload_tests;
 mod sample;
 
 use std::future::Future;
@@ -18,12 +21,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use idlemax_core::config::Config;
 use idlemax_core::guard::Guard;
 use idlemax_core::job_run;
 use idlemax_core::protocol::{LocalStatus, RunningJob};
 use idlemax_core::reconcile::AgentState;
 use idlemax_core::types::{DeviceInfo, GuardDecision, UnixMs};
-use idlemax_core::VERSION;
+use idlemax_core::{Paths, VERSION};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::{Instant, Interval, MissedTickBehavior};
@@ -31,7 +35,7 @@ use tracing::{error, info, warn};
 
 use crate::state::now_ms;
 
-use super::api::LocalControl;
+use super::api::{LocalControl, ReloadRequest};
 use super::client::CoordClient;
 use super::outbox::DurableOutbox;
 use super::probes::{Probes, Reading};
@@ -60,6 +64,10 @@ pub struct Wiring {
     pub advisor_inputs_every: Option<Duration>,
     pub device_refresh_every: Duration,
     pub notify: bool,
+    /// Where `config.toml` lives and the settings the agent started with, so a reload can
+    /// tell what changed.
+    pub paths: Paths,
+    pub config: Config,
 }
 
 pub struct Agent {
@@ -75,6 +83,9 @@ pub struct Agent {
     advisor_inputs_every: Option<Duration>,
     device_refresh_every: Duration,
     notify: bool,
+    paths: Paths,
+    /// The settings the agent runs with; a reload compares the file against these.
+    config: Config,
     state: AgentState,
     outbox: DurableOutbox,
     reading: Reading,
@@ -104,6 +115,8 @@ impl Agent {
             advisor_inputs_every: w.advisor_inputs_every,
             device_refresh_every: w.device_refresh_every,
             notify: w.notify,
+            paths: w.paths,
+            config: w.config,
             state: AgentState::default(),
             outbox: w.outbox,
             reading: Reading::default(),
@@ -122,6 +135,7 @@ impl Agent {
         mut self,
         shutdown: impl Future<Output = ()>,
         mut control: mpsc::UnboundedReceiver<LocalControl>,
+        mut reload: mpsc::UnboundedReceiver<ReloadRequest>,
     ) {
         tokio::pin!(shutdown);
         let mut sample = ticker(self.sample_every, false);
@@ -149,6 +163,7 @@ impl Agent {
                 biased;
                 () = &mut shutdown => break,
                 Some(first) = control.recv() => self.on_local_controls(first, &mut control).await,
+                Some(request) = reload.recv() => self.on_reload(request).await,
                 Some(done) = join(&mut trip) => {
                     trip = None;
                     self.on_trip(done).await;

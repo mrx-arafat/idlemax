@@ -76,11 +76,18 @@ A job update for an unknown job is 404.
 | GET | /healthz | | `ok` (no auth) |
 | GET | /v1/local/status | | `LocalStatus` |
 | POST | /v1/local/control | `ControlRequest` with `global` scope; `pause`, `resume` or `stop_all` | `LocalStatus` |
+| POST | /v1/local/reload | | `ReloadReport` |
 
 It keeps working while the coordinator is down.
 `POST /v1/local/control` waits up to 5 s for `local_paused` to reflect the action, so the agent publishes status through a `tokio::sync::watch` channel.
 It returns 200 once applied, 202 when the agent has not applied it within 5 s, 400 for a non-global scope or `cancel`, and 503 when the agent loop is gone.
 Creating `$IDLEMAX_HOME/PAUSE` pauses every job on the device without any API call; deleting it resumes at once.
+
+`POST /v1/local/reload` makes the agent re-read `config.toml` and apply what it can without a restart: every `[guard]` key, `agent.command_allowlist` and `agent.notify`.
+It takes a fresh sample at once, so the new rule shows in `LocalStatus.guard` and can start work right away.
+The reply is `{"applied": [...], "restart_agent": [...], "restart_coordinator": [...]}`, each a list of `section.name` settings that changed in the file since the agent last read it.
+`restart_agent` lists settings the agent reads only when it starts (for example `agent.sample_secs`, `agent.profile`, `agent.listen`, `quota.accounts`); `restart_coordinator` lists `coordinator.*` and `advisor.*`.
+A file that does not parse or validate is 400 with the reason, and the agent keeps the settings it has; 503 when the agent loop is gone or does not answer within 12 s.
 
 ## Encodings
 

@@ -110,7 +110,7 @@ impl Agent {
     }
 
     /// Runs `f` on the runner off the async threads and refreshes the running list.
-    async fn with_runner<R: Send + 'static>(
+    pub(super) async fn with_runner<R: Send + 'static>(
         &mut self,
         f: impl FnOnce(&mut Runner) -> R + Send + 'static,
     ) -> Option<R> {

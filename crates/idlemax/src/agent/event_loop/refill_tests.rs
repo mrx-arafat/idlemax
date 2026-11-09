@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::{extract::State, routing::post, Json, Router};
-use idlemax_core::config::{AgentConfig, GuardPolicy};
+use idlemax_core::config::{AgentConfig, Config, GuardPolicy};
 use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply};
 use idlemax_core::quota::QuotaConfig;
 use idlemax_core::types::{Job, JobSpec};
@@ -129,14 +129,18 @@ async fn completion_refills_before_the_regular_heartbeat() {
         advisor_inputs_every: None,
         device_refresh_every: Duration::from_secs(3600),
         notify: false,
+        paths: paths.clone(),
+        config: Config::default(),
     });
     let (_control, controls) = mpsc::unbounded_channel();
+    let (_reload, reloads) = mpsc::unbounded_channel();
     let (stop_agent, stopped_agent) = oneshot::channel();
     let task = tokio::spawn(agent.run(
         async {
             let _ = stopped_agent.await;
         },
         controls,
+        reloads,
     ));
     let result = tokio::time::timeout(Duration::from_secs(15), async {
         received.recv().await.unwrap();

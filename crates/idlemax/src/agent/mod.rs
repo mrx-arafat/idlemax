@@ -110,8 +110,10 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
             .then(|| Duration::from_secs(config.agent.advisor_inputs_secs)),
         device_refresh_every: Duration::from_secs(3600),
         notify: config.agent.notify,
+        paths: paths.clone(),
+        config: config.clone(),
     });
-    agent.run(shutdown, ports.control).await;
+    agent.run(shutdown, ports.control, ports.reload).await;
     tracing::info!("agent stopped");
     Ok(())
 }

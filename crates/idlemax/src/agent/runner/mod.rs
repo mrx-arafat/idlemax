@@ -114,6 +114,11 @@ impl Runner {
         }
     }
 
+    /// Replaces the programs jobs may run (a config reload); jobs already running go on.
+    pub fn set_allowlist(&mut self, allowlist: Vec<String>) {
+        self.allowlist = allowlist;
+    }
+
     /// Starts a leased job. On error nothing runs and no update is queued.
     pub fn start(&mut self, job: &Job) -> Result<(), RunnerError> {
         let started_ms = now_ms();
