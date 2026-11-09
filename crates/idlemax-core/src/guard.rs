@@ -63,6 +63,13 @@ impl Guard {
         &self.policy
     }
 
+    /// Swaps the thresholds of a running guard (a config reload). The swap history and the
+    /// breach streaks carry over, so a reload never makes the guard forget that the machine
+    /// was just under pressure.
+    pub fn set_policy(&mut self, policy: GuardPolicy) {
+        self.policy = policy;
+    }
+
     /// One verdict per sample. Call once per sample, in time order.
     pub fn evaluate(
         &mut self,

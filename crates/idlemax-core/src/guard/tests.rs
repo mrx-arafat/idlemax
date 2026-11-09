@@ -448,3 +448,40 @@ fn unknown_idle_time_holds_only_when_an_idle_minimum_is_required() {
     assert_eq!(free.action, run);
     assert!(free.reasons.is_empty(), "{:?}", free.reasons);
 }
+
+#[test]
+fn a_reloaded_policy_applies_at_the_next_sample_and_keeps_the_guard_s_memory() {
+    let mut on_battery = mac();
+    on_battery.on_ac_power = Some(false);
+    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let held = guard.evaluate(&on_battery, &[], false, false);
+    assert_eq!(held.action, GuardAction::Pause);
+    assert!(
+        held.reasons.iter().any(|r| r.ends_with("on battery")),
+        "{:?}",
+        held.reasons
+    );
+
+    // Run on battery above the 40% floor, as `idlemax config set guard.require_ac_power false`.
+    guard.set_policy(GuardPolicy {
+        require_ac_power: false,
+        ..GuardPolicy::macos_laptop()
+    });
+    let now = guard.evaluate(&on_battery, &[], false, false);
+    assert!(
+        !now.reasons.iter().any(|r| r.ends_with("on battery")),
+        "{:?}",
+        now.reasons
+    );
+    assert!(!guard.policy().require_ac_power);
+
+    // The 40% floor still holds on battery.
+    on_battery.battery_pct = Some(30.0);
+    let low = guard.evaluate(&on_battery, &[], false, false);
+    assert_eq!(low.action, GuardAction::Pause);
+    assert!(
+        low.reasons.iter().any(|r| r.contains("battery")),
+        "{:?}",
+        low.reasons
+    );
+}

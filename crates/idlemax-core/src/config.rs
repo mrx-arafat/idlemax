@@ -8,10 +8,12 @@ use crate::{DEFAULT_AGENT_LISTEN, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
 
 mod edit;
 mod guard_policy;
+mod reload;
 mod settings;
 
 pub use edit::{set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, SwapGrowth};
+pub use reload::{plan_reload, ReloadReport};
 pub use settings::{list_settings, show_value, Setting};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]

@@ -85,7 +85,7 @@ pub fn show_value(value: &Value) -> String {
     }
 }
 
-fn json<T: Serialize>(value: &T) -> Result<Value, ConfigError> {
+pub(super) fn json<T: Serialize>(value: &T) -> Result<Value, ConfigError> {
     serde_json::to_value(value).map_err(|e| ConfigError::Guard(format!("settings: {e}")))
 }
 
