@@ -31,12 +31,13 @@ fn config_set_edits_the_file_keeps_comments_and_a_backup_and_refuses_bad_input()
     let home = dir.path();
     assert_eq!(idlemax(home, &["init"]).code, 0);
     let file = home.join("state/config.toml");
-    // The agent address is a port nothing listens on, and the file carries a comment to keep.
-    let text = std::fs::read_to_string(&file)
-        .unwrap()
-        .replace("127.0.0.1:7879", "127.0.0.1:1")
-        .replacen("[agent]", "# my notes\n[agent]", 1);
-    std::fs::write(&file, text).unwrap();
+    // A laptop profile, so the defaults are the same on every OS; the agent address is a port
+    // nothing listens on; and a comment the edits must keep.
+    std::fs::write(
+        &file,
+        "# my notes\n[agent]\nprofile = \"macos_laptop\"\nlisten = \"127.0.0.1:1\"\n",
+    )
+    .unwrap();
 
     let set = idlemax(home, &["config", "set", "guard.require_ac_power", "false"]);
     assert_eq!(set.code, 0, "{}", set.stdout);
