@@ -154,6 +154,19 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - **How:** Reproduce each in a throwaway home; fix only what reproduces.
 - **Done when:** Each is either fixed with a test or recorded here as not a bug.
 
+### 29. Keep a Linux machine awake the same way
+
+- **Why (round 4):** `agent.keep_awake = "ac"` holds an idle-sleep assertion only on macOS (`caffeinate -i -w <agent pid>`); a Linux laptop with a short suspend timer still sleeps before the guard's idle wait ends.
+- **How:** Hold `systemd-inhibit --what=idle --who=idlemax --why=<reason>` under the same pure decision, as a child that dies with the agent, and reap it on release.
+- **Done when:** On a Linux laptop on AC power with a queued job, `systemd-inhibit --list` shows idlemax's inhibitor while the guard waits or runs, and it is gone when the queue empties or the laptop goes on battery.
+
+### 30. Tune the laptop guard defaults from real report data
+
+- **Why (round 4):** On the owner's 16 GiB MacBook, memory pressure `warn` held new work on every sample, and together with the 10 minute user-idle rule it held work for the whole of each test window, so keep-awake correctly refused to hold and no job ran.
+  A guard that leaves a machine idle while it has room is a bug by the project goal, but one busy session is too small a sample to change a default.
+- **How:** Run `idlemax report` over a few days of normal use, compare the hours held by `memory pressure` and `user active` with the hours the machine was really contended (swap-in rate, PSI, load), and lower the laptop defaults only where the data shows room.
+- **Done when:** The laptop preset's memory and idle rules are backed by recorded report numbers in this file, and a day of normal use on that Mac runs queued jobs without the owner noticing them.
+
 ## v0.4: learn from real runs and harden
 
 ### 11. Learn token costs and tune quota reserves
