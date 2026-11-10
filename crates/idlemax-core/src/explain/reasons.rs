@@ -178,7 +178,7 @@ pub(super) fn blocker_reason(
 
 /// One short phrase per device-level blocker: what makes a device unable to ever take the
 /// job. These are the scheduler's static checks, so none of them clears by waiting.
-pub(super) fn ineligible_causes(blockers: &[Blocker], job: &Job) -> Vec<String> {
+pub(crate) fn ineligible_causes(blockers: &[Blocker], job: &Job) -> Vec<String> {
     blockers
         .iter()
         .filter_map(|b| match b {

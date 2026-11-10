@@ -20,6 +20,7 @@ use crate::types::{
     UnixMs,
 };
 
+pub(crate) use self::reasons::ineligible_causes;
 use self::reasons::{blocker_reason, hold_reasons, span};
 pub use self::summary::{summarize, Headline, WhySummary};
 
@@ -250,7 +251,7 @@ fn explain_device(
 
 /// The device's last guard verdict, minus the jobs the coordinator knows it started after
 /// that report. The scheduler needs no such correction: it always sees a fresh heartbeat.
-fn guard_now(dv: &DeviceView, visible: &[Job]) -> GuardDecision {
+pub(crate) fn guard_now(dv: &DeviceView, visible: &[Job]) -> GuardDecision {
     let mut guard = dv.guard.clone().unwrap_or_default();
     let (started, mem_mb) = visible
         .iter()

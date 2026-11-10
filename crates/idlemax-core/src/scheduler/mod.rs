@@ -19,7 +19,7 @@ mod update;
 
 pub use blockers::{
     ai_leased_accounts, blocker, blockers, cost_allowed, device_blockers, job_blockers,
-    spendable_headroom, token_class_pct, Blocker, SchedContext,
+    job_blockers_in, spendable_headroom, token_class_pct, Blocker, SchedContext,
 };
 pub use lease::{expire_leases, lease_deadline};
 pub use pick::{pick, start_budget};

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod advice;
+pub mod capacity;
 pub mod config;
 pub mod control;
 pub mod doctor;

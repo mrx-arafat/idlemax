@@ -149,8 +149,9 @@ pub fn job_blockers(
     job_blockers_in(now_ms, quota, paused_accounts, &leased, job)
 }
 
-/// `job_blockers` with the leased AI accounts already known, so `pick` computes them once.
-pub(super) fn job_blockers_in(
+/// `job_blockers` with the leased AI accounts already known, so a caller that asks about many
+/// jobs (`pick`, the capacity view) computes them once.
+pub fn job_blockers_in(
     now_ms: UnixMs,
     quota: &[QuotaView],
     paused_accounts: &[String],
