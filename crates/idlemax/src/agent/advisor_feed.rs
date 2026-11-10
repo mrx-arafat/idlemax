@@ -68,7 +68,10 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let project = home.path().join(".claude/projects/-leak-user-code-myproj");
         std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("abc123.jsonl"), TRANSCRIPT).unwrap();
+        let cwd = home.path().join("myproj");
+        std::fs::create_dir(&cwd).unwrap();
+        let transcript = TRANSCRIPT.replace("/Users/leak-user/code/myproj", &cwd.to_string_lossy());
+        std::fs::write(project.join("abc123.jsonl"), transcript).unwrap();
 
         let inputs = AdvisorInputs {
             device: "mac".into(),

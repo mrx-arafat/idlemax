@@ -101,7 +101,13 @@ fn write_session(home: &Path) {
     let dir = home.join(".claude/projects/-work-myproj");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("abc123.jsonl");
-    std::fs::write(&file, TRANSCRIPT).unwrap();
+    let cwd = home.join("myproj");
+    std::fs::create_dir_all(&cwd).unwrap();
+    std::fs::write(
+        &file,
+        TRANSCRIPT.replace("/work/myproj", &cwd.to_string_lossy()),
+    )
+    .unwrap();
     let five_hours_ago = SystemTime::now() - Duration::from_secs(5 * 3600);
     File::options()
         .write(true)

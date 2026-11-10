@@ -159,3 +159,31 @@ fn ensure_open(rec: &Recommendation) -> Result<(), AdviceError> {
         status => Err(AdviceError::NotOpen { id: rec.id, status }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_session_removed_from_the_local_snapshot_closes_its_open_follow_up() {
+        let cfg = AdvisorConfig::default();
+        let mut input = AdviceInput {
+            now_ms: 24 * 3_600_000,
+            sessions: vec![SessionMeta {
+                tool: "claude".into(),
+                id: "removed-worktree".into(),
+                last_activity_ms: 20 * 3_600_000,
+                signals: vec![SessionSignal::Interrupted],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut existing = plan_refresh(&cfg, &input, &[]).insert;
+        assert_eq!(existing.len(), 1);
+        existing[0].id = 7;
+        input.sessions.clear();
+        let plan = plan_refresh(&cfg, &input, &existing);
+        assert!(plan.insert.is_empty());
+        assert_eq!(plan.close, vec![7]);
+    }
+}

@@ -50,6 +50,9 @@ fn claude_sessions(projects: &Path, since_ms: UnixMs) -> Vec<SessionMeta> {
                 .map_err(|e| tracing::debug!(file = %path.display(), "session unreadable: {e}"))
                 .ok()?;
             let id = path.file_stem()?.to_string_lossy().into_owned();
+            if !project_available(&tail) {
+                return None;
+            }
             Some(SessionMeta {
                 tool: "claude".into(),
                 id,
@@ -63,6 +66,16 @@ fn claude_sessions(projects: &Path, since_ms: UnixMs) -> Vec<SessionMeta> {
 fn modified_ms(path: &Path) -> Option<UnixMs> {
     let t = std::fs::metadata(path).ok()?.modified().ok()?;
     i64::try_from(t.duration_since(UNIX_EPOCH).ok()?.as_millis()).ok()
+}
+
+/// Check the last reported cwd locally; full paths never leave this device.
+fn project_available(tail: &str) -> bool {
+    let cwd = tail
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|rec| rec.get("cwd").and_then(Value::as_str).map(PathBuf::from))
+        .next_back();
+    cwd.is_none_or(|path| path.is_absolute() && path.is_dir())
 }
 
 /// The last `max` bytes, starting at the next full line.
@@ -225,4 +238,43 @@ fn codex_sessions(index: &Path, since_ms: UnixMs) -> Vec<SessionMeta> {
     out.sort_by_key(|m| std::cmp::Reverse(m.last_activity_ms));
     out.truncate(LIMIT);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removed_project_sessions_stop_producing_advice_and_close_open_advice() {
+        use idlemax_core::advice::{plan_refresh, AdviceInput};
+        use idlemax_core::config::AdvisorConfig;
+
+        let home = tempfile::tempdir().unwrap();
+        let project = home.path().join("myproj");
+        std::fs::create_dir(&project).unwrap();
+        let transcripts = home.path().join(".claude/projects/fixture");
+        std::fs::create_dir_all(&transcripts).unwrap();
+        let transcript = transcripts.join("interrupted.jsonl");
+        let cwd = serde_json::to_string(&project).unwrap();
+        std::fs::write(
+            &transcript,
+            format!("{{\"type\":\"user\",\"cwd\":{cwd},\"message\":{{\"content\":\"[Request interrupted by user]\"}}}}\n"),
+        )
+        .unwrap();
+        let now = modified_ms(&transcript).unwrap() + 3 * 3_600_000;
+        let input = |sessions| AdviceInput {
+            now_ms: now,
+            sessions,
+            ..Default::default()
+        };
+        let cfg = AdvisorConfig::default();
+        let before = plan_refresh(&cfg, &input(read(home.path(), now)), &[]);
+        assert_eq!(before.insert.len(), 1);
+        let mut existing = before.insert;
+        existing[0].id = 42;
+        std::fs::remove_dir(&project).unwrap();
+        let after = plan_refresh(&cfg, &input(read(home.path(), now)), &existing);
+        assert!(after.insert.is_empty());
+        assert_eq!(after.close, vec![42]);
+    }
 }
