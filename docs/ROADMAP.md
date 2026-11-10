@@ -53,12 +53,23 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - CLI, setup and doctor: strict spec files, safe `init`, right recovery hints, `--fields` checked everywhere, Linux service restart, idle-agent and PATH checks in doctor.
 - CI skips docs-only pushes and cancels superseded runs.
 
+### Round 4 (2026-11-10): show the value, keep it safe
+
+A smaller fleet (two workers at a time) landed what a new owner asked for ("I don't know how this app is helping me"), and an independent review of every change before it merged found real defects in each first submission.
+
+- `idlemax report`, a TUI panel and a dashboard card: jobs run, job minutes, hours held per reason, idle time nobody used and why, AI quota spent against expired (#5).
+- The capacity view: slots and RAM budget in use per device, the top reason it is not using more, and AI quota left before reset (item 21).
+- `idlemax config` with live reload (#9), and `agent.keep_awake = "ac"` so a plugged-in Mac with queued work stays awake through the guard's idle wait (#8).
+- First-run setup: `--allow`, the allowlist named as the next step, no false doctor warning, its own usage help (#3, #4, #6).
+- Agent and advisor hardening: a hung cwd mount never blocks the loop or other jobs (item 22), advisor refreshes are serialized and atomic (item 25), and advice for removed project folders closes (#7).
+
 ### Needs the owner's OK before it runs
 
 - Running the Linux verification on the production server (item 1) and deploying on the tailnet (item 2).
 - Installing the statusline wrapper into the real Claude settings (item 4).
 - One supervised AI pass, which spends quota (item 7).
 - A real sleep test on the Mac (item 9).
+- Installing the round 4 build on the Mac and restarting its LaunchAgents, and the production server check of the server preset (item 31).
 
 ## v0.3: run it for real on the Mac and the server
 
@@ -132,6 +143,8 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - **Why (audit, round 3):** a token holder can still grow `coord.db`: heartbeat `quota`, `running` and `interactive_use` lists are unbounded; snapshots under never-configured account names are never pruned; `JobUpdate.device` is stored unchecked; advisor-input device ids are uncapped; account-scope pause names are not syntax-checked; schedules have no count cap.
 - **How:** `name_problem` on those names, bounded lists, drop snapshots for accounts not in `[[quota.accounts]]`, count advisor-input devices against the device cap, a schedules cap.
 - **Done when:** Each path has a test that an oversized or over-count request is refused or trimmed.
+- **In progress (round 4):** seven commits cover all eight paths, each with a test that failed first (tip `35e86e3` in the `value-report` worktree; patches in `~/AI/idlemax-wt/handoff/write-bounds-patches/`). Account-scope pause names and guard spans were already bounded; the work also closes a job's pause span when the job finishes and caps `events.device`.
+  Next: an independent review, `cargo test -p idlemax --test e2e`, then mark this item done.
 
 ### 25. Serialize the advisor refresh (done)
 
@@ -169,6 +182,18 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
   A guard that leaves a machine idle while it has room is a bug by the project goal, but one busy session is too small a sample to change a default.
 - **How:** Run `idlemax report` over a few days of normal use, compare the hours held by `memory pressure` and `user active` with the hours the machine was really contended (swap-in rate, PSI, load), and lower the laptop defaults only where the data shows room.
 - **Done when:** The laptop preset's memory and idle rules are backed by recorded report numbers in this file, and a day of normal use on that Mac runs queued jobs without the owner noticing them.
+
+### 31. Prove round 4 on the real machines
+
+- **Why (round 4):** Every round 4 change was verified in throwaway homes on spare ports, never on the owner's real install, because the rules forbid touching it: no `launchctl`, no `setup` without `--dry-run`, no real sleep, no Linux host.
+- **How:** With the owner's OK, install the new build on the Mac (`cargo install --path crates/idlemax --locked`, then restart both LaunchAgents), set `agent.keep_awake = "ac"` and an allowlist, queue a real job with the charger in and the 1 minute sleep timer, and read `idlemax report` after a day. Run `idlemax setup` without `--dry-run` once on a clean macOS account. On the production server, check the sized server preset and the cgroup memory cap together (item 23).
+- **Done when:** The Mac stays awake for a queued job and sleeps after the queue drains, the report after a day matches what happened, setup's real path ends healthy, and closing issue #9 is backed by `idlemax config` working on the real install.
+
+### 32. Follow-ups from the report and capacity views
+
+- **Why (round 4):** Found while building items 21 and #5, left out to keep each change small.
+- **How:** Report the guard policy ceilings (`max_jobs`, `ram_budget_mib`) in `GuardDecision` so a held device still shows "2 of 4 slots"; add the capacity line to the bare `idlemax` home view and the session hooks, which agents read first; give `idlemax report` a per-device breakdown and name the jobs that waited; fold the job read that `GET /v1/status` now does (113 ms at 10,000 queued jobs in a debug build) into item 26 if queues grow.
+- **Done when:** Each view answers the same question with the same numbers, and status stays under 50 ms of store lock on a 10,000-job queue.
 
 ## v0.4: learn from real runs and harden
 
