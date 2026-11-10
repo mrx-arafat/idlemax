@@ -93,7 +93,7 @@ function badge(text, tone, dot, title) { return h("span", { class: `badge ${tone
 function jobBadge(status) { return badge(label(status), JOB_TONE[status]); }
 function guardText(action) {
   if (!action) return "unknown";
-  if (action.kind === "run") return `run, ${action.slots} slot${action.slots === 1 ? "" : "s"}, ${action.mem_mib} MiB`;
+  if (action.kind === "run") return `run, ${action.slots} slot${action.slots === 1 ? "" : "s"} and ${action.mem_mib} MiB free`;
   return action.kind;
 }
 
@@ -361,7 +361,7 @@ function renderDevices() {
   if (!s) { box.replaceChildren(state.errors.status ? h("div", { class: "err" }, state.errors.status) : h("div", { class: "empty" }, "Loading")); return; }
   const devs = (s.devices || []).slice().sort((a, b) => (b.online - a.online) || String(a.info.id).localeCompare(String(b.info.id)));
   if (!devs.length) { box.replaceChildren(h("div", { class: "empty" }, "No device has sent a heartbeat yet. Start `idlemax agent` on a device.")); return; }
-  box.replaceChildren(h("div", { class: "devices" }, devs.map((d) => deviceCard(d, Boolean(s.global_paused)))));
+  box.replaceChildren(h("div", { class: "devices" }, devs.map((d) => deviceCard(d, Boolean(s.global_paused), s.accounts))));
 }
 
 // Under Pause all every device reads as paused, and the API cannot tell a device's own pause from
@@ -388,7 +388,46 @@ function osAndProfile(info) {
   return profile.startsWith(os) ? profile : [os, profile].filter(Boolean).join(" · ");
 }
 
-function deviceCard(d, byAll) {
+// How much of the device's allowance is in use and why it is not using more, as the coordinator
+// worked it out (`capacity` in GET /v1/status). An older coordinator sends none, and an offline
+// device already says so in its header.
+const CAPACITY_TONE = { full: "ok", starting: "ok", idle: "info", waiting: "info", too_big: "warn", cannot_run: "warn", held: "warn" };
+function fmtMib(m) { return m >= 1024 ? `${(m / 1024).toFixed(1)} GiB` : `${m} MiB`; }
+function capacityMeter(name, used, allowed, text) {
+  const pct = allowed > 0 ? Math.max(0, Math.min(100, (used / allowed) * 100)) : 0;
+  const bar = h("span");
+  bar.style.width = `${pct}%`;
+  return h("div", { class: "cap" },
+    h("div", { class: "cap-h" }, h("span", { class: "muted" }, name), h("span", { class: "num" }, text)),
+    h("div", { class: "meter", role: "img", "aria-label": `${name}: ${text}` }, bar));
+}
+function capacityBlock(c) {
+  if (!c || c.state === "offline") return null;
+  const slots = c.slots_allowed != null ? `${c.slots_used} / ${c.slots_allowed}` : `${c.slots_used}`;
+  const ram = c.mem_allowed_mib != null ? `${fmtMib(c.mem_used_mib)} / ${fmtMib(c.mem_allowed_mib)}` : fmtMib(c.mem_used_mib);
+  // The badge already says "held", so the reason drops its own "held: " prefix.
+  const why = c.state === "held" ? c.why.replace(/^held: /, "") : c.why;
+  return h("div", { class: "capacity" },
+    h("div", { class: "caps" },
+      capacityMeter("Slots", c.slots_used, c.slots_allowed, slots),
+      capacityMeter("RAM", c.mem_used_mib, c.mem_allowed_mib, ram)),
+    h("div", { class: "cap-why" }, badge(label(c.state), CAPACITY_TONE[c.state]), h("span", null, why)));
+}
+
+// The AI accounts this device may spend: whether idlemax may spend each now, and the quota left
+// before its window resets (a separate question: a shut account can have plenty left).
+function deviceQuota(info, accounts) {
+  const mine = (accounts || []).filter((a) => (info.ai_accounts || []).includes(a.account));
+  if (!mine.length) return null;
+  return h("div", { class: "dev-jobs" }, mine.map((a) => h("div", { class: "row" },
+    a.paused ? badge("paused", "warn") : a.spendable ? badge("spendable", "ok") : badge("held", ""),
+    h("span", { class: "t", title: a.why || null }, a.account),
+    h("span", { class: "faint num", style: "margin-left:auto" },
+      a.headroom_pct != null ? `${fmtPct(a.headroom_pct)} left` : "left unknown",
+      a.resets_at_ms ? [" · ", rel(a.resets_at_ms, "resets ", "num")] : null))));
+}
+
+function deviceCard(d, byAll, accounts) {
   const info = d.info || {};
   const m = d.metrics || null;
   const g = d.guard || null;
@@ -417,9 +456,11 @@ function deviceCard(d, byAll) {
         h("div", { class: "name" }, id || "(no id)"),
         h("div", { class: "sub" }, [info.hostname && info.hostname !== id ? info.hostname : null, osAndProfile(info), info.agent_version ? `agent ${info.agent_version}` : null].filter(Boolean).join(" · "))),
       h("div", { class: "badges" }, badges)),
+    capacityBlock(d.capacity),
     g ? h("div", { class: "guard" }, h("span", { class: "muted" }, "Guard"), badge(guardText(g.action), GUARD_TONE[kind]), g.user_active ? badge("user active", "") : null) : null,
     g && g.reasons && g.reasons.length ? h("ul", { class: "reasons" }, g.reasons.map((r) => h("li", null, r))) : null,
     stats.length ? h("div", { class: "stats" }, stats) : h("div", { class: "muted", style: "margin-top:10px;font-size:12.5px" }, "No metrics yet."),
+    deviceQuota(info, accounts),
     running.length ? h("div", { class: "dev-jobs" }, running.map((j) => h("div", { class: "row" },
       jobBadge(j.status), h("span", { class: "t" }, `#${j.id} ${j.name}`),
       h("span", { class: "faint num", style: "margin-left:auto" }, j.rss_bytes != null ? fmtBytes(j.rss_bytes) : `${j.mem_mb} MiB cap`)))) : null,
