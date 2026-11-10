@@ -67,21 +67,25 @@ It runs on macOS (Apple Silicon or Intel) and Linux (x86_64 or arm64).
 2. Set this device up with one command:
 
    ```sh
-   idlemax setup --dry-run   # first look: every file it would write, every command it would run
-   idlemax setup
+   idlemax setup --dry-run --allow /bin/echo   # preview, including the program used below
+   idlemax setup --allow /bin/echo
    ```
 
    `setup` creates `~/.idlemax/config.toml` and a token, installs the coordinator and the agent as background services (a LaunchAgent on macOS, systemd user units on Linux), and runs `idlemax doctor`.
-   It never overwrites anything, so running it again is safe and says `already done`.
+   It keeps existing settings and tokens, so running it again is safe and says `already done`.
    [Set up a device](#set-up-a-device) has the roles, the flags and the output.
 
-3. Say which programs jobs may run.
-   The allowlist starts empty on purpose, so no job can start until you name one, and `idlemax doctor` tells you so.
-   One command saves it, and the running agent picks it up at once with no restart:
+3. Review which programs jobs may run.
+   The setup command above allows `/bin/echo` for the example below.
+   Without `--allow`, the list starts empty on purpose and no job can start until you name a program.
+   To replace it later, one command saves the list and the running agent picks it up at once with no restart:
 
    ```sh
    idlemax config set agent.command_allowlist /bin/echo
    ```
+
+   To choose programs during setup instead, use `idlemax setup --allow git,cargo` (add `--dry-run` to preview).
+   When the list is empty, setup names `idlemax config set agent.command_allowlist git,cargo` as the first next step.
 
 4. Queue a job and wait for it:
 
@@ -177,7 +181,7 @@ After starting services, setup waits up to 10 seconds for the agent's first succ
 If startup is still pending, it reports `starting` and asks you to run `idlemax doctor` to re-check.
 
 ```sh
-idlemax setup [--role agent|coord|both] [--coord-url URL] [--token-stdin] [--statusline] [--no-service] [--dry-run]
+idlemax setup [--role agent|coord|both] [--coord-url URL] [--token-stdin] [--allow git,cargo] [--statusline] [--no-service] [--dry-run]
 ```
 
 It runs `init` (never overwriting), writes `config.toml` for the role, installs the services through the same code as `idlemax service install`, optionally wires the Claude Code statusline, and runs `idlemax doctor`.
@@ -206,7 +210,7 @@ would do      doctor          waits up to 10s for services to connect, then chec
                               would run: idlemax doctor
                               by hand: idlemax doctor
 
-dry run only: run the same command without --dry-run to apply it
+dry run only; no job can start while agent.command_allowlist is empty; next: idlemax config set agent.command_allowlist git,cargo
 ```
 
 | Role | What it does | Services installed |
@@ -226,9 +230,12 @@ ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http:
   Without them it stops with exit code 2 and the fix, before it writes anything.
 - `--statusline` also runs `idlemax statusline install`, for the roles that run an agent.
   `--no-service` writes the files but installs no service.
+- `--allow git,cargo` sets the programs jobs may run in the same setup, preserving config comments and backing up the old file.
+  It replaces the list; include every program the agent should allow.
+  An existing running agent reloads the change, while a newly started service reads it at startup.
 - The guard profile comes from the OS: `macos_laptop` on macOS and `linux_server` on Linux.
 - With `--role coord` or `--role both` the `--coord-url` host must be an IP address (or `localhost`), because the coordinator binds it; a name such as a MagicDNS host is refused with that advice.
-- Nothing existing is overwritten.
+- Existing settings and tokens are kept; `--allow` edits only `agent.command_allowlist`.
   A `--coord-url` that disagrees with the existing `config.toml`, or a `--token-stdin` token that differs from the existing token file, is refused with the fix.
 - A service file is rewritten and the service restarted only when its content would change, for example after the binary moved.
   A current file whose service is not running is started, so a re-run after a failed start fixes it.
@@ -238,9 +245,11 @@ ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http:
 - Exit code 1 means a step failed, or services were asked for and doctor still finds a failing check.
   With `--no-service` doctor's findings are printed but do not change the exit code, because nothing is running yet by design.
   Exit code 2 means flags that cannot work.
-- `--json` prints one report with `steps[]`, `changed`, `ok` and doctor's report.
+- `--json` prints one report with `steps[]`, `changed`, `ok`, `needs_allowlist`, `next` and doctor's report.
 
-`setup` does not set `agent.command_allowlist`, `agent.ai_accounts` or `[[quota.accounts]]`: those are your decisions, and doctor says what is missing.
+Without `--allow`, setup leaves `agent.command_allowlist` as it is.
+If it is empty on an agent role, the result and first help line name `idlemax config set agent.command_allowlist git,cargo` before suggesting any jobs.
+`agent.ai_accounts` and `[[quota.accounts]]` remain your decisions, and doctor says what is missing.
 `idlemax init` cannot set `coordinator.listen`, so the by-hand command for a coordinator on a non-default address needs that one line added to `config.toml`; the report says so.
 
 ## Keep it running
@@ -754,7 +763,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | Command | Does |
 |---|---|
 | `idlemax` | live state and the next commands to try, see [Use it from an AI agent](#use-it-from-an-ai-agent) |
-| `idlemax setup [--role agent\|coord\|both] [--coord-url URL] [--token-stdin] [--statusline] [--no-service] [--dry-run]` | set this device up in one command and run `doctor`, see [Set up a device](#set-up-a-device) |
+| `idlemax setup [--role agent\|coord\|both] [--coord-url URL] [--token-stdin] [--allow git,cargo] [--statusline] [--no-service] [--dry-run]` | set this device up in one command and run `doctor`, see [Set up a device](#set-up-a-device) |
 | `idlemax agent` | run the device agent |
 | `idlemax coord` | run the coordinator |
 | `idlemax init [--profile macos-laptop\|linux-server] [--coord-url URL] [--token-stdin]` | create the state dirs, `config.toml` and a 0600 token; never overwrites, and refuses the flags when a config already exists |

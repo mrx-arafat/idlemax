@@ -60,6 +60,7 @@ fn env<'a>(root: &Path, paths: &'a Paths, runner: &'a Fake, dry_run: bool) -> En
         runner,
         dry_run,
         token: None,
+        allow: None,
     }
 }
 
@@ -80,6 +81,81 @@ fn statuses(steps: &[StepReport]) -> Vec<Status> {
 }
 
 #[test]
+fn an_empty_allowlist_is_the_first_next_step_after_setup() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths::new(dir.path().join("state"));
+    let runner = fake(None);
+    let plan = plan_both(&paths);
+    let steps = execute(&plan, &env(dir.path(), &paths, &runner, false));
+    let report = finish(&plan, false, steps, None, true);
+    assert_eq!(
+        report.next.first().map(String::as_str),
+        Some("idlemax config set agent.command_allowlist git,cargo"),
+        "{}",
+        text::render(&report)
+    );
+    let again = execute(&plan_both(&paths), &env(dir.path(), &paths, &runner, false));
+    let report = finish(&plan_both(&paths), false, again, None, true);
+    let result = text::render(&report);
+    assert!(result.contains("nothing to change"), "{result}");
+    assert!(result.contains("idlemax config set agent.command_allowlist git,cargo"));
+}
+
+#[test]
+fn allow_sets_the_list_in_setup_and_preserves_comments_and_repeated_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths::new(dir.path().join("state"));
+    std::fs::create_dir_all(paths.root()).unwrap();
+    let before = "# keep this heading\n[coordinator]\nlisten = \"127.0.0.1:18310\"\nurl = \"http://127.0.0.1:18310\"\n[agent] # my device\nlisten = \"127.0.0.1:18311\"\ncommand_allowlist = [] # only these programs\n";
+    std::fs::write(paths.config_file(), before).unwrap();
+    let runner = fake(None);
+    let plan = plan_both(&paths);
+    let (edit, needs_allowlist) = allowlist::prepare(&paths, &plan, Some("git,cargo")).unwrap();
+    assert!(!needs_allowlist);
+    let steps = execute(
+        &plan,
+        &Env {
+            allow: edit.as_ref(),
+            ..env(dir.path(), &paths, &runner, false)
+        },
+    );
+    assert_eq!(
+        steps.iter().find(|s| s.step == "allowlist").unwrap().status,
+        Status::Done
+    );
+    let saved = std::fs::read_to_string(paths.config_file()).unwrap();
+    assert_eq!(
+        Config::parse(&saved).unwrap().agent.command_allowlist,
+        ["git", "cargo"]
+    );
+    for comment in [
+        "# keep this heading",
+        "# my device",
+        "# only these programs",
+    ] {
+        assert!(saved.contains(comment), "{saved}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(crate::cli::files::backup_path(&paths.config_file())).unwrap(),
+        before
+    );
+    let (edit, _) = allowlist::prepare(&paths, &plan_both(&paths), Some("git,cargo")).unwrap();
+    let again = execute(
+        &plan_both(&paths),
+        &Env {
+            allow: edit.as_ref(),
+            ..env(dir.path(), &paths, &runner, false)
+        },
+    );
+    assert_eq!(
+        again.iter().find(|s| s.step == "allowlist").unwrap().status,
+        Status::AlreadyDone
+    );
+    assert_eq!(std::fs::read_to_string(paths.config_file()).unwrap(), saved);
+    println!("Saved config from setup steps with a fake service runner:\n{saved}");
+}
+
+#[test]
 fn a_starting_setup_reports_doctor_as_the_next_step_without_a_warning() {
     let dir = tempfile::tempdir().unwrap();
     let paths = Paths::new(dir.path().join("state"));
@@ -93,6 +169,7 @@ fn a_starting_setup_reports_doctor_as_the_next_step_without_a_warning() {
             "idlemax doctor".into(),
         )],
         None,
+        false,
     );
     assert_eq!(report.next, ["idlemax doctor"]);
     assert!(report.doctor.is_none());
@@ -134,7 +211,7 @@ fn a_dry_run_changes_nothing_and_a_second_run_changes_nothing_again() {
         after.iter().all(|c| c.contains(" show ")),
         "a current, running unit is only asked about: {after:?}"
     );
-    assert!(!finish(&plan_both(&paths), false, second, None).changed);
+    assert!(!finish(&plan_both(&paths), false, second, None, false).changed);
 }
 
 #[test]
@@ -160,7 +237,7 @@ fn a_failing_service_command_stops_the_run_and_the_rest_is_not_run() {
         "{}",
         steps[3].detail
     );
-    assert!(!finish(&plan_both(&paths), false, steps, None).ok);
+    assert!(!finish(&plan_both(&paths), false, steps, None, false).ok);
 }
 
 #[test]

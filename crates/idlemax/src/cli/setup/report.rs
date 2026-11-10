@@ -84,6 +84,7 @@ pub struct SetupReport {
     /// True when every step worked and doctor found no failing check.
     pub(super) ok: bool,
     pub(super) next: Vec<String>,
+    pub(super) needs_allowlist: bool,
 }
 
 pub(super) fn finish(
@@ -91,6 +92,7 @@ pub(super) fn finish(
     dry_run: bool,
     steps: Vec<StepReport>,
     doctor: Option<Report>,
+    needs_allowlist: bool,
 ) -> SetupReport {
     let changed = steps.iter().any(|s| s.status == Status::Done);
     let stopped = steps.iter().any(|s| s.status == Status::Failed);
@@ -100,9 +102,12 @@ pub(super) fn finish(
         doctor.as_ref().is_some_and(|d| !d.healthy) && plan.service_skipped.is_none();
     let ok = !stopped && !doctor_fails;
     let mut next = Vec::new();
+    if needs_allowlist && !stopped {
+        next.push(super::allowlist::NEXT.to_string());
+    }
     if steps.iter().any(|s| s.status == Status::Starting) {
         next.push("idlemax doctor".to_string());
-    } else if ok && !dry_run {
+    } else if ok && !dry_run && !needs_allowlist {
         next.push("idlemax tui".to_string());
         next.push("idlemax job add <spec.toml>".to_string());
     }
@@ -114,5 +119,6 @@ pub(super) fn finish(
         doctor,
         ok,
         next,
+        needs_allowlist,
     }
 }

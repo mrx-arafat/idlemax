@@ -19,6 +19,7 @@ use crate::state;
 use report::{finish, Status, StepReport};
 use steps::{execute, Env};
 
+mod allowlist;
 mod readiness;
 mod report;
 mod steps;
@@ -49,6 +50,9 @@ pub struct SetupArgs {
     /// Print every file and command without writing or running anything
     #[arg(long)]
     dry_run: bool,
+    /// Programs jobs may run, replacing the allowlist while preserving config comments
+    #[arg(long, value_name = "PROGRAMS")]
+    allow: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -85,6 +89,7 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
         Ok(plan) => plan,
         Err(e) => return Err(CliError::usage(e.to_string(), "idlemax setup --help").into()),
     };
+    let (allow, needs_allowlist) = allowlist::prepare(paths, &plan, args.allow.as_deref())?;
     let env = Env {
         paths,
         svc: service_ctx(paths, &plan)?,
@@ -94,11 +99,13 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
         runner: &SystemRunner,
         dry_run: args.dry_run,
         token,
+        allow: allow.as_ref(),
     };
     let mut steps = execute(&plan, &env);
+    allowlist::reload_existing(paths, plan.role, args.dry_run, &mut steps).await;
     let doctor = doctor_step(&plan, &env, &steps, coord).await;
     steps.push(doctor.0);
-    let report = finish(&plan, args.dry_run, steps, doctor.1);
+    let report = finish(&plan, args.dry_run, steps, doctor.1, needs_allowlist);
     let next: Vec<String> = report
         .next
         .iter()

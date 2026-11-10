@@ -77,6 +77,23 @@ fn step_text(step: &StepReport, dry_run: bool) -> String {
 
 fn closing(r: &SetupReport) -> String {
     let role = r.role.name();
+    if r.needs_allowlist && !r.steps.iter().any(|s| s.status == Status::Failed) {
+        let state = if r.dry_run {
+            "dry run only"
+        } else if r.steps.iter().any(|s| s.status == Status::Starting) {
+            "services are starting"
+        } else if !r.ok {
+            "setup needs attention"
+        } else if !r.changed {
+            "nothing to change"
+        } else {
+            "setup finished"
+        };
+        return format!(
+            "{state}; no job can start while agent.command_allowlist is empty; next: {}",
+            super::allowlist::NEXT
+        );
+    }
     if r.dry_run {
         return "dry run only: run the same command without --dry-run to apply it".into();
     }

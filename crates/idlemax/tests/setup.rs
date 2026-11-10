@@ -139,7 +139,32 @@ fn dry_run_lists_every_file_and_command_and_writes_nothing() {
         toon.contains("would_write[") && toon.contains("would_run["),
         "{toon}"
     );
+    assert!(toon.contains("agent.command_allowlist is empty"), "{toon}");
+    assert!(
+        toon.contains("Run `idlemax config set agent.command_allowlist git,cargo` to continue"),
+        "{toon}"
+    );
     assert!(is_empty_dir(&h.home), "the TOON dry run wrote under HOME");
+}
+
+#[test]
+fn allow_flag_previews_the_allowlist_without_writing_it() {
+    let home = Home::new();
+    let (code, report) = home.json(&["--dry-run", "--allow", "git,cargo"]);
+    assert_eq!(code, 0, "{report}");
+    let allow = step(&report, "allowlist", None);
+    assert_eq!(allow["status"], "would_do");
+    assert!(allow["detail"].as_str().unwrap().contains("git"));
+    assert!(allow["detail"].as_str().unwrap().contains("cargo"));
+    assert!(!home.state.exists());
+    assert!(is_empty_dir(&home.home));
+    let (code, error) = home.json(&["--dry-run", "--allow", "[1]"]);
+    assert_eq!(code, 2);
+    assert_eq!(error["help"], "idlemax setup --help");
+    assert!(
+        !home.state.exists(),
+        "invalid allowlist must be refused before writing"
+    );
 }
 
 #[test]

@@ -2,6 +2,7 @@
 //! service install, statusline install) and reports what happened.
 
 use anyhow::{Context, Result};
+use idlemax_core::config::Edit;
 use idlemax_core::install::service::{render, ServiceKind};
 use idlemax_core::install::setup::{
     unit_change, ConfigPlan, SetupPlan, StatuslinePlan, TokenPlan, UnitChange,
@@ -24,18 +25,23 @@ pub(super) struct Env<'a> {
     pub(super) dry_run: bool,
     /// The token piped in with `--token-stdin`.
     pub(super) token: Option<String>,
+    pub(super) allow: Option<&'a Edit>,
 }
 
 enum Stage {
     Config,
     Token,
+    Allowlist,
     Service(ServiceKind),
     ServiceSkipped(&'static str),
     Statusline(StatuslinePlan),
 }
 
-fn stages(plan: &SetupPlan) -> Vec<Stage> {
+fn stages(plan: &SetupPlan, allow: bool) -> Vec<Stage> {
     let mut stages = vec![Stage::Config, Stage::Token];
+    if allow {
+        stages.push(Stage::Allowlist);
+    }
     match plan.service_skipped {
         Some(reason) => stages.push(Stage::ServiceSkipped(reason)),
         None => stages.extend(plan.services.iter().map(|k| Stage::Service(*k))),
@@ -48,7 +54,7 @@ fn stages(plan: &SetupPlan) -> Vec<Stage> {
 pub(super) fn execute(plan: &SetupPlan, env: &Env<'_>) -> Vec<StepReport> {
     let mut steps: Vec<StepReport> = Vec::new();
     let mut broke: Option<&'static str> = None;
-    for stage in stages(plan) {
+    for stage in stages(plan, env.allow.is_some()) {
         let report = match broke {
             None => run_stage(&stage, plan, env),
             Some(by) => not_run(&stage, plan, by),
@@ -65,6 +71,10 @@ fn run_stage(stage: &Stage, plan: &SetupPlan, env: &Env<'_>) -> StepReport {
     match stage {
         Stage::Config => config_step(plan, env),
         Stage::Token => token_step(plan, env),
+        Stage::Allowlist => match env.allow {
+            Some(edit) => super::allowlist::step(env.paths, edit, env.dry_run),
+            None => skipped(stage, plan, "no --allow value"),
+        },
         Stage::Service(kind) => service_step(*kind, plan, env),
         Stage::ServiceSkipped(reason) => skipped(stage, plan, reason),
         Stage::Statusline(StatuslinePlan::Install) => statusline_step(plan, env),
@@ -87,6 +97,7 @@ fn labels(stage: &Stage) -> (&'static str, Option<&'static str>) {
     match stage {
         Stage::Config => ("config", None),
         Stage::Token => ("token", None),
+        Stage::Allowlist => ("allowlist", None),
         Stage::Service(kind) => ("service", Some(kind.name())),
         Stage::ServiceSkipped(_) => ("service", None),
         Stage::Statusline(_) => ("statusline", None),
@@ -101,6 +112,7 @@ fn command(stage: &Stage, plan: &SetupPlan) -> String {
         Stage::Service(kind) => format!("idlemax service install {}", kind.name()),
         Stage::ServiceSkipped(_) => "idlemax service install".into(),
         Stage::Statusline(_) => "idlemax statusline install".into(),
+        Stage::Allowlist => "idlemax config set agent.command_allowlist <programs>".into(),
     }
 }
 
