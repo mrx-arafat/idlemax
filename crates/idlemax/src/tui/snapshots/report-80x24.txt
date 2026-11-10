@@ -16,10 +16,10 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │  old-mac-mini         offline 2d1h ago  -      -          -                  │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ AI quota ────────────────────────────────────────────────────────────────────┐
+│ claude-work: paused by you, 18% left (5h), resets in 1h35m                   │
+│ codex-personal-with-a-very-long-account-name: not spendable now (no usage    │
+│ data yet), quota left unknown (week)                                         │
 └──────────────────────────────────────────────────────────────────────────────┘
 p/r pause/resume device macbook-pro-ar…  s stop-all  tab/1-6 switch  q quit

@@ -96,6 +96,27 @@ pub fn account_cells(a: &AccountCapacity, now_ms: UnixMs) -> Vec<String> {
     ]
 }
 
+/// One sentence for a narrow place: "claude: spendable, 31% left (week), resets in 3h00m".
+pub fn account_line(a: &AccountCapacity, now_ms: UnixMs) -> String {
+    let may = match (a.paused, a.spendable, a.why.as_deref()) {
+        (true, ..) => "paused by you".to_string(),
+        (false, true, _) => "spendable".to_string(),
+        (false, false, Some(why)) => format!("not spendable now ({why})"),
+        (false, false, None) => "not spendable now".to_string(),
+    };
+    let left = a.headroom_pct.map_or_else(
+        || "quota left unknown".to_string(),
+        |p| format!("{} left", pct(p)),
+    );
+    let window = a
+        .window
+        .map_or_else(String::new, |w| format!(" ({})", window_label(w)));
+    let resets = a
+        .resets_at_ms
+        .map_or_else(String::new, |t| format!(", resets {}", rel(t, now_ms)));
+    format!("{}: {may}, {left}{window}{resets}", a.account)
+}
+
 fn device_state(d: &DeviceView, now_ms: UnixMs) -> String {
     if !d.online {
         return format!("offline {}", rel(d.last_seen_ms, now_ms));
@@ -410,5 +431,41 @@ mod tests {
             ..GuardDecision::default()
         };
         assert_eq!(guard_summary(&g), "kill: disk free 9347.8 MiB < 10240 MiB");
+    }
+
+    #[test]
+    fn account_line_says_whether_idlemax_may_spend_how_much_and_until_when() {
+        const NOW: UnixMs = 1_800_000_000_000;
+        let account =
+            |name: &str, spendable: bool, paused, why: Option<&str>, resets: Option<i64>| {
+                AccountCapacity {
+                    account: name.into(),
+                    headroom_pct: spendable.then_some(54.0),
+                    spendable,
+                    paused,
+                    window: Some(QuotaWindowKind::Weekly),
+                    resets_at_ms: resets.map(|ms| NOW + ms),
+                    why: why.map(String::from),
+                }
+            };
+        let line = |a| account_line(&a, NOW);
+        assert_eq!(
+            line(account("claude", true, false, None, Some(52 * 3_600_000))),
+            "claude: spendable, 54% left (week), resets in 2d4h"
+        );
+        assert_eq!(
+            line(account(
+                "codex",
+                false,
+                false,
+                Some("no usage data yet"),
+                None
+            )),
+            "codex: not spendable now (no usage data yet), quota left unknown (week)"
+        );
+        assert_eq!(
+            line(account("claude", true, true, None, Some(95 * 60_000))),
+            "claude: paused by you, 54% left (week), resets in 1h35m"
+        );
     }
 }

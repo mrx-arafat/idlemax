@@ -1,5 +1,6 @@
 //! Delivery: ratatui dashboard. Owns the terminal and the event loop; data comes from `feed`.
 
+mod accounts;
 mod app;
 mod feed;
 mod layout;

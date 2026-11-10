@@ -228,6 +228,14 @@ fn fixture() -> Snapshot {
         "version": "0.1.0", "paused_accounts": ["claude-work"], "open_advice": 1,
         "jobs": {"queued": 1, "running": 1, "paused": 1, "failed": 1, "parked": 1},
         "devices": [healthy_mac(), loaded_server(), offline_mini()],
+        "accounts": [
+            {"account": "claude-work", "headroom_pct": 18.0, "spendable": false, "paused": true,
+             "window": {"kind": "rolling", "minutes": 300}, "resets_at_ms": NOW + 95 * MIN,
+             "why": "held: 18% above the reserve is below the 25% minimum"},
+            {"account": "codex-personal-with-a-very-long-account-name", "headroom_pct": null,
+             "spendable": false, "paused": false, "window": {"kind": "weekly"}, "resets_at_ms": null,
+             "why": "no usage data yet"},
+        ],
     });
     Snapshot {
         status: parse(status),

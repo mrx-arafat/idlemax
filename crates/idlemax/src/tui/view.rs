@@ -13,6 +13,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, TableState, Tabs, Wrap};
 use ratatui::Frame;
 
+use super::accounts;
 use super::app::{App, Tab};
 use super::feed::Snapshot;
 use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, text_width, wrap_words};
@@ -142,6 +143,12 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
     match tab {
         Tab::Devices => {
             let area = report::render(f, area, &app.report);
+            let area = accounts::render(
+                f,
+                area,
+                d.status.accounts.as_deref().unwrap_or_default(),
+                now_ms,
+            );
             let rows = d.status.devices.iter().map(|v| {
                 let style = match (v.online, v.paused || v.local_paused) {
                     (false, _) => Style::new().dark_gray(),
