@@ -5,7 +5,9 @@ use clap::{Args, Subcommand};
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
-use super::{config_cmd, hooks, init_cmd, job, schedule, service, setup, skill, statusline};
+use super::{
+    config_cmd, hooks, init_cmd, job, report, schedule, service, setup, skill, statusline,
+};
 
 #[derive(Subcommand, Debug)]
 pub(super) enum Cmd {
@@ -42,6 +44,8 @@ pub(super) enum Cmd {
     StopAll(Target),
     /// AI account windows, reserve and headroom
     Quota,
+    /// What idlemax did with the machine, and what stopped it
+    Report(report::ReportArgs),
     /// Recent events
     Events {
         /// Rows to ask for; the coordinator answers at most 1000

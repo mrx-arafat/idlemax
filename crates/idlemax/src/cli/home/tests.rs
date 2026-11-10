@@ -129,7 +129,7 @@ help[4]:
   Run `idlemax jobs --status failed` to see the 2 failed
   Run `idlemax advise` to review 2 open
   Run `idlemax status` to see the cluster, its devices and the guard verdict of each
-  Run `idlemax job add <spec.toml>` to queue a job from a TOML spec, or a command after `--`";
+  Run `idlemax report` to see what idlemax did today and this week, and what held it back";
     assert_eq!(render(&h, Mode::Full), full);
 
     let hook = "\

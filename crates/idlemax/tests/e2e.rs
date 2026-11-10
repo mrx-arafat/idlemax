@@ -547,6 +547,26 @@ async fn coord_and_agent_run_a_tiny_job() {
     assert!(show_str.contains("# e2e-echo: succeeded"));
     assert!(show_str.contains(MARKER));
 
+    // The report counts the job that just ran and the guard history the heartbeats built.
+    let report_out = Command::new(BIN)
+        .args(["report", "--json", "--days", "1"])
+        .env("HOME", &home)
+        .env("IDLEMAX_HOME", &state)
+        .output()
+        .unwrap();
+    assert!(
+        report_out.status.success(),
+        "report command failed: {}",
+        String::from_utf8_lossy(&report_out.stdout)
+    );
+    let reports: serde_json::Value = serde_json::from_slice(&report_out.stdout).unwrap();
+    assert_eq!(reports[0]["jobs"]["ran"], 1, "{reports}");
+    assert_eq!(reports[0]["jobs"]["succeeded"], 1, "{reports}");
+    assert!(
+        reports[0]["guard"]["tracked_ms"].as_i64().unwrap() > 0,
+        "{reports}"
+    );
+
     job_add_cli(&home, &state);
     agent_death_is_retried(&home, &state, &mut agent, api).await;
 

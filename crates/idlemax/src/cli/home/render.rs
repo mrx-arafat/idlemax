@@ -21,6 +21,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "see the cluster, its devices and the guard verdict of each",
     ),
     (
+        "idlemax report",
+        "see what idlemax did today and this week, and what held it back",
+    ),
+    (
         "idlemax jobs --status <status>",
         "list jobs, for example failed or parked",
     ),

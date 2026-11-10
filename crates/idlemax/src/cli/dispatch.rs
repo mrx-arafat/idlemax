@@ -8,8 +8,8 @@ use idlemax_core::Paths;
 use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd};
 use super::init_cmd::run_init;
 use super::{
-    config_cmd, handlers, home, hooks, inbox, job, logs, out, print, rows, schedule, service,
-    setup, skill, statusline, ApiClient, Cli, CliError, ClientError, ExitWith, Out, Peer,
+    config_cmd, handlers, home, hooks, inbox, job, logs, out, print, report, rows, schedule,
+    service, setup, skill, statusline, ApiClient, Cli, CliError, ClientError, ExitWith, Out, Peer,
 };
 use crate::state::{self, now_ms};
 
@@ -153,6 +153,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         Cmd::Resume(t) => handlers::control(c, t.request(ControlAction::Resume), out).await,
         Cmd::StopAll(t) => handlers::control(c, t.request(ControlAction::StopAll), out).await,
         Cmd::Quota => handlers::quota(c, out, now).await,
+        Cmd::Report(args) => report::run(c, args, out, now, zone).await,
         Cmd::Events { limit } => handlers::events(c, out, limit, zone).await,
         Cmd::Advise { cmd } => handlers::advise(c, cmd.unwrap_or(AdviseCmd::List), out, now).await,
         Cmd::Tui => Ok(crate::tui::run(c.clone(), zone).await?),
