@@ -2,6 +2,8 @@
 "use strict";
 
 const POLL_MS = 5000;
+// The report changes slowly and costs the coordinator a scan, so it is asked for less often.
+const REPORT_MS = 30000;
 const TOKEN_KEY = "idlemax.token";
 const ACTIVE = new Set(["leased", "running", "paused"]);
 const TERMINAL = new Set(["succeeded", "failed", "killed", "cancelled", "parked"]);
@@ -121,7 +123,7 @@ const scopes = {
 };
 
 // State and polling.
-const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
+const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, report: null, reportAt: 0, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
 // Full explanations are fetched only for the rows a user opened, and re-fetched once per poll.
 const whyOpen = new Set();
 const whyDetail = new Map();
@@ -140,6 +142,7 @@ async function refresh() {
     ["events", api("GET", "/v1/events?limit=60")],
     ["why", api("GET", "/v1/why")],
   ];
+  if (Date.now() - state.reportAt >= REPORT_MS) calls.push(["report", reportCalls()]);
   const openIds = [...whyOpen];
   const detailCalls = openIds.map((id) => api("GET", whyPath(id)));
   const [results, details] = await Promise.all([Promise.allSettled(calls.map((c) => c[1])), Promise.allSettled(detailCalls)]);
@@ -152,12 +155,20 @@ async function refresh() {
   let anyOk = false;
   results.forEach((r, i) => {
     const key = calls[i][0];
-    if (r.status === "fulfilled") { state[key] = r.value; delete state.errors[key]; anyOk = true; }
+    if (r.status === "fulfilled") { state[key] = r.value; delete state.errors[key]; anyOk = true; if (key === "report") state.reportAt = Date.now(); }
     else state.errors[key] = r.reason && r.reason.message ? r.reason.message : "request failed";
   });
   if (anyOk) state.lastOk = Date.now();
   details.forEach((r, i) => whyDetail.set(openIds[i], r.status === "fulfilled" ? { data: r.value } : { error: r.reason && r.reason.message ? r.reason.message : "request failed" }));
   render();
+}
+
+// Today so far (from this browser's midnight) and the last 7 days, as `idlemax report` shows them.
+function reportCalls() {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const since = Math.min(midnight.getTime(), Date.now() - 1);
+  return Promise.all([api("GET", `/v1/report?since_ms=${since}&label=today`), api("GET", "/v1/report?days=7")]);
 }
 
 function schedule() {
@@ -247,6 +258,7 @@ function render() {
   section("tiles", [s], "tiles", renderTiles);
   // last_seen_ms is shown only for offline devices; online ones move it on every heartbeat.
   const devs = s && (s.devices || []).map((d) => (d.online ? { ...d, last_seen_ms: 0 } : d));
+  section("report", [state.report, e.report], "report", renderReport);
   section("devices", [devs, s && s.global_paused, e.status], "devices", renderDevices);
   section("schedules", [state.schedules, e.schedules], "schedules", renderSchedules);
   section("jobs", [state.jobs, e.jobs, $("job-filter").value], "jobs", renderJobs);
@@ -297,6 +309,48 @@ function renderTiles() {
     tile("Failed", (c.failed || 0) + (c.killed || 0), c.failed || c.killed ? "bad" : ""),
     tile("Open advice", s.open_advice || 0),
   );
+}
+
+// Same wording as the verdict line the coordinator writes: seconds, minutes, hours, then days.
+function fmtSpan(ms) {
+  ms = Math.max(0, ms);
+  if (ms < 60000) return `${Math.round(ms / 1000)} s`;
+  if (ms < 3600000) return `${Math.round(ms / 60000)} min`;
+  if (ms < 2 * 86400000) return `${(ms / 3600000).toFixed(1)} h`;
+  return `${(ms / 86400000).toFixed(1)} days`;
+}
+
+function reportLines(r) {
+  const j = r.jobs, g = r.guard, i = r.idle, q = r.quota;
+  const lines = [`Jobs: ${j.ran} ran, ${j.succeeded} succeeded, ${j.failed} failed, ${j.killed} killed, ${j.cancelled} cancelled; ${j.job_ms > 0 && j.job_ms < 30000 ? "<1" : Math.round(j.job_ms / 60000)} job-min`];
+  if (g.tracked_ms > 0) {
+    const by = (g.held_by || []).slice(0, 4).map((x) => `${x.label} ${fmtSpan(x.ms)}`).join(", ");
+    lines.push(g.held_ms > 0 ? `Held: ${fmtSpan(g.held_ms)} of ${fmtSpan(g.tracked_ms)} tracked: ${by}` : `Held: never, in ${fmtSpan(g.tracked_ms)} tracked`);
+    if (g.offline_ms > 0) lines.push(`Asleep or offline: ${fmtSpan(g.offline_ms)}`);
+    lines.push(`Idle: jobs running ${fmtSpan(i.used_ms)}, queue empty ${fmtSpan(i.queue_empty_ms)}, work waiting ${fmtSpan(i.work_waiting_ms)}${i.quota_waiting_ms > 0 ? `, AI work waiting for quota ${fmtSpan(i.quota_waiting_ms)}` : ""}`);
+    if ((i.stuck_jobs || []).length) lines.push(`Queued, and no device can run: ${i.stuck_jobs.join(", ")}`);
+    const l = i.longest;
+    lines.push(l ? `Longest idle stretch: ${fmtSpan(l.end_ms - l.start_ms)} from ${fmtTime(l.start_ms)} to ${fmtTime(l.end_ms)}: ${l.label}` : "Longest idle stretch: none");
+  }
+  if (!q.configured) lines.push("AI quota: no AI accounts are configured");
+  else if (!(q.expired || []).length) lines.push("AI quota: no window has reset in this period");
+  else {
+    const unused = q.expired.reduce((sum, c) => sum + c.unused_pct, 0) / q.expired.length;
+    const kept = q.counted_since_ms > r.since_ms ? ` (only the last ${fmtSpan(r.until_ms - q.counted_since_ms)} of quota history is kept)` : "";
+    lines.push(`AI quota: ${q.expired.length} window${q.expired.length === 1 ? "" : "s"} expired, ${unused.toFixed(0)}% unused on average${kept}`);
+  }
+  return lines;
+}
+
+function renderReport() {
+  const reports = state.report;
+  if (!reports) {
+    $("report").replaceChildren(h("p", { class: "muted" }, state.errors.report ? `The report is unavailable: ${state.errors.report}` : "Loading"));
+    return;
+  }
+  $("report").replaceChildren(...reports.map((r) => h("div", { class: "rep" },
+    h("div", { class: `rep-v${r.jobs.ran ? "" : " warn"}` }, r.verdict),
+    h("ul", { class: "rep-l" }, reportLines(r).map((t) => h("li", null, t))))));
 }
 
 function stat(k, v, title) { return h("div", { class: "stat", title: title || null }, h("div", { class: "k" }, k), h("div", { class: "v num" }, v)); }

@@ -227,6 +227,14 @@ select {
   background: var(--panel); font-size: 12.5px;
 }
 
+/* Did it help? The report: a verdict line per period, the numbers behind it underneath. */
+.rep + .rep { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.rep-v { font-weight: 600; overflow-wrap: anywhere; }
+.rep-v.warn { color: var(--warn); }
+.rep-l { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+.rep-l li { overflow-wrap: anywhere; }
+.rep-l li + li { margin-top: 2px; }
+
 /* Quota */
 .acct + .acct { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .acct-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
@@ -383,6 +391,10 @@ dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14
     <div class="tiles" id="tiles"></div>
     <div class="grid">
       <div class="col">
+        <section class="card" aria-labelledby="h-report">
+          <div class="card-h"><h2 id="h-report">Did it help?</h2></div>
+          <div class="card-b" id="report"></div>
+        </section>
         <section class="card" aria-labelledby="h-devices">
           <div class="card-h"><h2 id="h-devices">Devices</h2></div>
           <div class="card-b" id="devices"></div>
