@@ -34,6 +34,7 @@ pub fn launch(
     job: &Job,
     started_ms: UnixMs,
     tag: u64,
+    cwd: &Path,
 ) -> Result<Launched, RunnerError> {
     let spec = &job.spec;
     let (program, args) = spec
@@ -43,13 +44,12 @@ pub fn launch(
     let mut argv = vec![resolve_program(program)?];
     argv.extend(args.iter().cloned());
     let argv = supervised(paths, supervisor, job.id, argv);
-    let cwd = resolve_cwd(spec.cwd.as_deref())?;
     let (log, log_path, log_offset) = open_log(paths, job, started_ms, wrapper.name())?;
     let full = wrapper.wrap(&argv, spec.mem_mb, &scope_unit(job.id, started_ms));
     let (exe, exe_args) = full.split_first().ok_or(RunnerError::EmptyCommand)?;
     let stderr = log.try_clone().map_err(io_err("clone log", &log_path))?;
     let mut cmd = Command::new(exe);
-    cmd.args(exe_args).current_dir(&cwd);
+    cmd.args(exe_args).current_dir(cwd);
     inherit_minimal_env(&mut cmd);
     cmd.envs(&spec.env)
         .env_remove(TOKEN_ENV)
@@ -177,7 +177,7 @@ fn resolve_program(program: &str) -> Result<String, RunnerError> {
 }
 
 /// Spec cwd with `~` expanded; the user's home when unset. Touches no filesystem.
-pub(super) fn expand_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
+pub(in crate::agent) fn expand_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
     let home = || dirs::home_dir().ok_or(RunnerError::NoHome);
     Ok(match cwd {
         None | Some("~") => home()?,
@@ -188,7 +188,8 @@ pub(super) fn expand_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
     })
 }
 
-fn resolve_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
+#[cfg(test)]
+pub(super) fn resolve_cwd(cwd: Option<&str>) -> Result<PathBuf, RunnerError> {
     let dir = expand_cwd(cwd)?;
     if dir.is_dir() {
         Ok(dir)

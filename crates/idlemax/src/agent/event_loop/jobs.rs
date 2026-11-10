@@ -1,6 +1,8 @@
 //! Jobs: plan with the domain `AgentState`, run the actions in the runner, reap exits and
 //! queue the resulting updates. Part of the agent event loop (adapter layer).
 
+use std::collections::HashMap;
+
 use idlemax_core::protocol::AgentCommand;
 use idlemax_core::reconcile::{AgentAction, TickInput};
 use idlemax_core::types::{ControlAction, Job};
@@ -9,7 +11,7 @@ use tracing::{error, info, warn};
 
 use super::{blocking, Agent};
 use crate::agent::api::LocalControl;
-use crate::agent::runner::Runner;
+use crate::agent::runner::{expand_cwd, Runner};
 use crate::state::now_ms;
 
 impl Agent {
@@ -54,11 +56,51 @@ impl Agent {
         if actions.is_empty() {
             return true;
         }
+        let mut checking = HashMap::new();
+        let mut resolved = Vec::with_capacity(actions.len());
+        for action in actions {
+            let cwd = match &action {
+                AgentAction::Start(job) => expand_cwd(job.spec.cwd.as_deref())
+                    .map(Some)
+                    .map_err(|e| e.to_string()),
+                _ => Ok(None),
+            };
+            if let Ok(Some(path)) = &cwd {
+                checking.entry(path.clone()).or_insert_with(|| {
+                    let checker = self.cwd_check.clone();
+                    let path = path.clone();
+                    tokio::spawn(async move { checker.check(path).await })
+                });
+            }
+            resolved.push((action, cwd));
+        }
+        let mut checked = HashMap::with_capacity(checking.len());
+        for (path, task) in checking {
+            let result = task
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|answer| answer.map_err(|e| e.to_string()));
+            checked.insert(path, result);
+        }
+        let prepared = resolved
+            .into_iter()
+            .map(|(action, cwd)| {
+                let result = cwd.and_then(|path| match path {
+                    Some(path) => checked
+                        .get(&path)
+                        .cloned()
+                        .ok_or_else(|| "cwd check result missing".to_string())?
+                        .map(Some),
+                    None => Ok(None),
+                });
+                (action, result)
+            })
+            .collect::<Vec<_>>();
         let outcomes = self.with_runner(move |r| {
-            actions
+            prepared
                 .into_iter()
-                .map(|a| {
-                    let outcome = execute(r, &a);
+                .map(|(a, cwd)| {
+                    let outcome = cwd.and_then(|cwd| execute(r, &a, cwd.as_deref()));
                     (a, outcome)
                 })
                 .collect::<Vec<_>>()
@@ -132,9 +174,15 @@ impl Agent {
     }
 }
 
-fn execute(runner: &mut Runner, action: &AgentAction) -> Result<(), String> {
+fn execute(
+    runner: &mut Runner,
+    action: &AgentAction,
+    cwd: Option<&std::path::Path>,
+) -> Result<(), String> {
     let done = match action {
-        AgentAction::Start(job) => runner.start(job),
+        AgentAction::Start(job) => {
+            runner.start_in(job, cwd.ok_or("cwd was not checked before start")?)
+        }
         AgentAction::Pause(id) => runner.pause(*id),
         AgentAction::Resume(id) => runner.resume(*id),
         AgentAction::Kill { id, order } => runner.kill_ordered(*id, order),

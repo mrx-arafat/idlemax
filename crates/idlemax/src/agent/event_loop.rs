@@ -8,6 +8,7 @@
 
 mod bounded;
 mod coord;
+mod cwd;
 mod jobs;
 mod keep_awake;
 #[cfg(test)]
@@ -77,6 +78,7 @@ pub struct Agent {
     client: CoordClient,
     probes: Arc<Mutex<Probes>>,
     runner: Arc<Mutex<Runner>>,
+    cwd_check: cwd::CwdCheck,
     pause_file: PathBuf,
     status: watch::Sender<LocalStatus>,
     sample_every: Duration,
@@ -112,6 +114,7 @@ impl Agent {
             client: w.client,
             probes: Arc::new(Mutex::new(w.probes)),
             runner: Arc::new(Mutex::new(w.runner)),
+            cwd_check: cwd::CwdCheck::new(cwd::CWD_CHECK_LIMIT, Arc::new(std::path::Path::is_dir)),
             pause_file: w.pause_file,
             status: w.status,
             sample_every: w.sample_every,

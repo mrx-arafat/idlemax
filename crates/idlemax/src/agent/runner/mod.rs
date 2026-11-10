@@ -35,6 +35,7 @@ use pidfile::Saved;
 use stop::{enforce, stop, Stop};
 
 pub use error::RunnerError;
+pub(super) use launch::expand_cwd;
 
 /// A random tag for one attempt. Processes used to be found by job id alone, but ids repeat
 /// across agents (and test runs) on one host, so one agent adopted and killed another's job.
@@ -120,17 +121,36 @@ impl Runner {
     }
 
     /// Starts a leased job. On error nothing runs and no update is queued.
+    #[cfg(test)]
     pub fn start(&mut self, job: &Job) -> Result<(), RunnerError> {
         let started_ms = now_ms();
         let awake_ms = self.awake_ms();
         self.start_at(job, started_ms, awake_ms)
     }
 
+    #[cfg(test)]
     fn start_at(
         &mut self,
         job: &Job,
         started_ms: UnixMs,
         awake_ms: i64,
+    ) -> Result<(), RunnerError> {
+        job_run::admit(&job.spec, &self.allowlist)?;
+        let cwd = launch::resolve_cwd(job.spec.cwd.as_deref())?;
+        self.start_at_in(job, started_ms, awake_ms, &cwd)
+    }
+
+    /// Starts only after the agent's bounded cwd check has answered.
+    pub(super) fn start_in(&mut self, job: &Job, cwd: &std::path::Path) -> Result<(), RunnerError> {
+        self.start_at_in(job, now_ms(), self.awake_ms(), cwd)
+    }
+
+    fn start_at_in(
+        &mut self,
+        job: &Job,
+        started_ms: UnixMs,
+        awake_ms: i64,
+        cwd: &std::path::Path,
     ) -> Result<(), RunnerError> {
         if self.slots.contains_key(&job.id) {
             return Err(RunnerError::AlreadyRunning(job.id));
@@ -140,8 +160,15 @@ impl Runner {
         pidfile::clear_marker(&self.paths, job.id);
         let supervisor = self.supervisor.as_deref();
         let tag = new_tag(job.id, started_ms);
-        let launched =
-            launch::launch(&self.paths, &self.wrapper, supervisor, job, started_ms, tag)?;
+        let launched = launch::launch(
+            &self.paths,
+            &self.wrapper,
+            supervisor,
+            job,
+            started_ms,
+            tag,
+            cwd,
+        )?;
         let saved = Saved {
             job: job.clone(),
             stop: None,

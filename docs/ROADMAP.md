@@ -112,7 +112,7 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - **How:** From data the API already returns (guard slots and `mem_mib`, running jobs, `why`), show per device "slots in use / allowed" and the top idle reason in `idlemax status`, `devices`, the TUI and the dashboard, and per AI account the quota left before reset.
 - **Done when:** On a busy cluster, each view answers "how much is used, how much is idle, and why" without running `why` per job.
 
-### 22. Never block the agent loop on a hung mount at job start
+### 22. Never block the agent loop on a hung mount at job start (done)
 
 - **Why:** The disk probe is now bounded, but `resolve_cwd` in `agent/runner/launch.rs` still calls `is_dir()` on the job's cwd inside the loop, so a job whose cwd sits on a hung network mount stalls the loop at start.
 - **How:** Check the cwd on a bounded blocking thread (as the sample does) and fail the start with a clear error when it times out.
