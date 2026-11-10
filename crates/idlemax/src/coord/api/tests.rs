@@ -225,6 +225,72 @@ fn mac_heartbeat(running: Vec<RunningJob>) -> Heartbeat {
 }
 
 #[tokio::test]
+async fn status_says_how_much_of_a_device_is_used_and_why_it_is_not_more() {
+    let api = Api::start().await;
+    let spec = |name: &str, requires: &[&str]| JobSpec {
+        name: name.into(),
+        command: vec!["true".into()],
+        requires: requires.iter().map(|r| r.to_string()).collect(),
+        mem_mb: 256,
+        ..JobSpec::default()
+    };
+    api.post("/v1/jobs", &spec("needs-docker", &["docker"]))
+        .await;
+    api.post("/v1/jobs", &spec("plain", &[])).await;
+    assert_eq!(api.heartbeat(Vec::new()).await.assign.len(), 1);
+
+    let status: serde_json::Value = api
+        .get_as("/v1/status", "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    let cap = &status["devices"][0]["capacity"];
+    assert_eq!(
+        (
+            &cap["slots_used"],
+            &cap["slots_allowed"],
+            &cap["mem_used_mib"],
+            &cap["mem_allowed_mib"],
+        ),
+        (&json!(1), &json!(2), &json!(256), &json!(1024))
+    );
+    assert_eq!(cap["state"], "cannot_run");
+    assert_eq!(cap["why"], "1 queued job cannot run here: no docker");
+    assert_eq!(status["accounts"], json!([]));
+}
+
+/// A busy coordinator: the live-job cap of AI jobs queued, three devices. Status is polled every
+/// few seconds under the store lock, so it must not do per-job scans of every job.
+#[test]
+fn status_stays_fast_with_ten_thousand_queued_ai_jobs_on_three_devices() {
+    let mut store = Store::open_in_memory().unwrap();
+    let now = now_ms();
+    for id in ["mac", "mini", "server"] {
+        let mut hb = mac_heartbeat(Vec::new());
+        hb.device.id = id.into();
+        hb.device.ai_accounts = vec!["claude".into()];
+        store.record_heartbeat(&hb, now).unwrap();
+    }
+    for i in 0..9_990 {
+        let spec = JobSpec {
+            name: format!("ai-{i}"),
+            command: vec!["claude".into(), "-p".into(), "x".into()],
+            cost: CostClass::Ai,
+            ai_account: Some("claude".into()),
+            ..JobSpec::default()
+        };
+        store.insert_job(&spec, now).unwrap();
+    }
+    let started = std::time::Instant::now();
+    let status = super::jobs::cluster_status(&store, &Config::default(), now).unwrap();
+    let took = started.elapsed();
+    assert_eq!(status.devices.len(), 3);
+    assert_eq!(status.jobs.queued, 9_990);
+    assert!(took.as_secs() < 2, "status took {took:?}");
+}
+
+#[tokio::test]
 async fn stdin_is_private_in_operator_responses_but_reaches_the_agent() {
     let api = Api::start().await;
     let secret = "private stdin sentinel";

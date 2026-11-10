@@ -5,6 +5,7 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use idlemax_core::capacity::{self, device_capacities, CapacityInput};
 use idlemax_core::control::{
     admit_job, global_paused, paused_accounts, plan_control, unknown_scope,
 };
@@ -19,7 +20,8 @@ use serde::Deserialize;
 
 use super::agents::log_transition;
 use super::http::{ApiFailure, JsonBody};
-use super::{offline_after_ms, page_limit, AppState};
+use super::why::Snapshot;
+use super::{page_limit, AppState};
 use crate::coord::store::{Added, Store, StoreError};
 use crate::state::now_ms;
 
@@ -221,18 +223,32 @@ pub(super) fn cluster_status(
     cfg: &Config,
     now: UnixMs,
 ) -> Result<ClusterStatus, ApiFailure> {
-    let paused = store.paused_scopes()?;
+    let snap = Snapshot::gather(store, cfg, now)?;
     let open_advice = store
         .list_recommendations(0)?
         .iter()
         .filter(|r| r.status == RecommendationStatus::Open)
         .count();
+    let input = CapacityInput {
+        now_ms: now,
+        jobs: &snap.jobs,
+        held: &snap.held,
+        paused: &snap.paused,
+        quota: &snap.quota,
+    };
+    let capacities = device_capacities(&input, &snap.devices);
+    let paused_accounts = paused_accounts(&snap.paused);
+    let mut devices = snap.devices;
+    for (dv, capacity) in devices.iter_mut().zip(capacities) {
+        dv.capacity = Some(capacity);
+    }
     Ok(ClusterStatus {
         at_ms: now,
         version: VERSION.into(),
-        global_paused: global_paused(&paused),
-        paused_accounts: paused_accounts(&paused),
-        devices: store.devices(now, offline_after_ms(cfg))?,
+        global_paused: global_paused(&snap.paused),
+        accounts: Some(capacity::accounts(&snap.quota, &paused_accounts)),
+        paused_accounts,
+        devices,
         jobs: store.job_counts()?,
         open_advice: u64::try_from(open_advice).unwrap_or(u64::MAX),
     })

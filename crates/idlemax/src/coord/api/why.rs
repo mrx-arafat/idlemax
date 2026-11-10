@@ -4,41 +4,36 @@
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use idlemax_core::control::is_held;
 use idlemax_core::explain::{explain, summarize, ExplainInput, Explanation, WhySummary};
 use idlemax_core::protocol::DeviceView;
 use idlemax_core::quota::QuotaView;
 use idlemax_core::types::{ControlScope, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Config;
 
-use super::agents::scheduler_jobs;
+use super::agents::scheduler_jobs_and_held;
 use super::http::ApiFailure;
 use super::jobs::{quota_views, LimitQuery};
 use super::{offline_after_ms, page_limit, AppState};
 use crate::coord::store::Store;
 use crate::state::now_ms;
 
-/// The coordinator's state at one instant, read once and shared by every explanation.
-struct Snapshot {
+/// The coordinator's state at one instant, read once and shared by every explanation and by
+/// the capacity shown in `GET /v1/status`.
+pub(super) struct Snapshot {
     now: UnixMs,
     /// What the scheduler picks from: active jobs and queued jobs no pause holds.
-    jobs: Vec<Job>,
+    pub(super) jobs: Vec<Job>,
     /// Queued jobs a pause holds back; the scheduler never sees them.
-    held: Vec<Job>,
-    devices: Vec<DeviceView>,
-    paused: Vec<ControlScope>,
-    quota: Vec<QuotaView>,
+    pub(super) held: Vec<Job>,
+    pub(super) devices: Vec<DeviceView>,
+    pub(super) paused: Vec<ControlScope>,
+    pub(super) quota: Vec<QuotaView>,
 }
 
 impl Snapshot {
-    fn gather(store: &Store, cfg: &Config, now: UnixMs) -> Result<Self, ApiFailure> {
+    pub(super) fn gather(store: &Store, cfg: &Config, now: UnixMs) -> Result<Self, ApiFailure> {
         let paused = store.paused_scopes()?;
-        let jobs = scheduler_jobs(store, &paused)?;
-        let held = store
-            .queued_jobs()?
-            .into_iter()
-            .filter(|j| is_held(&paused, j))
-            .collect();
+        let (jobs, held) = scheduler_jobs_and_held(store, &paused)?;
         Ok(Self {
             now,
             jobs,

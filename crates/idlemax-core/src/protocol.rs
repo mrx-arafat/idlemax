@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::capacity::{AccountCapacity, Capacity};
 use crate::types::{
     ControlAction, ControlScope, CostClass, DeviceId, DeviceInfo, GuardDecision, Job, JobId,
     JobStatus, MetricsSnapshot, QuotaSnapshot, UnixMs,
@@ -174,6 +175,10 @@ pub struct DeviceView {
     pub paused: bool,
     /// Paused on the device itself (kill switch file or local control).
     pub local_paused: bool,
+    /// How much of the device's allowance is in use and why it is not using more. Set by
+    /// the coordinator; absent from one that predates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<Capacity>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -218,6 +223,11 @@ pub struct ClusterStatus {
     pub devices: Vec<DeviceView>,
     pub jobs: JobCounts,
     pub open_advice: u64,
+    /// The quota each configured AI account has left before its window resets; empty when no
+    /// account is configured, and absent from a coordinator that predates it (unknown, not
+    /// empty).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<Vec<AccountCapacity>>,
 }
 
 /// POST /v1/control and POST /v1/local/control (local accepts Global scope only).

@@ -269,6 +269,38 @@ Finished and parked jobs are left out; a waiting job nothing holds back is liste
 The scheduler leases a job only to a device whose list contains the job's `argv[0]`, because the agent would refuse it otherwise.
 It is `null` for an agent that predates the field, and such a device is not filtered.
 
+## How much of each device is used
+
+`GET /v1/status` (and the reply of `POST /v1/control`) answers "how much is used, how much is idle, and why" without a `why` call per job.
+Each entry of `devices` carries `capacity`, and the cluster carries `accounts`.
+`idlemax status`, the TUI Devices tab and the dashboard device cards show these fields; none of them works the answer out again.
+It is computed from the same snapshot and the same scheduler checks as `why`, so the two cannot disagree.
+
+```json
+{"devices": [{"info": {"id": "my-laptop"}, "online": true,
+              "capacity": {"state": "cannot_run", "slots_used": 1, "slots_allowed": 2,
+                           "mem_used_mib": 256, "mem_allowed_mib": 1024,
+                           "why": "1 queued job cannot run here: no docker"}}],
+ "accounts": [{"account": "claude-max", "spendable": true, "paused": false, "headroom_pct": 31.0,
+               "window": {"kind": "weekly"}, "resets_at_ms": 1730500000000, "why": null}]}
+```
+
+- `capacity.slots_used` and `mem_used_mib` count every job that holds a slot: running, paused, and leased but not yet started.
+  `mem_used_mib` is the sum of their `mem_mb`.
+- `slots_allowed` and `mem_allowed_mib` are the most the device may hold: used plus what the guard's last verdict says is free.
+  They are `null` while the guard, a pause or the PAUSE file keeps new jobs from starting, because only a verdict that lets jobs start says how many more fit.
+- `state` is a stable snake_case code: `offline`, `held` (the guard or a pause keeps new jobs from starting), `full` (no free slot or no free RAM budget: the device works as hard as it may), `starting` (room and ready work: it leases on its next heartbeat), `too_big` (the smallest ready job needs more RAM than is free), `cannot_run` (no queued job can run on this device as it is configured), `waiting` (queued jobs wait on a retry delay, AI quota, a busy AI account or a pause), `idle` (room and nothing queued).
+- `why` is plain language for the state: `held: memory pressure` uses the same labels as `idlemax report`, `cannot_run` names the cause most queued jobs share (`no docker`, `limited to server`, the same phrases as `devices[].ineligible` in a `why` reply), and `full` says how many ready jobs wait.
+  A device that is `full` or `starting` is doing what it can; `idle`, `cannot_run`, `too_big` and `waiting` are spare capacity with a reason.
+- `accounts` has one entry per configured AI account, in the order of `[[quota.accounts]]`, and is `[]` when none is configured.
+  `spendable` and `why` say whether idlemax may spend the account this minute and, if not, the first reason (an interactive session, a lease, a window used up, the timing rule).
+  `headroom_pct` is a separate question: the percent of quota left to spend above the reserve, in the window that limits the account, whether or not it may be spent now, so a shut account can still show plenty left.
+  It is `null` when that window has no trusted data (no snapshot, stale, or waiting for the first one after a reset).
+  The limiting window (`window`, `resets_at_ms`) is the one that blocks the account: a window with no data first, else the blocking window that resets last; with none blocking, the window with the least headroom.
+  `GET /v1/quota` still has every window in full.
+- Both fields are additive.
+  A coordinator that predates them omits `capacity` and `accounts`, and a client must treat that as "unknown", not as empty: `idlemax status` then shows the running count for a device and no accounts list.
+
 ## What idlemax did
 
 `GET /v1/report` answers "did it help, and what stopped it?" for one period ending now (`idlemax report` prints it, `--json` prints this body).

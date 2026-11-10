@@ -125,14 +125,22 @@ pub(super) fn scheduler_jobs(
     store: &Store,
     paused: &[ControlScope],
 ) -> Result<Vec<Job>, StoreError> {
+    Ok(scheduler_jobs_and_held(store, paused)?.0)
+}
+
+/// `scheduler_jobs`, and the queued jobs a pause holds back that the scheduler never sees, from
+/// one read of the queue (each queued job's spec is parsed once).
+pub(super) fn scheduler_jobs_and_held(
+    store: &Store,
+    paused: &[ControlScope],
+) -> Result<(Vec<Job>, Vec<Job>), StoreError> {
     let mut jobs = store.active_jobs()?;
-    jobs.extend(
-        store
-            .queued_jobs()?
-            .into_iter()
-            .filter(|j| !is_held(paused, j)),
-    );
-    Ok(jobs)
+    let (held, visible): (Vec<Job>, Vec<Job>) = store
+        .queued_jobs()?
+        .into_iter()
+        .partition(|j| is_held(paused, j));
+    jobs.extend(visible);
+    Ok((jobs, held))
 }
 
 /// Leases what the scheduler picks; the store's compare-and-set settles any race.

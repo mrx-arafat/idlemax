@@ -215,5 +215,6 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
         local_paused: r.get(5)?,
         online: false,
         paused: false,
+        capacity: None,
     })
 }
