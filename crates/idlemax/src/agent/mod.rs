@@ -5,6 +5,7 @@ mod advisor_feed;
 pub mod api;
 pub mod client;
 mod event_loop;
+mod keep_awake;
 pub mod metrics;
 pub mod notify;
 mod outbox;

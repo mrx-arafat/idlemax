@@ -872,11 +872,17 @@ idlemax config unset guard.require_ac_power       # back to the default
 ```
 
 `set` checks the value the way startup does and refuses one that would stop the agent from starting, keeps your comments, saves the previous file as `config.toml.idlemax.bak`, and asks the running agent to reload.
-Every `[guard]` key, `agent.command_allowlist` and `agent.notify` apply at once.
+Every `[guard]` key, `agent.command_allowlist`, `agent.notify` and `agent.keep_awake` apply at once.
 The reply says when a setting is read only at start, and which process to restart.
 `set` replaces a list, so name every program the device may run.
 `[[quota.accounts]]` is a list of tables and stays a hand edit.
 Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) and [examples/config.server.toml](examples/config.server.toml) (a server).
+
+On a Mac with a sleep timer shorter than the guard's idle wait, run `idlemax config set agent.keep_awake ac` to let queued work reach idle time while plugged in.
+The display may still sleep.
+The assertion releases when work drains, the charger disconnects, or the resource guard or a pause control holds work.
+`idlemax status` and `idlemax why <job-id>` show a separate `keep-awake: holding (queued work, on AC)` line, or the reason it is not holding, when the agent reports this state.
+Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibition is not implemented yet.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -892,6 +898,7 @@ Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) an
 | `agent.sample_secs`, `agent.heartbeat_secs` | `30`, `30` | guard sample and heartbeat intervals |
 | `agent.advisor_inputs_secs` | `900` | how often the agent sends its `gh` summary and session metadata to the advisor; `0` sends nothing |
 | `agent.notify` | `false` | post a macOS notification with the job name and outcome when a job finishes; ignored on other systems |
+| `agent.keep_awake` | `off` | `ac` prevents idle system sleep on macOS while eligible queued or running work exists on AC power; applies live |
 | `agent.ai_accounts` | `[]` | AI accounts this device may spend |
 | `agent.command_allowlist` | `[]` | exact `argv[0]` values a job may run; bare names resolve on the agent's PATH; empty denies all |
 | `[guard]` | preset values | any key from the guard table above |

@@ -111,10 +111,11 @@ pub(super) fn on_heartbeat(
             log_transition(store, before, job, now)?;
         }
     }
-    let assign = assign_jobs(store, cfg, hb, &paused, now)?;
+    let (assign, queued_work) = assign_jobs(store, cfg, hb, &paused, now)?;
     Ok(HeartbeatReply {
         assign,
         commands: plan.commands,
+        queued_work,
     })
 }
 
@@ -141,7 +142,7 @@ fn assign_jobs(
     hb: &Heartbeat,
     paused: &[ControlScope],
     now: UnixMs,
-) -> Result<Vec<Job>, ApiFailure> {
+) -> Result<(Vec<Job>, bool), ApiFailure> {
     let device = &hb.device.id;
     let jobs = scheduler_jobs(store, paused)?;
     let quota = quota_views(store, cfg, now)?;
@@ -155,6 +156,19 @@ fn assign_jobs(
         paused: !may_assign(paused, device, hb.local_paused),
         paused_accounts: &accounts,
     };
+    // Ask the same scheduler with presence satisfied, keeping all resource and control gates.
+    let mut idle_guard = hb.guard.clone();
+    if idle_guard.user_active {
+        idle_guard.action = idle_guard.resource_action;
+    }
+    let queued_work = !pick(
+        &SchedContext {
+            guard: &idle_guard,
+            ..ctx
+        },
+        &jobs,
+    )
+    .is_empty();
     let mut leased = Vec::new();
     if !ctx.paused {
         for job in &jobs {
@@ -187,7 +201,7 @@ fn assign_jobs(
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(leased)
+    Ok((leased, queued_work))
 }
 
 /// Applies an agent's job update once per (device, seq): the job state, the transition

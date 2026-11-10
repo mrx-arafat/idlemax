@@ -9,6 +9,7 @@
 mod bounded;
 mod coord;
 mod jobs;
+mod keep_awake;
 #[cfg(test)]
 mod refill_tests;
 mod reload;
@@ -98,6 +99,9 @@ pub struct Agent {
     /// Shutting down: every tick kills, nothing starts.
     stopping: bool,
     refill_due: bool,
+    queued_work: bool,
+    assertion: super::keep_awake::Assertion,
+    keep_awake_status: String,
 }
 
 impl Agent {
@@ -127,6 +131,9 @@ impl Agent {
             last_heartbeat_ms: None,
             stopping: false,
             refill_due: false,
+            queued_work: false,
+            assertion: super::keep_awake::Assertion::default(),
+            keep_awake_status: "off (disabled)".into(),
         }
     }
 
@@ -191,6 +198,7 @@ impl Agent {
                 feed_due = false;
                 feed = Some(self.spawn_feed());
             }
+            self.update_keep_awake().await;
             self.publish();
         }
         if let Some(t) = trip {
@@ -204,6 +212,7 @@ impl Agent {
 
     fn publish(&self) {
         self.status.send_replace(LocalStatus {
+            keep_awake: Some(self.keep_awake_status.clone()),
             device: self.device.id.clone(),
             at_ms: now_ms(),
             version: VERSION.to_string(),
@@ -221,6 +230,7 @@ impl Agent {
     async fn shutdown(&mut self) {
         info!("agent stopping: killing running jobs");
         self.stopping = true;
+        self.update_keep_awake().await;
         self.reconcile(&[], &[], &[]).await;
         let deadline = Instant::now() + SHUTDOWN_GRACE;
         while self.state.jobs().next().is_some() && Instant::now() < deadline {

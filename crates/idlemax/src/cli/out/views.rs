@@ -161,6 +161,18 @@ pub fn status(s: &ClusterStatus, now: UnixMs, fields: &[String]) -> Result<Node,
     if let Node::Obj(devices) = lists::devices(s, now, fields)? {
         out.extend(devices.into_iter().filter(|(k, _)| k != "count"));
     }
+    let awake: Vec<_> = s
+        .devices
+        .iter()
+        .filter_map(|d| {
+            d.keep_awake
+                .as_ref()
+                .map(|state| (d.info.id.clone(), Node::str(state)))
+        })
+        .collect();
+    if !awake.is_empty() {
+        out.push(("keep_awake".into(), Node::Obj(awake)));
+    }
     Ok(Node::Obj(out))
 }
 
@@ -190,6 +202,11 @@ pub fn local(result: Option<&str>, s: &LocalStatus, now: UnixMs) -> Node {
         ("kill_switch".to_string(), Node::Bool(s.kill_switch)),
         ("guard".to_string(), Node::Str(guard_summary(&s.guard))),
     ]);
+    fields.extend(
+        s.keep_awake
+            .as_ref()
+            .map(|state| ("keep_awake".into(), Node::str(state))),
+    );
     if s.running.is_empty() {
         fields.push(("running".to_string(), Node::str("0 jobs")));
     } else {
@@ -262,6 +279,18 @@ pub fn why(e: &Explanation) -> Node {
     if e.devices.iter().any(clear) {
         fields.push(("clear_devices".to_string(), names(&clear)));
     }
+    let awake: Vec<_> = e
+        .devices
+        .iter()
+        .filter_map(|d| {
+            d.keep_awake
+                .as_ref()
+                .map(|state| (d.device.clone(), Node::str(state)))
+        })
+        .collect();
+    if !awake.is_empty() {
+        fields.push(("keep_awake".into(), Node::Obj(awake)));
+    }
     Node::Obj(fields)
 }
 
@@ -288,6 +317,7 @@ mod tests {
             ready,
             ineligible: Vec::new(),
             reasons,
+            keep_awake: None,
         };
         let e = Explanation {
             job: 7,

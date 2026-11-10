@@ -50,7 +50,7 @@ impl Agent {
             "config reloaded"
         );
         self.config = new;
-        if report.guard_changed() || allowlist {
+        if report.guard_changed() || allowlist || report.applies("agent.keep_awake") {
             // Take a verdict now, so the new rule shows in the status and can start work at once.
             self.on_sample().await;
         }

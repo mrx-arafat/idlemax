@@ -96,6 +96,8 @@ pub struct AgentConfig {
     pub command_allowlist: Vec<String>,
     /// Send desktop notification on job finish (macOS only, default false).
     pub notify: bool,
+    /// Prevent idle system sleep on AC while this device has useful work (macOS).
+    pub keep_awake: crate::keep_awake::KeepAwake,
 }
 
 impl Default for AgentConfig {
@@ -110,6 +112,7 @@ impl Default for AgentConfig {
             ai_accounts: Vec::new(),
             command_allowlist: Vec::new(),
             notify: false,
+            keep_awake: crate::keep_awake::KeepAwake::Off,
         }
     }
 }

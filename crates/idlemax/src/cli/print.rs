@@ -85,7 +85,13 @@ pub fn status(s: &ClusterStatus, now_ms: UnixMs) -> String {
     } else {
         table(&rows::DEVICE_HEADER, &rows)
     };
-    format!("{}\n\n{devices}", summary(s))
+    let mut text = format!("{}\n\n{devices}", summary(s));
+    for device in &s.devices {
+        if let Some(state) = &device.keep_awake {
+            text.push_str(&format!("\n{} keep-awake: {state}", device.info.id));
+        }
+    }
+    text
 }
 
 pub fn jobs(jobs: &[Job], now_ms: UnixMs) -> String {
@@ -190,6 +196,9 @@ pub fn local_status(result: Option<&str>, s: &LocalStatus, now_ms: UnixMs) -> St
     // The summary picks the reason at the verdict's level and cuts it, so list every one in full.
     for reason in &s.guard.reasons {
         out.push_str(&format!("\n  {reason}"));
+    }
+    if let Some(state) = &s.keep_awake {
+        out.push_str(&format!("\nkeep-awake: {state}"));
     }
     out.push_str(&format!("\nrunning jobs: {}", s.running.len()));
     for j in &s.running {

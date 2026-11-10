@@ -12,7 +12,11 @@ use super::{Config, ConfigError};
 /// Settings the agent applies on reload, besides every `guard.*` key. Anything not listed here
 /// or under `coordinator.` and `advisor.` is read at agent start, so a setting added later is
 /// reported as needing a restart until someone makes it live.
-const LIVE: [&str; 2] = ["agent.command_allowlist", "agent.notify"];
+const LIVE: [&str; 3] = [
+    "agent.command_allowlist",
+    "agent.notify",
+    "agent.keep_awake",
+];
 
 /// What a reload did, by setting name (`section.name`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +89,20 @@ mod tests {
 
     fn config(text: &str) -> Config {
         Config::parse(text).unwrap()
+    }
+
+    #[test]
+    fn keep_awake_defaults_off_and_switches_live_with_validated_values() {
+        use crate::keep_awake::KeepAwake;
+
+        let old = config("");
+        assert_eq!(old.agent.keep_awake, KeepAwake::Off);
+        let new = config("[agent]\nkeep_awake = \"ac\"\n");
+        assert_eq!(new.agent.keep_awake, KeepAwake::Ac);
+        let report = plan_reload(&old, &new).unwrap();
+        assert_eq!(report.applied, ["agent.keep_awake"]);
+        assert!(report.restart_agent.is_empty());
+        assert!(Config::parse("[agent]\nkeep_awake = \"always\"\n").is_err());
     }
 
     #[test]

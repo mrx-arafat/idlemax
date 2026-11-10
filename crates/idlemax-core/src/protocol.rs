@@ -29,6 +29,9 @@ pub struct RunningJob {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Heartbeat {
+    /// Actual idle-sleep assertion state, independent of the guard verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_awake: Option<String>,
     pub device: DeviceInfo,
     pub metrics: MetricsSnapshot,
     pub guard: GuardDecision,
@@ -110,6 +113,9 @@ pub struct HeartbeatReply {
     /// Newly leased jobs to start now.
     pub assign: Vec<Job>,
     pub commands: Vec<AgentCommand>,
+    /// Eligible queued work with user-idle treated as met; all other checks still apply.
+    #[serde(default)]
+    pub queued_work: bool,
 }
 
 /// POST /v1/agent/job-update, on every status change of a leased job.
@@ -155,6 +161,9 @@ pub struct JobUpdateReply {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DeviceView {
+    /// Actual idle-sleep assertion state as of the last heartbeat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_awake: Option<String>,
     pub info: DeviceInfo,
     pub online: bool,
     pub last_seen_ms: UnixMs,
@@ -224,6 +233,9 @@ pub struct ControlRequest {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalStatus {
+    /// Actual idle-sleep assertion state, independent of the guard verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_awake: Option<String>,
     pub device: DeviceId,
     pub at_ms: UnixMs,
     pub version: String,

@@ -39,6 +39,7 @@ async fn heartbeat(State(c): State<Coordinator>, Json(h): Json<Heartbeat>) -> Js
     Json(HeartbeatReply {
         assign,
         commands: Vec::new(),
+        queued_work: false,
     })
 }
 

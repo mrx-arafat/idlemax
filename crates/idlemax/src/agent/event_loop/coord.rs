@@ -37,6 +37,7 @@ impl Agent {
     }
 
     async fn apply_reply(&mut self, reply: HeartbeatReply) {
+        self.queued_work = reply.queued_work;
         if !reply.assign.is_empty() {
             // Re-check the kill switch at start time, not only once per sample.
             let present = tokio::fs::try_exists(&self.pause_file)
@@ -74,6 +75,7 @@ impl Agent {
 
     fn heartbeat(&self) -> Heartbeat {
         Heartbeat {
+            keep_awake: Some(self.keep_awake_status.clone()),
             device: self.device.clone(),
             metrics: self.reading.metrics.clone(),
             guard: self.decision.clone(),

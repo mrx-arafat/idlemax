@@ -6,6 +6,65 @@ use idlemax_core::types::{GuardAction, GuardDecision};
 use super::{local_status, summary};
 
 #[test]
+fn keep_awake_is_a_separate_status_line_only_when_reported() {
+    use crate::cli::out::{toon::encode, views};
+    use idlemax_core::explain::{DeviceExplanation, ExplainState, Explanation};
+    use idlemax_core::protocol::DeviceView;
+
+    let note = "holding (queued work, on AC)";
+    let mut status = ClusterStatus {
+        devices: vec![DeviceView {
+            keep_awake: Some(note.into()),
+            info: idlemax_core::types::DeviceInfo {
+                id: "mac".into(),
+                ..Default::default()
+            },
+            guard: Some(GuardDecision::default()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut why = Explanation {
+        job: 1,
+        name: "waiting".into(),
+        status: idlemax_core::types::JobStatus::Queued,
+        state: ExplainState::Blocked,
+        summary: "waiting".into(),
+        reasons: vec![],
+        at_ms: 0,
+        devices: vec![DeviceExplanation {
+            keep_awake: Some(note.into()),
+            device: "mac".into(),
+            online: true,
+            last_seen_ms: 0,
+            ready: false,
+            ineligible: vec![],
+            reasons: vec![],
+        }],
+    };
+    assert!(super::status(&status, 0).contains(&format!("\nmac keep-awake: {note}")));
+    assert!(crate::cli::why::render(&why).contains(&format!("\n  keep-awake: {note}")));
+    assert!(encode(&views::status(&status, 0, &[]).unwrap()).contains(note));
+    assert!(encode(&views::why(&why)).contains(note));
+    assert_eq!(
+        crate::cli::rows::guard_summary(status.devices[0].guard.as_ref().unwrap()),
+        "hold"
+    );
+    status.devices[0].keep_awake = None;
+    why.devices[0].keep_awake = None;
+    assert!(!super::status(&status, 0).contains("keep-awake"));
+    assert!(!crate::cli::why::render(&why).contains("keep-awake"));
+    assert!(!encode(&views::status(&status, 0, &[]).unwrap()).contains("keep_awake"));
+    assert!(!encode(&views::why(&why)).contains("keep_awake"));
+    let old: LocalStatus = serde_json::from_str("{}").unwrap();
+    assert!(old.keep_awake.is_none());
+    assert!(serde_json::to_value(old)
+        .unwrap()
+        .get("keep_awake")
+        .is_none());
+}
+
+#[test]
 fn local_status_prints_the_control_result_before_the_state() {
     let s = LocalStatus {
         device: "mac".into(),

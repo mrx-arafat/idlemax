@@ -24,6 +24,126 @@ use crate::state::now_ms;
 
 const TOKEN: &str = "coord-t0ken";
 
+#[tokio::test]
+async fn keep_awake_is_typed_metadata_in_status_and_why_not_a_guard_reason() {
+    let api = Api::start().await;
+    let job: Job = api
+        .post(
+            "/v1/jobs",
+            &JobSpec {
+                name: "waiting".into(),
+                command: vec!["sleep".into(), "30".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let mut hb = mac_heartbeat(Vec::new());
+    hb.guard.action = GuardAction::Hold;
+    let mut wire = serde_json::to_value(hb).unwrap();
+    wire["keep_awake"] = json!("holding (queued work, on AC)");
+    assert_eq!(
+        api.post("/v1/agent/heartbeat", &wire).await.status(),
+        StatusCode::OK
+    );
+    let status: serde_json::Value = api
+        .get_as("/v1/status", "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        status["devices"][0]["keep_awake"],
+        "holding (queued work, on AC)"
+    );
+    assert_eq!(status["devices"][0]["guard"]["reasons"], json!([]));
+    let why: serde_json::Value = api
+        .get_as(&format!("/v1/jobs/{}/why", job.id), "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        why["devices"][0]["keep_awake"],
+        "holding (queued work, on AC)"
+    );
+    assert!(!why["devices"][0]["reasons"]
+        .to_string()
+        .contains("keep-awake"));
+    wire.as_object_mut().unwrap().remove("keep_awake");
+    assert_eq!(
+        api.post("/v1/agent/heartbeat", &wire).await.status(),
+        StatusCode::OK
+    );
+    let status: serde_json::Value = api
+        .get_as("/v1/status", "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(status["devices"][0].get("keep_awake").is_none());
+}
+
+#[tokio::test]
+async fn queued_work_ignores_only_user_presence_and_preserves_scheduler_restrictions() {
+    let api = Api::start().await;
+    let spec = JobSpec {
+        name: "waiting-for-idle".into(),
+        command: vec!["/bin/sleep".into(), "30".into()],
+        mem_mb: 64,
+        ..Default::default()
+    };
+    assert_eq!(
+        api.post("/v1/jobs", &spec).await.status(),
+        StatusCode::CREATED
+    );
+    let mut hb = mac_heartbeat(Vec::new());
+    hb.device.command_allowlist = Some(vec!["/bin/sleep".into()]);
+    hb.guard.action = GuardAction::Pause;
+    hb.guard.user_active = true;
+    let reply: HeartbeatReply = api
+        .post("/v1/agent/heartbeat", &hb)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(reply.assign.is_empty());
+    assert!(reply.queued_work);
+    hb.device.command_allowlist = Some(Vec::new());
+    let reply: HeartbeatReply = api
+        .post("/v1/agent/heartbeat", &hb)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(!reply.queued_work);
+    hb.device.command_allowlist = Some(vec!["/bin/sleep".into()]);
+    hb.guard.resource_action = GuardAction::Hold;
+    let reply: HeartbeatReply = api
+        .post("/v1/agent/heartbeat", &hb)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(!reply.queued_work);
+    hb.guard.resource_action = GuardAction::Run {
+        slots: 2,
+        mem_mib: 1024,
+    };
+    hb.local_paused = true;
+    let reply: HeartbeatReply = api
+        .post("/v1/agent/heartbeat", &hb)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(!reply.queued_work);
+    let old: HeartbeatReply = serde_json::from_str(r#"{"assign":[],"commands":[]}"#).unwrap();
+    assert!(!old.queued_work);
+}
+
 struct Api {
     base: String,
     http: reqwest::Client,

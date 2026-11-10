@@ -83,7 +83,7 @@ It keeps working while the coordinator is down.
 It returns 200 once applied, 202 when the agent has not applied it within 5 s, 400 for a non-global scope or `cancel`, and 503 when the agent loop is gone.
 Creating `$IDLEMAX_HOME/PAUSE` pauses every job on the device without any API call; deleting it resumes at once.
 
-`POST /v1/local/reload` makes the agent re-read `config.toml` and apply what it can without a restart: every `[guard]` key, `agent.command_allowlist` and `agent.notify`.
+`POST /v1/local/reload` makes the agent re-read `config.toml` and apply what it can without a restart: every `[guard]` key, `agent.command_allowlist`, `agent.notify` and `agent.keep_awake`.
 It takes a fresh sample at once, so the new rule shows in `LocalStatus.guard` and can start work right away.
 The reply is `{"applied": [...], "restart_agent": [...], "restart_coordinator": [...]}`, each a list of `section.name` settings that changed in the file since the agent last read it.
 `restart_agent` lists settings the agent reads only when it starts (for example `agent.sample_secs`, `agent.profile`, `agent.listen`, `quota.accounts`); `restart_coordinator` lists `coordinator.*` and `advisor.*`.
@@ -136,6 +136,14 @@ A file that does not parse or validate is 400 with the reason, and the agent kee
 
 The agent posts a `Heartbeat` every `agent.heartbeat_secs` (default 30 s).
 The reply's `assign` holds newly leased jobs to start now.
+The additive `queued_work` boolean reports whether this device has eligible queued work with only the user-idle requirement treated as met.
+It uses the same scheduler as assignment, preserving resource budgets, pause controls, device restrictions, command allowlists, retry backoff and quota checks.
+An older agent ignores it; an older coordinator omits it, which newer agents treat as `false`.
+The opt-in macOS `agent.keep_awake = "ac"` uses this signal while waiting for user idle, or holds for running work, only on known AC power with a clear resource guard.
+`Heartbeat`, `LocalStatus`, `DeviceView` and `DeviceExplanation` have an optional `keep_awake` string for the actual assertion state, separate from guard reasons and blockers.
+Missing values default to `None` and are omitted when serialized; older agents and coordinators remain compatible.
+The coordinator preserves it inside the existing device info JSON, without a schema migration.
+`idlemax status` and `idlemax why` print it separately only when present, as of the last heartbeat; `idlemax local status` reports the current local value.
 A lease lasts `coordinator.lease_secs` (default 120 s) and is renewed by every heartbeat that reports the job in `running`.
 An expired lease re-queues the job with `not_before_ms` backoff; after `max_attempts` it is `parked`.
 AI jobs (`cost = "ai"`) get one attempt and never retry automatically.

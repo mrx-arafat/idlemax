@@ -4,14 +4,24 @@ use std::collections::BTreeMap;
 
 use idlemax_core::control::{device_online, offline_transition};
 use idlemax_core::protocol::{DeviceView, Heartbeat};
-use idlemax_core::types::{ControlScope, EventKind, UnixMs};
+use idlemax_core::types::{ControlScope, DeviceInfo, EventKind, UnixMs};
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::{Deserialize, Serialize};
 
 use super::{
     enum_text, json_col, json_text, opt_json_col, u64_to_sql, Store, StoreError, StoreResult,
 };
 
 const MINUTE_MS: i64 = 60_000;
+
+/// The existing info JSON stays readable by older coordinators as plain DeviceInfo.
+#[derive(Serialize, Deserialize)]
+struct StoredDevice {
+    #[serde(flatten)]
+    info: DeviceInfo,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    keep_awake: Option<String>,
+}
 
 const UPSERT_DEVICE: &str = "
 INSERT INTO devices (id, info, first_seen_ms, last_seen_ms, metrics, guard, running,
@@ -73,7 +83,10 @@ impl Store {
         }
         tx.prepare_cached(UPSERT_DEVICE)?.execute(params![
             id,
-            json_text(&hb.device)?,
+            json_text(&StoredDevice {
+                info: hb.device.clone(),
+                keep_awake: hb.keep_awake.clone()
+            })?,
             now,
             json_text(&hb.metrics)?,
             json_text(&hb.guard)?,
@@ -181,8 +194,10 @@ fn fold_minute(conn: &Connection, hb: &Heartbeat, now: UnixMs) -> StoreResult<()
 }
 
 fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
+    let stored: StoredDevice = json_col(r, 0)?;
     Ok(DeviceView {
-        info: json_col(r, 0)?,
+        info: stored.info,
+        keep_awake: stored.keep_awake,
         last_seen_ms: r.get(1)?,
         metrics: opt_json_col(r, 2)?,
         guard: opt_json_col(r, 3)?,

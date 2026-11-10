@@ -246,7 +246,16 @@ fn guard_reasons_carry_the_config_key_and_slots_and_ram_are_counted() {
     let decision = guard.evaluate(&on_battery, &[], false, false);
     let mut w = World::new(queued(1));
     w.devices[0].guard = Some(decision);
+    w.devices[0].keep_awake = Some("not holding (on battery)".into());
     let e = w.explain();
+    assert_eq!(
+        e.devices[0].keep_awake.as_deref(),
+        Some("not holding (on battery)")
+    );
+    assert!(!e.devices[0]
+        .reasons
+        .iter()
+        .any(|r| r.message.contains("keep-awake:")));
     let battery = find(&e.devices[0].reasons, ReasonKind::Guard);
     assert!(battery.message.starts_with("on battery"), "{battery:?}");
     assert_eq!(

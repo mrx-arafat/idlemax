@@ -94,6 +94,9 @@ pub struct Reason {
 /// Reasons that apply to one device only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeviceExplanation {
+    /// Actual idle-sleep assertion state as of the last heartbeat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_awake: Option<String>,
     pub device: DeviceId,
     pub online: bool,
     /// The verdicts below are as of this heartbeat (guard, running jobs, budget).
@@ -235,6 +238,7 @@ fn explain_device(
         reasons.insert(0, reasons::offline(dv, input.now_ms));
     }
     DeviceExplanation {
+        keep_awake: dv.keep_awake.clone(),
         device: dv.info.id.clone(),
         online: dv.online,
         last_seen_ms: dv.last_seen_ms,
