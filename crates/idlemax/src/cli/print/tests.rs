@@ -119,3 +119,102 @@ fn the_summary_counts_failed_killed_and_parked_jobs_when_there_are_any() {
     let quiet = line(JobCounts::default());
     assert!(quiet.contains("jobs: 0 running, 0 queued |"), "{quiet}");
 }
+
+#[test]
+fn status_shows_what_is_used_what_is_idle_and_why_per_device_and_per_account() {
+    use crate::cli::out::{toon::encode, views};
+    use idlemax_core::capacity::{AccountCapacity, Capacity, CapacityState};
+    use idlemax_core::protocol::DeviceView;
+    use idlemax_core::types::{DeviceInfo, QuotaWindowKind};
+
+    const NOW: i64 = 1_800_000_000_000;
+    let mut status = ClusterStatus {
+        devices: vec![DeviceView {
+            info: DeviceInfo {
+                id: "mac".into(),
+                ..Default::default()
+            },
+            online: true,
+            capacity: Some(Capacity {
+                state: CapacityState::CannotRun,
+                slots_used: 2,
+                slots_allowed: Some(4),
+                mem_used_mib: 1024,
+                mem_allowed_mib: Some(4096),
+                why: "2 queued jobs cannot run here: no git".into(),
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    status.accounts = Some(Vec::new());
+    let none = encode(&views::status(&status, NOW, &[]).unwrap());
+    assert!(
+        none.contains("accounts: \"0 AI accounts configured"),
+        "{none}"
+    );
+    status.accounts = Some(vec![AccountCapacity {
+        account: "claude".into(),
+        headroom_pct: Some(31.0),
+        spendable: true,
+        window: Some(QuotaWindowKind::Weekly),
+        resets_at_ms: Some(NOW + 3 * 3_600_000),
+        ..Default::default()
+    }]);
+
+    let table = super::status(&status, NOW);
+    for want in ["2/4", "1.0G/4.0G", "2 queued jobs cannot run here: no git"] {
+        assert!(table.contains(want), "{want} in\n{table}");
+    }
+    let claude = ["claude", "yes", "31%", "in", "3h00m", "week", "-"];
+    let listed = |l: &str| l.split_whitespace().eq(claude);
+    assert!(table.lines().any(listed), "{table}");
+
+    let toon = encode(&views::status(&status, NOW, &[]).unwrap());
+    assert!(
+        toon.contains("devices[1]{id,state,slots,ram,why}:"),
+        "{toon}"
+    );
+    assert!(
+        toon.contains(r#"mac,online,2/4,1.0G/4.0G,"2 queued jobs cannot run here: no git""#),
+        "{toon}"
+    );
+    assert!(
+        toon.contains("accounts[1]{account,spend,left,resets,window,why}:")
+            && toon.contains("claude,yes,31%,in 3h00m,week,"),
+        "{toon}"
+    );
+}
+
+#[test]
+fn status_fields_pick_device_columns_and_a_missing_accounts_list_is_not_an_empty_one() {
+    use crate::cli::out::{toon::encode, views};
+
+    let status = |accounts: &str| -> ClusterStatus {
+        let json = format!(r#"{{"devices":[{{"info":{{"id":"mac"}},"online":true}}]{accounts}}}"#);
+        serde_json::from_str(&json).unwrap()
+    };
+    // `--fields guard,jobs` names device columns; the accounts list must not reject them.
+    for fields in [vec!["guard", "jobs"], vec!["all"]] {
+        let fields: Vec<String> = fields.into_iter().map(String::from).collect();
+        for accounts in ["", r#","accounts":[]"#] {
+            let shown = views::status(&status(accounts), 0, &fields);
+            assert!(
+                shown.is_ok(),
+                "{fields:?} with {accounts:?}: {:?}",
+                shown.err()
+            );
+        }
+    }
+    let wide = ["guard".to_string(), "jobs".to_string()];
+    assert!(encode(&views::status(&status(""), 0, &wide).unwrap()).contains("guard"));
+
+    // A coordinator that predates the field sends none: say nothing, not "none configured".
+    let old = status("");
+    assert!(!encode(&views::status(&old, 0, &[]).unwrap()).contains("accounts"));
+    assert!(!super::status(&old, 0).contains("AI accounts"));
+    // One that sends an empty list says none are configured.
+    let none = status(r#","accounts":[]"#);
+    assert!(encode(&views::status(&none, 0, &[]).unwrap()).contains("0 AI accounts configured"));
+    assert!(super::status(&none, 0).contains("no AI accounts configured"));
+}

@@ -3,9 +3,9 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  DEVICE                  STATE   GUARD                       CPU  LOAD  JOBS │
-│> ビルドサーバー-東京-01  online  run 1: すべて正常です       12%  0.80  1    │
-│  mac-🚀-dev              online  pause: バッテリー残量が 2…  -    -     0    │
+│  DEVICE                 STATE   SLOTS  RAM        WHY                    CPU │
+│> ビルドサーバー-東京-…  online  1/2    512M/2.5G  1 queued job cannot …  12% │
+│  mac-🚀-dev             online  0      0M         held: battery          -   │
 │                                                                              │
 │                                                                              │
 │                                                                              │

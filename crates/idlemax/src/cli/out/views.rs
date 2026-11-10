@@ -158,8 +158,15 @@ pub fn job_total(c: &JobCounts, filter: Option<JobStatus>) -> u64 {
 /// `idlemax status`: the summary, then the devices.
 pub fn status(s: &ClusterStatus, now: UnixMs, fields: &[String]) -> Result<Node, CliError> {
     let mut out = summary(s);
-    if let Node::Obj(devices) = lists::devices(s, now, fields)? {
-        out.extend(devices.into_iter().filter(|(k, _)| k != "count"));
+    // An older coordinator sends no accounts at all: that is unknown, not "none configured".
+    let accounts = s.accounts.as_deref().map(|a| lists::accounts(a, now));
+    for list in [Some(lists::devices(s, now, fields)), accounts]
+        .into_iter()
+        .flatten()
+    {
+        if let Node::Obj(list) = list? {
+            out.extend(list.into_iter().filter(|(k, _)| k != "count"));
+        }
     }
     let awake: Vec<_> = s
         .devices

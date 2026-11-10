@@ -23,9 +23,9 @@ pub struct Spec {
 
 pub const DEVICES: Spec = Spec {
     header: &rows::DEVICE_HEADER,
-    flex: &[0, 2],
-    drop: &[9, 7, 8, 3, 6, 5], // POWER, SWAP, DISK, IDLE, MEM FREE, LOAD
-    min_width: 20, // the guard reason is the point of this tab, so it outranks the metrics
+    flex: &[0, 4],
+    drop: &[11, 9, 10, 5, 8, 7, 6], // POWER, SWAP, DISK, IDLE, MEM FREE, LOAD, CPU
+    min_width: 20, // why a device is not busier is the point of this tab, so it outranks the metrics
     empty: "No device has sent a heartbeat yet. Start `idlemax agent` on a device.",
 };
 /// `rows::JOB_HEADER` with the last column renamed: a waiting job shows why instead of a result.

@@ -10,10 +10,10 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │ h)                                                                           │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  DEVICE              STATE             GUARD               CPU  JOBS         │
-│> macbook-pro-arafat  online            run 2: all signal…  23%  1            │
-│  hetzner-fsn1-buil…  local-paused      pause: load 1m 9.…  96%  1 (1 paused) │
-│  old-mac-mini        offline 2d1h ago  -                   -    0            │
+│  DEVICE               STATE             SLOTS  RAM        WHY                │
+│> macbook-pro-arafat   online            1/3    512M/4.5G  starting 1 queued… │
+│  hetzner-fsn1-build…  local-paused      1      512M       held: a local pau… │
+│  old-mac-mini         offline 2d1h ago  -      -          -                  │
 │                                                                              │
 │                                                                              │
 │                                                                              │

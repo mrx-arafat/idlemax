@@ -11,7 +11,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 
 ## Commands
 
-- `idlemax status`: see the cluster, its devices and the guard verdict of each
+- `idlemax status`: see the cluster, and per device the slots and RAM in use and why it is not using more
 - `idlemax report`: see what idlemax did today and this week, and what held it back
 - `idlemax jobs --status <status>`: list jobs, for example failed or parked
 - `idlemax job add <spec.toml>`: queue a job from a TOML spec, or a command after `--`

@@ -91,7 +91,23 @@ pub fn status(s: &ClusterStatus, now_ms: UnixMs) -> String {
             text.push_str(&format!("\n{} keep-awake: {state}", device.info.id));
         }
     }
+    if let Some(list) = &s.accounts {
+        text.push_str("\n\n");
+        text.push_str(&accounts(list, now_ms));
+    }
     text
+}
+
+/// The AI accounts' quota left before their windows reset, or why there is none to show.
+fn accounts(list: &[idlemax_core::capacity::AccountCapacity], now_ms: UnixMs) -> String {
+    if list.is_empty() {
+        return "no AI accounts configured ([[quota.accounts]] in config.toml)".into();
+    }
+    let rows: Vec<_> = list
+        .iter()
+        .map(|a| rows::account_cells(a, now_ms))
+        .collect();
+    table(&rows::ACCOUNT_HEADER, &rows)
 }
 
 pub fn jobs(jobs: &[Job], now_ms: UnixMs) -> String {

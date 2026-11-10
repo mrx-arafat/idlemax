@@ -1,19 +1,22 @@
 //! Delivery: turns API views into display cells, shared by CLI tables and the TUI.
 
+use idlemax_core::capacity::{AccountCapacity, CapacityState};
 use idlemax_core::protocol::DeviceView;
 use idlemax_core::quota::QuotaView;
 use idlemax_core::schedule::{Decision, RunResult, ScheduleView};
 use idlemax_core::types::{
-    Event, GuardAction, GuardDecision, Job, JobStatus, QuotaWindowKind, Recommendation, UnixMs,
+    Event, GuardAction, GuardDecision, Job, QuotaWindowKind, Recommendation, UnixMs,
 };
 use serde::Serialize;
 
-pub const DEVICE_HEADER: [&str; 11] = [
-    "DEVICE", "STATE", "GUARD", "IDLE", "CPU", "LOAD", "MEM FREE", "SWAP", "DISK", "POWER", "JOBS",
+pub const DEVICE_HEADER: [&str; 12] = [
+    "DEVICE", "STATE", "SLOTS", "RAM", "WHY", "IDLE", "CPU", "LOAD", "MEM FREE", "SWAP", "DISK",
+    "POWER",
 ];
 pub const JOB_HEADER: [&str; 9] = [
     "ID", "NAME", "STATUS", "DEVICE", "COST", "PRIO", "TRIES", "AGE", "RESULT",
 ];
+pub const ACCOUNT_HEADER: [&str; 6] = ["ACCOUNT", "SPEND", "LEFT", "RESETS", "WINDOW", "WHY"];
 pub const QUOTA_HEADER: [&str; 8] = [
     "ACCOUNT", "WINDOW", "USED", "RESERVE", "HEADROOM", "RESETS", "SPEND", "WHY",
 ];
@@ -23,15 +26,13 @@ pub const SCHEDULE_HEADER: [&str; 5] = ["ID", "NAME", "EVERY", "STATE", "LAST RE
 
 pub fn device_cells(d: &DeviceView, now_ms: UnixMs) -> Vec<String> {
     let m = d.metrics.as_ref();
-    let paused_jobs = d
-        .running
-        .iter()
-        .filter(|j| j.status == JobStatus::Paused)
-        .count();
+    let (slots, ram, why) = capacity_cells(d);
     vec![
         d.info.id.clone(),
         device_state(d, now_ms),
-        d.guard.as_ref().map_or_else(|| "-".into(), guard_summary),
+        slots,
+        ram,
+        why,
         opt(m.and_then(|m| m.user_idle_secs), |s| {
             dur(i64::try_from(s).unwrap_or(i64::MAX).saturating_mul(1000))
         }),
@@ -43,10 +44,55 @@ pub fn device_cells(d: &DeviceView, now_ms: UnixMs) -> Vec<String> {
         opt(m, |m| gib(m.swap_used_bytes)),
         opt(m, |m| gib(m.disk_free_bytes)),
         opt(m, power),
-        match paused_jobs {
-            0 => d.running.len().to_string(),
-            p => format!("{} ({p} paused)", d.running.len()),
-        },
+    ]
+}
+
+/// Slots, RAM budget and the reason it is not using more, as the coordinator worked them
+/// out. A coordinator that predates `capacity` leaves only the running count.
+fn capacity_cells(d: &DeviceView) -> (String, String, String) {
+    let Some(c) = &d.capacity else {
+        return (d.running.len().to_string(), "-".into(), "-".into());
+    };
+    if c.state == CapacityState::Offline {
+        return ("-".into(), "-".into(), "-".into());
+    }
+    let slots = match c.slots_allowed {
+        Some(allowed) => format!("{}/{allowed}", c.slots_used),
+        None => c.slots_used.to_string(),
+    };
+    let ram = match c.mem_allowed_mib {
+        Some(allowed) => format!("{}/{}", mib(c.mem_used_mib), mib(allowed)),
+        None => mib(c.mem_used_mib),
+    };
+    (slots, ram, c.why.clone())
+}
+
+/// "512M", "1.5G".
+fn mib(v: u64) -> String {
+    if v >= 1024 {
+        format!("{:.1}G", v as f64 / 1024.0)
+    } else {
+        format!("{v}M")
+    }
+}
+
+/// An AI account's quota: whether idlemax may spend it, how much, and until when.
+pub fn account_cells(a: &AccountCapacity, now_ms: UnixMs) -> Vec<String> {
+    let spend = match (a.paused, a.spendable) {
+        (true, _) => "paused",
+        (false, true) => "yes",
+        (false, false) => "no",
+    };
+    vec![
+        a.account.clone(),
+        spend.into(),
+        a.headroom_pct.map_or_else(|| "-".into(), pct),
+        a.resets_at_ms
+            .map_or_else(|| "-".into(), |t| rel(t, now_ms)),
+        a.window.map_or_else(|| "-".into(), window_label),
+        a.why
+            .as_deref()
+            .map_or_else(|| "-".into(), |w| trunc(w, 60)),
     ]
 }
 
@@ -284,7 +330,7 @@ pub fn trunc(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use idlemax_core::schedule::{Decision, RunResult, Schedule};
-    use idlemax_core::types::JobSpec;
+    use idlemax_core::types::{JobSpec, JobStatus};
 
     use super::*;
 

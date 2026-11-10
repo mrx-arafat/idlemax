@@ -18,7 +18,7 @@ pub const DESCRIPTION: &str =
 pub const COMMANDS: &[(&str, &str)] = &[
     (
         "idlemax status",
-        "see the cluster, its devices and the guard verdict of each",
+        "see the cluster, and per device the slots and RAM in use and why it is not using more",
     ),
     (
         "idlemax report",

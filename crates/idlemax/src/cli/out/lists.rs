@@ -2,6 +2,7 @@
 //! schemas), `--fields` adds more, a total says how much is not shown, and an empty list
 //! says so in words instead of printing nothing.
 
+use idlemax_core::capacity::AccountCapacity;
 use idlemax_core::job_run::inbox::InboxEntry;
 use idlemax_core::protocol::{ClusterStatus, DeviceView};
 use idlemax_core::quota::QuotaView;
@@ -145,21 +146,49 @@ pub fn jobs(
     Ok(list("jobs", &empty, list_of.len(), total, table))
 }
 
+/// The columns of `rows::device_cells`, in order; `guard` and `jobs` follow them.
+const DEVICE_CELLS: &[&str] = &[
+    "id", "state", "slots", "ram", "why", "idle", "cpu", "load", "mem_free", "swap", "disk",
+    "power",
+];
 const DEVICE_NAMES: &[&str] = &[
-    "id", "state", "guard", "idle", "cpu", "load", "mem_free", "swap", "disk", "power", "jobs",
+    "id", "state", "slots", "ram", "why", "idle", "cpu", "load", "mem_free", "swap", "disk",
+    "power", "guard", "jobs",
 ];
 const DEVICES: Catalog = Catalog {
     name: "devices",
     all: DEVICE_NAMES,
-    default: &["id", "state", "guard", "jobs"],
+    default: &["id", "state", "slots", "ram", "why"],
 };
 
 pub fn devices(s: &ClusterStatus, now: UnixMs, extra: &[String]) -> Result<Node, CliError> {
     let table = DEVICES.table(&s.devices, extra, |d: &DeviceView| {
-        named(DEVICE_NAMES, rows::device_cells(d, now))
+        let mut row = named(DEVICE_CELLS, rows::device_cells(d, now));
+        let guard = d.guard.as_ref().map(rows::guard_summary);
+        row.push(("guard", guard.map_or(Node::Null, Node::Str)));
+        row.push(("jobs", Node::Uint(d.running.len() as u64)));
+        row
     })?;
     let empty = "0 devices have sent a heartbeat yet";
     Ok(list("devices", empty, s.devices.len(), None, table))
+}
+
+const ACCOUNT_NAMES: &[&str] = &["account", "spend", "left", "resets", "window", "why"];
+/// The list is short, so every column shows and `--fields` (which names device columns on
+/// `status`) has nothing to add.
+const ACCOUNTS: Catalog = Catalog {
+    name: "accounts",
+    all: ACCOUNT_NAMES,
+    default: ACCOUNT_NAMES,
+};
+
+/// The quota each AI account has left before its window resets.
+pub fn accounts(list_of: &[AccountCapacity], now: UnixMs) -> Result<Node, CliError> {
+    let table = ACCOUNTS.table(list_of, &[], |a| {
+        named(ACCOUNT_NAMES, rows::account_cells(a, now))
+    })?;
+    let empty = "0 AI accounts configured ([[quota.accounts]] in config.toml)";
+    Ok(list("accounts", empty, list_of.len(), None, table))
 }
 
 const QUOTA_NAMES: &[&str] = &[

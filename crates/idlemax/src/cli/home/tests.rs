@@ -128,7 +128,7 @@ quota[2]{account,spendable}:
 help[4]:
   Run `idlemax jobs --status failed` to see the 2 failed
   Run `idlemax advise` to review 2 open
-  Run `idlemax status` to see the cluster, its devices and the guard verdict of each
+  Run `idlemax status` to see the cluster, and per device the slots and RAM in use and why it is not using more
   Run `idlemax report` to see what idlemax did today and this week, and what held it back";
     assert_eq!(render(&h, Mode::Full), full);
 

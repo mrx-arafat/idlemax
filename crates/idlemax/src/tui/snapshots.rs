@@ -37,7 +37,9 @@ fn healthy_mac() -> Value {
                     "on_ac_power": true, "battery_pct": 87.0},
         "guard": {"action": {"kind": "run", "slots": 2, "mem_mib": 4096},
                   "reasons": ["run: all signals healthy"]},
-        "running": [{"id": 41, "name": "index-refresh", "status": "running"}]
+        "running": [{"id": 41, "name": "index-refresh", "status": "running"}],
+        "capacity": {"state": "starting", "slots_used": 1, "slots_allowed": 3, "mem_used_mib": 512,
+                     "mem_allowed_mib": 4608, "why": "starting 1 queued job on the next heartbeat"}
     })
 }
 
@@ -50,13 +52,16 @@ fn loaded_server() -> Value {
                     "disk_free_bytes": 35_000_000_000u64, "on_ac_power": null},
         "guard": {"action": {"kind": "pause"},
                   "reasons": ["pause: load 1m 9.40 is above 8.00 on 8 cores for 3 minutes in a row"]},
-        "running": [{"id": 43, "name": "kb-refresh", "status": "paused"}]
+        "running": [{"id": 43, "name": "kb-refresh", "status": "paused"}],
+        "capacity": {"state": "held", "slots_used": 1, "slots_allowed": null, "mem_used_mib": 512,
+                     "mem_allowed_mib": null, "why": "held: a local pause"}
     })
 }
 
 fn offline_mini() -> Value {
     json!({"info": {"id": "old-mac-mini", "os": "macos"}, "online": false,
-           "last_seen_ms": NOW - 49 * HOUR})
+           "last_seen_ms": NOW - 49 * HOUR,
+           "capacity": {"state": "offline", "slots_used": 0, "mem_used_mib": 0, "why": "offline"}})
 }
 
 fn job(id: i64, name: &str, status: &str, extra: Value) -> Value {
@@ -384,9 +389,12 @@ fn wide_characters() -> Snapshot {
             {"info": {"id": "ビルドサーバー-東京-01", "os": "linux"}, "online": true, "last_seen_ms": NOW - 3_000,
              "metrics": {"cpu_busy_pct": 12.0, "load_avg_1m": 0.8, "mem_free_pct": 60.0, "mem_available_bytes": 9_000_000_000u64},
              "guard": {"action": {"kind": "run", "slots": 1, "mem_mib": 2048}, "reasons": ["run: すべて正常です"]},
-             "running": [{"id": 52, "name": "🚀 deploy-preview", "status": "running"}]},
+             "running": [{"id": 52, "name": "🚀 deploy-preview", "status": "running"}],
+             "capacity": {"state": "cannot_run", "slots_used": 1, "slots_allowed": 2, "mem_used_mib": 512,
+                          "mem_allowed_mib": 2560, "why": "1 queued job cannot run here: 日本語ツールがありません"}},
             {"info": {"id": "mac-🚀-dev", "os": "macos"}, "online": true, "last_seen_ms": NOW - 2_000,
-             "guard": {"action": {"kind": "pause"}, "reasons": ["pause: バッテリー残量が 28% で 40% を下回っています"]}}
+             "guard": {"action": {"kind": "pause"}, "reasons": ["pause: バッテリー残量が 28% で 40% を下回っています"]},
+             "capacity": {"state": "held", "slots_used": 0, "mem_used_mib": 0, "why": "held: battery"}}
         ],
     }));
     data.jobs = parse(json!([
