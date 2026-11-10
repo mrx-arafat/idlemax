@@ -16,7 +16,7 @@ use idlemax_core::types::Os;
 use idlemax_core::{Config, Paths};
 
 use super::service::{self, Ctx, SystemRunner};
-use super::{job::usage_error, statusline, ExitWith, Out};
+use super::{statusline, CliError, ExitWith, Out};
 use crate::state;
 use report::{finish, Status, StepReport};
 use steps::{execute, Env};
@@ -87,7 +87,7 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
     };
     let plan = match plan_setup(paths, &request)? {
         Ok(plan) => plan,
-        Err(e) => return Err(usage_error(&e.to_string())),
+        Err(e) => return Err(CliError::usage(e.to_string(), "idlemax setup --help").into()),
     };
     let env = Env {
         paths,

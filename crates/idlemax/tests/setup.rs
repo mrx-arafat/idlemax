@@ -206,3 +206,38 @@ fn an_agent_without_the_coordinator_address_is_a_usage_error() {
         "nothing is written when the flags cannot work"
     );
 }
+
+#[test]
+fn every_setup_usage_error_points_to_setup_help_and_preserves_the_message() {
+    for args in [
+        vec!["--coord-url", "100.64.0.10:7878"],
+        vec!["--role", "agent"],
+        vec!["--role", "agent", "--coord-url", "http://100.64.0.10:7878"],
+        vec!["--coord-url", "http://myhost:7878"],
+    ] {
+        let home = Home::new();
+        let mut flags = vec!["--dry-run"];
+        flags.extend(args);
+        let (code, error) = home.json(&flags);
+        assert_eq!(code, 2, "{error}");
+        assert_eq!(error["help"], "idlemax setup --help", "{error}");
+        assert!(
+            error["error"].as_str().unwrap().contains("coord"),
+            "{error}"
+        );
+    }
+    let home = Home::new();
+    std::fs::create_dir(&home.state).unwrap();
+    std::fs::write(
+        home.state.join("config.toml"),
+        "[coordinator]\nurl = \"http://127.0.0.1:18310\"\n",
+    )
+    .unwrap();
+    let (code, error) = home.json(&["--dry-run", "--coord-url", "http://100.64.0.10:7878"]);
+    assert_eq!(code, 2);
+    assert_eq!(error["help"], "idlemax setup --help");
+    assert!(error["error"]
+        .as_str()
+        .unwrap()
+        .contains("already sets coordinator.url"));
+}
