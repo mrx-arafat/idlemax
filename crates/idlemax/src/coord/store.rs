@@ -9,6 +9,7 @@ mod events;
 mod inputs;
 mod jobs;
 mod quota;
+mod report;
 mod schedules;
 mod schema;
 #[cfg(test)]
@@ -36,6 +37,8 @@ const HISTORY_RETENTION_MS: i64 = 30 * DAY_MS;
 const JOB_RETENTION_MS: i64 = 90 * DAY_MS;
 /// Longest event message stored; a hostile device id or error text cannot make rows large.
 pub(crate) const MAX_EVENT_MESSAGE_CHARS: usize = 500;
+/// `coordinator.offline_after_secs` by default; the coordinator sets the configured value.
+const DEFAULT_OFFLINE_AFTER_MS: i64 = 90_000;
 const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const WAL_SIZE_LIMIT_BYTES: i64 = 8 * 1024 * 1024;
 
@@ -51,6 +54,10 @@ struct Caps {
     live_jobs: i64,
     /// Pause flags (`pause` scopes) set at once.
     controls: i64,
+    /// Guard spans kept per device; older ones go first.
+    guard_spans: i64,
+    /// Pause spans kept; closed ones, oldest first, go first.
+    pause_spans: i64,
 }
 
 impl Default for Caps {
@@ -60,6 +67,8 @@ impl Default for Caps {
             devices: 256,
             live_jobs: 10_000,
             controls: 1_024,
+            guard_spans: 10_000,
+            pause_spans: 10_000,
         }
     }
 }
@@ -118,12 +127,16 @@ pub struct PruneReport {
     pub updates: usize,
     pub devices: usize,
     pub jobs: usize,
+    pub guard_spans: usize,
+    pub pause_spans: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
 pub struct Store {
     conn: Connection,
     caps: Caps,
+    /// A device silent for longer than this was away; guard spans do not bridge the gap.
+    offline_after_ms: i64,
 }
 
 impl Store {
@@ -152,9 +165,15 @@ impl Store {
         let mut store = Store {
             conn,
             caps: Caps::default(),
+            offline_after_ms: DEFAULT_OFFLINE_AFTER_MS,
         };
         store.migrate()?;
         Ok(store)
+    }
+
+    /// Sets how long a device may stay silent before the report counts it as away.
+    pub fn set_offline_after_ms(&mut self, ms: i64) {
+        self.offline_after_ms = ms;
     }
 
     #[cfg(test)]
@@ -184,7 +203,7 @@ impl Store {
 
     /// Drops metrics and quota history older than `metrics_retention_ms` (the newest
     /// quota snapshot per account window always stays), plus events, closed advice and devices
-    /// silent for 30 days (and applied-update records of that age), and finished jobs older
+    /// silent for 30 days (and applied-update records, guard spans and closed pause spans of that age), and finished jobs older
     /// than 90 days, then returns freed pages to the OS.
     pub fn prune(&mut self, now: UnixMs, metrics_retention_ms: i64) -> StoreResult<PruneReport> {
         let metrics_cutoff = now.saturating_sub(metrics_retention_ms);
@@ -221,6 +240,14 @@ impl Store {
                    AND COALESCE(finished_ms, created_ms) < ?1
                    AND id NOT IN (SELECT last_job_id FROM schedules WHERE last_job_id IS NOT NULL)",
                 [jobs_cutoff],
+            )?,
+            guard_spans: tx.execute(
+                "DELETE FROM guard_spans WHERE end_ms < ?1",
+                [history_cutoff],
+            )?,
+            pause_spans: tx.execute(
+                "DELETE FROM pause_spans WHERE end_ms < ?1",
+                [history_cutoff],
             )?,
         };
         tx.execute(

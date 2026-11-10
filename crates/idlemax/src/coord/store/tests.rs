@@ -22,7 +22,7 @@ fn control_rolls_back_pause_when_job_write_fails() {
         jobs: vec![changed],
         summary: "pause".into(),
     };
-    assert!(s.apply_control(&plan).is_err());
+    assert!(s.apply_control(&plan, T0).is_err());
     assert!(s.paused_scopes().unwrap().is_empty());
     assert_eq!(s.get_job(job.id).unwrap(), Some(job));
 }
@@ -315,12 +315,12 @@ fn pause_flags_over_the_cap_are_refused_and_resuming_still_works() {
         jobs: Vec::new(),
         summary: String::new(),
     };
-    s.apply_control(&plan("a", true)).unwrap();
-    s.apply_control(&plan("b", true)).unwrap();
-    limit_hit(s.apply_control(&plan("c", true)), "pause flags");
-    s.apply_control(&plan("a", true)).unwrap();
-    s.apply_control(&plan("a", false)).unwrap();
-    s.apply_control(&plan("c", true)).unwrap();
+    s.apply_control(&plan("a", true), T0).unwrap();
+    s.apply_control(&plan("b", true), T0).unwrap();
+    limit_hit(s.apply_control(&plan("c", true), T0), "pause flags");
+    s.apply_control(&plan("a", true), T0).unwrap();
+    s.apply_control(&plan("a", false), T0).unwrap();
+    s.apply_control(&plan("c", true), T0).unwrap();
 }
 
 #[test]
@@ -336,8 +336,8 @@ fn job_pause_flags_cleared_on_terminal_and_prune() {
         jobs: Vec::new(),
         summary: String::new(),
     };
-    s.apply_control(&pause(job1.id, true)).unwrap();
-    s.apply_control(&pause(job2.id, true)).unwrap();
+    s.apply_control(&pause(job1.id, true), T0).unwrap();
+    s.apply_control(&pause(job2.id, true), T0).unwrap();
     assert_eq!(s.paused_scopes().unwrap().len(), 2);
 
     let mut finished = job1;

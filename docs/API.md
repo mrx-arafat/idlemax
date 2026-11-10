@@ -34,6 +34,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | GET | /v1/jobs/{id}/why | | `Explanation` |
 | GET | /v1/why?limit= | | `[WhySummary]` |
 | GET | /v1/quota | | `[quota::QuotaView]` |
+| GET | /v1/report?days=&since_ms=&label= | | `Report` |
 | POST | /v1/control | `ControlRequest` | `ClusterStatus` |
 | GET | /v1/events?limit= | | `[Event]` |
 | GET | /v1/advice | | `[Recommendation]`, open ones first |
@@ -158,6 +159,7 @@ The store is bounded so one token holder cannot grow it without limit:
 
 - events: messages are cut to 500 characters and only the newest 100000 are kept (and none older than 30 days);
 - finished jobs older than 90 days are pruned, except `parked` ones and the last job of a schedule;
+- guard spans (see [What idlemax did](#what-idlemax-did)): at most 10000 per device (the oldest go first, so a device that flaps only loses its own history), none older than 30 days; and pause spans: at most 10000, closed ones going first, none closed more than 30 days ago;
 - pause flags: at most 1024 (a new one over that is 409; resuming is always allowed), and a pause request for a device id with a control character or over 128 characters is 400;
 - advisor inputs: at most 256 KiB per device (400 over that).
 
@@ -266,6 +268,60 @@ Finished and parked jobs are left out; a waiting job nothing holds back is liste
 `DeviceInfo.command_allowlist` is the agent's `agent.command_allowlist`, sent with every heartbeat.
 The scheduler leases a job only to a device whose list contains the job's `argv[0]`, because the agent would refuse it otherwise.
 It is `null` for an agent that predates the field, and such a device is not filtered.
+
+## What idlemax did
+
+`GET /v1/report` answers "did it help, and what stopped it?" for one period ending now (`idlemax report` prints it, `--json` prints this body).
+Give `days` (1 to 30) or `since_ms` (Unix ms, within the last 30 days), not both; neither means the last 24 hours.
+A `since_ms` at or after the coordinator's now is read as now, so a client whose clock runs a little ahead gets an empty period instead of an error.
+`label` names the period in `verdict` (1 to 32 letters, digits, spaces, `.`, `_`, `-`); it defaults to `last 24 h`, `last N days` or `this period`.
+A bad parameter is 400.
+
+```json
+{"label": "today", "since_ms": 1730000000000, "until_ms": 1730036000000,
+ "verdict": "today: 2 jobs ran (14 job-min); guard held 6.1 h, mostly memory pressure (5.2 h); queue was empty 1.3 h of idle time",
+ "jobs": {"ran": 2, "succeeded": 2, "failed": 0, "killed": 0, "cancelled": 0, "job_ms": 840000},
+ "guard": {"tracked_ms": 36000000, "tracking_since_ms": 1729990000000, "held_ms": 21960000,
+           "held_by": [{"reason": "memory", "label": "memory pressure", "ms": 18720000}],
+           "offline_ms": 0},
+ "idle": {"used_ms": 840000, "queue_empty_ms": 4680000, "work_waiting_ms": 0,
+          "quota_waiting_ms": 0, "stuck_jobs": [],
+          "longest": {"start_ms": 1730001000000, "end_ms": 1730020000000,
+                      "cause": {"kind": "held", "reason": "memory"}, "label": "held by memory pressure"}},
+ "quota": {"configured": false, "counted_since_ms": 1730000000000, "expired": [], "open": []}}
+```
+
+- Times are device time: with two devices, 24 hours of period is 48 hours of `tracked_ms`.
+  `tracked_ms` counts from the first guard sample the coordinator kept (`tracking_since_ms`), so a period that starts before it is covered only from then.
+- `jobs` counts jobs that ran at some point in the period (`ran`), and those that ended in it by how they ended.
+  `job_ms` is wall-clock time from start to finish, paused time included, summed over every attempt.
+  A job row keeps only its last attempt, so the attempts come from the job's start and end events (`job_started`, then `job_succeeded`, `job_failed`, `job_killed`, `job_cancelled`, `job_parked`, `job_queued` or `lease_expired`), which carry the coordinator's clock; a job with no such events falls back to its row.
+  Every time is clamped to between the job's creation and now, because the start and finish in a row are stamped by the agent's clock, which can run ahead or behind.
+  The jobs that ended in the period, and how, are counted on the coordinator's clock too: from the time it logged `job_succeeded`, `job_failed`, `job_killed` or `job_cancelled`, falling back to the row's `finished_ms` when those events are gone.
+- `guard.held_ms` is time the guard held new work (verdict hold, pause or kill).
+  `held_by` splits it by reason, longest first; one verdict can have several reasons, so the parts can add up to more than `held_ms`.
+  `reason` is one of `pause_file`, `local_pause`, `paused` (a coordinator pause from `idlemax pause`: all jobs, or this device), `user_active`, `idle_unknown` (the host cannot read the idle time, so the guard holds), `battery`, `thermal`, `memory` (memory and swap), `disk`, `load` (CPU load and I/O pressure), `recovering` and `other`.
+- `guard.offline_ms` is time with no heartbeat for longer than `coordinator.offline_after_secs`: the machine slept, or the agent or coordinator was down.
+  A device whose newest guard span ended more than 7 days before the period began is taken to be retired and is left out of it, and the zero-job verdict names "asleep or offline" only when no device was awake.
+  A pause on one job, on an AI account or on all jobs is not waiting: the scheduler's own `in_scope` takes that job's time out of its wait, and a pause on all jobs or on a device holds the device (`may_assign`), which counts under `paused` above.
+- `idle` splits the awake time that no guard hold covers: `used_ms` (a job ran), `queue_empty_ms` (nothing the device could take was waiting), `work_waiting_ms` and `quota_waiting_ms`.
+  `work_waiting_ms` is time a device was idle with a queued job waiting past two minutes (a heartbeat to learn of it, another to lease it) that it could take yet did not start: `idlemax why <id>` says why.
+  A device could take a job when the scheduler's own `device_blockers` finds nothing against it (the job's `devices` list, `requires`, cost class, the device's command allowlist and AI accounts), so a job pinned to an offline server is not waiting on an idle laptop.
+  `work_waiting_ms` and `quota_waiting_ms` are wall-clock time counted once however many devices could take the work, while the other numbers are device time.
+  An AI job waits for quota or its account, not for room, so it counts in `quota_waiting_ms`.
+  A retry's backoff is not counted as waiting.
+  `stuck_jobs` lists queued jobs (at most 5, lowest id first) that have waited past that grace and that no known device could take as it is configured, such as a command missing from every allowlist.
+  `longest` is the longest unbroken stretch with nothing running while the device was awake, and `cause` is what it mostly was: `{"kind": "held", "reason": ...}`, `{"kind": "work_waiting"}`, `{"kind": "waiting_on_quota"}` or `{"kind": "queue_empty"}`.
+- `quota` is filled only when `[[quota.accounts]]` is configured (`configured` is false and both lists are empty otherwise).
+  `expired` lists window cycles whose reset fell in the period with the most percent seen used (`peak_used_pct`) and what was left (`unused_pct`); `open` lists the cycles still running.
+  The coordinator keeps quota snapshots for `coordinator.metrics_retention_days` (7 by default), so a longer period counts cycles only from `counted_since_ms`, which is the period's start or the start of the kept history, whichever is later; the verdict and `idlemax report` say so.
+  Use seen between the last probe and the reset is not known, so `unused_pct` is an upper bound.
+
+The coordinator keeps one guard span per device per verdict change (`guard_spans`, schema V7): a heartbeat that repeats the verdict only moves the span's end, so the table grows with changes, not samples, even if the coordinator's clock steps back.
+A report that starts while a device is asleep still counts the sleep, because the query also takes the device's newest span from before the start (one indexed lookup per device, since the query runs under the store lock that every heartbeat waits for).
+Pauses are kept the same way in `pause_spans`: a pause opens a span, a resume closes it, and a pause already in force when V7 first runs starts then.
+Spans older than 30 days are pruned, and a coordinator upgraded to V7 has no history from before the upgrade.
+A device older than this field needs no change: the coordinator reads the verdict from the heartbeats it already sends.
 
 ## Control semantics (coordinator)
 

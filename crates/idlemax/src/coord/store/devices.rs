@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use idlemax_core::control::{device_online, offline_transition};
 use idlemax_core::protocol::{DeviceView, Heartbeat};
+use idlemax_core::report::GuardState;
 use idlemax_core::types::{ControlScope, DeviceInfo, EventKind, UnixMs};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,8 @@ impl Store {
             return Err(StoreError::Invalid("heartbeat device id is empty".into()));
         }
         let max_devices = self.caps.devices;
+        let offline_after_ms = self.offline_after_ms;
+        let max_spans = self.caps.guard_spans;
         let tx = self.conn.transaction()?;
         let previous = tx
             .query_row(
@@ -95,6 +98,13 @@ impl Store {
             hb.local_paused,
         ])?;
         fold_minute(&tx, hb, now)?;
+        super::report::record_guard(
+            &tx,
+            id,
+            &GuardState::of(&hb.guard),
+            now,
+            (offline_after_ms, max_spans),
+        )?;
         super::quota::insert_snapshots(&tx, &hb.quota, now)?;
         tx.commit()?;
         Ok(previous)

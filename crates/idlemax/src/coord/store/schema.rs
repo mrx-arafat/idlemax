@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -155,4 +155,41 @@ CREATE TABLE schedules (
 const V6: &str = r#"
 ALTER TABLE jobs ADD COLUMN key TEXT;
 CREATE INDEX jobs_by_key ON jobs(key, status) WHERE key IS NOT NULL;
+"#;
+
+/// The guard verdict of each device as spans, and the coordinator's pauses as spans, for the
+/// value report. A guard row is written when the verdict changes; each heartbeat that repeats it moves `end_ms` on, so the table grows with
+/// changes, not with samples. A device's newest span is its highest `id`, never its latest
+/// `start_ms`, so a clock that steps back cannot start a row per heartbeat. `reasons` is the
+/// stored names of the hold reasons, comma separated.
+const V7: &str = r#"
+CREATE TABLE guard_spans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device TEXT NOT NULL,
+  start_ms INTEGER NOT NULL,
+  end_ms INTEGER NOT NULL,
+  held INTEGER NOT NULL,
+  reasons TEXT NOT NULL
+) STRICT;
+CREATE INDEX guard_spans_newest ON guard_spans(device, id);
+-- The span that began last before a report's start, found per device without a scan.
+CREATE INDEX guard_spans_by_start ON guard_spans(device, start_ms);
+CREATE INDEX guard_spans_age ON guard_spans(end_ms);
+-- The report reads the lifecycle events of jobs.
+CREATE INDEX events_by_job ON events(job) WHERE job IS NOT NULL;
+
+-- Coordinator pauses as spans, so a report can tell a pause from a device with room to spare.
+-- A row is opened when a scope is paused and closed when it is resumed.
+CREATE TABLE pause_spans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('global', 'device', 'account', 'job')),
+  scope_id TEXT NOT NULL,
+  start_ms INTEGER NOT NULL,
+  end_ms INTEGER
+) STRICT;
+CREATE INDEX pause_spans_open ON pause_spans(scope_type, scope_id) WHERE end_ms IS NULL;
+CREATE INDEX pause_spans_age ON pause_spans(end_ms);
+-- Pauses already in force when this version first runs start now.
+INSERT INTO pause_spans (scope_type, scope_id, start_ms)
+  SELECT scope_type, scope_id, CAST(strftime('%s', 'now') AS INTEGER) * 1000 FROM controls;
 "#;

@@ -5,6 +5,7 @@ mod advice;
 mod agents;
 pub mod http;
 mod jobs;
+mod report;
 mod schedules;
 #[cfg(test)]
 mod tests;
@@ -33,7 +34,8 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(store: Store, config: Config, paths: Paths) -> Self {
+    pub fn new(mut store: Store, config: Config, paths: Paths) -> Self {
+        store.set_offline_after_ms(offline_after_ms(&config));
         Self {
             refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             store: Arc::new(Mutex::new(store)),
@@ -87,6 +89,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/jobs/{id}/why", get(why::why))
         .route("/v1/why", get(why::why_all))
         .route("/v1/quota", get(jobs::quota))
+        .route("/v1/report", get(report::report))
         .route("/v1/control", post(jobs::control))
         .route("/v1/events", get(jobs::events))
         .route("/v1/advice", get(advice::list))

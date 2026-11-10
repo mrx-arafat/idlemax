@@ -64,7 +64,7 @@ pub(super) fn insert_snapshots(
     Ok(())
 }
 
-fn snapshot_from_row(r: &Row<'_>) -> rusqlite::Result<QuotaSnapshot> {
+pub(super) fn snapshot_from_row(r: &Row<'_>) -> rusqlite::Result<QuotaSnapshot> {
     Ok(QuotaSnapshot {
         account: r.get(0)?,
         window: json_col(r, 1)?,

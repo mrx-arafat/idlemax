@@ -201,7 +201,7 @@ pub(super) fn apply_control(
             return Err(ApiFailure::BadRequest(why));
         }
     }
-    store.apply_control(&plan)?;
+    store.apply_control(&plan, now)?;
     let (device, job) = match &req.scope {
         ControlScope::Device(d) => (Some(d), None),
         ControlScope::Job(id) => (None, Some(*id)),
