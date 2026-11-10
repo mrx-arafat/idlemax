@@ -283,6 +283,43 @@ For a production coordinator on a server, use the system units in [Deploying acr
 
 ## Following a job
 
+### Did it help?
+
+```sh
+idlemax report           # today and the last 7 days
+idlemax report --days 30 # one period, 1 to 30 days
+idlemax report --json    # the numbers for a script
+```
+
+The first line of each period is the answer, then the numbers behind it (a demo run):
+
+```text
+today: 6 jobs ran (<1 job-min); guard held 6 min, all of it by memory pressure; queue was empty 12 min of idle time
+  jobs    6 ran: 6 succeeded, 0 failed, 0 killed, 0 cancelled; <1 job-min
+  held    6 min of 19 min tracked: memory pressure 6 min, you using the machine 6 min
+  idle    jobs running 14 s, queue empty 12 min, work waiting 0 s
+  longest 6 min from 11-10 16:44 to 11-10 16:50: held by memory pressure
+  quota   no AI accounts are configured
+```
+
+When nothing ran, the line says why, with the hours: `0 jobs ran today: held 7.9 h by memory pressure`, or `0 jobs ran today: the queue was empty`.
+
+- `jobs` counts the jobs that ran at some point in the period and how the ones that ended in it ended.
+  The job minutes are wall-clock time from start to finish.
+- `held` is the time the guard held new work, split by reason: `the PAUSE file`, `a local pause`, `a pause you set`, `you using the machine`, `idle time it cannot read`, `battery`, `thermal limits`, `memory pressure`, `low disk space`, `load`, `recovering after a breach`.
+  One verdict can have several reasons, so the parts can add up to more than the total.
+- `away` (shown when it is not zero) is time with no heartbeat for longer than `coordinator.offline_after_secs`: the machine slept, or the agent or coordinator was down.
+- `idle` splits the awake time that no hold covers: jobs running, the queue empty, and work that waited more than two minutes with a device idle that could take it (`idlemax why <id>` says why).
+  A job pinned to another machine does not count against an idle laptop, and AI work that waits for quota is counted apart.
+  A queued job that no device can run as it is configured, such as a command missing from every allowlist, is named by its id instead of reading as an empty queue.
+- `longest` is the longest unbroken stretch with nothing running while the machine was awake, and what it mostly was.
+- `quota` lists AI quota windows that reset in the period and what they left unused, when `[[quota.accounts]]` is configured.
+  The unused share is an upper bound: use between the last probe and the reset is not seen, and quota history is kept for `coordinator.metrics_retention_days` (7), so a longer report says it counts only that much.
+- Device time adds up across devices, so two devices give 48 hours of tracked time for 24 hours of period.
+- The coordinator keeps the history from the first heartbeat after it was upgraded to this version, for 30 days, so a new install shows `tracked` time shorter than the period for a while.
+
+The TUI shows the same lines in a "Did it help?" panel above the devices, and the web dashboard in a card at the top of its left column.
+
 ### Something is off
 
 ```sh
@@ -769,6 +806,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax init [--profile macos-laptop\|linux-server] [--coord-url URL] [--token-stdin]` | create the state dirs, `config.toml` and a 0600 token; never overwrites, and refuses the flags when a config already exists |
 | `idlemax config [list [--all] \| get KEY \| set KEY VALUE \| unset KEY]` | show or change a setting in `config.toml` and apply it to the running agent without a restart; see [Change a setting](#change-a-setting) |
 | `idlemax status` | cluster summary and devices |
+| `idlemax report [--days N]` | what idlemax did today and in the last 7 days, or in the last N days, and what held it back, see [Did it help?](#did-it-help) |
 | `idlemax jobs [--status S] [--limit N]` | list jobs (default limit 50) |
 | `idlemax job add [flags] -- <argv...> \| <spec.toml> \| -` | queue a job from flags, a spec file or stdin; `--wait [--timeout S]` waits for the result and `--key K` makes a retry safe, see [Run a command on idle capacity](#run-a-command-on-idle-capacity) |
 | `idlemax job cancel <id>` | cancel a job, killing it if it runs |
