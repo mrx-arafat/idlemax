@@ -2,6 +2,8 @@ use super::*;
 
 fn env() -> ServiceEnv {
     ServiceEnv {
+        agent_jobs: 1,
+        agent_ram_mib: 512,
         bin: "/opt/my tools/idlemax".into(),
         home: "/home/u".into(),
         state_dir: "/data & more/idlemax".into(),
@@ -11,6 +13,58 @@ fn env() -> ServiceEnv {
             ("CODEX_HOME".into(), "/home/u/.codex".into()),
         ],
         uid: 501,
+    }
+}
+
+#[test]
+fn rendered_agent_caps_follow_the_guard_budget_for_root_and_user_units() {
+    let disabled = ServiceEnv {
+        agent_jobs: 0,
+        ..env()
+    };
+    assert!(render_system(ServiceKind::Agent, &disabled)
+        .unwrap()
+        .content
+        .contains("CPUQuota=100%"));
+    use crate::{types::Os, Config};
+    for (text, jobs, ram, high, max) in [
+        ("", 8, 4096, "MemoryHigh=4160M", "MemoryMax=4224M"),
+        (
+            "[guard]\nmax_jobs = 1\nram_budget_mib = 512\n",
+            1,
+            512,
+            "MemoryHigh=576M",
+            "MemoryMax=640M",
+        ),
+    ] {
+        let policy = Config::parse(text)
+            .unwrap()
+            .guard_policy_for(Os::Linux, 16, 16 << 30)
+            .unwrap();
+        assert_eq!((policy.max_jobs, policy.ram_budget_mib), (jobs, ram));
+        let env = ServiceEnv {
+            agent_jobs: policy.max_jobs,
+            agent_ram_mib: policy.ram_budget_mib,
+            ..env()
+        };
+        for unit in [
+            render(Platform::SystemdUser, ServiceKind::Agent, &env).unwrap(),
+            render_system(ServiceKind::Agent, &env).unwrap(),
+        ] {
+            assert!(unit.content.contains(high), "{}", unit.content);
+            assert!(unit.content.contains(max), "{}", unit.content);
+            assert!(unit.content.contains(&format!("CPUQuota={}%", jobs * 100)));
+            assert!(!unit.content.contains('@'));
+        }
+        let root = render_system(ServiceKind::Agent, &env).unwrap();
+        assert_eq!(
+            root.path,
+            PathBuf::from("/etc/systemd/system/idlemax-agent.service")
+        );
+        assert!(root.content.contains("User=idlemax"));
+        assert!(root
+            .content
+            .contains("ReadWritePaths=\"/data & more/idlemax\""));
     }
 }
 
@@ -103,6 +157,8 @@ fn systemd_unit_quotes_values_and_keeps_the_system_unit_caps() {
 #[test]
 fn bad_inputs_are_refused() {
     let relative = ServiceEnv {
+        agent_jobs: 1,
+        agent_ram_mib: 512,
         bin: "idlemax".into(),
         ..env()
     };

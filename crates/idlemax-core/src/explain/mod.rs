@@ -95,6 +95,8 @@ pub struct Reason {
 /// Reasons that apply to one device only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeviceExplanation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_limit: Option<crate::types::MemoryLimit>,
     /// Actual idle-sleep assertion state as of the last heartbeat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_awake: Option<String>,
@@ -239,6 +241,7 @@ fn explain_device(
         reasons.insert(0, reasons::offline(dv, input.now_ms));
     }
     DeviceExplanation {
+        memory_limit: dv.guard.as_ref().and_then(|g| g.memory_limit.clone()),
         keep_awake: dv.keep_awake.clone(),
         device: dv.info.id.clone(),
         online: dv.online,

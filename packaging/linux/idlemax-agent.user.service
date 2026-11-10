@@ -1,6 +1,7 @@
 # idlemax device agent as a systemd user unit, written by `idlemax service install`.
 # Re-running it overwrites this file; keep your changes in a drop-in (`systemctl --user edit idlemax-agent`).
-# The caps match idlemax-agent.service. They bind only when the user manager delegates the
+# The renderer sizes the reference caps below from the guard's host/config budget.
+# They bind only when the user manager delegates the
 # cgroup controllers; the sandboxing of the system unit is left out because a user unit cannot
 # rely on it. To start at boot without a login session, run `loginctl enable-linger $USER`.
 

@@ -291,6 +291,7 @@ pub fn job_verdict(guard: &GuardDecision, policy: ActivePolicy) -> GuardAction {
 /// Verdict when device health is unknown (a sample failed): pause everything.
 pub fn fail_safe_decision(reason: &str, at_ms: UnixMs) -> GuardDecision {
     GuardDecision {
+        memory_limit: None,
         action: GuardAction::Pause,
         resource_action: GuardAction::Pause,
         user_active: false,

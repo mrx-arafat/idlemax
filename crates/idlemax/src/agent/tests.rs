@@ -71,6 +71,7 @@ async fn device_info_refreshes_on_ticker() {
     };
 
     let wiring = Wiring {
+        memory_cap: idlemax_core::config::MemoryCap::Unlimited,
         device: initial_device,
         guard,
         client,

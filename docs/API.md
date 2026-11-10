@@ -142,6 +142,9 @@ It uses the same scheduler as assignment, preserving resource budgets, pause con
 An older agent ignores it; an older coordinator omits it, which newer agents treat as `false`.
 The opt-in macOS `agent.keep_awake = "ac"` uses this signal while waiting for user idle, or holds for running work, only on known AC power with a clear resource guard.
 `Heartbeat`, `LocalStatus`, `DeviceView` and `DeviceExplanation` have an optional `keep_awake` string for the actual assertion state, separate from guard reasons and blockers.
+The guard verdict in `Heartbeat`, `LocalStatus` and `DeviceView` may carry optional `memory_limit` metadata: `{configured_mib, effective_mib, cgroup_max_bytes}` when Linux clamps RAM to its effective v1/v2 ancestor cap minus 128 MiB of agent overhead.
+When `cgroup_max_bytes` is absent inside this metadata, the Linux server could not determine its limit and uses a reference fallback of at most 1 job/512 MiB, preserving stricter overrides; this differs from a successfully read unlimited hierarchy, which has no fallback metadata.
+`DeviceExplanation.memory_limit` carries the same metadata; missing fields default to absent and absent fields are omitted, so old agents and coordinators remain compatible.
 Missing values default to `None` and are omitted when serialized; older agents and coordinators remain compatible.
 The coordinator preserves it inside the existing device info JSON, without a schema migration.
 `idlemax status` and `idlemax why` print it separately only when present, as of the last heartbeat; `idlemax local status` reports the current local value.

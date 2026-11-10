@@ -25,12 +25,15 @@ pub fn render(e: &Explanation) -> String {
             text.push_str(&format!("\n\n{} ({state}): would take it now", d.device));
         } else if d.reasons.is_empty() {
             clear.push(d.device.as_str());
-            if d.keep_awake.is_some() {
+            if d.keep_awake.is_some() || d.memory_limit.is_some() {
                 text.push_str(&format!("\n\n{} ({state}):", d.device));
             }
         } else {
             text.push_str(&format!("\n\n{} ({state}):", d.device));
             push_reasons(&mut text, &d.reasons);
+        }
+        if let Some(limit) = &d.memory_limit {
+            text.push_str(&format!("\n  {limit}"));
         }
         if let Some(state) = &d.keep_awake {
             text.push_str(&format!("\n  keep-awake: {state}"));

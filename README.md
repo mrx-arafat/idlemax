@@ -21,7 +21,7 @@ AI jobs spend only the quota above a reserve you choose, late in each window.
   The first sign of contention pauses jobs: you at the keyboard, battery power, thermal throttling, memory pressure, swap, load or low disk.
   A serious problem on two checks in a row kills them.
 - **It keeps servers safe.**
-  A server takes only light jobs (never CPU-heavy or AI), runs one at a time within 512 MiB, and pauses at a load average of 1.5.
+  A server takes only light jobs (never CPU-heavy or AI), keeps small hosts at the 1-job/512-MiB reference, and targets a site reserve as capacity grows.
   Every job also has a memory cap, a runtime cap and a command allowlist.
 - **It treats your AI account carefully.**
   AI jobs launch only the official CLIs, with your own login, on the device where you logged in.
@@ -261,6 +261,7 @@ idlemax writes the service file for your OS:
 ```sh
 idlemax init                        # config.toml and the token, once (setup does this too)
 idlemax service install --dry-run   # prints the file and the exact launchctl or systemctl commands
+idlemax service render agent --cpus 4 --memory-mib 4096 --format table # offline Linux root unit from explicit target facts
 idlemax service install             # writes it and starts the agent
 idlemax service status
 idlemax doctor                      # then check the whole setup
@@ -701,10 +702,22 @@ Linux and a busy machine have not been measured.
 | PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
 | Load per CPU, outside the jobs | > 1.0 | > 2.0 | > 0.75 | > 1.5 | `load_per_cpu_pause`, `load_per_cpu_kill` |
 | Disk free | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | `disk_free_mib_pause`, `disk_free_mib_kill` |
-| Capacity | half the CPUs, a quarter of the RAM (at least 2 jobs, 1 GiB) | | 1 job, 512 MiB | | `max_jobs`, `ram_budget_mib` |
+| Capacity | half the CPUs, a quarter of the RAM (at least 2 jobs, 1 GiB) | | spare CPUs bounded by RAM slots; quarter-RAM target with a 512-MiB floor | | `max_jobs`, `ram_budget_mib` |
 
 The laptop sizes its capacity to the machine when the agent starts: a 10 core Mac with 16 GiB runs up to 5 jobs and 4 GiB of job memory, and setting `max_jobs` or `ram_budget_mib` pins that value.
-The server keeps one job and 512 MiB because the packaged systemd unit caps the agent and its job; raise the unit's limits together with these keys.
+The server targets a reserve of one CPU and 1536 MiB for sites plus 128 MiB for the agent, and limits job RAM to a quarter of host RAM within that reserve.
+Small hosts retain the old 512-MiB minimum so default jobs still fit; on those hosts the fixed RAM reserve is best-effort and the existing contention guard still applies.
+Slots are bounded by both spare CPUs and the RAM budget divided by the default 512-MiB job size, with at least one slot unless explicitly disabled.
+A 4-vCPU VPS reporting 1950 MiB keeps 1 job and 512 MiB; a 16-CPU/16-GiB server gets 8 job slots and 4096 MiB.
+Unset capacity keys show `auto` in `idlemax config list --all`; explicit values pin the corresponding setting.
+Generated Linux units use the same budget: `MemoryHigh` adds 64 MiB, `MemoryMax` adds 128 MiB for the agent, and `CPUQuota` is 100% per job slot.
+After changing capacity settings, regenerate the unit and restart it.
+At Linux agent startup, the effective minimum through its cgroup ancestors (`memory.max` on v2, `memory.limit_in_bytes` on v1/hybrid) clamps even a pinned RAM budget to that cap minus 128 MiB.
+An explicitly unlimited hierarchy adds no clamp; an undetermined hierarchy on a Linux server fails closed at no more than the old 1-job/512-MiB reference, preserving stricter overrides.
+`status` and `why` show both reductions and unknown-limit fallback; a config reload preserves the startup result.
+Off-host root rendering requires both `--cpus` and `--memory-mib`, uses server defaults, and accepts a target config only through `--config <path>`.
+Without explicit facts it runs only on Linux with a server profile and uses that host/config; every rendered unit names its facts and config source.
+Explicit facts use `/var/lib/idlemax` as the target state directory unless `--state-dir <path>` is supplied, and do not copy the build host's PATH or config-home variables.
 Disk is the least free space of `/`, the state dir and the working directory of each running job, because a job fills the filesystem it runs on.
 Below the first disk line nothing new starts and running jobs go on, since pausing a job gives no disk back; below the kill line running jobs are killed.
 Load is the 1 minute load average minus what the running jobs use themselves (their measured CPU, so a busy job never pauses itself), divided by the number of CPUs.
@@ -852,6 +865,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax events [--limit N]` | recent events (default limit 50) |
 | `idlemax advise [list \| accept <id> \| dismiss <id> \| refresh]` | advisor recommendations (default `list`) |
 | `idlemax service install \| uninstall \| status [agent\|coord]` | run the agent (or the coordinator) as a background service, see [Keep it running](#keep-it-running); `--dry-run` previews `install` and `uninstall` |
+| `idlemax service render [agent\|coord]` | offline root unit; off-host use `--cpus N --memory-mib N` and optional `--config <target-config>`; `--format table` prints raw text; `--bin` chooses the target executable |
 | `idlemax statusline install \| uninstall \| status` | wire Claude's statusline into the quota probe; `--dry-run` previews `install` and `uninstall` |
 | `idlemax hooks install \| uninstall \| status [--claude] [--codex] [--opencode]` | start every agent session with idlemax's state, see [Session hooks and the skill](#session-hooks-and-the-skill); `--dry-run` previews |
 | `idlemax skill [--check]` | print the generated agent skill, or check the committed copy is current |
@@ -1094,12 +1108,15 @@ The TUI (tab 6) and the web dashboard list schedules too, with pause, resume and
    sudo install -d -o idlemax -g idlemax -m 0700 /var/lib/idlemax
    sudo install -o idlemax -g idlemax -m 0600 examples/config.server.toml /var/lib/idlemax/config.toml
    sudo -u idlemax env IDLEMAX_HOME=/var/lib/idlemax idlemax init
-   sudo install -m 0644 packaging/linux/idlemax-coord.service packaging/linux/idlemax-agent.service /etc/systemd/system/
+   sudo -u idlemax env IDLEMAX_HOME=/var/lib/idlemax idlemax service render agent --bin /usr/local/bin/idlemax --format table > idlemax-agent.service
+   sudo install -m 0644 packaging/linux/idlemax-coord.service idlemax-agent.service /etc/systemd/system/
    sudo systemctl daemon-reload
    sudo systemctl enable --now idlemax-coord idlemax-agent
    ```
 
    Edit `listen`, `url` and `device_id` in `/var/lib/idlemax/config.toml` before enabling the units.
+   Render on the destination host after editing capacity settings; `service render` is offline and never calls systemctl.
+   The shipped static `packaging/linux/idlemax-agent.service` remains a valid 1-job/512-MiB reference; pin those two guard keys when using it directly.
 
 3. On every other device, share the coordinator's token and point the agent at it, which also installs the agent as a per-user service (macOS LaunchAgent, Linux systemd user unit):
 
@@ -1118,7 +1135,7 @@ The TUI (tab 6) and the web dashboard list schedules too, with pause, resume and
 | `com.idlemax.agent.plist`, `com.idlemax.coord.plist` | `ProcessType` Background, `LowPriorityIO`, `LowPriorityBackgroundIO`, `Nice` 20, restart after a crash, logs in `<state dir>/logs/` |
 | `idlemax-agent.user.service`, `idlemax-coord.user.service` | the system units' `MemoryMax`, `CPUQuota`, `Nice` and I/O class, applied only if your user manager delegates those cgroup controllers, and without the system units' sandbox |
 | `idlemax-coord.service` | `MemoryHigh=192M`, `MemoryMax=256M`, `MemorySwapMax=0`, `CPUQuota=20%`, `CPUWeight=10`, `IOWeight=10`, a strict sandbox that writes only `/var/lib/idlemax`, restarts until the private IP exists |
-| `idlemax-agent.service` | `MemoryMax=640M` for the agent plus its one job, `MemorySwapMax=0`, `CPUQuota=100%`, `CPUWeight=10`, `IOWeight=10`, `Nice=19`, idle I/O class; jobs write only `/var/lib/idlemax` and a private `/tmp` |
+| `idlemax-agent.service` | shipped reference: `MemoryMax=640M` for one 512-MiB job plus the agent, `CPUQuota=100%`; `service render agent` sizes these limits from the host/config budget; both retain no swap, low CPU/I/O weight, `Nice=19`, idle I/O class and the write sandbox |
 
 On the server, jobs run under `nice` and `ionice` inside the agent unit's cgroup unless the idlemax user has a systemd user manager.
 Keep lingering off so every job stays inside those caps.

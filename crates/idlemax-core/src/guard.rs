@@ -102,6 +102,7 @@ impl Guard {
         }
         let (user_active, user) = self.presence(m, &mut reasons);
         GuardDecision {
+            memory_limit: None,
             action: resource.max(user),
             resource_action: resource,
             user_active,

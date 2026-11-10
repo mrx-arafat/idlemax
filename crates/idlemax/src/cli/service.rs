@@ -30,6 +30,24 @@ pub struct ServiceArgs {
 
 #[derive(Subcommand, Debug)]
 enum ServiceCmd {
+    /// Render a Linux root unit offline; nothing is written or started (use --format table for raw unit text)
+    Render {
+        which: Option<Unit>,
+        #[arg(long, value_name = "PATH")]
+        bin: Option<PathBuf>,
+        /// Target CPU count; required with --memory-mib for off-host rendering
+        #[arg(long, requires = "memory_mib", value_parser = clap::value_parser!(u32).range(1..))]
+        cpus: Option<u32>,
+        /// Target total RAM in MiB
+        #[arg(long, requires = "cpus", value_parser = clap::value_parser!(u64).range(1..))]
+        memory_mib: Option<u64>,
+        /// Target server config; explicit facts otherwise use server defaults
+        #[arg(long, value_name = "PATH")]
+        config: Option<PathBuf>,
+        /// Target state directory (explicit facts default to /var/lib/idlemax)
+        #[arg(long, value_name = "PATH")]
+        state_dir: Option<PathBuf>,
+    },
     /// Write the service file for this OS and start it; running it again restarts it if the file changed
     Install {
         /// Which service [default: agent]
@@ -96,6 +114,7 @@ impl Runner for SystemRunner {
     }
 }
 
+mod target;
 mod text;
 
 pub(super) struct Ctx {
@@ -124,17 +143,42 @@ struct UninstallReport {
 }
 
 pub fn run(paths: &Paths, args: ServiceArgs, out: &Out) -> Result<()> {
-    let platform = Platform::for_os(Os::current())
-        .context("`idlemax service` supports macOS and Linux only")?;
+    let platform = if matches!(args.cmd, ServiceCmd::Render { .. }) {
+        Platform::SystemdUser
+    } else {
+        Platform::for_os(Os::current())
+            .context("`idlemax service` supports macOS and Linux only")?
+    };
     let bin = match &args.cmd {
         ServiceCmd::Install { bin, .. } => bin.clone(),
         _ => None,
     };
-    let ctx = Ctx {
-        platform,
-        env: service_env(paths, platform, bin)?,
-    };
+    let mut env = service_env(paths, platform, bin)?;
+    if matches!(args.cmd, ServiceCmd::Install { .. }) {
+        size_service(paths, platform, &mut env)?;
+    }
+    let ctx = Ctx { platform, env };
     match args.cmd {
+        ServiceCmd::Render {
+            which,
+            bin,
+            cpus,
+            memory_mib,
+            config,
+            state_dir,
+        } => {
+            let kind = which.map(ServiceKind::from).unwrap_or(ServiceKind::Agent);
+            let unit = target::render(
+                paths,
+                ctx.env,
+                kind,
+                bin,
+                cpus.zip(memory_mib),
+                config,
+                state_dir,
+            )?;
+            out.emit(&unit, |u| u.content.clone(), &[])?;
+        }
         ServiceCmd::Install { which, dry_run, .. } => {
             let kinds = kinds(which, &[ServiceKind::Agent]);
             let reports = install(&ctx, paths, &SystemRunner, &kinds, dry_run)?;
@@ -211,6 +255,8 @@ pub(super) fn service_env(
         vars.extend(value.map(|v| (name.to_string(), v)));
     }
     Ok(ServiceEnv {
+        agent_jobs: 1,
+        agent_ram_mib: 512,
         bin,
         home,
         state_dir,
@@ -218,6 +264,23 @@ pub(super) fn service_env(
         vars,
         uid: current_uid(platform)?,
     })
+}
+
+/// Gather sizing inputs only for writing/rendering a unit, never for status or removal.
+pub(super) fn size_service(paths: &Paths, platform: Platform, env: &mut ServiceEnv) -> Result<()> {
+    let config = crate::state::load_config(paths)?;
+    let mut sys = sysinfo::System::new().context("reading host capacity")?;
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+    let os = if platform == Platform::SystemdUser {
+        Os::Linux
+    } else {
+        Os::current()
+    };
+    let policy = config.guard_policy_for(os, sys.cpus().len() as u32, sys.total_memory())?;
+    env.agent_jobs = policy.max_jobs;
+    env.agent_ram_mib = policy.ram_budget_mib;
+    Ok(())
 }
 
 /// Numeric user id for launchd's `gui/<uid>` domain. `id -u` avoids a libc binding; systemd's

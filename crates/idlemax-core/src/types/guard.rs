@@ -59,6 +59,8 @@ impl GuardAction {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GuardDecision {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_limit: Option<MemoryLimit>,
     /// Combined verdict: use for starting jobs and for jobs with on_user_active = pause.
     pub action: GuardAction,
     /// Verdict from machine health and the kill switch only, ignoring user presence.
@@ -68,4 +70,23 @@ pub struct GuardDecision {
     pub user_active: bool,
     pub reasons: Vec<String>,
     pub at_ms: UnixMs,
+}
+
+/// Why the host-sized or configured RAM budget was reduced by the service's cgroup.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryLimit {
+    pub configured_mib: u64,
+    pub effective_mib: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cgroup_max_bytes: Option<u64>,
+}
+
+impl std::fmt::Display for MemoryLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Some(cap) = self.cgroup_max_bytes else {
+            return write!(f, "cgroup memory limit unknown; reference fallback caps capacity at 1 job / 512 MiB (effective RAM {} MiB)", self.effective_mib);
+        };
+        write!(f, "RAM budget clamped from {} to {} MiB by effective cgroup memory limit={} bytes ({} MiB reserved for agent)",
+            self.configured_mib, self.effective_mib, cap, crate::config::AGENT_OVERHEAD_MIB)
+    }
 }

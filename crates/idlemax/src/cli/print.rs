@@ -87,6 +87,9 @@ pub fn status(s: &ClusterStatus, now_ms: UnixMs) -> String {
     };
     let mut text = format!("{}\n\n{devices}", summary(s));
     for device in &s.devices {
+        if let Some(limit) = device.guard.as_ref().and_then(|g| g.memory_limit.as_ref()) {
+            text.push_str(&format!("\n{}: {limit}", device.info.id));
+        }
         if let Some(state) = &device.keep_awake {
             text.push_str(&format!("\n{} keep-awake: {state}", device.info.id));
         }
@@ -212,6 +215,9 @@ pub fn local_status(result: Option<&str>, s: &LocalStatus, now_ms: UnixMs) -> St
     // The summary picks the reason at the verdict's level and cuts it, so list every one in full.
     for reason in &s.guard.reasons {
         out.push_str(&format!("\n  {reason}"));
+    }
+    if let Some(limit) = &s.guard.memory_limit {
+        out.push_str(&format!("\n{limit}"));
     }
     if let Some(state) = &s.keep_awake {
         out.push_str(&format!("\nkeep-awake: {state}"));

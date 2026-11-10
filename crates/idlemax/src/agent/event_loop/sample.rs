@@ -22,7 +22,7 @@ impl Agent {
         self.reap().await;
         let job_dirs = self.job_dirs.clone();
         let read = blocking_within(&self.probes, PROBE_LIMIT, move |p| p.read(&job_dirs));
-        let decision = match read.await {
+        let mut decision = match read.await {
             Ok(reading) => {
                 self.reading = reading;
                 self.guard.evaluate(
@@ -37,6 +37,7 @@ impl Agent {
                 fail_safe_decision(&format!("metrics sample failed: {e}"), now_ms())
             }
         };
+        decision.memory_limit = self.memory_limit.clone();
         if decision.action != self.decision.action {
             info!(action = ?decision.action, reasons = ?decision.reasons, "guard verdict changed");
         }

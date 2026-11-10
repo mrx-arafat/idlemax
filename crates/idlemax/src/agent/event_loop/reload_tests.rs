@@ -22,6 +22,7 @@ fn agent_at(paths: &Paths) -> Agent {
     );
     let (status, _status_rx) = watch::channel(LocalStatus::default());
     Agent::new(Wiring {
+        memory_cap: idlemax_core::config::MemoryCap::Unlimited,
         device: DeviceInfo {
             id: "reload".into(),
             cpu_count: 4,
@@ -57,6 +58,7 @@ async fn a_reload_applies_the_guard_rule_and_a_broken_file_changes_nothing() {
     let paths = Paths::new(home.path());
     crate::state::ensure_dirs(&paths).unwrap();
     let mut agent = agent_at(&paths);
+    agent.memory_cap = idlemax_core::config::MemoryCap::Limited(640 << 20);
     assert!(agent.guard.policy().require_ac_power);
 
     // The file the user edited: run on battery too, and one program allowed, and a setting
@@ -70,6 +72,11 @@ async fn a_reload_applies_the_guard_rule_and_a_broken_file_changes_nothing() {
     );
     assert_eq!(report.restart_agent, ["agent.sample_secs"]);
     assert!(!agent.guard.policy().require_ac_power);
+    assert_eq!(agent.guard.policy().ram_budget_mib, 512);
+    assert_eq!(
+        agent.decision.memory_limit.as_ref().unwrap().effective_mib,
+        512
+    );
 
     // A file that does not parse is refused and the settings stay as they were.
     std::fs::write(paths.config_file(), "[guard\n").unwrap();

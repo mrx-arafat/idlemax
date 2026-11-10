@@ -40,6 +40,7 @@ fn run(slots: u32, mem_mib: u64, at_ms: UnixMs) -> GuardDecision {
 
 fn verdict(action: GuardAction, user_active: bool, resource_action: GuardAction) -> GuardDecision {
     GuardDecision {
+        memory_limit: None,
         action,
         resource_action,
         user_active,

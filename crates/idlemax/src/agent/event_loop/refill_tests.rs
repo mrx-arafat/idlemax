@@ -152,6 +152,7 @@ async fn run_loop(hung_cwd: bool, isolation: bool) {
     );
     let (status, _status_rx) = watch::channel(LocalStatus::default());
     let mut agent = Agent::new(Wiring {
+        memory_cap: idlemax_core::config::MemoryCap::Unlimited,
         device: DeviceInfo {
             id: "refill".into(),
             ..DeviceInfo::default()

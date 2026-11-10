@@ -3,6 +3,7 @@
 
 mod advisor_feed;
 pub mod api;
+mod cgroup;
 pub mod client;
 mod event_loop;
 mod keep_awake;
@@ -97,6 +98,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         "agent started"
     );
     let agent = Agent::new(Wiring {
+        memory_cap: tokio::task::spawn_blocking(cgroup::memory_max).await?,
         device,
         guard,
         client,

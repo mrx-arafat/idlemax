@@ -12,7 +12,7 @@ mod reload;
 mod settings;
 
 pub use edit::{find_setting, set_setting, unset_setting, Edit, EditError};
-pub use guard_policy::{GuardPolicy, SwapGrowth};
+pub use guard_policy::{GuardPolicy, MemoryCap, SwapGrowth, AGENT_OVERHEAD_MIB};
 pub use reload::{plan_reload, ReloadReport};
 pub use settings::{list_settings, show_value, Setting};
 
@@ -171,8 +171,7 @@ impl Config {
         preset.with_overrides(&self.guard)
     }
 
-    /// `guard_policy` with the laptop's job slots and RAM budget sized to this machine. The
-    /// server stays at its preset: the packaged systemd unit caps the agent and its job.
+    /// `guard_policy` with unset capacity sized to this host and the profile's reserve.
     pub fn guard_policy_for(
         &self,
         os: Os,
@@ -182,7 +181,9 @@ impl Config {
         let policy = self.guard_policy(os)?;
         Ok(match self.agent.profile_or_default(os) {
             DeviceProfile::MacosLaptop => policy.sized_for(cpu_count, mem_total_bytes, &self.guard),
-            DeviceProfile::LinuxServer => policy,
+            DeviceProfile::LinuxServer => {
+                policy.server_sized_for(cpu_count, mem_total_bytes, &self.guard)
+            }
         })
     }
 }
@@ -247,8 +248,53 @@ mod tests {
         assert_eq!(slots_and_ram(laptop, 2, 2 * GIB), (2, 1024));
         let pinned = format!("{laptop}[guard]\nmax_jobs = 1\nram_budget_mib = 256\n");
         assert_eq!(slots_and_ram(&pinned, 10, 16 * GIB), (1, 256));
+    }
+
+    #[test]
+    fn server_capacity_reserves_resources_and_honours_explicit_overrides() {
         let server = "[agent]\nprofile = \"linux_server\"\n";
-        assert_eq!(slots_and_ram(server, 6, 16 * GIB), (1, 512));
+        let cfg = Config::parse(server).unwrap();
+        for (cpus, gib, jobs, ram) in [
+            (2, 2, 1, 512),
+            (4, 4, 2, 1024),
+            (8, 8, 4, 2048),
+            (16, 16, 8, 4096),
+        ] {
+            let policy = cfg.guard_policy_for(Os::Linux, cpus, gib << 30).unwrap();
+            assert_eq!((policy.max_jobs, policy.ram_budget_mib), (jobs, ram));
+        }
+        let small = cfg.guard_policy_for(Os::Linux, 4, 1950 << 20).unwrap();
+        assert_eq!((small.max_jobs, small.ram_budget_mib), (1, 512));
+        let cfg = Config::parse(&format!(
+            "{server}[guard]\nmax_jobs = 1\nram_budget_mib = 256\n"
+        ))
+        .unwrap();
+        let policy = cfg.guard_policy_for(Os::Linux, 16, 16 << 30).unwrap();
+        assert_eq!((policy.max_jobs, policy.ram_budget_mib), (1, 256));
+    }
+
+    #[test]
+    fn cgroup_memory_clamps_even_pinned_budgets_and_reserves_agent_overhead() {
+        let mut unknown = Config::default()
+            .guard_policy_for(Os::Linux, 16, 16 << 30)
+            .unwrap();
+        let note = unknown.apply_memory_cap(MemoryCap::Unknown, true).unwrap();
+        assert_eq!((unknown.max_jobs, unknown.ram_budget_mib), (1, 512));
+        assert!(note.to_string().contains("reference fallback"));
+        assert!(note.cgroup_max_bytes.is_none());
+        for (cap, budget, expected) in [
+            (None, 4096, 4096),
+            (Some(640 << 20), 4096, 512),
+            (Some(8192 << 20), 4096, 4096),
+            (Some(127 << 20), 512, 0),
+            (Some((640 << 20) + 1), 4096, 512),
+        ] {
+            let mut policy = GuardPolicy::linux_server();
+            policy.ram_budget_mib = budget;
+            let note = policy.clamp_memory(cap);
+            assert_eq!(policy.ram_budget_mib, expected);
+            assert_eq!(note.is_some(), budget != expected);
+        }
     }
 
     #[test]

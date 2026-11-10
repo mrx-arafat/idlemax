@@ -243,11 +243,17 @@ fn guard_reasons_carry_the_config_key_and_slots_and_ram_are_counted() {
         on_ac_power: Some(false),
         ..calm()
     };
-    let decision = guard.evaluate(&on_battery, &[], false, false);
+    let mut decision = guard.evaluate(&on_battery, &[], false, false);
+    let mut policy = GuardPolicy::macos_laptop();
+    decision.memory_limit = policy.clamp_memory(Some(640 << 20));
     let mut w = World::new(queued(1));
     w.devices[0].guard = Some(decision);
     w.devices[0].keep_awake = Some("not holding (on battery)".into());
     let e = w.explain();
+    assert_eq!(
+        e.devices[0].memory_limit.as_ref().unwrap().effective_mib,
+        512
+    );
     assert_eq!(
         e.devices[0].keep_awake.as_deref(),
         Some("not holding (on battery)")

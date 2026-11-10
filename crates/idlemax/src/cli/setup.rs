@@ -145,7 +145,8 @@ fn service_ctx(paths: &Paths, plan: &SetupPlan) -> Result<Option<Ctx>> {
     }
     let platform = Platform::for_os(Os::current())
         .context("`idlemax setup` installs services on macOS and Linux only; use --no-service")?;
-    let env = service::service_env(paths, platform, None)?;
+    let mut env = service::service_env(paths, platform, None)?;
+    service::size_service(paths, platform, &mut env)?;
     Ok(Some(Ctx { platform, env }))
 }
 

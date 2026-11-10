@@ -62,13 +62,14 @@ impl Agent {
     fn apply_guard(&mut self, new: &Config) -> Result<(), String> {
         let mut basis = new.clone();
         basis.agent.profile = self.config.agent.profile;
-        let policy = basis
+        let mut policy = basis
             .guard_policy_for(
                 Os::current(),
                 self.device.cpu_count,
                 self.device.mem_total_bytes,
             )
             .map_err(|e| e.to_string())?;
+        self.memory_limit = policy.apply_memory_cap(self.memory_cap, self.server_profile);
         self.guard.set_policy(policy);
         Ok(())
     }

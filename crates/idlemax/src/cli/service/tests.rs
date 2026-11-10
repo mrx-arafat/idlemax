@@ -37,6 +37,8 @@ fn fake(fail_on: Option<&'static str>) -> Fake {
 fn ctx(root: &Path) -> (Ctx, Paths) {
     let paths = Paths::new(root.join("state"));
     let env = ServiceEnv {
+        agent_jobs: 1,
+        agent_ram_mib: 512,
         bin: "/opt/idlemax".into(),
         home: root.join("home"),
         state_dir: paths.root().to_path_buf(),
@@ -56,7 +58,9 @@ fn ctx(root: &Path) -> (Ctx, Paths) {
 #[test]
 fn install_status_uninstall_round_trip_under_a_temp_home() {
     let dir = tempfile::tempdir().unwrap();
-    let (ctx, paths) = ctx(dir.path());
+    let (mut ctx, paths) = ctx(dir.path());
+    ctx.env.agent_ram_mib = 4096;
+    ctx.env.agent_jobs = 15;
     let runner = fake(None);
     let all = [ServiceKind::Agent, ServiceKind::Coord];
 
@@ -69,6 +73,8 @@ fn install_status_uninstall_round_trip_under_a_temp_home() {
 
     let dry = install(&ctx, &paths, &runner, &[ServiceKind::Agent], true).unwrap();
     assert!(!dry[0].file.exists() && runner.seen.borrow().is_empty());
+    assert!(dry[0].content.contains("MemoryMax=4224M"));
+    assert!(dry[0].content.contains("CPUQuota=1500%"));
 
     let done = install(&ctx, &paths, &runner, &[ServiceKind::Agent], false).unwrap();
     let written = std::fs::read_to_string(&done[0].file).unwrap();

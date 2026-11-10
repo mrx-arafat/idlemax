@@ -6,12 +6,12 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{Config, ConfigError, GuardPolicy};
-use crate::types::{DeviceProfile, Os};
+use crate::types::Os;
 
 /// The sections that hold settings, in the order they are listed.
 const SECTIONS: [&str; 5] = ["coordinator", "agent", "guard", "quota", "advisor"];
 
-/// Laptop capacity is sized to the machine when the agent starts, so an unset value has no
+/// Capacity is sized to the machine when the agent starts, so an unset value has no
 /// fixed number to show.
 const SIZED_AT_START: [&str; 2] = ["guard.max_jobs", "guard.ram_budget_mib"];
 
@@ -52,9 +52,7 @@ pub fn list_settings(text: &str, os: Os) -> Result<Vec<Setting>, ConfigError> {
         for (name, value) in now {
             let key = format!("{section}.{name}");
             let from_file = in_file.is_some_and(|t| t.contains_key(name));
-            let auto = !from_file
-                && profile == DeviceProfile::MacosLaptop
-                && SIZED_AT_START.contains(&key.as_str());
+            let auto = !from_file && SIZED_AT_START.contains(&key.as_str());
             settings.push(Setting {
                 key,
                 value: if auto { auto_value() } else { value.clone() },
@@ -66,7 +64,7 @@ pub fn list_settings(text: &str, os: Os) -> Result<Vec<Setting>, ConfigError> {
     Ok(settings)
 }
 
-/// The value shown for a laptop's unset capacity.
+/// The value shown for unset host capacity.
 fn auto_value() -> Value {
     Value::String("auto".into())
 }
@@ -138,7 +136,8 @@ mod tests {
             (json!("auto"), json!(1024))
         );
         let server = list_settings("[agent]\nprofile = \"linux_server\"\n", Os::Macos).unwrap();
-        assert_eq!(find(&server, "guard.max_jobs").value, json!(1));
+        assert_eq!(find(&server, "guard.max_jobs").value, json!("auto"));
+        assert_eq!(find(&server, "guard.ram_budget_mib").value, json!("auto"));
 
         assert_eq!(
             show_value(&find(&settings, "agent.command_allowlist").value),

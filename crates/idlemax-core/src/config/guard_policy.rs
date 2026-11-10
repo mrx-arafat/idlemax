@@ -60,6 +60,19 @@ pub struct GuardPolicy {
 }
 
 const GIB_MIB: u64 = 1024;
+/// Site reserve target; the legacy budget takes precedence on small hosts.
+const SERVER_CPU_RESERVE: u32 = 1;
+const SERVER_RAM_RESERVE_MIB: u64 = 1536;
+/// Room for the agent itself in addition to its jobs.
+pub const AGENT_OVERHEAD_MIB: u64 = 128;
+
+/// Unlimited is a successfully read hierarchy, unlike an undetermined limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryCap {
+    Unknown,
+    Unlimited,
+    Limited(u64),
+}
 
 impl GuardPolicy {
     pub fn for_profile(profile: DeviceProfile) -> Self {
@@ -164,6 +177,69 @@ impl GuardPolicy {
             self.ram_budget_mib = self.ram_budget_mib.max(quarter);
         }
         self
+    }
+
+    /// Target a site reserve and quarter-RAM budget, retaining the historical 512-MiB
+    /// floor so default jobs fit small hosts. Slots are bounded by both CPU and RAM.
+    pub fn server_sized_for(mut self, cpus: u32, bytes: u64, overrides: &toml::Table) -> Self {
+        if !overrides.contains_key("ram_budget_mib") {
+            let total = bytes / (1024 * 1024);
+            self.ram_budget_mib = if total == 0 {
+                512
+            } else {
+                (total / 4)
+                    .min(total.saturating_sub(SERVER_RAM_RESERVE_MIB + AGENT_OVERHEAD_MIB))
+                    .max(512)
+            };
+        }
+        if !overrides.contains_key("max_jobs") {
+            let memory_slots = u32::try_from(self.ram_budget_mib / crate::types::DEFAULT_MEM_MB)
+                .unwrap_or(u32::MAX)
+                .max(1);
+            self.max_jobs = cpus
+                .saturating_sub(SERVER_CPU_RESERVE)
+                .max(1)
+                .min(memory_slots);
+        }
+        self
+    }
+
+    pub fn apply_memory_cap(
+        &mut self,
+        cap: MemoryCap,
+        server: bool,
+    ) -> Option<crate::types::MemoryLimit> {
+        match cap {
+            MemoryCap::Limited(bytes) => self.clamp_memory(Some(bytes)),
+            MemoryCap::Unlimited => None,
+            MemoryCap::Unknown if server => {
+                let configured_mib = self.ram_budget_mib;
+                self.max_jobs = self.max_jobs.min(1);
+                self.ram_budget_mib = self.ram_budget_mib.min(512);
+                Some(crate::types::MemoryLimit {
+                    configured_mib,
+                    effective_mib: self.ram_budget_mib,
+                    cgroup_max_bytes: None,
+                })
+            }
+            MemoryCap::Unknown => None,
+        }
+    }
+
+    /// A cgroup bounds the agent and its jobs together, including explicitly pinned budgets.
+    pub fn clamp_memory(&mut self, cap_bytes: Option<u64>) -> Option<crate::types::MemoryLimit> {
+        let cap_bytes = cap_bytes?;
+        let available = (cap_bytes / (1024 * 1024)).saturating_sub(AGENT_OVERHEAD_MIB);
+        if self.ram_budget_mib <= available {
+            return None;
+        }
+        let limit = crate::types::MemoryLimit {
+            configured_mib: self.ram_budget_mib,
+            effective_mib: available,
+            cgroup_max_bytes: Some(cap_bytes),
+        };
+        self.ram_budget_mib = available;
+        Some(limit)
     }
 
     /// Overlays `[guard]` keys; unknown keys or wrong types are errors.

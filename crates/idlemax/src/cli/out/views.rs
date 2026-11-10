@@ -180,6 +180,20 @@ pub fn status(s: &ClusterStatus, now: UnixMs, fields: &[String]) -> Result<Node,
     if !awake.is_empty() {
         out.push(("keep_awake".into(), Node::Obj(awake)));
     }
+    let limits = s
+        .devices
+        .iter()
+        .filter_map(|d| {
+            d.guard
+                .as_ref()?
+                .memory_limit
+                .as_ref()
+                .map(|limit| (d.info.id.clone(), Node::str(limit.to_string())))
+        })
+        .collect::<Vec<_>>();
+    if !limits.is_empty() {
+        out.push(("memory_limit".into(), Node::Obj(limits)));
+    }
     Ok(Node::Obj(out))
 }
 
@@ -213,6 +227,12 @@ pub fn local(result: Option<&str>, s: &LocalStatus, now: UnixMs) -> Node {
         s.keep_awake
             .as_ref()
             .map(|state| ("keep_awake".into(), Node::str(state))),
+    );
+    fields.extend(
+        s.guard
+            .memory_limit
+            .as_ref()
+            .map(|limit| ("memory_limit".into(), Node::str(limit.to_string()))),
     );
     if s.running.is_empty() {
         fields.push(("running".to_string(), Node::str("0 jobs")));
@@ -298,6 +318,18 @@ pub fn why(e: &Explanation) -> Node {
     if !awake.is_empty() {
         fields.push(("keep_awake".into(), Node::Obj(awake)));
     }
+    let limits = e
+        .devices
+        .iter()
+        .filter_map(|d| {
+            d.memory_limit
+                .as_ref()
+                .map(|limit| (d.device.clone(), Node::str(limit.to_string())))
+        })
+        .collect::<Vec<_>>();
+    if !limits.is_empty() {
+        fields.push(("memory_limit".into(), Node::Obj(limits)));
+    }
     Node::Obj(fields)
 }
 
@@ -318,6 +350,7 @@ mod tests {
             until_ms: None,
         };
         let device = |name: &str, ready: bool, reasons: Vec<Reason>| DeviceExplanation {
+            memory_limit: None,
             device: name.into(),
             online: true,
             last_seen_ms: 5,

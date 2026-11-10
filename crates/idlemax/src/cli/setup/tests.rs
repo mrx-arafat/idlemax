@@ -45,6 +45,8 @@ fn env<'a>(root: &Path, paths: &'a Paths, runner: &'a Fake, dry_run: bool) -> En
     let svc = Ctx {
         platform: Platform::SystemdUser,
         env: ServiceEnv {
+            agent_jobs: 1,
+            agent_ram_mib: 512,
             bin: "/opt/idlemax".into(),
             home: root.join("home"),
             state_dir: paths.root().to_path_buf(),

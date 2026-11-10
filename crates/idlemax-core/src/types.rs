@@ -7,7 +7,7 @@ mod guard;
 mod job;
 
 pub use device::{DeviceInfo, DeviceProfile, MemoryPressure, MetricsSnapshot, Os};
-pub use guard::{GuardAction, GuardDecision};
+pub use guard::{GuardAction, GuardDecision, MemoryLimit};
 pub use job::{
     ActivePolicy, CostClass, Job, JobSpec, JobStatus, SpecError, TokenClass, DEFAULT_MAX_ATTEMPTS,
     DEFAULT_MAX_RUNTIME_SECS, DEFAULT_MEM_MB, MAX_KEY_CHARS,

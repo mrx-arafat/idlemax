@@ -6,6 +6,16 @@ Nothing here changes production state until the "Deploy" section.
 Do the build and verification first; they use temporary paths and a temporary state directory.
 
 The safe budget on the reference server is 1 vCPU and 512 MiB out of 2 vCPU and 3.3 GiB.
+This runbook pins `guard.max_jobs = 1` and `guard.ram_budget_mib = 512` to preserve that reference budget.
+Without overrides, the Linux preset targets one CPU and 1536 MiB for sites plus 128 MiB for the agent, using a quarter of host RAM within that reserve and retaining the historical 512-MiB floor for small hosts.
+A 4-vCPU VPS reporting 1950 MiB keeps 1 job/512 MiB; RAM also bounds the default slot count at one per 512 MiB of budget.
+For larger hosts, render a matching root unit offline with `IDLEMAX_HOME=/var/lib/idlemax idlemax service render agent --bin /usr/local/bin/idlemax --format table` before installing it.
+Generated units add 128 MiB of agent overhead above the job RAM budget; at startup a Linux agent also clamps that budget to its finite effective ancestor memory limit minus 128 MiB.
+The reader includes ancestor limits and v1/hybrid memory controllers, treating the huge v1 sentinel as unlimited.
+An undetermined limit on a Linux server falls back to at most 1 job/512 MiB, while a successfully read unlimited hierarchy keeps the configured budget.
+Both clamp and fallback are visible in `idlemax status` and `idlemax why`.
+Off-host rendering requires target facts, for example `idlemax service render agent --cpus 4 --memory-mib 4096 --config <target-config> --format table`; it never borrows the build host's laptop config.
+It defaults to Linux target paths and omits the build host's PATH/config-home variables; use `--state-dir` and `--bin` to choose different target paths.
 The coordinator unit caps itself at 256 MiB and 20% of one CPU.
 The agent unit caps itself at 640 MiB and one CPU, which includes the one job the Linux server preset allows.
 
@@ -168,6 +178,10 @@ device_id = "my-server"
 profile = "linux_server"
 listen = "127.0.0.1:7879"
 command_allowlist = ["gh", "git"]
+
+[guard]
+max_jobs = 1
+ram_budget_mib = 512
 ```
 
 Keep `ai_accounts = []` on the server unless that server has its own CLI logins.

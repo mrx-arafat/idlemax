@@ -10,6 +10,10 @@ use super::quote::{is_plain_text, shell_quote, systemd_env_line, systemd_exec_wo
 use super::setup::UnitChange;
 use crate::types::Os;
 
+mod render;
+pub use render::render_system;
+use render::sized_unit;
+
 const AGENT_PLIST: &str = include_str!("../../../../packaging/macos/com.idlemax.agent.plist");
 const COORD_PLIST: &str = include_str!("../../../../packaging/macos/com.idlemax.coord.plist");
 const AGENT_UNIT: &str = include_str!("../../../../packaging/linux/idlemax-agent.user.service");
@@ -74,6 +78,8 @@ pub enum ServiceError {
 /// Everything the service files are built from, collected once by the CLI.
 #[derive(Debug, Clone)]
 pub struct ServiceEnv {
+    pub agent_jobs: u32,
+    pub agent_ram_mib: u64,
     pub bin: PathBuf,
     /// The user's home directory; service files live under it.
     pub home: PathBuf,
@@ -246,7 +252,8 @@ pub fn render(
                 COORD_UNIT
             };
             let lines: Vec<String> = rows.iter().map(|(n, v)| systemd_env_line(n, v)).collect();
-            expand(template, &[("@BIN@", systemd_exec_word(bin))], &lines)
+            let content = expand(template, &[("@BIN@", systemd_exec_word(bin))], &lines);
+            sized_unit(content, kind, env)
         }
     };
     Ok(UnitFile {

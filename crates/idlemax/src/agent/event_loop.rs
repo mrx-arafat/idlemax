@@ -52,6 +52,7 @@ const SHUTDOWN_FLUSH: Duration = Duration::from_secs(3);
 
 /// Everything the loop needs, built by `agent::run`.
 pub struct Wiring {
+    pub memory_cap: idlemax_core::config::MemoryCap,
     pub device: DeviceInfo,
     pub guard: Guard,
     pub client: CoordClient,
@@ -73,6 +74,9 @@ pub struct Wiring {
 }
 
 pub struct Agent {
+    memory_cap: idlemax_core::config::MemoryCap,
+    server_profile: bool,
+    memory_limit: Option<idlemax_core::types::MemoryLimit>,
     device: DeviceInfo,
     guard: Guard,
     client: CoordClient,
@@ -107,8 +111,20 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub fn new(w: Wiring) -> Self {
+    pub fn new(mut w: Wiring) -> Self {
+        let memory_cap = w.memory_cap;
+        let server_profile = cfg!(target_os = "linux")
+            && w.config
+                .agent
+                .profile_or_default(idlemax_core::types::Os::Linux)
+                == idlemax_core::types::DeviceProfile::LinuxServer;
+        let mut policy = w.guard.policy().clone();
+        let memory_limit = policy.apply_memory_cap(memory_cap, server_profile);
+        w.guard.set_policy(policy);
         Self {
+            memory_cap,
+            server_profile,
+            memory_limit,
             device: w.device,
             guard: w.guard,
             client: w.client,

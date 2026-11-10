@@ -33,6 +33,7 @@ fn keep_awake_is_a_separate_status_line_only_when_reported() {
         reasons: vec![],
         at_ms: 0,
         devices: vec![DeviceExplanation {
+            memory_limit: None,
             keep_awake: Some(note.into()),
             device: "mac".into(),
             online: true,
@@ -42,6 +43,35 @@ fn keep_awake_is_a_separate_status_line_only_when_reported() {
             reasons: vec![],
         }],
     };
+    let limit = idlemax_core::types::MemoryLimit {
+        configured_mib: 4096,
+        effective_mib: 512,
+        cgroup_max_bytes: Some(671088640),
+    };
+    status.devices[0].guard.as_mut().unwrap().memory_limit = Some(limit.clone());
+    why.devices[0].memory_limit = Some(limit.clone());
+    let message = "RAM budget clamped from 4096 to 512 MiB by effective cgroup memory limit=671088640 bytes (128 MiB reserved for agent)";
+    assert!(super::status(&status, 0).contains(message));
+    assert!(crate::cli::why::render(&why).contains(message));
+    assert!(encode(&views::status(&status, 0, &[]).unwrap()).contains(message));
+    assert!(encode(&views::why(&why)).contains(message));
+    let local = LocalStatus {
+        guard: status.devices[0].guard.clone().unwrap(),
+        ..Default::default()
+    };
+    assert!(local_status(None, &local, 0).contains(message));
+    let unknown = idlemax_core::types::MemoryLimit {
+        cgroup_max_bytes: None,
+        ..limit
+    };
+    why.devices[0].memory_limit = Some(unknown.clone());
+    status.devices[0].guard.as_mut().unwrap().memory_limit = Some(unknown);
+    assert!(super::status(&status, 0).contains("reference fallback"));
+    assert!(crate::cli::why::render(&why).contains("reference fallback"));
+    assert!(serde_json::from_str::<GuardDecision>("{}")
+        .unwrap()
+        .memory_limit
+        .is_none());
     assert!(super::status(&status, 0).contains(&format!("\nmac keep-awake: {note}")));
     assert!(crate::cli::why::render(&why).contains(&format!("\n  keep-awake: {note}")));
     assert!(encode(&views::status(&status, 0, &[]).unwrap()).contains(note));

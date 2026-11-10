@@ -132,7 +132,7 @@ A smaller fleet (two workers at a time) landed what a new owner asked for ("I do
 - **How:** Check the cwd on a bounded blocking thread (as the sample does) and fail the start with a clear error when it times out.
 - **Done when:** A test with a cwd check that never returns starts no job, reports the cause, and keeps the loop responsive.
 
-### 23. Let the server preset scale with the host
+### 23. Let the server preset scale with the host (done)
 
 - **Why:** The laptop preset now takes half the CPUs and a quarter of the RAM, but `linux_server` stays at 1 job and 512 MiB to fit the packaged agent unit's `MemoryMax=640M`, so a big server idles most of its spare capacity.
 - **How:** Size the server preset from the host like the laptop one, with the site-protection reserve explicit, and derive the unit's `MemoryMax` from the same budget at install time.
