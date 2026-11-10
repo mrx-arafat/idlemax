@@ -106,11 +106,14 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - **How:** Open the dashboard in Safari and Firefox and on a real phone, including a job with many waiting reasons and a status filter that matches nothing.
 - **Done when:** No layout or control defect shows in any of them.
 
-### 21. Show how much capacity is used and how much sits idle
+### 21. Show how much capacity is used and how much sits idle (done)
 
 - **Why:** The main goal is maximum use of every resource; round 3 made the guard and scheduler use far more of each machine, but a user still cannot see at a glance how many slots and how much RAM budget each device has free, or why a device with queued jobs is idle.
 - **How:** From data the API already returns (guard slots and `mem_mib`, running jobs, `why`), show per device "slots in use / allowed" and the top idle reason in `idlemax status`, `devices`, the TUI and the dashboard, and per AI account the quota left before reset.
 - **Done when:** On a busy cluster, each view answers "how much is used, how much is idle, and why" without running `why` per job.
+- **Done:** The coordinator works it out once, in the pure `idlemax-core::capacity` module on the scheduler's own checks, and serves `devices[].capacity` and `accounts` in `GET /v1/status` (see docs/API.md).
+  `idlemax status` (there is no separate `devices` command, `status` lists the devices), the TUI Devices tab and the dashboard device cards show slots, RAM, the state and the main reason, and the AI quota each account may still spend.
+  While the guard holds new work the device's limit is not known, so only the used part shows.
 
 ### 22. Never block the agent loop on a hung mount at job start (done)
 

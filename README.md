@@ -320,6 +320,36 @@ When nothing ran, the line says why, with the hours: `0 jobs ran today: held 7.9
 
 The TUI shows the same lines in a "Did it help?" panel above the devices, and the web dashboard in a card at the top of its left column.
 
+### How much is used right now?
+
+`idlemax report` answers what happened over the day.
+`idlemax status` answers what is happening now: for each device, how much of its allowance is in use and why it is not using more.
+
+```text
+$ idlemax status | cat
+...
+devices[1]{id,state,slots,ram,why}:
+  my-laptop,online,1/2,256M/1.0G,"1 queued job cannot run here: no docker"
+accounts: "0 AI accounts configured ([[quota.accounts]] in config.toml)"
+```
+
+- `slots` is the jobs holding a slot (running, paused, or leased and about to start) out of the most the guard lets the device hold, `guard.max_jobs`.
+  `ram` is the memory those jobs budget (`mem_mb`) out of `guard.ram_budget_mib`.
+  While the guard holds new work the limit is not known, so only the used part shows.
+- `why` is the main reason the device is not using more:
+  `all 2 slots in use, 1 queued job waiting` (it works as hard as it may),
+  `starting 2 queued jobs on the next heartbeat`,
+  `queue empty`,
+  `held: memory pressure` (the same labels as `idlemax report`),
+  `2 queued jobs cannot run here: no git` (a missing tool, a job limited to other devices, the allowlist or the profile's cost classes),
+  `1 queued job waiting: AI quota`,
+  or `the smallest queued job needs 4096 MiB but only 1024 MiB of the RAM budget is free`.
+  It uses the scheduler's own checks, so it never disagrees with `idlemax why <job-id>`, and you do not have to run that per job.
+- With `[[quota.accounts]]` configured, an `accounts` table lists each AI account: whether idlemax may spend it now (`spend`), the quota left above the reserve before the limiting window resets (`left`, shown even while spending is held, `-` when that window has no data yet), that window and when it resets.
+- `--fields guard,jobs` adds the raw guard verdict and the job count, `--json` prints the same data as `GET /v1/status` (see [docs/API.md](docs/API.md)), and a coordinator older than this field shows only the running count and no accounts list.
+
+The TUI's Devices tab shows the same columns with an "AI quota" panel under them, and each device card on the web dashboard shows slot and RAM meters, the reason and the AI accounts that device may spend.
+
 ### Something is off
 
 ```sh
@@ -805,7 +835,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax coord` | run the coordinator |
 | `idlemax init [--profile macos-laptop\|linux-server] [--coord-url URL] [--token-stdin]` | create the state dirs, `config.toml` and a 0600 token; never overwrites, and refuses the flags when a config already exists |
 | `idlemax config [list [--all] \| get KEY \| set KEY VALUE \| unset KEY]` | show or change a setting in `config.toml` and apply it to the running agent without a restart; see [Change a setting](#change-a-setting) |
-| `idlemax status` | cluster summary and devices |
+| `idlemax status` | cluster summary, and per device the slots and RAM budget in use and why it is not using more, see [How much is used right now?](#how-much-is-used-right-now) |
 | `idlemax report [--days N]` | what idlemax did today and in the last 7 days, or in the last N days, and what held it back, see [Did it help?](#did-it-help) |
 | `idlemax jobs [--status S] [--limit N]` | list jobs (default limit 50) |
 | `idlemax job add [flags] -- <argv...> \| <spec.toml> \| -` | queue a job from flags, a spec file or stdin; `--wait [--timeout S]` waits for the result and `--key K` makes a retry safe, see [Run a command on idle capacity](#run-a-command-on-idle-capacity) |
