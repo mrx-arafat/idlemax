@@ -543,6 +543,11 @@ idlemax skill --check             # exit 1, with the fix, when skills/idlemax/SK
 | Codex | `~/.codex/hooks.json` (or `$CODEX_HOME`) | the same entry, plus `[features] hooks = true` in `config.toml` |
 | OpenCode | `~/.config/opencode/plugins/idlemax.js` | a managed plugin that adds the summary to the system prompt |
 
+OpenCode hooks use `$OPENCODE_CONFIG_DIR/plugins` when the override is non-empty, then `$XDG_CONFIG_HOME/opencode/plugins` for an absolute XDG path, otherwise `$HOME/.config/opencode/plugins`.
+`hooks status` reports managed copies left in the HOME/XDG global locations, and `hooks install` writes the selected target before removing those legacy copies; `hooks uninstall` removes both selected and detected legacy copies.
+Dry-runs preview the migration, and files without idlemax's managed marker stay untouched.
+Before moving between arbitrary custom directories, uninstall with the previous environment: idlemax cannot discover a custom path no longer named by any variable.
+
 - With no flag `hooks install` acts on the agents whose config directory exists and names the others as skipped; `--claude`, `--codex` and `--opencode` act on exactly the ones you name.
 - It edits only its own entry, byte for byte, and keeps the old file as `<file>.idlemax.bak`.
   Running it again changes nothing, and it repairs the command if the binary moved.

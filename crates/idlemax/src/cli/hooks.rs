@@ -3,6 +3,7 @@
 //! entry. The file work is in `agents`; this file holds the arguments, the report and its text.
 
 mod agents;
+mod opencode_migration;
 mod places;
 mod status;
 

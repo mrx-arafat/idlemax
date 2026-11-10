@@ -35,7 +35,7 @@ pub(super) fn left_out(which: &Which, places: &Places) -> Vec<&'static str> {
     }
     Agent::ALL
         .into_iter()
-        .filter(|a| !places.dir(*a).is_dir())
+        .filter(|a| !places.found(*a))
         .map(Agent::name)
         .collect()
 }
@@ -102,7 +102,7 @@ pub fn install(which: &Which, dry_run: bool) -> Result<Report> {
             let result = match agent {
                 Agent::Claude => json_install(agent, &places.file(agent), &command, dry_run),
                 Agent::Codex => codex_install(&places, &command, dry_run),
-                Agent::OpenCode => plugin_install(&places.file(agent), &program, dry_run),
+                Agent::OpenCode => super::opencode_migration::install(&places, &program, dry_run),
             };
             result.unwrap_or_else(|e| refused(agent, places.file(agent), &e))
         })
@@ -186,7 +186,7 @@ fn codex_install(places: &Places, command: &str, dry_run: bool) -> Result<AgentR
     Ok(r)
 }
 
-fn plugin_install(file: &Path, program: &str, dry_run: bool) -> Result<AgentReport> {
+pub(super) fn plugin_install(file: &Path, program: &str, dry_run: bool) -> Result<AgentReport> {
     let before = read_optional(file)?;
     if before.as_deref().is_some_and(|t| !opencode::is_managed(t)) {
         bail!(
@@ -219,7 +219,7 @@ pub fn uninstall(which: &Which, dry_run: bool) -> Result<Report> {
         .map(|(agent, _)| {
             let file = places.file(agent);
             let result = match agent {
-                Agent::OpenCode => plugin_remove(&file, dry_run),
+                Agent::OpenCode => super::opencode_migration::uninstall(&places, dry_run),
                 _ => json_remove(agent, &file, dry_run),
             };
             let mut r = result.unwrap_or_else(|e| refused(agent, file, &e));
@@ -258,7 +258,7 @@ fn json_remove(agent: Agent, file: &Path, dry_run: bool) -> Result<AgentReport> 
     Ok(r)
 }
 
-fn plugin_remove(file: &Path, dry_run: bool) -> Result<AgentReport> {
+pub(super) fn plugin_remove(file: &Path, dry_run: bool) -> Result<AgentReport> {
     let text = read_optional(file)?;
     let mut r = new_report(Agent::OpenCode, file.to_path_buf(), Outcome::NotInstalled);
     match text.as_deref() {

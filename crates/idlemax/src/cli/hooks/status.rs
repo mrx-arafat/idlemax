@@ -29,7 +29,11 @@ pub(super) fn run(which: &Which) -> Result<Report> {
         .into_iter()
         .map(|agent| {
             let file = places.file(agent);
-            if !places.dir(agent).is_dir() {
+            if agent == Agent::OpenCode {
+                return super::opencode_migration::status(&places)
+                    .unwrap_or_else(|e| refused(agent, file, &e));
+            }
+            if !places.found(agent) {
                 return new_report(agent, file, Outcome::NotFound);
             }
             status_of(agent, &places, &file).unwrap_or_else(|e| refused(agent, file.clone(), &e))
@@ -38,7 +42,7 @@ pub(super) fn run(which: &Which) -> Result<Report> {
     Ok(report("status", false, agents, Vec::new()))
 }
 
-fn status_of(agent: Agent, places: &Places, file: &Path) -> Result<AgentReport> {
+pub(super) fn status_of(agent: Agent, places: &Places, file: &Path) -> Result<AgentReport> {
     let text = read_optional(file)?;
     let command = match agent {
         Agent::OpenCode => text

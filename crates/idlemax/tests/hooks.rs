@@ -49,6 +49,8 @@ impl Sandbox {
             .env("PATH", &self.path)
             .env_remove("CLAUDE_CONFIG_DIR")
             .env_remove("CODEX_HOME")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("OPENCODE_CONFIG_DIR")
             .stdin(Stdio::null())
             .output()
             .unwrap();
@@ -82,6 +84,119 @@ fn outcome(report: &Value, agent: &str) -> String {
     found.map_or("absent".into(), |a| {
         a["outcome"].as_str().unwrap().to_string()
     })
+}
+
+#[test]
+fn opencode_dry_run_targets_the_verified_config_directory() {
+    let sb = Sandbox::new();
+    let state = sb.home.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let xdg = sb._tmp.path().join("xdg");
+    let custom = sb._tmp.path().join("additional-opencode");
+    for (value, custom_value, expected) in [
+        (
+            Some(xdg.as_os_str()),
+            Some(custom.as_os_str()),
+            custom.clone(),
+        ),
+        (Some(xdg.as_os_str()), None, xdg.join("opencode")),
+        (
+            Some(xdg.as_os_str()),
+            Some(std::ffi::OsStr::new("")),
+            xdg.join("opencode"),
+        ),
+        (None, None, sb.home.join(".config/opencode")),
+        (
+            Some(std::ffi::OsStr::new("")),
+            None,
+            sb.home.join(".config/opencode"),
+        ),
+        (
+            Some(std::ffi::OsStr::new("relative-config")),
+            None,
+            sb.home.join(".config/opencode"),
+        ),
+    ] {
+        assert!(state.is_dir() && state.starts_with(std::env::temp_dir()));
+        let mut cmd = Command::new(BIN);
+        cmd.args(["hooks", "install", "--opencode", "--dry-run", "--json"])
+            .env("HOME", &sb.home)
+            .env("IDLEMAX_HOME", &state)
+            .env_remove("OPENCODE_CONFIG_DIR")
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CODEX_HOME")
+            .env_remove("IDLEMAX_TOKEN")
+            .env_remove("IDLEMAX_COORD")
+            .env_remove("XDG_CONFIG_HOME");
+        if let Some(value) = value {
+            cmd.env("XDG_CONFIG_HOME", value);
+        }
+        if let Some(value) = custom_value {
+            cmd.env("OPENCODE_CONFIG_DIR", value);
+        }
+        let output = cmd.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let plugin = expected.join("plugins/idlemax.js");
+        assert_eq!(
+            report["agents"][0]["path"],
+            plugin.to_string_lossy().as_ref()
+        );
+        assert!(!plugin.exists(), "a dry run wrote a plugin");
+        assert!(!custom.exists(), "the custom directory was modified");
+    }
+}
+
+#[test]
+fn opencode_legacy_copy_is_reported_and_migration_is_previewed() {
+    let sb = Sandbox::new();
+    let state = sb.home.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    sb.write(
+        ".config/opencode/plugins/idlemax.js",
+        &idlemax_core::install::opencode::plugin_source(BIN),
+    );
+    let legacy = sb.home.join(".config/opencode/plugins/idlemax.js");
+    let custom = sb._tmp.path().join("custom");
+    let run = |args: &[&str]| {
+        assert!(state.is_dir() && state.starts_with(std::env::temp_dir()));
+        let output = Command::new(BIN)
+            .arg("hooks")
+            .args(args)
+            .arg("--opencode")
+            .arg("--json")
+            .env("HOME", &sb.home)
+            .env("IDLEMAX_HOME", &state)
+            .env("OPENCODE_CONFIG_DIR", &custom)
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CODEX_HOME")
+            .env_remove("IDLEMAX_TOKEN")
+            .env_remove("IDLEMAX_COORD")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let status = run(&["status"]);
+    assert_eq!(
+        status["agents"][0]["path"],
+        legacy.to_string_lossy().as_ref()
+    );
+    assert_eq!(outcome(&status, "opencode"), "stale");
+    let install = run(&["install", "--dry-run"]);
+    assert!(install["agents"][0]["notes"].to_string().contains("legacy"));
+    let uninstall = run(&["uninstall", "--dry-run"]);
+    assert_eq!(outcome(&uninstall, "opencode"), "removed");
+    assert!(legacy.exists() && !custom.exists());
 }
 
 /// Our hook commands in a settings or hooks file; none when the file has no SessionStart hooks.
@@ -231,6 +346,8 @@ fn with_no_agent_installed_the_error_names_where_it_looked_and_what_to_pass() {
         .env("PATH", "/usr/bin:/bin")
         .env_remove("CLAUDE_CONFIG_DIR")
         .env_remove("CODEX_HOME")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("OPENCODE_CONFIG_DIR")
         .stdin(Stdio::null())
         .output()
         .unwrap();

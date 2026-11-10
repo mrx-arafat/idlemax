@@ -32,6 +32,7 @@ pub(super) struct Places {
     pub(super) claude: PathBuf,
     pub(super) codex: PathBuf,
     pub(super) opencode: PathBuf,
+    pub(super) opencode_legacy: Vec<PathBuf>,
 }
 
 impl Places {
@@ -45,13 +46,30 @@ impl Places {
         let codex = var("CODEX_HOME")
             .map(PathBuf::from)
             .or_else(|| under(".codex"));
-        match (claude, codex, under(".config/opencode")) {
-            (Some(claude), Some(codex), Some(opencode)) => Ok(Self {
+        let global = var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute())
+            .or_else(|| under(".config"))
+            .map(|dir| dir.join("opencode"));
+        // Current OpenCode's global layer takes the explicit config directory first;
+        // older releases also search it after their global directory.
+        let opencode = var("OPENCODE_CONFIG_DIR")
+            .map(PathBuf::from)
+            .or_else(|| global.clone());
+        match (claude, codex, opencode) {
+            (Some(claude), Some(codex), Some(opencode)) => {
+                let mut opencode_legacy = Vec::new();
+                for dir in [global, under(".config/opencode")].into_iter().flatten() {
+                    let file = dir.join("plugins").join(opencode::FILE_NAME);
+                    if dir != opencode && !opencode_legacy.contains(&file) { opencode_legacy.push(file); }
+                }
+                Ok(Self {
                 claude,
                 codex,
                 opencode,
-            }),
-            _ => bail!("HOME is unset or empty; set it, or CLAUDE_CONFIG_DIR and CODEX_HOME"),
+                opencode_legacy,
+            })},
+            _ => bail!("HOME is unset or empty; set HOME, or CLAUDE_CONFIG_DIR, CODEX_HOME and OPENCODE_CONFIG_DIR (or XDG_CONFIG_HOME)"),
         }
     }
 
@@ -61,6 +79,22 @@ impl Places {
             Agent::Codex => &self.codex,
             Agent::OpenCode => &self.opencode,
         }
+    }
+
+    pub(super) fn found(&self, agent: Agent) -> bool {
+        self.dir(agent).is_dir()
+            || (agent == Agent::OpenCode
+                && self.opencode_legacy.iter().any(|path| {
+                    path.parent()
+                        .and_then(Path::parent)
+                        .is_some_and(Path::is_dir)
+                }))
+    }
+
+    pub(super) fn opencode_files(&self) -> Vec<PathBuf> {
+        std::iter::once(self.file(Agent::OpenCode))
+            .chain(self.opencode_legacy.iter().cloned())
+            .collect()
     }
 
     /// The file idlemax edits for this agent.
@@ -91,6 +125,6 @@ pub(super) fn selected(which: &Which, places: &Places) -> Vec<(Agent, bool)> {
     Agent::ALL
         .into_iter()
         .map(|a| (a, false))
-        .filter(|(a, _)| places.dir(*a).is_dir())
+        .filter(|(a, _)| places.found(*a))
         .collect()
 }

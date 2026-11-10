@@ -166,6 +166,12 @@ A smaller fleet (two workers at a time) landed what a new owner asked for ("I do
 
 ### 28. Confirm two platform claims from the audit
 
+- **OpenCode half done:** Plugin installation, status and removal prefer non-empty `OPENCODE_CONFIG_DIR`, then absolute `$XDG_CONFIG_HOME/opencode`, then `$HOME/.config/opencode`.
+  Current OpenCode's [CLI global-layer setup](https://github.com/anomalyco/opencode/blob/dev/packages/cli/src/index.ts) applies the explicit directory override; older releases also search it additively, so it is a valid target for both lookup designs.
+  A temp-home CLI dry-run regression covers explicit-directory precedence, empty overrides, the XDG path and its fallbacks.
+  Status discovers managed HOME/XDG legacy copies; install migrates them after a successful target write, and uninstall removes selected and legacy copies while preserving unmanaged files.
+  The macOS service-install half remains unconfirmed and deferred because it requires launchctl.
+
 - **Why (audit, round 3, unconfirmed):** re-running `idlemax service install` on macOS while a job is stopping may make `bootstrap` fail after an ignored `bootout`; and the OpenCode plugin always goes to `$HOME/.config/opencode` although OpenCode reads `XDG_CONFIG_HOME` and `OPENCODE_CONFIG_DIR`.
 - **How:** Reproduce each in a throwaway home; fix only what reproduces.
 - **Done when:** Each is either fixed with a test or recorded here as not a bug.
