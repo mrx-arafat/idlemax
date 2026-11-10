@@ -16,6 +16,7 @@ use ratatui::Frame;
 use super::app::{App, Tab};
 use super::feed::Snapshot;
 use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, text_width, wrap_words};
+use super::report;
 use super::table::{self, empty_state, table};
 use super::why::{headline, render_pane, WhyState};
 use crate::cli::print::summary_parts;
@@ -140,6 +141,7 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
     let why = app.why_open.then_some(&mut app.why);
     match tab {
         Tab::Devices => {
+            let area = report::render(f, area, &app.report);
             let rows = d.status.devices.iter().map(|v| {
                 let style = match (v.online, v.paused || v.local_paused) {
                     (false, _) => Style::new().dark_gray(),

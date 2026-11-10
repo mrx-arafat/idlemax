@@ -1,6 +1,7 @@
 //! Delivery: dashboard state and key handling; turns keys into confirmed requests.
 
 use idlemax_core::explain::WhySummary;
+use idlemax_core::report::Report;
 use idlemax_core::types::{ControlScope, Job, JobId, UnixMs};
 use ratatui::widgets::TableState;
 
@@ -68,6 +69,9 @@ pub struct App {
     pub source: String,
     pub tab: Tab,
     pub data: Option<Snapshot>,
+    /// What idlemax did today and in the last 7 days; empty until the first answer, and
+    /// from a coordinator without `/v1/report`.
+    pub report: Vec<Report>,
     pub updated_ms: Option<UnixMs>,
     pub fetch_error: Option<String>,
     pub flash: Option<Flash>,
@@ -89,6 +93,7 @@ impl App {
             source: source.into(),
             tab: Tab::Devices,
             data: None,
+            report: Vec::new(),
             updated_ms: None,
             fetch_error: None,
             flash: None,
@@ -116,6 +121,7 @@ impl App {
             Update::Done(text) => self.flash(format!("ok: {text}"), false, now_ms),
             Update::Failed(text) => self.flash(text, true, now_ms),
             Update::Why(job, result) => self.store_why(job, result),
+            Update::Report(reports) => self.report = reports,
         }
         None
     }

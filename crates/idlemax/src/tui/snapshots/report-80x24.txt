@@ -1,0 +1,25 @@
+##### Devices 80x24
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+┌ Did it help? ────────────────────────────────────────────────────────────────┐
+│ today: 2 jobs ran (14 job-min); guard held 6.1 h, mostly memory pressure     │
+│ (5.2 h); queue was empty 1.3 h of idle time                                  │
+│ 0 jobs ran in the last 7 days: held 38.0 h, mostly by memory pressure (31.2  │
+│ h)                                                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  DEVICE              STATE             GUARD               CPU  JOBS         │
+│> macbook-pro-arafat  online            run 2: all signal…  23%  1            │
+│  hetzner-fsn1-buil…  local-paused      pause: load 1m 9.…  96%  1 (1 paused) │
+│  old-mac-mini        offline 2d1h ago  -                   -    0            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume device macbook-pro-ar…  s stop-all  tab/1-6 switch  q quit

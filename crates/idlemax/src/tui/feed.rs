@@ -7,15 +7,19 @@ use std::time::Duration;
 use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::quota::QuotaView;
+use idlemax_core::report::Report;
 use idlemax_core::schedule::{ScheduleId, ScheduleView};
 use idlemax_core::types::{Event, Job, JobId, Recommendation, UnixMs};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::MissedTickBehavior;
 
-use crate::cli::{print, ApiClient, ClientError};
+use crate::cli::rows::Zone;
+use crate::cli::{print, report, ApiClient, ClientError};
 use crate::state::now_ms;
 
 const REFRESH: Duration = Duration::from_secs(2);
+/// The report changes slowly and costs the coordinator a scan, so it is asked for less often.
+const REPORT_REFRESH: Duration = Duration::from_secs(30);
 const JOB_LIMIT: u32 = 200;
 const EVENT_LIMIT: u32 = 200;
 
@@ -71,19 +75,32 @@ pub enum Update {
     Failed(String),
     /// The answer to `Request::Why`, or why it could not be had.
     Why(JobId, Result<Explanation, String>),
+    /// Today's report and the last 7 days'.
+    Report(Vec<Report>),
 }
 
 /// Runs until the dashboard drops either channel end.
 pub async fn run(
     client: ApiClient,
+    zone: Zone,
     mut requests: UnboundedReceiver<Request>,
     updates: Sender<Update>,
 ) {
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut report_tick = tokio::time::interval(REPORT_REFRESH);
+    report_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             _ = tick.tick() => {}
+            _ = report_tick.tick() => {
+                if let Some(update) = fetch_report(&client, zone).await {
+                    if updates.send(update).is_err() {
+                        return;
+                    }
+                }
+                continue;
+            }
             req = requests.recv() => {
                 let Some(req) = req else { return };
                 // An explanation changes nothing, so it needs no refresh of everything else.
@@ -99,6 +116,17 @@ pub async fn run(
         if updates.send(fetch(&client).await).is_err() {
             return;
         }
+    }
+}
+
+/// The reports, an empty list from a coordinator that predates them, or None when the
+/// coordinator could not be asked (the last answer stays on screen).
+async fn fetch_report(c: &ApiClient, zone: Zone) -> Option<Update> {
+    let [today, week] = report::default_periods(now_ms(), zone);
+    match tokio::try_join!(c.report(today), c.report(week)) {
+        Ok((today, week)) => Some(Update::Report(vec![today, week])),
+        Err(ClientError::Api { status: 404, .. }) => Some(Update::Report(Vec::new())),
+        Err(_) => None,
     }
 }
 

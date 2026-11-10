@@ -3,6 +3,7 @@
 mod app;
 mod feed;
 mod layout;
+mod report;
 #[cfg(test)]
 mod snapshots;
 mod table;
@@ -45,7 +46,7 @@ pub async fn run(client: ApiClient, zone: crate::cli::rows::Zone) -> Result<(), 
     app.zone = zone;
     let (req_tx, req_rx) = tokio::sync::mpsc::unbounded_channel();
     let (upd_tx, upd_rx) = mpsc::channel();
-    let feed = tokio::spawn(feed::run(client, req_rx, upd_tx));
+    let feed = tokio::spawn(feed::run(client, zone, req_rx, upd_tx));
     // Terminal I/O blocks, so the UI loop lives on a blocking thread.
     let ui = tokio::task::spawn_blocking(move || ui_thread(app, &req_tx, &upd_rx)).await;
     feed.abort();

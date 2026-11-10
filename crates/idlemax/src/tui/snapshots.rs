@@ -495,3 +495,18 @@ fn reasons_pane_fits_80x24() {
 fn reasons_pane_fits_120x40() {
     check("why-120x40", &why_screens(120, 40, false));
 }
+
+#[test]
+fn the_report_panel_sits_above_the_devices_at_80x24() {
+    let mut app = app_with(fixture(), Tab::Devices);
+    app.report = parse(json!([
+        {"label": "today", "jobs": {"ran": 2},
+         "verdict": "today: 2 jobs ran (14 job-min); guard held 6.1 h, mostly memory pressure (5.2 h); queue was empty 1.3 h of idle time"},
+        {"label": "last 7 days", "jobs": {"ran": 0},
+         "verdict": "0 jobs ran in the last 7 days: held 38.0 h, mostly by memory pressure (31.2 h)"}
+    ]));
+    check(
+        "report-80x24",
+        &format!("##### Devices 80x24\n{}\n", screen(&mut app, 80, 24)),
+    );
+}
