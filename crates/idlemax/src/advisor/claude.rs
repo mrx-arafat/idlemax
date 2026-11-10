@@ -43,6 +43,7 @@ pub fn pass_job(pass: &AiPass, schema: &Value) -> JobSpec {
     ];
     JobSpec {
         name: AI_PASS_JOB_NAME.into(),
+        key: Some(format!("{AI_PASS_JOB_NAME}:{}", pass.account)),
         command: command.iter().map(|s| s.to_string()).collect(),
         stdin: Some(pass.prompt.clone()),
         requires: vec![AI_PASS_CLI.into()],
@@ -109,6 +110,7 @@ mod tests {
         };
         let schema = serde_json::json!({"type": "object"});
         let spec = pass_job(&pass, &schema);
+        assert_eq!(spec.key.as_deref(), Some("advisor-ai-pass:personal"));
 
         assert!(spec.command.iter().all(|arg| !arg.contains(prompt)));
         let stored = serde_json::to_value(&spec).unwrap();

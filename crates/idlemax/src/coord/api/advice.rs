@@ -6,15 +6,12 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use idlemax_core::advice::{self, AdviceError};
 use idlemax_core::control::admit_job;
-use idlemax_core::protocol::{ClusterStatus, ControlRequest};
-use idlemax_core::types::{
-    ControlAction, ControlScope, EventKind, Job, JobId, JobStatus, Recommendation,
-    RecommendationStatus, UnixMs,
-};
+use idlemax_core::protocol::ClusterStatus;
+use idlemax_core::types::{EventKind, Job, JobId, Recommendation, UnixMs};
 use idlemax_core::Config;
 
 use super::http::ApiFailure;
-use super::jobs::{add_job, apply_control, cluster_status, operator_job, quota_views, LimitQuery};
+use super::jobs::{cluster_status, operator_job, quota_views, LimitQuery};
 use super::{page_limit, AppState};
 use crate::advisor::{self as advisor_adapter, AdviceChanges, CoordState};
 use crate::coord::store::Store;
@@ -74,6 +71,20 @@ pub async fn dismiss(
 
 /// One advisor run: gather state and the agents' inputs, let the advisor decide, persist.
 pub async fn run_refresh(app: &AppState, now: UnixMs) -> Result<(), ApiFailure> {
+    run_refresh_with(app, now, |state, existing| async move {
+        advisor_adapter::refresh(app.paths(), &app.config().advisor, state, &existing, now)
+            .await
+            .map_err(|e| ApiFailure::Unavailable(format!("advisor: {e}")))
+    })
+    .await
+}
+
+async fn run_refresh_with<F, Fut>(app: &AppState, now: UnixMs, compute: F) -> Result<(), ApiFailure>
+where
+    F: FnOnce(CoordState, Vec<Recommendation>) -> Fut,
+    Fut: std::future::Future<Output = Result<AdviceChanges, ApiFailure>>,
+{
+    let _refresh = app.refresh_lock.lock().await;
     let (state, existing) = app
         .with_store(move |store, cfg| {
             let status = cluster_status(store, cfg, now)?;
@@ -86,10 +97,7 @@ pub async fn run_refresh(app: &AppState, now: UnixMs) -> Result<(), ApiFailure> 
             Ok::<_, ApiFailure>((state, existing_advice(store, now)?))
         })
         .await?;
-    let cfg = &app.config().advisor;
-    let changes = advisor_adapter::refresh(app.paths(), cfg, state, &existing, now)
-        .await
-        .map_err(|e| ApiFailure::Unavailable(format!("advisor: {e}")))?;
+    let changes = compute(state, existing).await?;
     app.with_store(move |store, cfg| persist(store, cfg, &changes, "refresh", None, now))
         .await
 }
@@ -98,6 +106,7 @@ pub async fn run_refresh(app: &AppState, now: UnixMs) -> Result<(), ApiFailure> 
 /// Every outcome records an Advice event naming `job`, which is how a replay of the update
 /// knows the ingest finished.
 pub async fn ingest_ai_output(app: &AppState, job: JobId, output: String, now: UnixMs) {
+    let _refresh = app.refresh_lock.lock().await;
     let gathered = app
         .with_store(move |store, cfg| {
             Ok::<_, ApiFailure>((
@@ -172,7 +181,7 @@ fn dismiss_advice(store: &mut Store, id: i64, now: UnixMs) -> Result<Recommendat
     Ok(stored)
 }
 
-/// Persists an advisor plan. A queued spec that fails admission is logged, not fatal.
+/// Persists an advisor plan atomically. Failed admission leaves the plan unapplied.
 /// The closing event names `job` (the AI pass) when there is one: it marks the plan as done.
 fn persist(
     store: &mut Store,
@@ -182,52 +191,11 @@ fn persist(
     job: Option<JobId>,
     now: UnixMs,
 ) -> Result<(), ApiFailure> {
-    for id in &changes.close {
-        store.set_recommendation_status(*id, RecommendationStatus::Dismissed)?;
-    }
-    for rec in &changes.insert {
-        store.insert_recommendation(rec)?;
-    }
-    let mut queued = 0;
     for spec in &changes.queue {
-        match add_job(store, cfg, spec, now) {
-            Ok(_) => queued += 1,
-            Err(ApiFailure::BadRequest(why)) => {
-                let msg = format!("advisor job {} not queued: {why}", spec.name);
-                store.append_event(EventKind::Advice, None, None, &msg, now)?;
-            }
-            Err(e) => return Err(e),
-        }
+        admit_job(spec, &cfg.quota)?;
     }
-    let cancelled = cancel_stale(store, &changes.cancel, now)?;
-    let msg = format!(
-        "advice {origin}: {} new, {} closed, {queued} job(s) queued, {cancelled} stale cancelled",
-        changes.insert.len(),
-        changes.close.len()
-    );
-    store.append_event(EventKind::Advice, None, job, &msg, now)?;
+    store.persist_advice(changes, origin, job, now)?;
     Ok(())
-}
-
-/// Cancels stale advisor jobs that are still queued; one leased since the advisor looked
-/// keeps running, since killing it would waste the quota it already spends.
-fn cancel_stale(store: &mut Store, ids: &[JobId], now: UnixMs) -> Result<usize, ApiFailure> {
-    let mut cancelled = 0;
-    for &id in ids {
-        if store
-            .get_job(id)?
-            .is_some_and(|j| j.status == JobStatus::Queued)
-        {
-            let req = ControlRequest {
-                scope: ControlScope::Job(id),
-                action: ControlAction::Cancel,
-                reason: Some("stale advisor AI pass".into()),
-            };
-            apply_control(store, &req, &[], now)?;
-            cancelled += 1;
-        }
-    }
-    Ok(cancelled)
 }
 
 fn existing_advice(store: &Store, now: UnixMs) -> Result<Vec<Recommendation>, ApiFailure> {
@@ -249,5 +217,141 @@ fn advice_failure(e: AdviceError) -> ApiFailure {
         AdviceError::InvalidJob(_) | AdviceError::AiOutput(_) => {
             ApiFailure::BadRequest(e.to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod refresh_tests {
+    use super::*;
+    use idlemax_core::types::RecommendationStatus;
+
+    #[tokio::test]
+    async fn concurrent_refreshes_queue_one_mock_pass_and_preserve_mid_refresh_acceptance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        let id = store
+            .insert_recommendation(&Recommendation::default())
+            .unwrap();
+        let app = AppState::new(
+            store,
+            Config::default(),
+            idlemax_core::Paths::new(tmp.path()),
+        );
+        let changes = AdviceChanges {
+            close: vec![id],
+            queue: vec![idlemax_core::types::JobSpec {
+                name: idlemax_core::advice::AI_PASS_JOB_NAME.into(),
+                key: Some("advisor-ai-pass:fixture".into()),
+                command: vec!["/bin/echo".into(), "mock pass".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let (entered, entered_rx) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let first_app = app.clone();
+        let first_changes = changes.clone();
+        let first = tokio::spawn(async move {
+            run_refresh_with(&first_app, 1, |_, _| async move {
+                entered.send(()).unwrap();
+                released.await.unwrap();
+                Ok(first_changes)
+            })
+            .await
+        });
+        entered_rx.await.unwrap();
+        app.with_store(move |store, _| {
+            store.set_recommendation_status(id, RecommendationStatus::Accepted)?;
+            Ok::<_, ApiFailure>(())
+        })
+        .await
+        .unwrap();
+        let second_app = app.clone();
+        let (second_ready, second_ready_rx) = tokio::sync::oneshot::channel();
+        let second = tokio::spawn(async move {
+            second_ready.send(()).unwrap();
+            run_refresh_with(&second_app, 2, |state, existing| async move {
+                assert_eq!(
+                    state.jobs.len(),
+                    1,
+                    "refresh gathered before the earlier plan committed"
+                );
+                assert_eq!(existing[0].status, RecommendationStatus::Accepted);
+                Ok(changes)
+            })
+            .await
+        });
+        second_ready_rx.await.unwrap();
+        release.send(()).unwrap();
+        first.await.unwrap().unwrap();
+        second.await.unwrap().unwrap();
+        app.with_store(move |store, _| {
+            assert_eq!(store.job_counts()?.queued, 1);
+            let stale = store.queued_jobs()?.remove(0);
+            store.persist_advice(
+                &AdviceChanges {
+                    cancel: vec![stale.id],
+                    queue: vec![stale.spec],
+                    ..Default::default()
+                },
+                "refresh",
+                None,
+                3,
+            )?;
+            assert_eq!(store.job_counts()?.queued, 1);
+            assert_eq!(
+                store.get_job(stale.id)?.unwrap().status,
+                idlemax_core::types::JobStatus::Cancelled
+            );
+            assert_eq!(
+                store.get_recommendation(id)?.unwrap().status,
+                RecommendationStatus::Accepted
+            );
+            Ok::<_, ApiFailure>(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[test]
+    fn stale_close_preserves_accepted_advice_and_failed_queue_rolls_back() {
+        let mut store = Store::open_in_memory().unwrap();
+        let accepted = Recommendation {
+            status: RecommendationStatus::Accepted,
+            ..Default::default()
+        };
+        let id = store.insert_recommendation(&accepted).unwrap();
+        let changes = AdviceChanges {
+            close: vec![id],
+            ..Default::default()
+        };
+        persist(&mut store, &Config::default(), &changes, "refresh", None, 1).unwrap();
+        assert_eq!(
+            store.get_recommendation(id).unwrap().unwrap().status,
+            RecommendationStatus::Accepted
+        );
+        let changes = AdviceChanges {
+            insert: vec![Recommendation {
+                key: "must-rollback".into(),
+                ..accepted
+            }],
+            queue: vec![idlemax_core::types::JobSpec::default()],
+            ..Default::default()
+        };
+        assert!(persist(&mut store, &Config::default(), &changes, "refresh", None, 2).is_err());
+        assert_eq!(store.list_recommendations(0).unwrap().len(), 1);
+        let mut changes = changes;
+        changes.queue.insert(
+            0,
+            idlemax_core::types::JobSpec {
+                name: "must-rollback".into(),
+                command: vec!["/bin/echo".into()],
+                ..Default::default()
+            },
+        );
+        assert!(store.persist_advice(&changes, "refresh", None, 3).is_err());
+        assert_eq!(store.list_recommendations(0).unwrap().len(), 1);
+        assert_eq!(store.job_counts().unwrap().queued, 0);
+        assert_eq!(store.events(0).unwrap().len(), 1);
     }
 }

@@ -287,7 +287,7 @@ pub(super) fn get_job(conn: &Connection, id: JobId) -> StoreResult<Option<Job>> 
 }
 
 /// The oldest job with `key` that has not finished.
-fn unfinished_with_key(conn: &Connection, key: &str) -> StoreResult<Option<Job>> {
+pub(super) fn unfinished_with_key(conn: &Connection, key: &str) -> StoreResult<Option<Job>> {
     let sql = format!(
         "SELECT {JOB_COLUMNS} FROM jobs WHERE key = ?1 AND status IN {LIVE} ORDER BY id LIMIT 1"
     );

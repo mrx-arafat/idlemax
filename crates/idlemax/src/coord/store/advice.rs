@@ -8,6 +8,8 @@ use super::{
     enum_col, enum_text, json_col, json_text, opt_json_col, sql_limit, Store, StoreResult,
 };
 
+mod refresh;
+
 const COLUMNS: &str =
     "id, at_ms, key, kind, title, why, evidence, suggested_job, confidence, source, status";
 
@@ -36,25 +38,9 @@ impl Store {
     }
 
     /// Stores a recommendation under a new id (its `id` field is ignored) and returns the id.
+    #[cfg(test)]
     pub fn insert_recommendation(&mut self, rec: &Recommendation) -> StoreResult<i64> {
-        self.conn.execute(
-            "INSERT INTO recommendations (at_ms, key, kind, title, why, evidence,
-               suggested_job, confidence, source, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                rec.at_ms,
-                rec.key,
-                enum_text(&rec.kind)?,
-                rec.title,
-                rec.why,
-                json_text(&rec.evidence)?,
-                rec.suggested_job.as_ref().map(json_text).transpose()?,
-                rec.confidence,
-                enum_text(&rec.source)?,
-                enum_text(&rec.status)?,
-            ],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        insert_recommendation(&self.conn, rec)
     }
 
     /// Open ones first, then newest; `limit` 0 means all.
@@ -80,11 +66,32 @@ impl Store {
         status: RecommendationStatus,
     ) -> StoreResult<Option<Recommendation>> {
         self.conn.execute(
-            "UPDATE recommendations SET status = ?2 WHERE id = ?1",
+            "UPDATE recommendations SET status = ?2 WHERE id = ?1 AND status = 'open'",
             params![id, enum_text(&status)?],
         )?;
         self.get_recommendation(id)
     }
+}
+
+fn insert_recommendation(conn: &rusqlite::Connection, rec: &Recommendation) -> StoreResult<i64> {
+    conn.execute(
+        "INSERT INTO recommendations (at_ms, key, kind, title, why, evidence,
+               suggested_job, confidence, source, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            rec.at_ms,
+            rec.key,
+            enum_text(&rec.kind)?,
+            rec.title,
+            rec.why,
+            json_text(&rec.evidence)?,
+            rec.suggested_job.as_ref().map(json_text).transpose()?,
+            rec.confidence,
+            enum_text(&rec.source)?,
+            enum_text(&rec.status)?,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 fn rec_from_row(r: &Row<'_>) -> rusqlite::Result<Recommendation> {

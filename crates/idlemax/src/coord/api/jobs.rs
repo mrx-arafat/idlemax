@@ -158,15 +158,6 @@ pub async fn quota(State(app): State<AppState>) -> Result<Json<Vec<QuotaView>>, 
     Ok(Json(views.await?))
 }
 
-pub(super) fn add_job(
-    store: &mut Store,
-    cfg: &Config,
-    spec: &JobSpec,
-    now: UnixMs,
-) -> Result<Job, ApiFailure> {
-    Ok(add_job_once(store, cfg, spec, now)?.into_job())
-}
-
 /// Queues the spec unless its key already names an unfinished job (then nothing changes).
 fn add_job_once(
     store: &mut Store,

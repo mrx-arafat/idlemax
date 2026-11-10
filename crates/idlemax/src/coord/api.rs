@@ -26,6 +26,7 @@ use super::web;
 /// Shared by every handler and by the coordinator's background sweeps.
 #[derive(Clone)]
 pub struct AppState {
+    refresh_lock: Arc<tokio::sync::Mutex<()>>,
     store: Arc<Mutex<Store>>,
     config: Arc<Config>,
     paths: Arc<Paths>,
@@ -34,6 +35,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(store: Store, config: Config, paths: Paths) -> Self {
         Self {
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             store: Arc::new(Mutex::new(store)),
             config: Arc::new(config),
             paths: Arc::new(paths),

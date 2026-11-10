@@ -130,7 +130,7 @@ Four read-only audits and a worker fleet landed about 50 fixes; `git log v0.2.0.
 - **How:** `name_problem` on those names, bounded lists, drop snapshots for accounts not in `[[quota.accounts]]`, count advisor-input devices against the device cap, a schedules cap.
 - **Done when:** Each path has a test that an oversized or over-count request is refused or trimmed.
 
-### 25. Serialize the advisor refresh
+### 25. Serialize the advisor refresh (done)
 
 - **Why (audit, round 3):** `run_refresh` reads and persists in two lock acquisitions, so a sweep refresh and `POST /v1/advice/refresh` can interleave: two AI passes queued, duplicate advice, an advice accepted mid-refresh set back to dismissed, or an auto-accepted advice whose job never queued.
 - **How:** One `tokio::Mutex` around refreshes in `AppState`, close only `WHERE status = 'open'`, persist in one transaction, give the AI pass an idempotency key. Test without a real AI pass.

@@ -292,6 +292,9 @@ A coordinator older than this route answers 404; the agent logs a warning and tr
 `Recommendation.key` is a stable dedup key (for example `parked_job:42`), so a refresh does not repeat advice the owner already saw.
 Accepting queues `suggested_job`; nothing runs on the advisor's word alone, except job names listed in `advisor.auto_accept`.
 Suggested jobs come from templates in `$IDLEMAX_HOME/jobs/*.toml`.
+Refreshes and AI-output ingestion are serialized; each plan commits advice, queued jobs, cancellations and events atomically.
+A failed job admission leaves the plan unapplied, and a stale refresh can only dismiss advice that is still open.
+AI-pass jobs use the per-account idempotency key `advisor-ai-pass:<account>` so an unfinished pass is not queued twice.
 
 ## Schedules
 
