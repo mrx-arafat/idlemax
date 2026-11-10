@@ -80,6 +80,29 @@ fn statuses(steps: &[StepReport]) -> Vec<Status> {
 }
 
 #[test]
+fn a_starting_setup_reports_doctor_as_the_next_step_without_a_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths::new(dir.path().join("state"));
+    let report = finish(
+        &plan_both(&paths),
+        false,
+        vec![StepReport::new(
+            "doctor",
+            Status::Starting,
+            "services are still starting",
+            "idlemax doctor".into(),
+        )],
+        None,
+    );
+    assert_eq!(report.next, ["idlemax doctor"]);
+    assert!(report.doctor.is_none());
+    let text = text::render(&report);
+    assert!(text.contains("starting"));
+    assert!(text.contains("run `idlemax doctor` to re-check"));
+    assert!(!text.contains("warn"));
+}
+
+#[test]
 fn a_dry_run_changes_nothing_and_a_second_run_changes_nothing_again() {
     let dir = tempfile::tempdir().unwrap();
     let paths = Paths::new(dir.path().join("state"));

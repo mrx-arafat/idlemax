@@ -173,12 +173,15 @@ unset IDLEMAX_HOME
 
 `idlemax setup` takes a device from an installed binary to a working one:
 
+After starting services, setup waits up to 10 seconds for the agent's first successful coordinator connection before running doctor.
+If startup is still pending, it reports `starting` and asks you to run `idlemax doctor` to re-check.
+
 ```sh
 idlemax setup [--role agent|coord|both] [--coord-url URL] [--token-stdin] [--statusline] [--no-service] [--dry-run]
 ```
 
 It runs `init` (never overwriting), writes `config.toml` for the role, installs the services through the same code as `idlemax service install`, optionally wires the Claude Code statusline, and runs `idlemax doctor`.
-Every step is `done`, `already done`, `skipped`, `would do` (a dry run) or `FAILED`, with the exact command that does the same by hand:
+Every step is `done`, `already done`, `skipped`, `would do` (a dry run), `starting` or `FAILED`, with the exact command that does the same by hand:
 
 ```text
 $ idlemax setup --dry-run
@@ -199,7 +202,7 @@ would do      service agent   new, then started
                               ...
 skipped       statusline      not asked for: add --statusline
                               by hand: idlemax statusline install
-would do      doctor          checks the whole setup once it is written
+would do      doctor          waits up to 10s for services to connect, then checks the whole setup
                               would run: idlemax doctor
                               by hand: idlemax doctor
 
@@ -230,7 +233,8 @@ ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http:
 - A service file is rewritten and the service restarted only when its content would change, for example after the binary moved.
   A current file whose service is not running is started, so a re-run after a failed start fixes it.
 - The first failing step stops the run, and the steps after it say they were not run.
-  After it installs services it waits up to 15 seconds for their ports, then runs doctor and prints the report.
+  After it installs services it waits up to 10 seconds for the agent's coordinator connection (or just the coordinator for a coordinator-only role), then runs doctor.
+  Pending startup reports `starting` with `idlemax doctor` as the next check.
 - Exit code 1 means a step failed, or services were asked for and doctor still finds a failing check.
   With `--no-service` doctor's findings are printed but do not change the exit code, because nothing is running yet by design.
   Exit code 2 means flags that cannot work.

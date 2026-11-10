@@ -19,6 +19,8 @@ pub enum Status {
     Failed,
     /// Doctor ran and found failing checks (its own report lists the fixes).
     Problems,
+    /// Services have not completed their handshake within the startup window.
+    Starting,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,7 +100,9 @@ pub(super) fn finish(
         doctor.as_ref().is_some_and(|d| !d.healthy) && plan.service_skipped.is_none();
     let ok = !stopped && !doctor_fails;
     let mut next = Vec::new();
-    if ok && !dry_run {
+    if steps.iter().any(|s| s.status == Status::Starting) {
+        next.push("idlemax doctor".to_string());
+    } else if ok && !dry_run {
         next.push("idlemax tui".to_string());
         next.push("idlemax job add <spec.toml>".to_string());
     }

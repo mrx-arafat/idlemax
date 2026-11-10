@@ -2,6 +2,34 @@ use super::*;
 
 const TAILNET: &str = "http://100.64.0.10:7878";
 
+#[test]
+fn startup_waits_for_the_agent_heartbeat_and_stays_starting_at_the_deadline() {
+    assert_eq!(
+        startup_readiness(Role::Both, true, false, 0, 10_000),
+        StartupReadiness::Waiting
+    );
+    assert_eq!(
+        startup_readiness(Role::Both, true, true, 9_999, 10_000),
+        StartupReadiness::Ready
+    );
+    assert_eq!(
+        startup_readiness(Role::Both, true, false, 10_000, 10_000),
+        StartupReadiness::Starting
+    );
+    assert_eq!(
+        startup_readiness(Role::Agent, false, true, 10_000, 10_000),
+        StartupReadiness::Ready
+    );
+    assert_eq!(
+        startup_readiness(Role::Coord, true, false, 0, 10_000),
+        StartupReadiness::Ready
+    );
+    assert_eq!(
+        startup_readiness(Role::Coord, false, true, 10_000, 10_000),
+        StartupReadiness::Starting
+    );
+}
+
 fn request(role: Role) -> Request<'static> {
     Request {
         role,

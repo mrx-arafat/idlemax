@@ -38,6 +38,7 @@ fn status_word(s: Status) -> &'static str {
         Status::WouldDo => "would do",
         Status::Failed => "FAILED",
         Status::Problems => "problems",
+        Status::Starting => "starting",
     }
 }
 
@@ -83,6 +84,9 @@ fn closing(r: &SetupReport) -> String {
         return "setup stopped at the step marked FAILED: fix it, then run `idlemax setup` \
                 again (it is safe to repeat)"
             .into();
+    }
+    if r.steps.iter().any(|s| s.status == Status::Starting) {
+        return "services are starting; run `idlemax doctor` to re-check".into();
     }
     let done = if r.changed {
         "setup is done"

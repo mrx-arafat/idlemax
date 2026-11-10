@@ -7,6 +7,36 @@ use super::service::{Platform, ServiceKind};
 use crate::config::Config;
 use crate::types::{DeviceProfile, Os};
 
+/// Whether freshly started services have completed their startup handshake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupReadiness {
+    Ready,
+    Waiting,
+    Starting,
+}
+
+/// An agent is ready only after reaching its coordinator, not merely opening its API.
+pub fn startup_readiness(
+    role: Role,
+    coordinator_ready: bool,
+    agent_connected: bool,
+    elapsed_ms: u64,
+    wait_ms: u64,
+) -> StartupReadiness {
+    let ready = if role.runs_agent() {
+        agent_connected
+    } else {
+        coordinator_ready
+    };
+    if ready {
+        StartupReadiness::Ready
+    } else if elapsed_ms >= wait_ms {
+        StartupReadiness::Starting
+    } else {
+        StartupReadiness::Waiting
+    }
+}
+
 /// What this device is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

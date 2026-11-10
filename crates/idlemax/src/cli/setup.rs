@@ -3,14 +3,12 @@
 //! the existing commands do the work, and this module reports every step as done, already
 //! done (a no-op), skipped or failed, with the command that does the same by hand.
 
-use std::time::{Duration, Instant};
-
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
 use idlemax_core::doctor::Report;
-use idlemax_core::install::service::{Platform, ServiceKind};
+use idlemax_core::install::service::Platform;
 use idlemax_core::install::setup::{
-    plan, Existing, Request, Role, SetupError, SetupPlan, StatuslinePlan,
+    plan, Existing, Request, Role, SetupError, SetupPlan, StartupReadiness, StatuslinePlan,
 };
 use idlemax_core::types::Os;
 use idlemax_core::{Config, Paths};
@@ -21,15 +19,13 @@ use crate::state;
 use report::{finish, Status, StepReport};
 use steps::{execute, Env};
 
+mod readiness;
 mod report;
 mod steps;
 mod text;
 
 #[cfg(test)]
 mod tests;
-
-/// How long to wait for freshly installed services to open their ports before doctor looks.
-const LISTEN_WAIT: Duration = Duration::from_secs(15);
 
 #[derive(Args, Debug)]
 pub struct SetupArgs {
@@ -159,7 +155,11 @@ async fn doctor_step(
         return (StepReport::new("doctor", Status::Skipped, why, cmd), None);
     }
     if env.dry_run {
-        let why = "checks the whole setup once it is written";
+        let why = if plan.services.is_empty() {
+            "checks the whole setup once it is written"
+        } else {
+            "waits up to 10s for services to connect, then checks the whole setup"
+        };
         let mut step = StepReport::new("doctor", Status::WouldDo, why, cmd.clone());
         step.runs = vec![cmd];
         return (step, None);
@@ -167,8 +167,22 @@ async fn doctor_step(
     let started_services = steps
         .iter()
         .any(|s| s.step == "service" && s.status == Status::Done);
-    if started_services {
-        wait_until_listening(env.paths, plan).await;
+    // Other probe errors fall through to doctor for its normal config/auth diagnostics.
+    if started_services
+        && matches!(
+            readiness::wait(env.paths, plan.role).await,
+            Ok(StartupReadiness::Starting)
+        )
+    {
+        return (
+            StepReport::new(
+                "doctor",
+                Status::Starting,
+                "services are still starting; re-check with idlemax doctor",
+                cmd,
+            ),
+            None,
+        );
     }
     let report = crate::doctor::run(coord).await;
     let (status, c) = (
@@ -187,32 +201,4 @@ async fn doctor_step(
         c.fail
     );
     (StepReport::new("doctor", status, detail, cmd), Some(report))
-}
-
-/// Gives the services this run installed a moment to open their ports.
-async fn wait_until_listening(paths: &Paths, plan: &SetupPlan) {
-    let Ok(config) = state::load_config(paths) else {
-        return;
-    };
-    let addrs: Vec<String> = plan
-        .services
-        .iter()
-        .map(|kind| match kind {
-            ServiceKind::Coord => config.coordinator.listen.clone(),
-            ServiceKind::Agent => config.agent.listen.clone(),
-        })
-        .collect();
-    let deadline = Instant::now() + LISTEN_WAIT;
-    for addr in addrs {
-        while Instant::now() < deadline {
-            let connect = tokio::net::TcpStream::connect(addr.as_str());
-            if matches!(
-                tokio::time::timeout(Duration::from_millis(500), connect).await,
-                Ok(Ok(_))
-            ) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-    }
 }
