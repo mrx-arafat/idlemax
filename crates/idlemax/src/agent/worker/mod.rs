@@ -15,6 +15,7 @@ pub mod host;
 pub mod procs;
 mod record;
 mod review;
+pub mod scope;
 mod steps;
 #[cfg(test)]
 mod tests;

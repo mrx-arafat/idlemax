@@ -15,6 +15,7 @@ case "$1" in
   limit) cat >/dev/null; echo "usage limit reached"; exit 1 ;;
   env) cat >/dev/null; env ;;
   sleep) cat >/dev/null; sleep 30 ;;
+  escape) cat >/dev/null; setsid -f sh -c 'echo $$ > "$ESCAPE_PID"; exec sleep 600'; sleep 30 ;;
 esac
 "#;
 
@@ -220,4 +221,46 @@ fn a_stale_handle_never_reaches_a_later_worker_with_the_same_pid() {
     assert_eq!(rig.host.state(&second).unwrap().status, AgentStatus::Idle);
     rig.host.stop(&second).unwrap();
     until_done(&rig, &second);
+}
+
+#[test]
+fn a_stop_ends_a_double_forked_survivor_too_when_the_worker_has_its_own_scope() {
+    // Red team case 10: `setsid -f` leaves the process group; the scope keeps it.
+    let rig = rig();
+    if rig.host.scope.is_none() {
+        eprintln!("no systemd manager here: the scope case is not tested");
+        return;
+    }
+    let pid_file = rig._temp.path().join("escape.pid");
+    let mut l = launch(&rig, "escape");
+    l.env
+        .push(("ESCAPE_PID".into(), pid_file.display().to_string()));
+    let handle = rig.host.start(&l).unwrap();
+    rig.host.send(&handle, "go").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let survivor = loop {
+        if let Some(pid) = std::fs::read_to_string(&pid_file)
+            .ok()
+            .and_then(|s| s.trim().parse::<i32>().ok())
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "the stub never forked");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    rig.host.stop(&handle).unwrap();
+    until_done(&rig, &handle);
+    let alive = |pid: i32| std::path::Path::new(&format!("/proc/{pid}")).exists();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while alive(survivor) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let left = alive(survivor);
+    if left {
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(survivor),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+    }
+    assert!(!left, "the double-forked process outlived the stop");
 }

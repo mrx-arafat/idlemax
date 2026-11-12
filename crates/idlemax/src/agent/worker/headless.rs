@@ -3,7 +3,8 @@
 //! environment of a job plus the pairs of a pane, and writes the worker's output to the job
 //! log that `idlemax logs` reads. It has no pane, so nothing can wait for input: the agent is
 //! `idle` before its prompt, `working` while it lives after it and `done` once it exited.
-//! A headless worker is a child of the agent, so it never outlives it.
+//! A headless worker is a child of the agent, so it never outlives it. On Linux it runs in
+//! a systemd scope of its own, so a stop also ends what it forked out of its group.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -20,6 +21,7 @@ use idlemax_core::worker::WorkerCli;
 use idlemax_core::{Paths, TOKEN_ENV};
 
 use super::host::{AgentStatus, Handle, HostError, HostState, Launch, WorkerHost};
+use super::scope::{self, WorkerScope};
 use crate::agent::runner::os::{signal_group, Sig};
 
 #[cfg(test)]
@@ -47,6 +49,8 @@ struct Slot {
     /// it and reads `None`.
     exit: Arc<Mutex<Option<i32>>>,
     finished: Arc<Mutex<Option<Instant>>>,
+    /// The worker's scope cgroup, read once the child runs in it; None without a scope.
+    cgroup: Arc<Mutex<Option<PathBuf>>>,
 }
 
 #[derive(Default)]
@@ -55,6 +59,8 @@ pub struct HeadlessHost {
     /// Keyed by the handle's label, which is new for every start; a pid can come back.
     slots: Mutex<HashMap<String, Arc<Slot>>>,
     starts: AtomicU64,
+    /// Starts each worker in a scope of its own; None where there is no systemd manager.
+    scope: Option<WorkerScope>,
     /// The only directory a test build searches, so a test finds its stub CLI.
     #[cfg(test)]
     bin_dir: Option<PathBuf>,
@@ -64,6 +70,7 @@ impl HeadlessHost {
     pub fn new(paths: Paths) -> Self {
         Self {
             paths: Some(paths),
+            scope: WorkerScope::detect(),
             ..Default::default()
         }
     }
@@ -159,15 +166,22 @@ fn write_footer(log: &Path, status: &str, code: i32) {
         .and_then(|mut f| f.write_all(line.as_bytes()));
 }
 
-/// The job's minimal environment (`job_run::inherits`), then the pane's pairs, never the token.
-fn command(program: &Path, launch: &Launch) -> Command {
+/// The job's minimal environment (`job_run::inherits`), then the pane's pairs, never the token;
+/// in a scope of its own when there is one.
+fn command(program: &Path, launch: &Launch, scope: Option<&WorkerScope>) -> Command {
     use std::os::unix::process::CommandExt;
-    let mut cmd = Command::new(program);
+    let mut cmd = match scope {
+        Some(s) => s.command(launch.job, launch.attempt, program),
+        None => Command::new(program),
+    };
     cmd.args(&launch.args)
         .current_dir(&launch.folder)
         .env_clear();
     cmd.envs(std::env::vars_os().filter(|(k, _)| k.to_str().is_some_and(inherits)));
     cmd.envs(launch.env.iter().map(|(k, v)| (k, v)));
+    if let Some(s) = scope {
+        cmd.envs(s.bus_env());
+    }
     cmd.env_remove(TOKEN_ENV).process_group(0);
     cmd
 }
@@ -183,7 +197,12 @@ impl WorkerHost for HeadlessHost {
         let stderr = log
             .try_clone()
             .map_err(|e| failed(format!("{}: {e}", log_path.display())))?;
-        let spawned = command(&program, launch)
+        // Under a scope `systemd-run` spawns whatever the program is, so check it here.
+        if !executable(&program) {
+            write_footer(&log_path, "failed", -1);
+            return Err(failed(format!("{} is not executable", program.display())));
+        }
+        let spawned = command(&program, launch, self.scope.as_ref())
             .stdin(Stdio::piped())
             .stdout(log)
             .stderr(stderr)
@@ -203,6 +222,7 @@ impl WorkerHost for HeadlessHost {
             stopping: Arc::new(AtomicBool::new(false)),
             exit: Arc::new(Mutex::new(None)),
             finished: Arc::new(Mutex::new(None)),
+            cgroup: Arc::new(Mutex::new(None)),
         });
         reap(child, &slot);
         let mut slots = self.slots.lock().unwrap_or_else(PoisonError::into_inner);
@@ -289,6 +309,14 @@ impl WorkerHost for HeadlessHost {
             return Ok(());
         }
         slot.stopping.store(true, Ordering::SeqCst);
+        let cgroup = slot
+            .cgroup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(cgroup) = cgroup {
+            scope::end(cgroup);
+        }
         signal_group(slot.pid, Sig::Term).map_err(|e| HostError::Failed {
             call: "SIGTERM".into(),
             why: e.to_string(),
@@ -335,14 +363,29 @@ impl WorkerHost for HeadlessHost {
 fn reap(mut child: std::process::Child, slot: &Slot) {
     let (log, stopping) = (slot.log.clone(), Arc::clone(&slot.stopping));
     let (exit, finished) = (Arc::clone(&slot.exit), Arc::clone(&slot.finished));
+    let (cgroup, pid) = (Arc::clone(&slot.cgroup), slot.pid);
     std::thread::spawn(move || loop {
         let mut exit = exit.lock().unwrap_or_else(PoisonError::into_inner);
+        // The scope's cgroup, once the child has moved into it.
+        let mut known = cgroup.lock().unwrap_or_else(PoisonError::into_inner);
+        if known.is_none() {
+            *known = scope::worker_cgroup(pid);
+        }
+        drop(known);
         let code = match child.try_wait() {
             Ok(None) => None,
             Ok(Some(status)) => Some(exit_code(status)),
             Err(_) => Some(-1),
         };
         if let Some(code) = code {
+            // Whatever the worker left running in its scope ends with it.
+            let left = cgroup
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            if let Some(left) = left {
+                scope::end(left);
+            }
             let status = match (stopping.load(Ordering::SeqCst), code) {
                 (true, _) => "killed",
                 (false, 0) => "succeeded",
@@ -356,6 +399,11 @@ fn reap(mut child: std::process::Child, slot: &Slot) {
         drop(exit);
         std::thread::sleep(REAP_POLL);
     });
+}
+
+fn executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 /// The exit code, or 128 plus the signal that ended it.

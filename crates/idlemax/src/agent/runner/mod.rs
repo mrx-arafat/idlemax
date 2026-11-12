@@ -13,7 +13,7 @@ mod pidfile;
 mod stop;
 #[cfg(all(test, unix))]
 mod tests;
-mod wrapper;
+pub(crate) mod wrapper;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
