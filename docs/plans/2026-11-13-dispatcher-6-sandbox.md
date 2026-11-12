@@ -123,7 +123,7 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 - [x] Task 3: Serve the allow-list proxy and the in-sandbox relay
 - [x] Task 4: Wrap the agent CLI in both hosts and check it took
 - [x] Task 5: Report the sandbox in doctor
-- [ ] Task 6: Document the sandbox
+- [x] Task 6: Document the sandbox
 - [ ] Task 7: Needs a Mac: the Seatbelt profile
 - [ ] Task 8: Needs the owner's OK: prove the sandbox with bwrap installed
 
@@ -259,12 +259,12 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 ### Task 6: Document the sandbox
 
-**Files:** `docs/WORKER-PROOF.md`, `README.md`, `docs/DISPATCHER.md` (the Spec map row).
+**Files:** `docs/WORKER-PROOF.md`, `docs/manual/09-configuration.md`, `docs/manual/14-safety-and-privacy.md` (README has no `[workers]` table; the settings reference is the manual), `docs/DISPATCHER.md` (the Spec map row, in the spec commit).
 
 **Definition of Done:**
 
-- [ ] WORKER-PROOF gains a "Sandbox" table with the rows of Task 8, and its "Not fenced" paragraph says what the sandbox now fences.
-- [ ] README lists `workers.sandbox` and `workers.sandbox_hosts`.
+- [x] WORKER-PROOF gains a "Sandbox" table with the rows of Task 8, and its "Not fenced" paragraph says what the sandbox now fences.
+- [x] The configuration reference lists `workers.sandbox` and `workers.sandbox_hosts`, and the safety page says what the sandbox fences and what it does not.
 
 ### Task 7: Needs a Mac: the Seatbelt profile
 

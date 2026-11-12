@@ -77,13 +77,24 @@ At agent startup on Linux, the agent's own cgroup memory limit (minus 128 MiB) a
 
 And a finished task is checked by idlemax, not taken on the worker's word: the baseline checks must still pass, the diff must stay in scope, and a large or core diff gets a review by another provider.
 
+### The sandbox
+
+Where bubblewrap works (`idlemax doctor` shows `ok  sandbox`), each worker runs inside it (`workers.sandbox`, default `auto`):
+
+- it can write only its worktree, the git objects and refs its commits need, and a temp folder; the repository's `.git/config` and `.git/hooks` stay read-only;
+- it cannot see `~/.ssh`, `~/.config/gh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.git-credentials`, `~/.netrc`, the idlemax state folder or your `~/.claude`; Claude gets idlemax's own Claude home with your login only, never your MCP servers or projects;
+- its only network is a proxy that opens port 443 of the model hosts (`workers.sandbox_hosts`);
+- every process of the worker ends with it, a detached one included.
+
 ### What a worker can still reach
 
-These fences are **soft**: a worker runs as your own user.
+Without the sandbox (no bubblewrap, `workers.sandbox = off`, or macOS until its sandbox is built) these fences are **soft**: a worker runs as your own user.
 
 - Credentials on disk or in the keychain (ssh keys, the `gh` login, cloud CLI logins) stay readable to a worker that goes looking.
 - The idlemax token file and `coord.db` stay readable too.
 - The push block lives in git's environment and config: a worker that drops its environment gets past it, and only an OS sandbox stops that.
+
+Inside the sandbox a worker can still read your project and toolchains, use your Claude login against the model hosts, and change anything in its own worktree.
 
 > [!WARNING]
 > Switch on `auto` only after the checks in [docs/WORKER-PROOF.md](../WORKER-PROOF.md) passed for each CLI you list in `workers.clis`.
@@ -100,7 +111,7 @@ A job or worker that idlemax started can stop and pause work, but it cannot resu
 ### What this lock does not stop
 
 The lock stops accidents and a launched process that tries the documented switches.
-**It is not a sandbox.** It does not stop:
+**It is not a sandbox.** Without the worker sandbox above it does not stop:
 
 - A write to `config.toml` in the state folder: every `[dispatcher]` key, the mode included, and every quota key except `quota.accounts` apply at once, because the daemons re-read them when the file changes; `[workers]` keys apply at the coordinator's next launch step; `[guard]` keys and the other live agent keys apply at the agent's next reload (which `idlemax config set` asks for); every other key, `quota.accounts` included, applies at the next restart.
 - A write to `rules.md`, the database or the token file, or deleting the `PAUSE` file: it is the same OS user. A worker's change to `config.toml`, `rules.md` or the token file that no owner command made is detected when its turn is checked: the Run is rejected and the owner gets a needs-you notice.

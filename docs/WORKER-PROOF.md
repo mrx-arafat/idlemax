@@ -90,6 +90,24 @@ Run these on a server in the throwaway setup above, with `workers.host headless`
 | Continued session | `idlemax start` | The worker starts again with `--resume <session>` and the same session id | |
 | An agent restart | Restart the agent in the middle of a turn | The worker is not taken back; its job ends `killed` and retryable, no process with its tag is left, and the Run continues with `--resume` | |
 
+## Sandbox
+
+The worker sandbox of A13 (dispatcher Spec 6), Linux with `bubblewrap` installed, `workers.sandbox = required`.
+Run the first rows in the throwaway setup with the stub CLIs of `~/idlemax-wt/smoke/stubs`; the last two need the real Claude CLI.
+
+| Step | Command | Expected | Result |
+|---|---|---|---|
+| Doctor | `idlemax doctor` | `ok  sandbox  workers run inside bubblewrap with the allow-list proxy` | |
+| Push by URL | In the worker, `git push <path or URL of the remote> HEAD:refs/heads/x` | Fails; the remote has no new ref | |
+| Token and secrets | In the worker, `cat $IDLEMAX_HOME/token`, `ls ~/.ssh`, `cat ~/.git-credentials` | Nothing found | |
+| Writes outside | In the worker, write to the owner's checkout, `~/.claude/settings.json` and `$(git rev-parse --git-common-dir)/hooks/x` | Each fails (read-only file system) | |
+| A commit | `git commit` in the worktree | Succeeds: objects, refs and the worktree's own git dir are writable | |
+| Network | In the worker, `curl https://example.com` and `curl https://api.anthropic.com` | The first gets `403` from the proxy, the second reaches the host | |
+| A detached process | In the worker, `setsid -f sleep 600`, then `idlemax stop` | No `sleep 600` is left | |
+| The pane took the shim | A Herdr worker | Its CLI runs in another mount namespace than the agent (`/proc/<pid>/ns/mnt`) | |
+| Real Claude | One worker on the sample task | Reaches `idle` with no trust dialog, commits | |
+| A token refresh | A worker that runs past the access token's expiry | Keeps working; the owner's own `claude` is still logged in after it | |
+
 ## Reviewers
 
 | Reviewer | Command | Expected | Result |
@@ -99,4 +117,5 @@ Run these on a server in the throwaway setup above, with `workers.host headless`
 
 ## Not fenced
 
-Credentials on disk or in the keychain (ssh keys, the `gh` login, cloud CLI logins), the idlemax token file and `coord.db` stay readable to a worker that goes looking, and the git push block can be undone on purpose (Open Question 1 of Spec 2).
+Without the sandbox, credentials on disk or in the keychain (ssh keys, the `gh` login, cloud CLI logins), the idlemax token file and `coord.db` stay readable to a worker that goes looking, and the git push block can be undone on purpose (Open Question 1 of Spec 2).
+With the sandbox (Spec 6) those paths are hidden and the network is limited to the model hosts; the worker still reads the project and the toolchains and uses the owner's Claude login.
