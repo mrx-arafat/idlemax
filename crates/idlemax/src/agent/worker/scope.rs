@@ -29,6 +29,8 @@ pub struct WorkerScope {
     systemd_run: String,
     user: bool,
     env: PathBuf,
+    /// Moves a running pid (a Herdr pane's shell) into a new scope; None without `busctl`.
+    busctl: Option<PathBuf>,
 }
 
 impl WorkerScope {
@@ -45,6 +47,7 @@ impl WorkerScope {
                 systemd_run,
                 user,
                 env,
+                busctl: crate::agent::runner::wrapper::which("busctl"),
             }),
             _ => {
                 if cfg!(target_os = "linux") {
@@ -76,6 +79,56 @@ impl WorkerScope {
         }
         cmd.arg(program);
         cmd
+    }
+
+    /// A scope runner with fixed programs, for a test that only looks at the calls.
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        Self {
+            systemd_run: "systemd-run".into(),
+            user: true,
+            env: "env".into(),
+            busctl: Some("busctl".into()),
+        }
+    }
+
+    /// The `busctl` call that moves the running `pid` into a new worker scope, its children
+    /// following it: the Herdr host cannot start a pane's shell inside one.
+    pub fn adopt(&self, job: JobId, attempt: u32, pid: u32) -> Option<(String, Vec<String>)> {
+        let busctl = self.busctl.as_ref()?.to_string_lossy().into_owned();
+        let n = UNITS.fetch_add(1, Ordering::SeqCst);
+        let unit = format!(
+            "{UNIT_PREFIX}{job}-{attempt}-{}-{n}.scope",
+            std::process::id()
+        );
+        let mut args: Vec<String> = Vec::new();
+        if self.user {
+            args.push("--user".into());
+        }
+        let call = [
+            "call",
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "StartTransientUnit",
+            "ssa(sv)a(sa(sv))",
+        ];
+        args.extend(call.iter().map(|s| s.to_string()));
+        args.push(unit);
+        // Like `systemd-run --collect`: the unit goes once it ends, even after a kill.
+        let tail = [
+            "fail",
+            "2",
+            "CollectMode",
+            "s",
+            "inactive-or-failed",
+            "PIDs",
+            "au",
+            "1",
+        ];
+        args.extend(tail.iter().map(|s| s.to_string()));
+        args.extend([pid.to_string(), "0".into()]);
+        Some((busctl, args))
     }
 
     /// The agent's bus variables `systemd-run` reads, to set after a cleared environment.

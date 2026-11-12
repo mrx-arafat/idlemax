@@ -291,7 +291,7 @@ The worktree shows up in `git worktree list` of that repository, so you can look
 | `headless` | a child process of the agent; its output goes to the job log that `idlemax logs <job>` prints |
 
 A `production` device always runs workers headless, so `herdr` is refused there.
-On Linux with a systemd manager each headless worker runs in a transient scope of its own (`idlemax-w-<job>-…`), so a stop also ends what it forked or `setsid`-ed out of its process group; elsewhere a stop ends the process group only.
+On Linux with a systemd manager each worker runs in a transient scope of its own (`idlemax-w-<job>-…`): a headless worker starts in it, and a Herdr pane's shell is moved into it before the agent starts. A stop then also ends what the worker forked or `setsid`-ed out of its process group. Elsewhere, or when the move fails (logged at info), a stop ends the process group or the pane only.
 
 A worker is stopped after `workers.max_runtime_secs` (3600) awake seconds per launch, and after `workers.blocked_secs` (120) waiting for input.
 

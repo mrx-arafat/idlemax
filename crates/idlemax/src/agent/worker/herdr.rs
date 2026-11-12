@@ -4,6 +4,7 @@
 //! pane is closed only while its label and workspace still match what was saved (D4).
 
 mod parse;
+mod scoped;
 #[cfg(test)]
 mod tests;
 mod trust;
@@ -16,6 +17,7 @@ use tracing::warn;
 
 use super::cmd::{Cmd, Commands};
 use super::host::{AgentStatus, Handle, HostError, HostState, Launch, WorkerHost};
+use super::scope::{self, WorkerScope};
 use parse::Pane;
 
 /// The workspace that holds every worker pane.
@@ -28,19 +30,27 @@ pub struct HerdrHost {
     commands: Arc<dyn Commands>,
     /// The program that puts a pid into the background class (A16); None where there is none.
     background: Option<String>,
+    /// Moves each pane's shell into a worker scope (red team case 10); None off Linux.
+    scope: Option<WorkerScope>,
 }
 
 impl HerdrHost {
     pub fn new(commands: Arc<dyn Commands>) -> Self {
         let background = cfg!(target_os = "macos").then(|| "/usr/sbin/taskpolicy".to_string());
-        Self::with_background(commands, background)
+        Self::with_background(commands, background).scoped(WorkerScope::detect())
     }
 
     pub fn with_background(commands: Arc<dyn Commands>, background: Option<String>) -> Self {
         Self {
             commands,
             background,
+            scope: None,
         }
+    }
+
+    /// The same host, putting each worker's pane shell in a scope of its own.
+    pub fn scoped(self, scope: Option<WorkerScope>) -> Self {
+        Self { scope, ..self }
     }
 
     /// One `herdr` call: its stdout, or why it failed.
@@ -186,6 +196,7 @@ impl HerdrHost {
                 &strings(&["-b", "-p", &pid.to_string()]),
             )?;
         }
+        self.adopt(pane, launch);
         let mut args = strings(&["agent", "start", &launch.name]);
         args.extend(strings(&[
             "--kind",
@@ -263,8 +274,12 @@ impl WorkerHost for HerdrHost {
         if self.verified(handle)?.is_none() {
             return Ok(());
         }
-        self.call(&strings(&["pane", "close", &handle.pane]))
-            .map(drop)
+        let cgroup = self.scope_of(&handle.pane);
+        let closed = self.call(&strings(&["pane", "close", &handle.pane]));
+        if let Some(cgroup) = cgroup {
+            scope::end(cgroup);
+        }
+        closed.map(drop)
     }
 
     fn matches(&self, handle: &Handle) -> Result<bool, HostError> {

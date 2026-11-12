@@ -372,3 +372,28 @@ fn the_trust_dialog_of_a_folder_outside_the_worktrees_or_of_another_run_is_never
         assert!(!calls.iter().any(|c| c.contains("send-keys")), "{calls:#?}");
     }
 }
+
+#[test]
+fn on_linux_the_panes_shell_moves_into_a_worker_scope_before_the_agent_starts() {
+    // Red team case 10: what the worker forks stays in its scope, and a stop ends it.
+    let fake = existing_tab();
+    let host = HerdrHost::with_background(fake.clone(), None)
+        .scoped(Some(crate::agent::worker::scope::WorkerScope::for_test()));
+    host.start(&launch()).unwrap();
+    let calls = lines(&fake);
+    let adopt = calls
+        .iter()
+        .position(|c| c.starts_with("busctl --user call org.freedesktop.systemd1"))
+        .unwrap_or_else(|| panic!("no scope call in {calls:#?}"));
+    assert!(calls[adopt].contains("StartTransientUnit ssa(sv)a(sa(sv)) idlemax-w-7-1-"));
+    assert!(
+        calls[adopt].ends_with(".scope fail 2 CollectMode s inactive-or-failed PIDs au 1 4242 0"),
+        "{}",
+        calls[adopt]
+    );
+    let start = calls
+        .iter()
+        .position(|c| c.contains("agent start"))
+        .unwrap();
+    assert!(adopt < start, "{calls:#?}");
+}
