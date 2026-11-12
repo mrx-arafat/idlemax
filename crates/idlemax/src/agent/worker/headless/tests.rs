@@ -176,3 +176,46 @@ fn a_child_that_exits_before_its_prompt_is_gone() {
         Some("s-9")
     );
 }
+
+#[test]
+fn a_test_host_never_searches_the_real_path() {
+    let rig = rig();
+    assert!(HeadlessHost::new(rig.paths.clone())
+        .search_dirs()
+        .is_empty());
+    assert_eq!(rig.host.search_dirs(), [rig._temp.path().join("bin")]);
+}
+
+#[test]
+fn a_start_that_cannot_spawn_ends_the_log_with_the_failure_footer() {
+    let rig = rig();
+    let stub = rig._temp.path().join("bin").join("claude");
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(rig.host.start(&launch(&rig, "echo")).is_err());
+    let text = log(&rig);
+    assert!(
+        text.ends_with("=== idlemax: failed (exit -1) ===\n"),
+        "{text}"
+    );
+    assert!(LogProgress::default().push(text.as_bytes()));
+}
+
+#[test]
+fn a_stale_handle_never_reaches_a_later_worker_with_the_same_pid() {
+    let rig = rig();
+    let first = rig.host.start(&launch(&rig, "sleep")).unwrap();
+    rig.host.stop(&first).unwrap();
+    until_done(&rig, &first);
+    let second = rig.host.start(&launch(&rig, "sleep")).unwrap();
+    assert_ne!(first.label, second.label);
+    // The first worker's handle, as if the system had given its pid to the second one.
+    let stale = Handle {
+        pane: second.pane.clone(),
+        ..first.clone()
+    };
+    assert_eq!(rig.host.state(&stale).unwrap().status, AgentStatus::Gone);
+    rig.host.stop(&stale).unwrap();
+    assert_eq!(rig.host.state(&second).unwrap().status, AgentStatus::Idle);
+    rig.host.stop(&second).unwrap();
+    until_done(&rig, &second);
+}

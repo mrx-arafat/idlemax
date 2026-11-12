@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -30,6 +30,8 @@ const END_TEXT_LINES: usize = 40;
 /// A finished worker's slot is kept this long, so a slow tick still reads its exit.
 const KEEP_FINISHED: Duration = Duration::from_secs(600);
 const FOOTER_PREFIX: &str = "=== idlemax: ";
+/// How often the reaper looks for the child's exit.
+const REAP_POLL: Duration = Duration::from_millis(50);
 
 struct Slot {
     pid: u32,
@@ -40,7 +42,9 @@ struct Slot {
     stdin: Mutex<Option<std::process::ChildStdin>>,
     sent: AtomicBool,
     stopping: Arc<AtomicBool>,
-    /// The exit code, set by the reaper once the footer is in the log.
+    /// The exit code, set by the reaper once the footer is in the log. The child is reaped
+    /// only under this lock, so its pid cannot belong to another process while `stop` holds
+    /// it and reads `None`.
     exit: Arc<Mutex<Option<i32>>>,
     finished: Arc<Mutex<Option<Instant>>>,
 }
@@ -48,8 +52,10 @@ struct Slot {
 #[derive(Default)]
 pub struct HeadlessHost {
     paths: Option<Paths>,
+    /// Keyed by the handle's label, which is new for every start; a pid can come back.
     slots: Mutex<HashMap<String, Arc<Slot>>>,
-    /// A directory searched before `PATH`, so a test finds its stub CLI.
+    starts: AtomicU64,
+    /// The only directory a test build searches, so a test finds its stub CLI.
     #[cfg(test)]
     bin_dir: Option<PathBuf>,
 }
@@ -62,7 +68,7 @@ impl HeadlessHost {
         }
     }
 
-    /// A host that finds its CLI in `bin_dir` before `PATH`, for a test with a stub.
+    /// A host that finds its CLI in `bin_dir` alone, for a test with a stub.
     #[cfg(test)]
     pub fn with_bin_dir(paths: Paths, bin_dir: PathBuf) -> Self {
         Self {
@@ -71,23 +77,33 @@ impl HeadlessHost {
         }
     }
 
+    /// The slot of this very start: its label and its pid both match.
     fn slot(&self, handle: &Handle) -> Option<Arc<Slot>> {
         self.slots
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(&handle.pane)
+            .get(&handle.label)
+            .filter(|s| s.pid.to_string() == handle.pane)
             .cloned()
+    }
+
+    /// Where the agent CLI is searched: `PATH`.
+    #[cfg(not(test))]
+    fn search_dirs(&self) -> Vec<PathBuf> {
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect()
+    }
+
+    /// A test build searches its own directory alone, never `PATH`, so a test that forgot
+    /// its stub can never start a real agent CLI.
+    #[cfg(test)]
+    fn search_dirs(&self) -> Vec<PathBuf> {
+        self.bin_dir.iter().cloned().collect()
     }
 
     fn program(&self, cli: WorkerCli) -> Result<PathBuf, HostError> {
         let name = cli.as_str();
-        let mut dirs: Vec<PathBuf> = Vec::new();
-        #[cfg(test)]
-        dirs.extend(self.bin_dir.clone());
-        dirs.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        dirs.iter()
+        self.search_dirs()
+            .iter()
             .map(|d| d.join(name))
             .find(|p| p.is_file())
             .ok_or_else(|| failed(format!("{name} is not on the agent's PATH")))
@@ -134,6 +150,15 @@ fn open_log(
     Ok((file, path, offset))
 }
 
+/// Appends the footer that ends the attempt for `idlemax logs --follow`.
+fn write_footer(log: &Path, status: &str, code: i32) {
+    let line = format!("\n{FOOTER_PREFIX}{status} (exit {code}) ===\n");
+    let _ = std::fs::OpenOptions::new()
+        .append(true)
+        .open(log)
+        .and_then(|mut f| f.write_all(line.as_bytes()));
+}
+
 /// The job's minimal environment (`job_run::inherits`), then the pane's pairs, never the token.
 fn command(program: &Path, launch: &Launch) -> Command {
     use std::os::unix::process::CommandExt;
@@ -158,12 +183,15 @@ impl WorkerHost for HeadlessHost {
         let stderr = log
             .try_clone()
             .map_err(|e| failed(format!("{}: {e}", log_path.display())))?;
-        let mut child = command(&program, launch)
+        let spawned = command(&program, launch)
             .stdin(Stdio::piped())
             .stdout(log)
             .stderr(stderr)
-            .spawn()
-            .map_err(|e| failed(format!("{}: {e}", program.display())))?;
+            .spawn();
+        let mut child = spawned.map_err(|e| {
+            write_footer(&log_path, "failed", -1);
+            failed(format!("{}: {e}", program.display()))
+        })?;
         let pid = child.id();
         let slot = Arc::new(Slot {
             pid,
@@ -182,12 +210,13 @@ impl WorkerHost for HeadlessHost {
             let done = *s.finished.lock().unwrap_or_else(PoisonError::into_inner);
             done.is_none_or(|at| at.elapsed() < KEEP_FINISHED)
         });
+        let start = self.starts.fetch_add(1, Ordering::SeqCst);
         let handle = Handle {
             pane: pid.to_string(),
             workspace: "headless".into(),
-            label: launch.name.clone(),
+            label: format!("{} #{start}", launch.name),
         };
-        slots.insert(handle.pane.clone(), slot);
+        slots.insert(handle.label.clone(), slot);
         Ok(handle)
     }
 
@@ -254,12 +283,9 @@ impl WorkerHost for HeadlessHost {
         let Some(slot) = self.slot(handle) else {
             return Ok(());
         };
-        if slot
-            .exit
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_some()
-        {
+        // Held while signalling: the reaper cannot reap the child, so its pid stays its own.
+        let exit = slot.exit.lock().unwrap_or_else(PoisonError::into_inner);
+        if exit.is_some() {
             return Ok(());
         }
         slot.stopping.store(true, Ordering::SeqCst);
@@ -303,25 +329,32 @@ impl WorkerHost for HeadlessHost {
     }
 }
 
-/// Waits for the child on a thread of its own, so it never stays a zombie, then writes the
-/// footer `idlemax logs --follow` stops on and only then publishes the exit code.
+/// Waits for the child on a thread of its own, so it never stays a zombie. It reaps only
+/// while it holds the exit lock, then writes the footer `idlemax logs --follow` stops on and
+/// publishes the exit code before it lets go.
 fn reap(mut child: std::process::Child, slot: &Slot) {
     let (log, stopping) = (slot.log.clone(), Arc::clone(&slot.stopping));
     let (exit, finished) = (Arc::clone(&slot.exit), Arc::clone(&slot.finished));
-    std::thread::spawn(move || {
-        let code = child.wait().ok().map(exit_code).unwrap_or(-1);
-        let status = match (stopping.load(Ordering::SeqCst), code) {
-            (true, _) => "killed",
-            (false, 0) => "succeeded",
-            (false, _) => "failed",
+    std::thread::spawn(move || loop {
+        let mut exit = exit.lock().unwrap_or_else(PoisonError::into_inner);
+        let code = match child.try_wait() {
+            Ok(None) => None,
+            Ok(Some(status)) => Some(exit_code(status)),
+            Err(_) => Some(-1),
         };
-        let line = format!("\n{FOOTER_PREFIX}{status} (exit {code}) ===\n");
-        let _ = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&log)
-            .and_then(|mut f| f.write_all(line.as_bytes()));
-        *finished.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
-        *exit.lock().unwrap_or_else(PoisonError::into_inner) = Some(code);
+        if let Some(code) = code {
+            let status = match (stopping.load(Ordering::SeqCst), code) {
+                (true, _) => "killed",
+                (false, 0) => "succeeded",
+                (false, _) => "failed",
+            };
+            write_footer(&log, status, code);
+            *finished.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+            *exit = Some(code);
+            return;
+        }
+        drop(exit);
+        std::thread::sleep(REAP_POLL);
     });
 }
 

@@ -46,6 +46,7 @@ impl Agent {
         }
         if report.applies("workers.host") {
             if let Some(link) = &self.workers {
+                // `agent.profile` needs a restart, so the start config's profile still holds.
                 let profile = self.config.agent.profile_or_default(Os::current());
                 link.set_host_policy(new.workers.host, Some(profile));
             }

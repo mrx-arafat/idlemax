@@ -27,21 +27,21 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::job_run::{allows_program, RunClock};
 use idlemax_core::protocol::JobUpdate;
-use idlemax_core::types::{DeviceId, DeviceProfile, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
+use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
 use idlemax_core::worker::report::{CheckFacts, WorkerPhase, WorkerReport};
-use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
+use idlemax_core::worker::WorkerSpec;
 use idlemax_core::Paths;
 
 use crate::agent::runner::os::Sig;
+use choose::new_session;
 use cmd::Commands;
 use end::End;
 pub use end::Msg;
 use host::{HostKind, WorkerHost};
 use procs::{Member, Procs};
-use steps::{brief_line, LaunchCtx, Outcome, Progress};
+use steps::{brief_line, Outcome, Progress};
 
 enum Phase {
     Launching {
@@ -102,9 +102,8 @@ pub struct Workers {
     host: Arc<dyn WorkerHost>,
     /// The headless host; None where the system has none (not Unix).
     headless: Option<Arc<dyn WorkerHost>>,
-    /// `workers.host`, and the device profile that decides it for a production device (A23).
-    host_setting: WorkerHostChoice,
-    profile: Option<DeviceProfile>,
+    /// `workers.host`, the device profile and Herdr's last answer (A23).
+    policy: choose::HostPolicy,
     commands: Arc<dyn Commands>,
     procs: Arc<Mutex<dyn Procs>>,
     paths: Paths,
@@ -133,8 +132,7 @@ impl Workers {
         Self {
             host,
             headless: None,
-            host_setting: WorkerHostChoice::default(),
-            profile: None,
+            policy: choose::HostPolicy::default(),
             commands,
             procs,
             paths,
@@ -183,58 +181,12 @@ impl Workers {
         if !worker.action.is_launch() {
             return self.start_review(job, worker, now_ms, awake_ms);
         }
-        let session = match (worker.action, worker.cli) {
-            (WorkerAction::Resume, _) => worker.session.clone(),
-            (_, WorkerCli::Claude) => match crate::state::new_session_id() {
-                Ok(id) => Some(id),
-                Err(e) => return vec![self.refusal(&job, &e.to_string(), now_ms)],
-            },
-            _ => None,
-        };
-        let (kind, host, note) = match self.choose_host() {
+        let chosen = new_session(&worker).and_then(|s| Ok((s, self.choose_host(now_ms)?)));
+        let (session, (kind, host, note)) = match chosen {
             Ok(chosen) => chosen,
             Err(why) => return vec![self.refusal(&job, &why, now_ms)],
         };
-        let tag = new_tag(job.id, now_ms);
-        let cancel = Arc::new(AtomicBool::new(false));
-        let paused = Arc::new(AtomicBool::new(false));
-        let rx = steps::spawn(LaunchCtx {
-            host: Arc::clone(&host),
-            commands: Arc::clone(&self.commands),
-            procs: Arc::clone(&self.procs),
-            worktrees_dir: self.paths.worktrees_dir(),
-            job: job.clone(),
-            worker: worker.clone(),
-            tag,
-            session: session.clone(),
-            cancel: Arc::clone(&cancel),
-            paused: Arc::clone(&paused),
-            now_ms,
-            poll: self.poll,
-            idle_wait: self.idle_wait,
-        });
-        let tracked = Tracked {
-            job,
-            worker,
-            host,
-            kind,
-            tag,
-            clock: RunClock::start(now_ms, awake_ms),
-            paused: false,
-            progress: Progress {
-                session,
-                ..Default::default()
-            },
-            members: Vec::new(),
-            throttled: BTreeSet::new(),
-            phase: Phase::Launching {
-                rx,
-                cancel,
-                paused,
-                kill: None,
-            },
-            saved: None,
-        };
+        let tracked = self.launch(job, worker, (kind, host), session, now_ms, awake_ms);
         let mut update = self.update(&tracked, JobStatus::Running, WorkerPhase::Preparing, now_ms);
         update.error = note;
         self.tracked.insert(tracked.job.id, tracked);

@@ -138,7 +138,7 @@ The repository is public: no address, host name or device id of the owner's mach
 - [x] Task 5: Read each device's Claude login and check the logins in doctor
 - [x] Task 6: Keep one Budget per login and pace a server-only account
 - [x] Task 7: Run the base checks again when the day's budget is spent
-- [ ] Task 8: Add the headless runner
+- [x] Task 8: Add the headless runner
 - [x] Task 9: Give each device its own credential
 - [x] Task 10: Refuse a public coordinator address and write the server rollout
 - [ ] Task 11: Needs the owner's OK: move the coordinator to the always-on server
@@ -954,6 +954,7 @@ This installs services, uses real logins, starts real agent sessions and spends 
 4. **Headless Codex has no known session id.**
    `codex exec` has `resume [SESSION_ID]`, `--json`, `--model` and `--sandbox` (`codex exec --help`, 2026-11-12), but nothing names the session id of a new run without reading its event stream, and that stream was not observed.
    Recommended: Claude only in Task 8, and a Codex row once Task 12 has recorded the event that carries the id.
+   Until then a `production` device whose `workers.clis` lists `codex` fails every Codex launch it is offered with `needs_you`; Spec 1's offer of accounts should leave out a provider the device's host cannot run.
 5. **Does the 5-hour stop apply to a server-only account.**
    D19 says a server-only account "works all week", and A18 stops every worker of an account at 60 percent of its 5-hour window, a line that exists so the owner is not locked out (D10 item 4).
    On an account the owner does not use, the stop protects nobody and leaves up to 40 percent of every 5-hour window unused.

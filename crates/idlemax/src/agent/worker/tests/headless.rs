@@ -1,5 +1,7 @@
 //! Tests: the worker manager over the headless host and a stub `claude` script, with the real
 //! process table and real git in a temp dir. No test starts `herdr`, `claude` or `codex`.
+//! A launch reads the stub's real environment, which macOS hides for its own `/bin/sh`, so the
+//! tests that reach the brief run on Linux only; `headless/tests.rs` covers the host there.
 
 use std::os::unix::fs::PermissionsExt;
 
@@ -70,6 +72,13 @@ fn manager(rig: &Rig, bin: &Path) -> Workers {
     workers
 }
 
+/// Whether a process of the group the stub leads is still there, read with `killpg(pgid, 0)`
+/// so it works where there is no `/proc`.
+fn group_alive(pgid: u32) -> bool {
+    let pgid = nix::unistd::Pid::from_raw(i32::try_from(pgid).unwrap());
+    nix::sys::signal::killpg(pgid, None).is_ok()
+}
+
 fn stop_order() -> KillOrder {
     KillOrder {
         reason: "stopped by the owner".into(),
@@ -84,6 +93,7 @@ fn worktree_of(updates: &[JobUpdate]) -> PathBuf {
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS hides the environment of /bin/sh")]
 fn a_headless_worker_commits_and_the_launch_ends_succeeded_with_its_output_in_the_job_log() {
     let mut rig = headless_rig(
         "cat >/dev/null\necho working\necho hi > added.txt\ngit add added.txt\n\
@@ -108,6 +118,7 @@ fn a_headless_worker_commits_and_the_launch_ends_succeeded_with_its_output_in_th
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS hides the environment of /bin/sh")]
 fn an_agent_that_exits_with_an_error_fails_the_job_and_keeps_its_last_lines() {
     let mut rig = headless_rig("cat >/dev/null\necho 'usage limit reached'\nexit 1");
     let mut now = 1_000;
@@ -123,6 +134,7 @@ fn an_agent_that_exits_with_an_error_fails_the_job_and_keeps_its_last_lines() {
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS hides the environment of /bin/sh")]
 fn a_stop_then_a_resume_continues_the_same_session_with_resume() {
     let mut rig = headless_rig("echo \"$*\" >> .argv\ncat >/dev/null\nsleep 30");
     let mut now = 1_000;
@@ -167,6 +179,7 @@ fn a_stop_then_a_resume_continues_the_same_session_with_resume() {
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS hides the environment of /bin/sh")]
 fn a_restarted_agent_never_takes_a_headless_worker_back_and_kills_what_is_left() {
     let mut rig = headless_rig("echo $$ > .pid\ncat >/dev/null\nsleep 30");
     let mut now = 1_000;
@@ -180,7 +193,7 @@ fn a_restarted_agent_never_takes_a_headless_worker_back_and_kills_what_is_left()
         .trim()
         .parse()
         .unwrap();
-    assert!(Path::new(&format!("/proc/{pid}")).exists());
+    assert!(group_alive(pid));
 
     // The agent restarts: a new manager reads the saved record.
     let bin = rig._temp.path().join("bin");
@@ -191,10 +204,10 @@ fn a_restarted_agent_never_takes_a_headless_worker_back_and_kills_what_is_left()
     assert!(lost[0].retryable);
     assert!(!fresh.is_tracking());
     let started = Instant::now();
-    while Path::new(&format!("/proc/{pid}")).exists() {
+    while group_alive(pid) {
         assert!(
             started.elapsed() < Duration::from_secs(5),
-            "process {pid} left"
+            "a process of group {pid} left"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -246,6 +259,7 @@ fn the_host_of_a_start_follows_the_setting_the_profile_and_what_herdr_answers() 
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS hides the environment of /bin/sh")]
 fn a_stop_kills_a_stubborn_group_after_the_grace_and_leaves_the_uncommitted_file() {
     let mut rig = headless_rig(
         "echo $$ > .pid\ntrap '' TERM\necho wip > draft.txt\ncat >/dev/null\nsleep 30",
@@ -271,15 +285,15 @@ fn a_stop_kills_a_stubborn_group_after_the_grace_and_leaves_the_uncommitted_file
     now += 1_000;
     let early = rig.workers.tick(now, now);
     assert!(early.is_empty(), "ended while the group was alive");
-    assert!(Path::new(&format!("/proc/{pid}")).exists());
+    assert!(group_alive(pid));
     // Still there after the grace: the manager kills it by pid.
     updates.extend(drive(&mut rig, &mut now, terminal));
     assert_eq!(last(&updates).status, JobStatus::Killed);
     let started = Instant::now();
-    while Path::new(&format!("/proc/{pid}")).exists() {
+    while group_alive(pid) {
         assert!(
             started.elapsed() < Duration::from_secs(5),
-            "process {pid} left"
+            "a process of group {pid} left"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -287,6 +301,7 @@ fn a_stop_kills_a_stubborn_group_after_the_grace_and_leaves_the_uncommitted_file
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS hides the environment of /bin/sh")]
 fn a_credential_in_the_child_environment_blocks_the_brief() {
     let mut rig = headless_rig("exec env GH_TOKEN=secret sh -c 'cat; sleep 30'");
     let mut now = 1_000;
@@ -302,4 +317,16 @@ fn a_credential_in_the_child_environment_blocks_the_brief() {
     );
     let log = std::fs::read_to_string(rig.paths.job_log_file(7)).unwrap();
     assert!(!log.contains(".brief.md"), "the brief was sent: {log}");
+}
+
+#[test]
+fn herdr_is_asked_at_most_once_in_thirty_seconds() {
+    let mut rig = headless_rig("cat >/dev/null");
+    rig.workers.set_host_policy(WorkerHostChoice::Auto, None);
+    *rig.host.available.lock().unwrap() = Some(false);
+    let kind = |rig: &mut Rig, now| rig.workers.choose_host(now).unwrap().0;
+    assert_eq!(kind(&mut rig, 1_000), HostKind::Headless);
+    *rig.host.available.lock().unwrap() = Some(true);
+    assert_eq!(kind(&mut rig, 30_999), HostKind::Headless);
+    assert_eq!(kind(&mut rig, 31_000), HostKind::Herdr);
 }
