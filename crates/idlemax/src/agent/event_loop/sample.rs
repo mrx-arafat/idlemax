@@ -84,7 +84,8 @@ impl Agent {
 
     /// The Linux facts and numbers of the fresh sample (D19). Workers run in the agent's
     /// cgroup only under the headless host of Spec 5 Task 8, so no cgroup is passed yet and
-    /// every tracked job counts as idlemax's own use.
+    /// every tracked job counts as idlemax's own use. A dispatcher job with a kill sent still
+    /// counts until it is reaped, because it still holds its memory.
     fn linux_inputs(&self, dispatcher: &DispatcherConfig) -> (LinuxFacts, LinuxNumbers) {
         let profile = self.config.agent.profile_or_default(self.device.os);
         let numbers = linux_numbers(profile, self.guard.policy(), dispatcher);

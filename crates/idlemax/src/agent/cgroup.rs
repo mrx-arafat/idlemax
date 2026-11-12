@@ -24,7 +24,8 @@ fn read_memory_max(proc_cgroup: &Path, mount: &Path) -> MemoryCap {
 /// What the cgroup with the tightest limit uses, page cache left out because the kernel
 /// gives it back before it kills: `memory.current` less `inactive_file` (v2), or
 /// `memory.usage_in_bytes` less `total_inactive_file` (v1). `None` without a limit or a reading.
-// SHORTCUT: unused until workers run inside the agent's cgroup, wire it with the headless host (Spec 5 Task 8).
+// SHORTCUT: unused until workers run inside the agent's cgroup, wire it with the headless host
+// (Spec 5 Task 8); pinned only by memory_used_reads_the_cgroup_with_the_tightest_limit_without_page_cache.
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(not(test), allow(dead_code))]
 fn read_memory_used(proc_cgroup: &Path, mount: &Path) -> Option<u64> {

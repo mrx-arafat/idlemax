@@ -288,5 +288,10 @@ mod tests {
             (inside.cgroup_used_bytes, inside.outside_used_bytes),
             (Some(MIB), 0)
         );
+        let scoped = linux_facts(&m, Some((GIB, Some(MIB))), true, &running, 1);
+        assert_eq!(
+            (scoped.cgroup_used_bytes, scoped.outside_used_bytes),
+            (Some(MIB), 612 * MIB)
+        );
     }
 }
