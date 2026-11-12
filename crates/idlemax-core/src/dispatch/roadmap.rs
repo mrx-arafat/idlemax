@@ -92,13 +92,36 @@ fn done_when_rest(line: &str) -> Option<String> {
     if list_marker(s) {
         s = s[1..].trim_start();
     }
-    let s = s.replace(['*', '_'], "");
+    let s = strip_emphasis(s);
     let rest = s.strip_prefix("Done when")?;
     // "Done whenever" is not the marker: a colon, a space or the end must follow.
     if rest.starts_with(|c: char| c.is_alphanumeric()) {
         return None;
     }
     Some(rest.trim_start_matches(':').trim().to_string())
+}
+
+/// The line without its emphasis markers (`**x**`, `*x*`, `_x_`). Text inside backticks is
+/// kept verbatim, and a `*` or `_` between two word characters (`c_to_k`, `a*b`) is kept.
+fn strip_emphasis(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let word = |i: Option<usize>| {
+        i.and_then(|i| chars.get(i))
+            .is_some_and(|c| c.is_alphanumeric())
+    };
+    let mut out = String::with_capacity(line.len());
+    let mut code = false;
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '`' {
+            code = !code;
+        }
+        let marker = !code && matches!(c, '*' | '_');
+        if marker && !(word(i.checked_sub(1)) && word(Some(i + 1))) {
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn list_marker(s: &str) -> bool {
@@ -148,6 +171,21 @@ Done when: each view answers it.\n";
         assert_eq!(
             pascal[0].detail,
             "Add `seqs/pascal.py` with `row(n)`, with two tests."
+        );
+    }
+
+    #[test]
+    fn code_and_identifiers_keep_their_underscores_and_only_emphasis_goes() {
+        // Live: the done check reached the pass as "ctok(0)" and the task went to needs_you.
+        let text = "## Add c_to_k\n\nDone when: `python3 -m unittest discover -s tests` passes and `c_to_k(0)` returns 273.15.\n\n## B\n\n- **Done when:** _really_ done, see snake_case_name and *a*b\n";
+        let items = parse_roadmap(text);
+        assert_eq!(
+            items[0].done_when,
+            "`python3 -m unittest discover -s tests` passes and `c_to_k(0)` returns 273.15."
+        );
+        assert_eq!(
+            items[1].done_when,
+            "really done, see snake_case_name and a*b"
         );
     }
 
