@@ -15,6 +15,8 @@ pub const MAX_ROADMAP_ITEMS: usize = 50;
 pub const MAX_TOUCHED: usize = 200;
 /// Tracked files a project reports at most, so a pass names real scope paths.
 pub const MAX_FILES: usize = 200;
+/// Characters of the project's AGENTS.md or CLAUDE.md a project reports at most.
+pub const MAX_CONVENTIONS_CHARS: usize = 2_000;
 pub const MAX_TITLE_CHARS: usize = 200;
 const MAX_REF_CHARS: usize = 256;
 
@@ -53,6 +55,9 @@ pub struct RepoReport {
     pub files: Vec<String>,
     /// How many tracked files the list left out.
     pub files_cut: usize,
+    /// The start of the project's AGENTS.md (else CLAUDE.md) at the base commit, so a pass
+    /// follows its conventions for new files.
+    pub conventions: Option<String>,
     pub checkout: Option<Checkout>,
 }
 
@@ -133,6 +138,18 @@ impl RepoReport {
         }
         for path in &self.files {
             problem(name_problem("file path", path, MAX_PATH_CHARS))?;
+        }
+        if let Some(c) = &self.conventions {
+            if c.chars().count() > MAX_CONVENTIONS_CHARS {
+                return Err(format!(
+                    "conventions over {MAX_CONVENTIONS_CHARS} characters"
+                ));
+            }
+            if c.chars()
+                .any(|ch| ch.is_control() && ch != '\n' && ch != '\t')
+            {
+                return Err("conventions hold a control character".into());
+            }
         }
         if let Some(c) = &self.checkout {
             problem(name_problem("checkout path", &c.path, MAX_PATH_CHARS))?;

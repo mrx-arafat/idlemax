@@ -405,7 +405,12 @@ fn real_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> (Vec<String>
             .find(|r| r.device == p.device && r.repo.path == p.path);
         repo.map(|r| r.repo.files.as_slice())
     });
-    match narrow_scope(&pp.scope_paths, files.unwrap_or_default()) {
+    let text = format!(
+        "{} {}",
+        task.title,
+        task.done_check.as_deref().unwrap_or("")
+    );
+    match narrow_scope(&pp.scope_paths, files.unwrap_or_default(), &text) {
         Some(kept) => (kept, pp.reason.clone()),
         None => (
             vec![WHOLE_PROJECT.into()],

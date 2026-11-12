@@ -32,9 +32,49 @@ pub fn drop_broad(paths: &mut Vec<String>) -> Vec<String> {
     broad
 }
 
-/// The named paths when each matches a tracked file, else None: the scope is widened. An
-/// empty file list means it is unknown, and the named paths stay.
-pub fn narrow_scope(named: &[String], files: &[String]) -> Option<Vec<String>> {
-    let real = |n: &String| files.iter().any(|f| in_scope(f, n));
-    (files.is_empty() || named.iter().all(real)).then(|| named.to_vec())
+/// The named paths when each matches a tracked file or is a new file in a folder the project
+/// has, plus the files `task_text` names whose folder exists; else None: the scope is
+/// widened. An empty file list means it is unknown, and the named paths stay.
+pub fn narrow_scope(named: &[String], files: &[String], task_text: &str) -> Option<Vec<String>> {
+    if files.is_empty() {
+        return Some(named.to_vec());
+    }
+    let folder_exists = |p: &str| {
+        p.rsplit_once('/')
+            .is_some_and(|(dir, _)| files.iter().any(|f| f.starts_with(&format!("{dir}/"))))
+    };
+    let real = |n: &String| {
+        files.iter().any(|f| in_scope(f, n)) || (!n.contains(['*', '?']) && folder_exists(n))
+    };
+    if !named.iter().all(real) {
+        return None;
+    }
+    let mut kept = named.to_vec();
+    for p in paths_named(task_text) {
+        let covered = kept.iter().any(|k| in_scope(&p, k));
+        if !covered && (files.contains(&p) || folder_exists(&p)) {
+            kept.push(p);
+        }
+    }
+    Some(kept)
+}
+
+/// The relative file paths a task's text names, such as `seqs/pascal.py`: a word with a `/`
+/// whose last part has an extension, never absolute and never with `..`.
+fn paths_named(text: &str) -> Vec<String> {
+    let path_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/');
+    let mut out: Vec<String> = Vec::new();
+    for word in text.split(|c: char| !path_char(c)) {
+        let word = word.trim_end_matches('.');
+        let file = word.rsplit('/').next().unwrap_or("");
+        let ok = word.contains('/')
+            && !word.starts_with('/')
+            && !word.split('/').any(|p| p == ".." || p.is_empty())
+            && file.contains('.')
+            && !file.starts_with('.');
+        if ok && !out.iter().any(|o| o == word) {
+            out.push(word.to_string());
+        }
+    }
+    out
 }

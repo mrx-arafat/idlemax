@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use idlemax_core::dispatch::inputs::{
-    Checkout, DispatchInputs, DispatchReply, RepoReport, MAX_FILES, MAX_REPOS, MAX_ROADMAP_ITEMS,
-    MAX_TOUCHED,
+    Checkout, DispatchInputs, DispatchReply, RepoReport, MAX_CONVENTIONS_CHARS, MAX_FILES,
+    MAX_REPOS, MAX_ROADMAP_ITEMS, MAX_TOUCHED,
 };
 use idlemax_core::dispatch::project::{default_name, Project};
 use idlemax_core::dispatch::roadmap::parse_roadmap;
@@ -129,6 +129,7 @@ async fn fill_project(report: &mut RepoReport, p: &Project) {
     report.files_cut = files.len().saturating_sub(MAX_FILES);
     files.truncate(MAX_FILES);
     report.files = files;
+    report.conventions = repo::conventions(&dir, &rev, MAX_CONVENTIONS_CHARS).await;
     if let Some(text) = repo::roadmap_text(&dir, &rev).await {
         let mut items = parse_roadmap(&text);
         items.truncate(MAX_ROADMAP_ITEMS);
@@ -216,7 +217,8 @@ mod tests {
         repo(&busy);
         repo(&on);
         std::fs::write(on.join("ROADMAP.md"), "## Do it\n\nDone when: it is done\n").unwrap();
-        git_cmd(&on, &["add", "ROADMAP.md"]);
+        std::fs::write(on.join("AGENTS.md"), "One module per feature.\n").unwrap();
+        git_cmd(&on, &["add", "ROADMAP.md", "AGENTS.md"]);
         git_cmd(&on, &["commit", "-q", "-m", "roadmap"]);
         std::fs::write(on.join("dirty.rs"), "x").unwrap();
         std::fs::write(busy.join("dirty.rs"), "x").unwrap();
@@ -249,6 +251,10 @@ mod tests {
         );
         assert!(!on_r.files.contains(&"dirty.rs".to_string()));
         assert!(busy_r.files.is_empty());
+        assert_eq!(
+            on_r.conventions.as_deref(),
+            Some("One module per feature.\n")
+        );
     }
 
     #[tokio::test]

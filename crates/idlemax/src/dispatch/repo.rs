@@ -177,6 +177,20 @@ pub async fn roadmap_text(root: &Path, rev: &str) -> Option<String> {
     None
 }
 
+/// The start of AGENTS.md, else CLAUDE.md, at `rev`: at most `max` characters, with no
+/// control character but newlines and tabs.
+pub async fn conventions(root: &Path, rev: &str, max: usize) -> Option<String> {
+    for file in ["AGENTS.md", "CLAUDE.md"] {
+        if let Some(text) = git(root, &["show", &format!("{rev}:{file}")]).await {
+            let clean = text
+                .chars()
+                .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'));
+            return Some(clean.take(max).collect());
+        }
+    }
+    None
+}
+
 /// The files tracked at `rev`, from `git ls-tree -r --name-only -z`.
 pub async fn tracked_files(root: &Path, rev: &str) -> Vec<String> {
     git(root, &["ls-tree", "-r", "--name-only", "-z", rev])

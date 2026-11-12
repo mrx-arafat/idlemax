@@ -204,6 +204,35 @@ fn a_scope_naming_a_file_the_project_lacks_becomes_the_whole_project() {
 }
 
 #[test]
+fn a_new_file_in_an_existing_folder_stays_and_the_file_a_task_names_joins_the_scope() {
+    // Live: "Add `seqs/pascal.py` ..." got ['seqs/__init__.py', 'tests/*'] and was called
+    // out of scope for writing seqs/pascal.py.
+    let mut w = World::new().with_pass(&["a", "b"]);
+    w.tasks[0].title = "Add `seqs/pascal.py` with pascal(n), the nth row".into();
+    w.repos[0].repo.files = vec!["seqs/__init__.py".into(), "tests/test_seqs.py".into()];
+    let picks = &mut w.pass.as_mut().unwrap().picks;
+    picks[0].scope_paths = vec!["seqs/__init__.py".into(), "tests/*".into()];
+    picks[1].scope_paths = vec!["seqs/fib.py".into(), "tests/test_fib.py".into()];
+    let plan = w.build();
+    let (a, b) = (&plan.devices[0].picks[0], &plan.devices[0].picks[1]);
+    assert_eq!(
+        a.scope_paths,
+        ["seqs/__init__.py", "tests/*", "seqs/pascal.py"]
+    );
+    assert_eq!(a.reason, "a is small");
+    assert_eq!(
+        b.scope_paths,
+        ["seqs/fib.py", "tests/test_fib.py"],
+        "new files, folders exist"
+    );
+    // A new file in a folder the project lacks is still a guess.
+    let mut w = World::new().with_pass(&["a"]);
+    w.repos[0].repo.files = vec!["seqs/__init__.py".into()];
+    w.pass.as_mut().unwrap().picks[0].scope_paths = vec!["other/new.py".into()];
+    assert_eq!(w.build().devices[0].picks[0].scope_paths, ["**"]);
+}
+
+#[test]
 fn auto_mode_picks_like_propose() {
     let mut world = World::new().with_pass(&["b", "a"]);
     world.mode = Mode::Auto;

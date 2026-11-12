@@ -690,7 +690,7 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 - Per device, `room` is the worker room the agent reported (`hold` with `this agent reports no worker room` when it sent none), and `held` says why the device takes nothing whatever its room: `offline`, `paused by you: idlemax resume`, or `kill switch or local pause is on`.
   A device takes picks only in `propose` mode, not held, with the room at `run`; it has `room.open_slots` slots.
 - Each pick names `project`, `task`, `title`, `provider`, `account`, `model`, the orchestrator's `reason`, `by: "orchestrator"`, the `scope_paths` the orchestrator named and the `avoid_paths` a worker must not touch.
-  The pass sees each project's `files` and is told to name scope paths only from them; when a named path matches none of the project's files, the scope becomes the whole project (`["**"]`, off-limits paths still hold) and the reason gains `(scope widened: the named paths did not exist)`.
+  The pass sees each project's `files` and `conventions` and is told to build scope paths from the files, adding every file the task names and the new files the conventions call for. A named path that matches no file is kept as a new file when its folder exists, and a file the task's title or done check names joins the scope when its folder exists; when a named path matches no file and sits in no existing folder, the scope becomes the whole project (`["**"]`, off-limits paths still hold) and the reason gains `(scope widened: the named paths did not exist)`.
   In `auto` a pick the launch step holds says why in `held`, such as `its last two runs were rejected or discarded: it needs you`, the review cap or a Budget's refusal, or `stopped by you: <reason>`; the coordinator also logs each new refusal at info. A Run the owner discarded whose worker never reached `running` (`running_ms` is null) counts as no try and no spend; one discarded mid-work still counts.
   A pick comes only from an orchestrator pass and only when its task is offered to that device, its account is usable and listed in the device's `agent.ai_accounts` with the provider's CLI installed, and the quota rules place it: its account's Budget has room for the Run's estimate, and its model is the one the task's tier sets for that provider (`quota.<provider>_small_model` or `quota.<provider>_standard_model`).
   A task in a project the owner is active in is picked only when no other project of the device has a ready task, never while the owner's changed-file list is cut, and then carries those files in `avoid_paths`.
@@ -913,7 +913,7 @@ Types live in `crates/idlemax-core/src/dispatch/inputs.rs`.
 {"device": "mac", "herdr": true,
  "repos": [{"path": "/Users/me/app", "name": "app", "slug": "me/app", "default_branch": "main",
             "working": true, "base_commit": "4f2a...", "touched": ["src/lib.rs"], "touched_clipped": false,
-            "files": ["Cargo.toml", "src/lib.rs"], "files_cut": 0,
+            "files": ["Cargo.toml", "src/lib.rs"], "files_cut": 0, "conventions": "# app\nOne module per feature.",
             "roadmap": [{"title": "3. Faster sync", "done_when": "sync takes under 1 s", "done": false, "owner": false}],
             "checkout": null}]}
 ```
@@ -922,7 +922,7 @@ Types live in `crates/idlemax-core/src/dispatch/inputs.rs`.
   A folder inside `$IDLEMAX_HOME` is never the owner's and is skipped.
 - `working` is true when a Herdr agent with status `working` runs in the repository.
 - `default_branch` is the local branch `origin/HEAD` names, kept only when it exists locally.
-- `base_commit`, `roadmap`, `touched` and `files` are filled only for the switched-on projects of the last reply; `files` lists the files tracked at the base commit (at `HEAD` without one), at most 200, and `files_cut` counts the ones left out; `roadmap` comes from `ROADMAP.md`, then `docs/ROADMAP.md`, on the base branch, or at `HEAD` while neither the project nor `origin/HEAD` names one (its items then carry the reason "set the base branch").
+- `base_commit`, `roadmap`, `touched` and `files` are filled only for the switched-on projects of the last reply; `files` lists the files tracked at the base commit (at `HEAD` without one), at most 200, and `files_cut` counts the ones left out; `conventions` is the start of `AGENTS.md`, else `CLAUDE.md`, at the same commit (at most 2,000 characters, newlines and tabs the only control characters); `roadmap` comes from `ROADMAP.md`, then `docs/ROADMAP.md`, on the base branch, or at `HEAD` while neither the project nor `origin/HEAD` names one (its items then carry the reason "set the base branch").
 - `DispatchInputs::check` refuses more than 64 repositories, 50 roadmap items 200 touched paths or 200 files per repository, over-long text and any control character with 400; the store refuses a payload over 256 KiB.
 - An unknown repository becomes a project that is off, with `source: "herdr"` and its default branch as the base; a known one is marked seen, and owner-active when `working`.
   A device holds at most 200 projects; a repository beyond that is skipped, never refused.
