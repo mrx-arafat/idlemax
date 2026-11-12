@@ -186,22 +186,33 @@ fn a_pass_fills_the_slots_in_its_order() {
 }
 
 #[test]
-fn a_scope_naming_a_file_the_project_lacks_becomes_the_whole_project() {
-    // The live pass named ["demo.py", "tests/"] in a project without demo.py.
+fn a_scope_path_that_does_not_exist_is_dropped_and_never_widens_the_scope() {
+    // Scope is a fence (D8): a wrong path is dropped alone, never replaced by the project.
     let mut w = World::new().with_pass(&["a", "b"]);
-    w.repos[0].repo.files = vec!["calc/__init__.py".into(), "tests/test_calc.py".into()];
+    w.repos[0].repo.files = vec!["src/a.rs".into(), "calc/__init__.py".into()];
     let picks = &mut w.pass.as_mut().unwrap().picks;
-    picks[0].scope_paths = vec!["demo.py".into(), "tests/".into()];
-    picks[1].scope_paths = vec!["*.py".into(), "tests/".into()];
+    picks[0].scope_paths = vec!["src/a.rs".into(), "nope/x.txt".into()];
+    picks[1].scope_paths = vec!["*.py".into()];
     let plan = w.build();
     let (a, b) = (&plan.devices[0].picks[0], &plan.devices[0].picks[1]);
-    assert_eq!(a.scope_paths, ["**"]);
+    assert_eq!(a.scope_paths, ["src/a.rs"]);
     assert_eq!(
         a.reason,
-        "a is small (scope widened: the named paths did not exist)"
+        "a is small (scope paths that do not exist were dropped: nope/x.txt)"
     );
-    assert_eq!(b.scope_paths, ["*.py", "tests/"]);
+    assert_eq!(b.scope_paths, ["*.py"]);
     assert_eq!(b.reason, "b is small");
+    // With no real path left the pick is not used, and the slot says why.
+    let mut w = World::new().with_pass(&["a"]);
+    w.repos[0].repo.files = vec!["src/a.rs".into()];
+    w.pass.as_mut().unwrap().picks[0].scope_paths = vec!["nope/x.txt".into()];
+    let d = &w.build().devices[0];
+    assert!(d.picks.is_empty());
+    let why = &d.empty.as_ref().unwrap().reason;
+    assert!(
+        why.contains("none of its scope paths exist: nope/x.txt"),
+        "{why}"
+    );
 }
 
 #[test]
@@ -226,11 +237,11 @@ fn a_new_file_in_an_existing_folder_stays_and_the_file_a_task_names_joins_the_sc
         b.scope_paths,
         ["seqs/fib.py", "tests/test_fib.py", "tests/"]
     );
-    // A new file in a folder the project lacks is still a guess.
+    // A new file in a folder the project lacks is a guess: dropped, never widened.
     let mut w = World::new().with_pass(&["a"]);
     w.repos[0].repo.files = vec!["seqs/__init__.py".into()];
     w.pass.as_mut().unwrap().picks[0].scope_paths = vec!["other/new.py".into()];
-    assert_eq!(w.build().devices[0].picks[0].scope_paths, ["**"]);
+    assert!(w.build().devices[0].picks.is_empty());
 }
 
 #[test]

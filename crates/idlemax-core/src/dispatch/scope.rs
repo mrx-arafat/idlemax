@@ -1,21 +1,17 @@
-//! Domain: a pick's scope paths against the files its project tracks. The orchestrator never
-//! sees the working tree, so a path it names may not exist. Such a scope is a guess: kept,
-//! its other paths would still call the task's real files out of scope (live: `demo.py`
-//! named next to `tests/` for a change in `calc/__init__.py`), so it becomes the whole
-//! project, whose off-limits paths the check still holds. Pure.
+//! Domain: a pick's scope paths against the files its project tracks. The scope is a fence
+//! (D8): the orchestrator never sees the working tree, so a path it names may not exist;
+//! such a path is dropped alone, and a pick with no real path left is not used. A scope is
+//! never widened to the whole project. Pure.
 
+use super::plan::{PassPick, PlanInput};
+use super::task::Task;
 use crate::worker::checks::{in_scope, under};
-
-/// The scope of a whole project: `**` matches every path (gitignore rules).
-pub const WHOLE_PROJECT: &str = "**";
-/// The note a pick's reason gets when its scope became the whole project.
-pub const SCOPE_WIDENED: &str = "scope widened: the named paths did not exist";
 
 /// Stars a scope pattern may hold; more is dropped, whatever the matcher's speed.
 pub const MAX_STARS: usize = 8;
 
 /// A scope pattern that covers every file (`*`, `**`, `*/**`, empty) disables the scope
-/// check, so the pass may not name one; idlemax alone widens a scope, to `WHOLE_PROJECT`.
+/// check, so the pass may not name one.
 pub fn too_broad(pattern: &str) -> bool {
     pattern
         .split('/')
@@ -35,18 +31,52 @@ pub fn drop_broad(paths: &mut Vec<String>) -> Vec<String> {
 /// Top-level folders that hold a project's tests; the one a project has joins every scope.
 const TEST_FOLDERS: [&str; 4] = ["tests", "test", "spec", "__tests__"];
 
-/// The named paths when each matches a tracked file or is a new file in a folder the project
-/// has, plus the files `task_text` names whose folder exists and the project's test folder,
-/// none under `off_limits`; else None: the scope is widened. An empty file list means it is
-/// unknown, and the named paths stay.
+/// A pick's scope: the paths kept, and the named ones dropped because they do not exist.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Scope {
+    pub kept: Vec<String>,
+    pub dropped: Vec<String>,
+}
+
+/// The pick's scope and its reason, with a note when paths were dropped; or why the pick
+/// cannot be used: none of its scope paths exist.
+pub fn pick_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> Result<Scope, String> {
+    let project = input
+        .projects
+        .iter()
+        .find(|v| v.project.id == task.project_id);
+    let repo = project.and_then(|v| {
+        let p = &v.project;
+        input
+            .repos
+            .iter()
+            .find(|r| r.device == p.device && r.repo.path == p.path)
+    });
+    let files = repo.map_or(&[][..], |r| r.repo.files.as_slice());
+    let detail = repo
+        .and_then(|r| r.repo.roadmap.iter().find(|i| i.title == task.title))
+        .map_or("", |i| i.detail.as_str());
+    let done = task.done_check.as_deref().unwrap_or("");
+    let text = format!("{} {detail} {done}", task.title);
+    let off_limits = project.map_or(&[][..], |v| v.project.settings.off_limits.as_slice());
+    narrow_scope(&pp.scope_paths, files, &text, off_limits)
+}
+
+/// The named paths that match a tracked file or are a new file in a folder the project has,
+/// plus the files `task_text` names whose folder exists and the project's test folder, none
+/// under `off_limits`. Named paths that do not exist are dropped; with none left, Err. An
+/// empty file list means it is unknown, and the named paths stay.
 pub fn narrow_scope(
     named: &[String],
     files: &[String],
     task_text: &str,
     off_limits: &[String],
-) -> Option<Vec<String>> {
+) -> Result<Scope, String> {
     if files.is_empty() {
-        return Some(named.to_vec());
+        return Ok(Scope {
+            kept: named.to_vec(),
+            dropped: Vec::new(),
+        });
     }
     let folder_exists = |p: &str| {
         p.rsplit_once('/')
@@ -55,10 +85,13 @@ pub fn narrow_scope(
     let real = |n: &String| {
         files.iter().any(|f| in_scope(f, n)) || (!n.contains(['*', '?']) && folder_exists(n))
     };
-    if !named.iter().all(real) {
-        return None;
+    let (mut kept, dropped): (Vec<String>, Vec<String>) = named.iter().cloned().partition(real);
+    if kept.is_empty() && !dropped.is_empty() {
+        return Err(format!(
+            "none of its scope paths exist: {}",
+            dropped.join(", ")
+        ));
     }
-    let mut kept = named.to_vec();
     let allowed = |p: &str| !off_limits.iter().any(|o| under(p, o));
     for p in paths_named(task_text) {
         let covered = kept.iter().any(|k| in_scope(&p, k));
@@ -73,7 +106,7 @@ pub fn narrow_scope(
             kept.push(format!("{dir}/"));
         }
     }
-    Some(kept)
+    Ok(Scope { kept, dropped })
 }
 
 /// The relative file paths a task's text names, such as `seqs/pascal.py`: a word with a `/`

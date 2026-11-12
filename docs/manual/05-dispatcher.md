@@ -191,8 +191,8 @@ It is told to build scope paths from the project's files, adding every file the 
 - A file the task's title, roadmap detail or done check names joins the scope when its folder exists.
   A roadmap item's detail is its section's text before the "Done when" line, at most 600 characters, so write `Add seqs/pascal.py ...` there and the file is in scope.
 - The project's top-level test folder (`tests`, `test`, `spec` or `__tests__`) joins every scope, never a path under an off-limits path.
-- A named path that matches no file and sits in no existing folder widens the scope to the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
-- When the device reported no file list for the project (an older agent, for example), the named scope paths are kept as given and never widened.
+- A named path that matches no file and sits in no existing folder is dropped on its own, and the pick's reason ends with `(scope paths that do not exist were dropped: <paths>)`. When none of the named paths is left, the pick is not used: its task waits for the next pass, and the empty slot says `none of its scope paths exist`. idlemax never widens a scope to the whole project.
+- When the device reported no file list for the project (an older agent, for example), the named scope paths are kept as given.
 
 - It runs with no tools, no hooks and no MCP servers.
 - It runs when its inputs changed, at most once an hour by itself, or on `idlemax plan --refresh`.
