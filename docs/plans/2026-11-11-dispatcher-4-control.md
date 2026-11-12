@@ -235,7 +235,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 
 - [ ] Task 1: Add the state labels and the dispatcher view to the core
 - [ ] Task 2: Serve the view and show it in `idlemax status`
-- [ ] Task 3: Decide who is calling
+- [x] Task 3: Decide who is calling
 - [ ] Task 4: Refuse owner-only calls from a launched process
 - [ ] Task 5: Change limits through the API
 - [ ] Task 6: Store, list and approve rule proposals
@@ -387,13 +387,13 @@ Nothing is enforced yet; Task 4 wires it in.
 
 **Definition of Done:**
 
-- [ ] `mark_of` returns `None` without the marker, `ThisHome` with the marker and no `IDLEMAX_HOME`, `ThisHome` with the marker and this home, and `OtherHome` with the marker and another home.
-- [ ] `classify` returns `Launched` when a `ThisHome` link sits two ancestors up behind an unmarked one, `Owner` for a chain whose only marked links are `OtherHome`, `Owner` for a chain with no marker, `Unseen` for a local caller with no chain, and `Owner` for a caller on another host.
-- [ ] `permit` passes `Stop` for every caller and refuses `Owner` access for `Launched` and `Unseen`.
-- [ ] `same_host` is true for a loopback peer and for a peer that equals the second of two local addresses, and false for an address that is not local.
-- [ ] `peer_pid_from_lsof` picks the client's pid from a two-block sample with `f` lines and returns `None` for empty output.
-- [ ] `socket_inode` finds the inode in a real IPv4 sample and returns `None` when no row matches.
-- [ ] Verify: `cargo test -p idlemax-core control::caller && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `mark_of` returns `None` without the marker, `ThisHome` with the marker and no `IDLEMAX_HOME`, `ThisHome` with the marker and this home, and `OtherHome` with the marker and another home.
+- [x] `classify` returns `Launched` when a `ThisHome` link sits two ancestors up behind an unmarked one, `Owner` for a chain whose only marked links are `OtherHome`, `Owner` for a chain with no marker, `Unseen` for a local caller with no chain, and `Owner` for a caller on another host.
+- [x] `permit` passes `Stop` for every caller and refuses `Owner` access for `Launched` and `Unseen`.
+- [x] `same_host` is true for a loopback peer and for a peer that equals the second of two local addresses, and false for an address that is not local.
+- [x] `peer_pid_from_lsof` picks the client's pid from a two-block sample with `f` lines and returns `None` for empty output.
+- [x] `socket_inode` finds the inode in a real IPv4 sample and returns `None` when no row matches.
+- [x] Verify: `cargo test -p idlemax-core control::caller && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 4: Refuse owner-only calls from a launched process
 

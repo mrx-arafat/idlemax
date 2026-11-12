@@ -348,6 +348,7 @@ fn finish(job: &Job, status: JobStatus, note: &str, now_ms: UnixMs) -> Job {
     }
 }
 
+pub mod caller;
 mod scope;
 pub use scope::unknown_scope;
 
