@@ -92,14 +92,15 @@ impl Workers {
     }
 
     /// The sandbox of one launch (`decide`): wrapped, bare with a note, or refused. `off`
-    /// probes nothing and notes nothing.
+    /// probes nothing and says so.
     pub(super) fn choose_sandbox(
         &self,
         cli: WorkerCli,
         kind: HostKind,
     ) -> Result<ChosenSandbox, String> {
+        // Off probes nothing, but the Run still says it ran without the sandbox (finding 10).
         if self.policy.sandbox == SandboxSetting::Off {
-            return Ok((None, None));
+            return Ok((None, Some(SandboxFact::Off)));
         }
         let found = self.policy.probe.unwrap_or(default_probe)();
         let probe = match &found {

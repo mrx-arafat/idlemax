@@ -136,3 +136,14 @@ fn a_headless_start_through_a_wrapper_that_makes_no_namespace_fails_closed() {
     let why = last(&updates).error.clone().unwrap_or_default();
     assert!(why.contains("the sandbox did not take"), "{why}");
 }
+
+#[test]
+fn a_sandbox_the_owner_switched_off_is_said_on_the_run_too() {
+    let mut rig = rig();
+    sandboxed(&mut rig, SandboxSetting::Off, no_bwrap);
+    let first = rig
+        .workers
+        .handle(Msg::Start(Box::new(job(&rig, WorkerAction::Launch))), 1, 1);
+    let fact = first[0].worker.as_ref().unwrap().sandbox.clone();
+    assert_eq!(fact, Some(SandboxFact::Off), "review finding 10");
+}
