@@ -22,7 +22,7 @@ pub enum DeviceCmd {
     Credential {
         id: String,
         /// Print the credential alone, for `| idlemax setup --role agent --token-stdin`
-        #[arg(long, conflicts_with = "revoke")]
+        #[arg(long, conflicts_with_all = ["revoke", "json", "format"])]
         raw: bool,
         /// Remove the device's credential; its agent is refused from then on
         #[arg(long)]

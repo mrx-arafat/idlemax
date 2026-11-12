@@ -593,6 +593,7 @@ A heartbeat never changes it; only `POST /v1/devices/{id}/on` and `/off` do, and
   `runs_stopped` counts the Runs stopped with their state saved; this build reports 0.
 - A server is held like an off device until its agent proves itself with its own credential: a device whose profile is not `laptop` and whose `DeviceView.agent_auth` is `owner_token_remote`, or not known yet, gets `server <id> has no credential of its own: idlemax device credential <id>` as `held`.
   `agent_auth` is how the agent proved itself on its last heartbeat: `credential`, `owner_token_local` (the owner token from the coordinator's own host) or `owner_token_remote`; it is absent before the first heartbeat.
+  A heartbeat counts as from the coordinator's own host only when its peer address is a loopback address or the address it reached the coordinator on, so an agent on the coordinator's host should talk to it on `127.0.0.1` or hold a credential.
   A credential is made for any id, known or not, since a new server has not sent a heartbeat; making and revoking one each log a `control` event that never holds the credential.
 - `on` drops the base check record of each of the device's projects whose check ended without a result, so the check runs again.
 

@@ -230,3 +230,71 @@ fn the_store_keeps_the_digest_and_a_remote_owner_token_is_marked() {
     let auth = super::super::agents::auth_of(&Identity::Owner, Some(remote));
     assert_eq!(auth, AgentAuth::OwnerTokenRemote);
 }
+
+#[test]
+fn a_heartbeat_is_judged_by_how_it_proved_itself_this_time() {
+    use idlemax_core::types::DeviceProfile;
+    let mut store = Store::open_in_memory().unwrap();
+    let mut hb = roomy("mac");
+    hb.device.profile = DeviceProfile::Workbox;
+    let cfg = Config::default();
+    let beat = |store: &mut Store, auth| {
+        super::super::agents::on_heartbeat(store, &cfg, &hb, auth, T0).unwrap()
+    };
+    beat(&mut store, AgentAuth::Credential);
+    store.set_device_dispatch("mac", true, T0).unwrap();
+    let job = check_job(&mut store);
+    // The owner token from another host now: this beat leases nothing.
+    let reply = beat(&mut store, AgentAuth::OwnerTokenRemote);
+    assert!(
+        reply.assign.iter().all(|j| j.id != job),
+        "{:?}",
+        reply.assign
+    );
+    let reply = beat(&mut store, AgentAuth::Credential);
+    assert!(
+        reply.assign.iter().any(|j| j.id == job),
+        "{:?}",
+        reply.assign
+    );
+}
+
+/// Every agent route with a body that names another device; a new `/v1/agent/*` route must
+/// be added here, or `every_agent_route_is_checked` fails.
+const OTHER_DEVICE: [(&str, &str); 4] = [
+    ("/v1/agent/heartbeat", r#"{"device": {"id": "mac"}}"#),
+    (
+        "/v1/agent/job-update",
+        r#"{"device": "mac", "id": 1, "seq": 1}"#,
+    ),
+    ("/v1/agent/advisor-inputs", r#"{"device": "mac"}"#),
+    (
+        "/v1/agent/dispatch-inputs",
+        r#"{"device": "mac", "herdr": false, "repos": []}"#,
+    ),
+];
+
+#[tokio::test]
+async fn a_device_credential_cannot_speak_for_another_device_on_any_agent_route() {
+    let api = Api::start().await;
+    let issued = api.post("/v1/devices/box/credential", &()).await;
+    let cred = credential_of(issued.json().await.unwrap());
+    for (path, body) in OTHER_DEVICE {
+        let body: serde_json::Value = serde_json::from_str(body).unwrap();
+        let res = api
+            .send_as(&cred, reqwest::Method::POST, path, Some(&body))
+            .await;
+        assert_eq!(res.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+}
+
+#[test]
+fn every_agent_route_is_checked() {
+    let router = include_str!("../../api.rs");
+    let routes: Vec<&str> = router
+        .split('"')
+        .filter(|s| s.starts_with("/v1/agent/"))
+        .collect();
+    let checked: Vec<&str> = OTHER_DEVICE.iter().map(|(p, _)| *p).collect();
+    assert_eq!(routes, checked);
+}

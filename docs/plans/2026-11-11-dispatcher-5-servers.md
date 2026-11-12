@@ -112,6 +112,7 @@ The repository is public: no address, host name or device id of the owner's mach
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
+| Every bearer that is not the owner token costs one store lookup of its digest, so a client on the private network can force one query per request | Low | Low | The coordinator binds only a private address (Task 10) and the lookup is one indexed equality; cache misses for a short time if the logs ever show it |
 | A new agent reports `workbox` to a coordinator that predates this plan and every heartbeat is refused | Medium | Medium | The old names stay valid on input (Task 1 test), Task 11 upgrades the coordinator first, and `docs/ROLLOUT.md` states the order |
 | The Linux numbers are wrong for a real server and a workbox thrashes or idles | Medium | High | A missing reading only holds, the numbers are settings, and Task 12 records pressure and available memory under load before any server stays in `auto` |
 | A worker on a server or on the Mac reads a token file and calls an owner route on the remote coordinator | Low | High | A server holds only its device credential, which opens the agent routes alone, and a server that still sends the owner token from another host is held (Task 9); the Mac keeps the owner token, so the mode on the moved coordinator stays `off` or `propose` until the owner has answered A13 (Task 11, Open Question 1) |
@@ -960,6 +961,9 @@ This installs services, uses real logins, starts real agent sessions and spends 
 6. **Which machine hosts the coordinator.**
    `docs/ROLLOUT.md` and roadmap items 1 and 2 are written for a server whose sites must keep running, D20 says the two saved servers run no live services, and the repository cannot say whether these are two machines or three.
    Recommended: role A of Task 11, the server of roadmap items 1 and 2, because its units, caps and 24-hour check are already written and proven for it; Task 11 covers role B with the one-agent rule if the owner picks a work server instead.
+7. **May one device finish another device's lapsed job.**
+   `is_late_result` (`scheduler/update.rs`) applies a result for a requeued job (no device, `attempt` equal to `job.attempts`) from any authenticated agent, so a device credential can end another device's lapsed job if it knows the id and the attempt, and a `succeeded` orchestrator pass with `output_tail` would be ingested.
+   Recommended: record the device of the last lease on requeue and refuse a late result from any other device; not built here because it changes Spec 1's lease rules.
 
 ## Review Disposition
 

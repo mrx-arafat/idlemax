@@ -45,11 +45,7 @@ pub async fn heartbeat(
     let auth = auth_of(&identity, conn.map(|Extension(c)| c));
     let now = now_ms();
     let reply = app
-        .with_store(move |store, cfg| {
-            let reply = on_heartbeat(store, cfg, &hb, now)?;
-            store.set_agent_auth(&hb.device.id, auth)?;
-            Ok::<_, ApiFailure>(reply)
-        })
+        .with_store(move |store, cfg| on_heartbeat(store, cfg, &hb, auth, now))
         .await?;
     Ok(Json(reply))
 }
@@ -121,10 +117,13 @@ pub(super) fn on_heartbeat(
     store: &mut Store,
     cfg: &Config,
     hb: &Heartbeat,
+    auth: AgentAuth,
     now: UnixMs,
 ) -> Result<HeartbeatReply, ApiFailure> {
     let device = &hb.device.id;
     let previous_seen = store.record_heartbeat(hb, now)?;
+    // Before anything leases: this beat is judged by how it proved itself now (A15).
+    store.set_agent_auth(device, auth)?;
     if came_online(previous_seen, now, offline_after_ms(cfg)) {
         let msg = format!(
             "{device} online (host {}, agent {})",

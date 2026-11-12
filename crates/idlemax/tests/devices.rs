@@ -338,3 +338,13 @@ async fn an_agent_with_its_own_credential_runs_a_plain_job_and_no_owner_command(
         .unwrap()
         .contains("its own credential"));
 }
+
+#[test]
+fn a_raw_credential_is_never_formatted() {
+    let h = Home::new();
+    for flag in [&["--json"][..], &["--format", "toon"][..]] {
+        let out = h.run(&[&["device", "credential", "box", "--raw"][..], flag].concat());
+        assert_eq!(out.status.code(), Some(2), "{flag:?}: {}", text(&out));
+        assert!(text(&out).contains("cannot be used with"), "{}", text(&out));
+    }
+}
