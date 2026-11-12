@@ -39,7 +39,7 @@ The web dashboard loads nothing remote.
 ### Can idlemax push my code or open pull requests?
 
 No.
-Workers commit locally on their own `idlemax/<task>` branch; every remote gets a dead push address and no credential helper.
+Workers commit locally on their own `idlemax/<task>` branch; every remote and every push URL gets a dead push address and no credential helper (an environment fence: only an OS sandbox stops a worker that drops it).
 Nothing leaves the machine unless you push it yourself after `idlemax review keep`.
 See [Safety and privacy](14-safety-and-privacy.md).
 

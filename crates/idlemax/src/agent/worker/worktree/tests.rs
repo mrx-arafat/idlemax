@@ -240,6 +240,17 @@ fn pane_env_blocks_a_push_to_a_local_bare_remote() {
         &env,
     );
     assert_ne!(push.code, Some(0), "the push went through");
+    // Red team case 1: a remote added under a new name, or the bare path itself, gets no
+    // further: every URL a remote can use is rewritten to the dead push address.
+    git_in(&info.folder, &["remote", "add", "other", &bare_str], &env);
+    for target in ["other", bare_str.as_str(), &format!("file://{bare_str}")] {
+        let push = git_in(
+            &info.folder,
+            &["push", target, "HEAD:refs/heads/leak2"],
+            &env,
+        );
+        assert_ne!(push.code, Some(0), "the push to {target} went through");
+    }
     let refs = git_in(&bare, &["for-each-ref"], &[]);
     assert!(refs.stdout.trim().is_empty(), "{}", refs.stdout);
 }

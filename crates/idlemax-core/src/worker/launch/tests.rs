@@ -169,7 +169,8 @@ fn pane_env_blanks_the_given_names_and_carries_the_job_id() {
     assert!(has("IDLEMAX_JOB_ID", "7"));
     assert!(has("IDLEMAX_JOB_TAG", "99"));
     assert!(has("IDLEMAX_TOKEN", ""));
-    assert!(has("GIT_CONFIG_COUNT", "2"));
+    assert!(has("GIT_CONFIG_COUNT", "11"));
+    assert!(has("GIT_ASKPASS", "") && has("SSH_ASKPASS", ""));
     assert!(has("GIT_CONFIG_KEY_1", "remote.origin.pushurl"));
     assert!(has("GIT_CONFIG_VALUE_1", "idlemax-no-push://origin"));
     assert!(env_problems(&env).is_empty());

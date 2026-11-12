@@ -10,7 +10,19 @@ use crate::types::{DeviceProfile, JobId};
 use crate::TOKEN_ENV;
 
 /// Variables a pane always gets empty, besides the names a first probe found (D22, A14).
-const ALWAYS_BLANK: [&str; 4] = [TOKEN_ENV, "GH_TOKEN", "GITHUB_TOKEN", "SSH_AUTH_SOCK"];
+const ALWAYS_BLANK: [&str; 6] = [
+    TOKEN_ENV,
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "SSH_AUTH_SOCK",
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+];
+/// URL prefixes git rewrites to the dead push address, so a push by URL or through a remote
+/// added later goes nowhere either: `""` matches every URL, the rest name each scheme.
+const NO_PUSH_PREFIXES: [&str; 9] = [
+    "", "https://", "http://", "ssh://", "git://", "git@", "file://", "/", ".",
+];
 /// Name endings that mark a credential.
 const SECRET_SUFFIXES: [&str; 5] = ["_TOKEN", "_KEY", "_SECRET", "_PASSWORD", "_CREDENTIALS"];
 
@@ -170,9 +182,10 @@ pub fn mcp_server_names(list: &str) -> Result<Vec<String>, LaunchError> {
 }
 
 /// The `--env` pairs of a worker pane: the job id (the worker marker, A12) and the attempt
-/// tag, no git prompt, git settings that give every remote a dead push address and no
-/// credential helper, and empty values for the idlemax token and every credential name in
-/// `blank` (D6, D22, A14).
+/// tag, no git prompt, git settings that give every remote and every push URL a dead push
+/// address and no credential helper, and empty values for the idlemax token, the askpass
+/// helpers and every credential name in `blank` (D6, D22, A14). Only an OS sandbox stops a
+/// worker that drops this environment (A13).
 pub fn pane_env(
     job_id: JobId,
     tag: u64,
@@ -190,6 +203,10 @@ pub fn pane_env(
             format!("remote.{remote}.pushurl"),
             format!("idlemax-no-push://{remote}"),
         ));
+    }
+    for prefix in NO_PUSH_PREFIXES {
+        let key = "url.idlemax-no-push://.pushInsteadOf".to_string();
+        config.push((key, prefix.to_string()));
     }
     env.push(("GIT_CONFIG_COUNT".to_string(), config.len().to_string()));
     for (i, (key, value)) in config.into_iter().enumerate() {
