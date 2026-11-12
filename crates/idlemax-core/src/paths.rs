@@ -99,6 +99,11 @@ impl Paths {
         self.root.join("checks")
     }
 
+    /// Dedicated directory for worker git worktrees.
+    pub fn worktrees_dir(&self) -> PathBuf {
+        self.root.join("worktrees")
+    }
+
     /// Directories the state adapter creates at startup.
     pub fn dirs(&self) -> [PathBuf; 4] {
         [
@@ -130,5 +135,14 @@ mod tests {
         );
         assert_eq!(resolve_home(None, Some("".into())), Err(HomeError::Missing));
         assert_eq!(resolve_home(None, None), Err(HomeError::Missing));
+    }
+
+    #[test]
+    fn worktrees_dir_is_under_root() {
+        let paths = Paths::new("/tmp/test-state");
+        assert_eq!(
+            paths.worktrees_dir(),
+            PathBuf::from("/tmp/test-state/worktrees")
+        );
     }
 }

@@ -36,6 +36,7 @@ use stop::{enforce, stop, Stop};
 
 pub use error::RunnerError;
 pub(super) use launch::expand_cwd;
+pub(crate) use wrapper::detect_wrapper;
 
 /// A random tag for one attempt. Processes used to be found by job id alone, but ids repeat
 /// across agents (and test runs) on one host, so one agent adopted and killed another's job.

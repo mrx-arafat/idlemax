@@ -19,6 +19,7 @@ pub mod supervise;
 #[cfg(test)]
 mod tests;
 mod uplink;
+pub mod worker;
 
 use std::future::Future;
 use std::net::SocketAddr;
