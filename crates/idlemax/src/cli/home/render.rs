@@ -50,6 +50,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "see the projects idlemax knows and switch one on or off",
     ),
     (
+        "idlemax plan",
+        "see which workers the dispatcher would launch now and why; it launches nothing",
+    ),
+    (
         "idlemax mode <off|propose>",
         "switch the dispatcher off, or to propose, where it only shows what it would launch",
     ),

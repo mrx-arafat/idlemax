@@ -5,8 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod accounts;
 pub mod check;
 pub mod inputs;
+pub mod plan;
 pub mod project;
 pub mod roadmap;
 pub mod room;

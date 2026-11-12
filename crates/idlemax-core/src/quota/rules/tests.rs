@@ -136,3 +136,25 @@ fn spend_rules_reserve_final_third_interactive_hold_and_one_lease_per_account() 
         assert_eq!(spendable(&cfg(), "claude", &fx.ctx()), want, "{name}");
     }
 }
+
+#[test]
+fn a_limit_hit_marks_every_row_until_its_window_resets() {
+    let mut fx = claude_base();
+    fx.hits = vec![("claude".into(), NOW - 10 * MIN)];
+    let rows = views(&cfg(), &fx.ctx());
+    let claude: Vec<&QuotaView> = rows.iter().filter(|v| v.account == "claude").collect();
+    assert!(
+        claude.len() == 2 && claude.iter().all(|v| v.limited.is_some()),
+        "{claude:?}"
+    );
+    assert!(rows
+        .iter()
+        .filter(|v| v.account == "codex")
+        .all(|v| v.limited.is_none()));
+    // The 5-hour window that saw the hit has reset: the next one starts after it.
+    fx.snaps[0] = snap("claude", rolling_5h(), 5.0, 295 * MIN, MIN);
+    let rows = views(&cfg(), &fx.ctx());
+    assert!(rows.iter().all(|v| v.limited.is_none()), "{rows:?}");
+    let old: QuotaView = serde_json::from_str(r#"{"account":"claude"}"#).unwrap();
+    assert_eq!(old.limited, None);
+}

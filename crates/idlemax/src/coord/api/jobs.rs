@@ -254,7 +254,7 @@ pub(super) fn cluster_status(
     })
 }
 
-pub(super) fn quota_views(
+pub(crate) fn quota_views(
     store: &Store,
     cfg: &Config,
     now: UnixMs,

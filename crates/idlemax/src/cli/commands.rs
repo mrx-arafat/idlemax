@@ -6,7 +6,7 @@ use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
 use super::{
-    config_cmd, hooks, init_cmd, job, mode, project, report, schedule, service, setup, skill,
+    config_cmd, hooks, init_cmd, job, mode, plan, project, report, schedule, service, setup, skill,
     statusline,
 };
 
@@ -42,6 +42,8 @@ pub(super) enum Cmd {
     Project(project::ProjectCmd),
     /// Switch the dispatcher off, or to propose, where it only shows what it would launch
     Mode(mode::ModeArgs),
+    /// See which workers the dispatcher would launch now and why; it launches nothing
+    Plan(plan::PlanArgs),
     /// Pause jobs everywhere, or on one device, account or job
     Pause(Target),
     /// Resume paused jobs

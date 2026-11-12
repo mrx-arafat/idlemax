@@ -1,10 +1,11 @@
-//! Dispatcher routes: the agents' dispatch feed. Adapter: stores the feed, turns it into
+//! Dispatcher routes: the plan and the agents' dispatch feed. Adapter: stores the feed, turns it into
 //! candidate projects and owner activity, and replies with the device's switched-on projects.
 
 use axum::extract::State;
 use axum::Json;
 use idlemax_core::control::may_assign;
 use idlemax_core::dispatch::inputs::{DispatchInputs, DispatchReply};
+use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::Mode;
 use idlemax_core::types::UnixMs;
 use idlemax_core::Config;
@@ -13,7 +14,20 @@ use super::http::{ApiFailure, JsonBody};
 use super::offline_after_ms;
 use super::AppState;
 use crate::coord::store::Store;
+use crate::dispatch::gather_plan;
 use crate::state::now_ms;
+
+/// `GET /v1/plan`: what the dispatcher would launch now and why; it launches nothing.
+pub async fn plan(State(app): State<AppState>) -> Result<Json<Plan>, ApiFailure> {
+    let now = now_ms();
+    let live = std::sync::Arc::clone(app.live());
+    let gathered = app
+        .with_store(move |store, cfg| {
+            Ok::<_, ApiFailure>(gather_plan(store, cfg, &live.current(), now)?)
+        })
+        .await?;
+    Ok(Json(gathered.plan))
+}
 
 /// `POST /v1/agent/dispatch-inputs`.
 pub async fn dispatch_inputs(

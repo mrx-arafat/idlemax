@@ -73,11 +73,15 @@ pub fn is_limit_message(text: &str) -> bool {
 fn account_views(account: &AccountConfig, ctx: &SpendContext<'_>) -> Vec<QuotaView> {
     let windows = windows(account, ctx);
     let (spendable, reasons) = verdict(account, &windows, ctx);
+    let limited = windows
+        .first()
+        .and_then(|shortest| limit_block(account, shortest, ctx));
     let base = QuotaView {
         account: account.name.clone(),
         provider: account.provider,
         spendable,
         reasons,
+        limited,
         at_ms: ctx.now_ms,
         ..QuotaView::default()
     };

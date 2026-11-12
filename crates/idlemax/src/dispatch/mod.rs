@@ -2,8 +2,11 @@
 //! `repo`, used by `agent::dispatch_feed`); the coordinator side (`step`) turns the stored
 //! inputs into base checks, tasks and the plan through the pure `idlemax_core::dispatch` rules.
 
+mod gather;
 pub mod herdr;
 pub mod repo;
+
+pub use gather::{gather_plan, project_views};
 
 use idlemax_core::dispatch::check::{check_job, next_step, BaseCheck, CheckStep, Phase};
 use idlemax_core::dispatch::inputs::StoredRepo;

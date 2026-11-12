@@ -3,15 +3,12 @@
 
 use idlemax_core::dispatch::inputs::RepoReport;
 use idlemax_core::dispatch::project::{
-    NewProject, Project, ProjectSettings, ProjectSource, ProjectView,
+    NewProject, Project, ProjectSettings, ProjectSource, ProjectView, MAX_PROJECTS_PER_DEVICE,
 };
 use idlemax_core::types::UnixMs;
 use rusqlite::{params, OptionalExtension, Row};
 
 use super::{enum_col, enum_text, json_col, json_text, Store, StoreError, StoreResult};
-
-/// Most projects one device may hold.
-pub const MAX_PROJECTS_PER_DEVICE: i64 = 200;
 
 const COLUMNS: &str = "id, device, name, path, enabled, settings, source, seen_ms, owner_active_ms";
 

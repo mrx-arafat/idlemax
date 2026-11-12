@@ -34,7 +34,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/jobs/{id}/cancel | | `Job` |
 | GET | /v1/jobs/{id}/why | | `Explanation` |
 | GET | /v1/why?limit= | | `[WhySummary]` |
-| GET | /v1/quota | | `[quota::QuotaView]` |
+| GET | /v1/quota | | `[quota::QuotaView]`; a row carries `limited` while a usage limit seen in the current window rests the account |
 | GET | /v1/report?days=&since_ms=&label= | | `Report` |
 | POST | /v1/control | `ControlRequest` | `ClusterStatus` |
 | GET | /v1/events?limit= | | `[Event]` |
@@ -48,6 +48,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/schedules/{id}/pause | | `ScheduleView` |
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 | POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose"}` | `{"mode", "before", "changed"}` |
+| GET | /v1/plan | | `Plan` |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
 | POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
 | POST | /v1/projects/{id}/on | | `ProjectView` |
@@ -464,6 +465,38 @@ Semantics:
 - Pause, resume and delete answer 404 for an unknown id.
 - Operator responses never include `spec.stdin`.
 - A client older than this release cannot decode the `schedule_fired` event kind from a newer coordinator, so upgrade the CLI and TUI together with the coordinator.
+
+## The dispatcher plan
+
+`GET /v1/plan` answers what the dispatcher would launch now and why; it launches nothing.
+Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
+
+```json
+{"at_ms": 1730000000000, "mode": "propose", "picked_by": "no orchestrator pass yet",
+ "devices": [{"device": "mac",
+              "room": {"state": "run", "reason": "run: memory 70% used (hold at 90%), swap-in 0 pages/s, disk 9000 MiB free", "open_slots": 2, "at_ms": 1730000000000},
+              "held": null, "picks": [],
+              "empty": {"count": 2, "reason": "1 ready tasks are not judged by the orchestrator: no orchestrator pass yet"}}],
+ "not_judged": [{"id": "roadmap:3:faster-sync", "project": "app", "project_id": 3, "device": "mac", "source": "roadmap",
+                 "title": "Faster sync", "done_check": "sync takes under 1 s", "scope_paths": [], "needs_you": null}],
+ "needs_you": [],
+ "accounts": [{"account": "claude-max", "provider": "claude", "usable": true, "why": "usable: 5-hour window 20% used, weekly 40% used",
+               "five_hour_used_pct": 20.0, "weekly_used_pct": 40.0}],
+ "notes": ["app: the check has not run on 4f2a9c1e0b7d"]}
+```
+
+- `mode` is `off` or `propose`; in `off` no device takes a pick.
+- `picked_by` names the orchestrator pass the picks come from and its age, or why no pass has run.
+- Per device, `room` is the worker room the agent reported (`hold` with `this agent reports no worker room` when it sent none), and `held` says why the device takes nothing whatever its room: `offline`, `paused by you: idlemax resume`, or `kill switch or local pause is on`.
+  A device takes picks only in `propose` mode, not held, with the room at `run`; it has `room.open_slots` slots.
+- Each pick names `project`, `task`, `title`, `provider`, `account`, `model`, the orchestrator's `reason`, `by: "orchestrator"`, the `scope_paths` the orchestrator named and the `avoid_paths` a worker must not touch.
+  A pick comes only from an orchestrator pass and only when its task is offered to that device, its account is usable and listed in the device's `agent.ai_accounts` with the provider's CLI installed, and its model is in `dispatcher.worker_models`.
+  A task in a project the owner is active in is picked only when no other project of the device has a ready task, never while the owner's changed-file list is cut, and then carries those files in `avoid_paths`.
+- `empty` counts the slots left over with one reason: no ready task, tasks the orchestrator has not judged, why the next pick could not be used, or that the orchestrator picked nothing more.
+- `not_judged` lists the ready tasks no orchestrator pass has seen, in plan order; they never fill a slot.
+- `needs_you` lists the tasks that need the owner, each with its reason in `needs_you`.
+- `accounts` applies the simple rule: an account is usable while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota, with a fresh weekly reading and no usage limit in the current window; agy and API accounts have no reading and are not usable.
+- `notes` holds per-project lines, such as a focused check that has not run on the base commit yet and why.
 
 ## Dispatcher mode
 

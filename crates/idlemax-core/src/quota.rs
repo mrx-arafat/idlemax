@@ -255,6 +255,10 @@ pub struct QuotaView {
     pub spendable: bool,
     /// Why the account is or is not spendable.
     pub reasons: Vec<String>,
+    /// A usage limit or HTTP 429 was seen in the current window: the account rests until that
+    /// window resets. Repeated on every row of the account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limited: Option<String>,
     /// Evaluation time.
     pub at_ms: UnixMs,
 }

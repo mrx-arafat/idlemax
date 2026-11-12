@@ -121,6 +121,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/schedules/{id}/pause", post(schedules::pause))
         .route("/v1/schedules/{id}/resume", post(schedules::resume))
         .route("/v1/dispatcher/mode", post(mode::set))
+        .route("/v1/plan", get(plan::plan))
         .route("/v1/projects", get(projects::list).post(projects::add))
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))
@@ -185,6 +186,7 @@ impl From<ControlError> for ApiFailure {
 }
 
 pub use self::advice::run_refresh;
+pub(crate) use self::jobs::quota_views;
 
 /// Query `limit`: default 100, at most 1000.
 fn page_limit(requested: Option<u32>) -> u32 {

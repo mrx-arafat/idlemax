@@ -1,7 +1,9 @@
 //! Delivery: TOON views, tables and next-step hints of the dispatcher commands (`project`,
 //! `mode`, `plan`).
 
+use idlemax_core::dispatch::plan::{DevicePlan, Pick, Plan};
 use idlemax_core::dispatch::project::ProjectView;
+use idlemax_core::dispatch::task::Task;
 use idlemax_core::dispatch::{Mode, ModeReply};
 
 use super::toon::Node;
@@ -160,4 +162,86 @@ pub fn mode_hints(mode: Mode) -> Vec<String> {
         Mode::Off => vec![run("idlemax mode propose", "let the dispatcher plan again")],
         Mode::Propose => vec![run("idlemax plan", "see what it would launch and why")],
     }
+}
+
+/// The plan as people read it: mode, who picked, per device the room, the picks and the
+/// empty slots, then the tasks not judged, the "needs you" list and the notes.
+pub fn plan_text(plan: &Plan) -> String {
+    let mut out = vec![match plan.mode {
+        Mode::Off => "dispatcher: off".to_string(),
+        Mode::Propose => "dispatcher: propose (nothing is launched)".to_string(),
+    }];
+    out.push(format!("picked by: {}", plan.picked_by));
+    for d in &plan.devices {
+        out.push(device_line(d));
+        for p in &d.picks {
+            out.extend(pick_lines(p));
+        }
+        if let Some(e) = &d.empty {
+            out.push(format!("  {} empty slots: {}", e.count, e.reason));
+        }
+    }
+    let task_line = |t: &Task| format!("  {}  {}  {}", t.project, t.source.as_str(), t.title);
+    if !plan.not_judged.is_empty() {
+        out.push("not judged by the orchestrator:".into());
+        out.extend(plan.not_judged.iter().map(task_line));
+    }
+    if !plan.needs_you.is_empty() {
+        out.push("needs you:".into());
+        out.extend(plan.needs_you.iter().map(|t| {
+            let why = t.needs_you.as_deref().unwrap_or_default();
+            format!("{}: {why}", task_line(t))
+        }));
+    }
+    if !plan.notes.is_empty() {
+        out.push("notes:".into());
+        out.extend(plan.notes.iter().map(|n| format!("  {n}")));
+    }
+    out.join("\n")
+}
+
+fn device_line(d: &DevicePlan) -> String {
+    let r = &d.room;
+    match &d.held {
+        Some(h) => format!("device {}: held: {h}", d.device),
+        None => format!(
+            "device {}: {}, {} open slots: {}",
+            d.device,
+            r.state.as_str(),
+            r.open_slots,
+            r.reason
+        ),
+    }
+}
+
+fn pick_lines(p: &Pick) -> Vec<String> {
+    let source = p.task.split(':').next().unwrap_or_default();
+    let provider = serde_json::to_value(p.provider)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
+    vec![
+        format!("  pick {}  {source}  {}", p.project, p.title),
+        format!("    {provider}  {}  {}", p.account, p.model),
+        format!("    scope: {}", words(&p.scope_paths)),
+        format!("    why: {}", p.reason),
+    ]
+}
+
+pub fn plan_node(plan: &Plan) -> Result<Node, serde_json::Error> {
+    Node::of(plan)
+}
+
+pub fn plan_hints(plan: &Plan) -> Vec<String> {
+    if plan.mode == Mode::Off {
+        return vec![run("idlemax mode propose", "let the dispatcher plan again")];
+    }
+    let mut hints = Vec::new();
+    if plan.devices.iter().all(|d| d.picks.is_empty()) && plan.not_judged.is_empty() {
+        hints.push(run(
+            "idlemax project list",
+            "see the projects and switch one on",
+        ));
+    }
+    hints
 }

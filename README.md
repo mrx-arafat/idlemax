@@ -863,6 +863,7 @@ idlemax project set app check -- cargo test -p core   # the focused check, as ar
 The dispatcher has two modes, switched with `idlemax mode`:
 
 ```sh
+idlemax plan            # which workers it would launch now, on what, and why; it launches nothing
 idlemax mode off        # plan nothing
 idlemax mode propose    # show what it would launch, and launch nothing (the default)
 ```
@@ -878,6 +879,9 @@ A task without a base branch or without a check that proves it done, a roadmap i
 
 To learn whether the check fails, the agent keeps a detached checkout of the base commit at `$IDLEMAX_HOME/checks/<project id>`, never your own folder, and the coordinator runs the project's setup and check commands there as dispatcher jobs named `dispatch-setup:<project>` and `dispatch-check:<project>`.
 The checkout is made or moved only while the worker room is `run` and no pause or kill switch is set, with repository hooks off.
+Nothing is ever picked without the orchestrator: a ready task no orchestrator pass has seen is listed under "not judged by the orchestrator" and fills no slot.
+An AI account may be used while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota.
+
 It shows up in `git worktree list` of that repository; switching the project off leaves it in place, and `git worktree remove <dir>` removes it.
 
 ## Controls

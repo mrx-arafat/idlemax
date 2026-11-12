@@ -6,9 +6,7 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use idlemax_core::dispatch::project::{
-    owner_active, NewProject, ProjectSettings, ProjectSource, ProjectView,
-};
+use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectSource, ProjectView};
 use idlemax_core::explain::allowlist_warning;
 use idlemax_core::types::{EventKind, JobSpec, UnixMs};
 use idlemax_core::Config;
@@ -149,22 +147,7 @@ pub(super) fn project_views(
     device: Option<&str>,
     now: UnixMs,
 ) -> Result<Vec<ProjectView>, ApiFailure> {
-    let sessions: Vec<_> = store
-        .advisor_inputs()?
-        .into_iter()
-        .flat_map(|s| {
-            let device = s.inputs.device;
-            s.inputs
-                .sessions
-                .into_iter()
-                .map(move |m| (device.clone(), m))
-        })
-        .collect();
-    let mut views = store.list_projects(device)?;
-    for v in &mut views {
-        v.owner_active = owner_active(v, &sessions, now);
-    }
-    Ok(views)
+    Ok(crate::dispatch::project_views(store, device, now)?)
 }
 
 fn existing(store: &Store, id: i64, now: UnixMs) -> Result<ProjectView, ApiFailure> {

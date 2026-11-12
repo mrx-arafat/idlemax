@@ -212,7 +212,7 @@ target/debug/idlemax init
 - [x] Task 5: Send what each device knows about its repositories
 - [x] Task 6: Admit the dispatcher's own jobs by the lines
 - [x] Task 7: Find tasks from the four sources
-- [ ] Task 8: Build the plan and show it with `idlemax plan`
+- [x] Task 8: Build the plan and show it with `idlemax plan`
 - [ ] Task 9: Run the orchestrator pass
 - [ ] Task 10: Needs the owner's OK: install this build on the Mac
 - [ ] Task 11: Needs the owner's OK: install the statusline capture and configure the accounts
@@ -958,15 +958,15 @@ In `off` mode the plan says so and holds no pick; in `propose` mode it shows wha
 
 **Definition of Done:**
 
-- [ ] `account_uses` marks an account with a 5-hour window at 59.9 percent usable and at 60.0 not, an account with `spent_week_pct` of 10.0 not usable, an `agy` account not usable, an account whose rows carry `limited` not usable with that text, an account whose 5-hour window is `NoData` not usable, and an account without a 5-hour window usable when its weekly window is `Active`.
-- [ ] `quota::views` sets `limited` on the rows of an account with a hit inside its current 5-hour window and leaves it `None` after that window's reset, and a `QuotaView` JSON without the field still decodes.
-- [ ] With two open slots, two ready tasks and no pass, `build` returns no pick, both tasks in `not_judged`, and `empty` of `{count: 2}` with a reason that says the tasks are not judged by the orchestrator.
-- [ ] With a pass that picked both tasks with a usable account and a listed model, `build` returns two picks in the pass's order, each with provider, account, model, reason, scope paths and `by` of `orchestrator`, and `not_judged` is empty.
-- [ ] A pass pick whose account stopped being usable is not a pick, and the slot's reason names the task title and the account's `why`; a pick whose account is not in the device's `ai_accounts` is not a pick either.
-- [ ] When the owner is active in one project and another project has an offered task, a pass pick in the active project is not used; when the other project has none, it is used with the repository's `touched` paths in `avoid_paths`; with `touched_clipped` set it is not used.
-- [ ] A device whose room is `hold`, a paused device and mode `off` each give no pick, and the first two say why.
-- [ ] `crates/idlemax/tests/plan.rs`: a coordinator in a temp home on a spare port gets one heartbeat with a `run` room of 2 slots and one feed with a repository and a roadmap item; after `idlemax project on <name>`, `idlemax plan --json` shows mode `propose`, no pick, `empty.count` of 2, the roadmap item's title in `not_judged`, and `idlemax jobs --json` is an empty list.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::accounts`, `cargo test -p idlemax-core dispatch::plan`, `cargo test -p idlemax-core quota`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --test plan`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `account_uses` marks an account with a 5-hour window at 59.9 percent usable and at 60.0 not, an account with `spent_week_pct` of 10.0 not usable, an `agy` account not usable, an account whose rows carry `limited` not usable with that text, an account whose 5-hour window is `NoData` not usable, and an account without a 5-hour window usable when its weekly window is `Active`.
+- [x] `quota::views` sets `limited` on the rows of an account with a hit inside its current 5-hour window and leaves it `None` after that window's reset, and a `QuotaView` JSON without the field still decodes.
+- [x] With two open slots, two ready tasks and no pass, `build` returns no pick, both tasks in `not_judged`, and `empty` of `{count: 2}` with a reason that says the tasks are not judged by the orchestrator.
+- [x] With a pass that picked both tasks with a usable account and a listed model, `build` returns two picks in the pass's order, each with provider, account, model, reason, scope paths and `by` of `orchestrator`, and `not_judged` is empty.
+- [x] A pass pick whose account stopped being usable is not a pick, and the slot's reason names the task title and the account's `why`; a pick whose account is not in the device's `ai_accounts` is not a pick either.
+- [x] When the owner is active in one project and another project has an offered task, a pass pick in the active project is not used; when the other project has none, it is used with the repository's `touched` paths in `avoid_paths`; with `touched_clipped` set it is not used.
+- [x] A device whose room is `hold`, a paused device and mode `off` each give no pick, and the first two say why.
+- [x] `crates/idlemax/tests/plan.rs`: a coordinator in a temp home on a spare port gets one heartbeat with a `run` room of 2 slots and one feed with a repository and a roadmap item; after `idlemax project on <name>`, `idlemax plan --json` shows mode `propose`, no pick, `empty.count` of 2, the roadmap item's title in `not_judged`, and `idlemax jobs --json` is an empty list.
+- [x] Verify: `cargo test -p idlemax-core dispatch::accounts`, `cargo test -p idlemax-core dispatch::plan`, `cargo test -p idlemax-core quota`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --test plan`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 9: Run the orchestrator pass
 

@@ -10,6 +10,8 @@ use crate::types::{DeviceId, UnixMs};
 /// Longest project path and name, in characters.
 pub const MAX_PATH_CHARS: usize = 4096;
 pub const MAX_NAME_CHARS: usize = 128;
+/// Most projects one device may hold.
+pub const MAX_PROJECTS_PER_DEVICE: i64 = 200;
 /// Most entries in `off_limits` or in `core_paths`.
 pub const MAX_PATH_LIST: usize = 64;
 const MAX_BRANCH_CHARS: usize = 200;
