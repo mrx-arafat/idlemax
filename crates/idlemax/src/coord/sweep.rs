@@ -1,5 +1,6 @@
 //! Coordinator background sweeps (adapter): lease expiry, offline devices and due schedules
-//! every 15 s, store pruning hourly, advisor refresh every 15 min. Loops log failures and continue.
+//! every 15 s, store pruning hourly, the dispatcher step every minute, advisor refresh every
+//! 15 min. Loops log failures and continue.
 
 use std::time::Duration;
 
@@ -28,10 +29,16 @@ const ADVISE_EVERY: Duration = Duration::from_secs(15 * 60);
 /// Lets the first heartbeats arrive before the first advisor run.
 const ADVISE_FIRST_AFTER: Duration = Duration::from_secs(60);
 const DAY_MS: i64 = 86_400_000;
+/// How often the dispatcher moves each project's base check on.
+const DISPATCH_EVERY: Duration = Duration::from_secs(60);
 
 /// Starts the sweep loops; the caller aborts them at shutdown.
 pub fn spawn(app: AppState) -> Vec<JoinHandle<()>> {
-    let mut tasks = vec![tokio::spawn(maintain(app.clone()))];
+    // The dispatcher has its own switch (`dispatcher.mode`), so it never hangs on the advisor's.
+    let mut tasks = vec![
+        tokio::spawn(maintain(app.clone())),
+        tokio::spawn(dispatch(app.clone())),
+    ];
     if app.config().advisor.enabled {
         tasks.push(tokio::spawn(advise(app)));
     }
@@ -53,6 +60,25 @@ async fn maintain(app: AppState) {
             Ok(()) if prune => last_prune_ms = now,
             Ok(()) => {}
             Err(e) => tracing::warn!(error = %e, "coordinator sweep failed"),
+        }
+    }
+}
+
+async fn dispatch(app: AppState) {
+    let mut tick = interval(DISPATCH_EVERY);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        let _serial = app.dispatch_lock().lock().await;
+        let live = std::sync::Arc::clone(app.live());
+        let now = now_ms();
+        let done = app
+            .with_store(move |store, _| {
+                crate::dispatch::step(store, &live.current(), now).map_err(SweepError::from)
+            })
+            .await;
+        if let Err(e) = done {
+            tracing::warn!(error = %e, "dispatcher step failed");
         }
     }
 }

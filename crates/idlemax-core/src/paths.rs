@@ -89,6 +89,11 @@ impl Paths {
         self.root.join("agent")
     }
 
+    /// The dispatcher's base checkouts, one per project: `checks/<project id>`.
+    pub fn checks_dir(&self) -> PathBuf {
+        self.root.join("checks")
+    }
+
     /// Directories the state adapter creates at startup.
     pub fn dirs(&self) -> [PathBuf; 4] {
         [

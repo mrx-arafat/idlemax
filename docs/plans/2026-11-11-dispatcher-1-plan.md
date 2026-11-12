@@ -211,7 +211,7 @@ target/debug/idlemax init
 - [x] Task 4: Read memory used and swap-in on macOS and report the room
 - [x] Task 5: Send what each device knows about its repositories
 - [x] Task 6: Admit the dispatcher's own jobs by the lines
-- [ ] Task 7: Find tasks from the four sources
+- [x] Task 7: Find tasks from the four sources
 - [ ] Task 8: Build the plan and show it with `idlemax plan`
 - [ ] Task 9: Run the orchestrator pass
 - [ ] Task 10: Needs the owner's OK: install this build on the Mac
@@ -851,16 +851,16 @@ Source 1 runs the project's focused check on the base branch as a dispatcher job
 
 **Definition of Done:**
 
-- [ ] `discover` on one project with a failed base check, two roadmap items, one assigned issue and one session with failing tests returns five tasks in that order with the documented ids.
-- [ ] Two roadmap items whose titles share their first 60 characters get the ids `roadmap:<id>:<slug>` and `roadmap:<id>:<slug>-2`.
-- [ ] A project that is off yields no task, and a project without a base branch yields tasks that all carry the base-branch reason.
-- [ ] An issue task in a project without a check command, a roadmap item with `owner` true, an interrupted session and a session in a project the owner is active in each carry their documented reason.
-- [ ] A task with a stored judgment of the same digest carries the judgment's reason, and the same task with a changed title is ready again.
-- [ ] `next_step` returns `Queue(Setup)` for a new base commit with a setup command, `Wait` while that job runs, `Queue(Check)` after it succeeded, `Done { passed: Some(false) }` for a check that exited 1, and `Done { passed: None }` for a check that was killed.
-- [ ] `check_job` returns a spec with `admission` of `lines`, `cost` of `cpu_heavy` and the checkout as `cwd`.
-- [ ] In a temp repository whose `post-checkout` hook writes a marker file, the feed creates `checks/<id>` at the base commit, moves it after a new commit on the base branch, never produces the marker file, and does neither while a `PAUSE` file exists.
-- [ ] A coordinator test posts a feed with a checkout at the base commit, runs `step`, and finds one queued job named `dispatch-check:<project>` with the checkout as `cwd`; a second `step` queues nothing more, and with mode `off` `step` queues nothing.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::task`, `cargo test -p idlemax-core dispatch::check`, `cargo test -p idlemax --bin idlemax dispatch_feed`, `cargo test -p idlemax --bin idlemax plan`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `discover` on one project with a failed base check, two roadmap items, one assigned issue and one session with failing tests returns five tasks in that order with the documented ids.
+- [x] Two roadmap items whose titles share their first 60 characters get the ids `roadmap:<id>:<slug>` and `roadmap:<id>:<slug>-2`.
+- [x] A project that is off yields no task, and a project without a base branch yields tasks that all carry the base-branch reason.
+- [x] An issue task in a project without a check command, a roadmap item with `owner` true, an interrupted session and a session in a project the owner is active in each carry their documented reason.
+- [x] A task with a stored judgment of the same digest carries the judgment's reason, and the same task with a changed title is ready again.
+- [x] `next_step` returns `Queue(Setup)` for a new base commit with a setup command, `Wait` while that job runs, `Queue(Check)` after it succeeded, `Done { passed: Some(false) }` for a check that exited 1, and `Done { passed: None }` for a check that was killed.
+- [x] `check_job` returns a spec with `admission` of `lines`, `cost` of `cpu_heavy` and the checkout as `cwd`.
+- [x] In a temp repository whose `post-checkout` hook writes a marker file, the feed creates `checks/<id>` at the base commit, moves it after a new commit on the base branch, never produces the marker file, and does neither while a `PAUSE` file exists.
+- [x] A coordinator test posts a feed with a checkout at the base commit, runs `step`, and finds one queued job named `dispatch-check:<project>` with the checkout as `cwd`; a second `step` queues nothing more, and with mode `off` `step` queues nothing.
+- [x] Verify: `cargo test -p idlemax-core dispatch::task`, `cargo test -p idlemax-core dispatch::check`, `cargo test -p idlemax --bin idlemax dispatch_feed`, `cargo test -p idlemax --bin idlemax plan`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 8: Build the plan and show it with `idlemax plan`
 

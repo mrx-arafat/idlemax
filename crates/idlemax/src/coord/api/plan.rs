@@ -130,4 +130,41 @@ mod tests {
         let reply = ingest_feed(&mut store, &cfg, &off, &feed(), T0).unwrap();
         assert!(reply.projects.is_empty());
     }
+
+    #[test]
+    fn a_step_queues_one_check_job_in_the_base_checkout() {
+        use idlemax_core::dispatch::inputs::Checkout;
+        use idlemax_core::dispatch::project::ProjectSettings;
+        let mut store = Store::open_in_memory().unwrap();
+        let cfg = Config::default();
+        let mut inputs = feed();
+        inputs.repos[1].base_commit = Some("c1".into());
+        inputs.repos[1].checkout = Some(Checkout {
+            path: "/state/checks/2".into(),
+            commit: Some("c1".into()),
+            error: None,
+        });
+        ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+        let lib = store.list_projects(None).unwrap()[1].project.clone();
+        store.set_project_enabled(lib.id, true).unwrap();
+        let settings = ProjectSettings {
+            base_branch: Some("main".into()),
+            check_command: vec!["cargo".into(), "test".into()],
+            ..Default::default()
+        };
+        store.set_project_settings(lib.id, &settings).unwrap();
+        ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+
+        let mut off = Config::default();
+        off.dispatcher.mode = Mode::Off;
+        crate::dispatch::step(&mut store, &off, T0).unwrap();
+        assert!(store.queued_jobs().unwrap().is_empty());
+
+        crate::dispatch::step(&mut store, &cfg, T0).unwrap();
+        crate::dispatch::step(&mut store, &cfg, T0 + 60_000).unwrap();
+        let queued = store.queued_jobs().unwrap();
+        assert_eq!(queued.len(), 1, "{queued:?}");
+        assert_eq!(queued[0].spec.name, "dispatch-check:lib");
+        assert_eq!(queued[0].spec.cwd.as_deref(), Some("/state/checks/2"));
+    }
 }

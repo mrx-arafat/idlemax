@@ -2,6 +2,7 @@
 //! feed task. Part of the agent event loop (adapter layer).
 
 use idlemax_core::dispatch::inputs::DispatchReply;
+use idlemax_core::dispatch::room::LineState;
 use idlemax_core::protocol::{Heartbeat, HeartbeatReply};
 use tokio::task::{JoinError, JoinHandle};
 use tracing::{error, info, warn};
@@ -81,6 +82,9 @@ impl Agent {
             device: self.device.id.clone(),
             paths: self.paths.clone(),
             projects: self.dispatch_projects.clone(),
+            room_run: self.room.state == LineState::Run,
+            local_paused: self.state.local_paused(),
+            job_dirs: self.job_dirs.clone(),
         };
         tokio::spawn(dispatch_feed::run(self.client.clone(), ctx))
     }

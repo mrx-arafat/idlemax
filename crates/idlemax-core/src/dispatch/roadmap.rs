@@ -23,8 +23,12 @@ pub struct RoadmapItem {
 pub fn parse_roadmap(text: &str) -> Vec<RoadmapItem> {
     let mut items = Vec::new();
     let mut section: Option<(String, Vec<&str>)> = None;
+    let mut fenced = false;
     for line in text.lines() {
-        if let Some(title) = heading(line) {
+        let fence = line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~");
+        fenced ^= fence;
+        // A `#` line inside a code block is code, not a heading.
+        if let Some(title) = heading(line).filter(|_| !fenced && !fence) {
             items.extend(section.take().and_then(|(t, lines)| item(&t, &lines)));
             section = Some((title, Vec::new()));
         } else if let Some((_, lines)) = section.as_mut() {
@@ -76,6 +80,10 @@ fn done_when_rest(line: &str) -> Option<String> {
     }
     let s = s.replace(['*', '_'], "");
     let rest = s.strip_prefix("Done when")?;
+    // "Done whenever" is not the marker: a colon, a space or the end must follow.
+    if rest.starts_with(|c: char| c.is_alphanumeric()) {
+        return None;
+    }
     Some(rest.trim_start_matches(':').trim().to_string())
 }
 
@@ -119,6 +127,17 @@ Done when: each view answers it.\n";
         assert!(!items[0].done && !items[0].owner);
         assert!(items[1].done);
         assert_eq!(items[1].done_when, "each view answers it.");
+    }
+
+    #[test]
+    fn code_fences_and_look_alike_words_are_not_items() {
+        let text = "## Real\n\n```sh\n## not a heading\n```\nDone when: it ships\n\n## Fake\n\nDone whenever you like\n";
+        let items = parse_roadmap(text);
+        assert_eq!(items.len(), 1, "{items:?}");
+        assert_eq!(
+            (items[0].title.as_str(), items[0].done_when.as_str()),
+            ("Real", "it ships")
+        );
     }
 
     #[test]

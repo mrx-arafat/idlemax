@@ -5,10 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod check;
 pub mod inputs;
 pub mod project;
 pub mod roadmap;
 pub mod room;
+pub mod task;
 
 /// What the dispatcher does with its plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -54,4 +56,28 @@ pub struct ModeReply {
 pub enum DispatchError {
     #[error("{0}")]
     Invalid(String),
+}
+
+/// FNV-1a 64-bit hash of the parts joined by a zero byte, as 16 hex digits.
+pub fn fnv64(parts: &[&str]) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET;
+    for (i, part) in parts.iter().enumerate() {
+        let sep: &[u8] = if i == 0 { &[] } else { &[0] };
+        for byte in sep.iter().chain(part.as_bytes()) {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(PRIME);
+        }
+    }
+    format!("{hash:016x}")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fnv64_matches_the_reference_and_separates_parts() {
+        assert_eq!(super::fnv64(&["a"]), "af63dc4c8601ec8c");
+        assert_ne!(super::fnv64(&["ab", "c"]), super::fnv64(&["a", "bc"]));
+    }
 }

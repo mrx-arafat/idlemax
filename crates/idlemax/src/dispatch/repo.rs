@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use idlemax_core::dispatch::inputs::Checkout;
 use tokio::process::Command;
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -14,6 +15,11 @@ const ROADMAP_FILES: [&str; 2] = ["ROADMAP.md", "docs/ROADMAP.md"];
 
 /// Runs `git --no-optional-locks -C <dir> <args>`; stdout on success.
 pub(crate) async fn git(dir: &Path, args: &[&str]) -> Option<String> {
+    git_result(dir, args).await.ok()
+}
+
+/// Like `git`, with stderr as the error.
+async fn git_result(dir: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("--no-optional-locks")
         .arg("-C")
@@ -21,15 +27,86 @@ pub(crate) async fn git(dir: &Path, args: &[&str]) -> Option<String> {
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
     let out = tokio::time::timeout(GIT_TIMEOUT, cmd.output())
         .await
-        .ok()?
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        .map_err(|_| format!("git {} timed out", args.join(" ")))?
+        .map_err(|e| format!("git: {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        Err(err.trim().chars().take(300).collect())
+    }
+}
+
+/// Git writes in the base checkout never run a repository hook: a hook started from the agent
+/// would run outside the allowlist, the lines and the kill switch.
+const NO_HOOKS: [&str; 2] = ["-c", "core.hooksPath=/dev/null"];
+
+/// Makes or moves `dir`, a detached worktree of `project` at `commit`. A folder that is not
+/// this project's checkout is left alone.
+pub async fn prepare_checkout(project: &Path, dir: &Path, commit: &str) -> Checkout {
+    let mut out = checkout_state(project, dir).await;
+    if out.error.is_some() || out.commit.as_deref() == Some(commit) {
+        return out;
+    }
+    let shown = dir.to_string_lossy().into_owned();
+    let result = if dir.exists() {
+        git_result(
+            dir,
+            &[&NO_HOOKS[..], &["checkout", "-q", "--detach", commit]].concat(),
+        )
+        .await
+    } else {
+        if let Some(parent) = dir.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                out.error = Some(format!("cannot create {}: {e}", parent.display()));
+                return out;
+            }
+        }
+        let add = ["worktree", "add", "-q", "--detach", shown.as_str(), commit];
+        git_result(project, &[&NO_HOOKS[..], &add].concat()).await
+    };
+    match result {
+        Ok(_) => checkout_state(project, dir).await,
+        Err(e) => Checkout {
+            error: Some(e),
+            ..out
+        },
+    }
+}
+
+/// Where the checkout is now, without changing it.
+pub async fn checkout_state(project: &Path, dir: &Path) -> Checkout {
+    let path = dir.to_string_lossy().into_owned();
+    let mut out = Checkout {
+        path: path.clone(),
+        commit: None,
+        error: None,
+    };
+    if !dir.exists() {
+        return out;
+    }
+    let common = |d: &Path| {
+        let d = d.to_path_buf();
+        async move {
+            let args = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
+            git(&d, &args).await.map(|c| canonical(Path::new(c.trim())))
+        }
+    };
+    if common(dir).await.is_none() || common(dir).await != common(project).await {
+        out.error = Some(format!("not this project's checkout: remove {path}"));
+        return out;
+    }
+    out.commit = git(dir, &["rev-parse", "HEAD"])
+        .await
+        .map(|c| c.trim().to_string());
+    out
+}
+
+fn canonical(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
 /// The main working tree of the repository holding `dir`: the parent of its common git

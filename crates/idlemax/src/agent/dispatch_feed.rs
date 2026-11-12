@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use idlemax_core::dispatch::inputs::{
-    DispatchInputs, DispatchReply, RepoReport, MAX_REPOS, MAX_ROADMAP_ITEMS, MAX_TOUCHED,
+    Checkout, DispatchInputs, DispatchReply, RepoReport, MAX_REPOS, MAX_ROADMAP_ITEMS, MAX_TOUCHED,
 };
 use idlemax_core::dispatch::project::{default_name, Project};
 use idlemax_core::dispatch::roadmap::parse_roadmap;
@@ -25,6 +25,12 @@ pub struct FeedContext {
     pub paths: Paths,
     /// The switched-on projects of the last reply.
     pub projects: Vec<Project>,
+    /// The worker room is `run`, so a base checkout may be made or moved.
+    pub room_run: bool,
+    /// A local pause is set (the kill switch file is checked at run time).
+    pub local_paused: bool,
+    /// Where the running jobs work; a checkout in use is never moved.
+    pub job_dirs: Vec<PathBuf>,
 }
 
 /// One feed run: collect, send, and return the reply. The next tick is the retry.
@@ -71,6 +77,7 @@ pub async fn collect(ctx: &FeedContext, herdr: Option<HerdrView>) -> DispatchInp
         let mut report = read_repo(&root, working.contains(&root)).await;
         if let Some(p) = project {
             fill_project(&mut report, p).await;
+            report.checkout = base_checkout(ctx, p, &report).await;
         }
         repos.push(report);
     }
@@ -120,6 +127,26 @@ async fn fill_project(report: &mut RepoReport, p: &Project) {
     report.touched = touched;
 }
 
+/// The project's checkout under `checks/<id>`, made or moved to the base commit only while
+/// the room is `run`, no pause or kill switch is set and no running job works in it; else
+/// reported as it is. The check never runs in the owner's folder (D6, D7).
+async fn base_checkout(ctx: &FeedContext, p: &Project, report: &RepoReport) -> Option<Checkout> {
+    let commit = report.base_commit.as_deref()?;
+    if p.settings.check_command.is_empty() {
+        return None;
+    }
+    let dir = ctx.paths.checks_dir().join(p.id.to_string());
+    let project = Path::new(&p.path);
+    let in_use = ctx.job_dirs.iter().any(|d| inside(d, &dir));
+    let may_write =
+        ctx.room_run && !ctx.local_paused && !ctx.paths.pause_file().exists() && !in_use;
+    Some(if may_write {
+        repo::prepare_checkout(project, &dir, commit).await
+    } else {
+        repo::checkout_state(project, &dir).await
+    })
+}
+
 /// A folder inside `$IDLEMAX_HOME` is never the owner's.
 fn inside(folder: &Path, own: &Path) -> bool {
     let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
@@ -158,6 +185,9 @@ mod tests {
             device: "mac".into(),
             paths: Paths::new(state),
             projects,
+            room_run: true,
+            local_paused: false,
+            job_dirs: Vec::new(),
         }
     }
 
@@ -209,5 +239,59 @@ mod tests {
         let r = &inputs.repos[0];
         assert!(r.base_commit.is_some());
         assert_eq!((r.touched.len(), r.touched_clipped), (200, true));
+    }
+
+    #[tokio::test]
+    async fn dispatch_feed_keeps_the_base_checkout_at_the_base_commit_without_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let (on, state) = (root.join("on"), root.join("state"));
+        repo(&on);
+        let marker = root.join("hook-ran");
+        let hook = on.join(".git/hooks/post-checkout");
+        std::fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let mut p = project(&on);
+        p.settings.check_command = vec!["true".into()];
+        std::fs::create_dir_all(&state).unwrap();
+        let mut c = ctx(&state, vec![p]);
+        let head = |d: &Path| {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(d)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+
+        std::fs::write(c.paths.pause_file(), "").unwrap();
+        let held = collect(&c, None).await;
+        assert_eq!(held.repos[0].checkout.as_ref().unwrap().commit, None);
+        std::fs::remove_file(c.paths.pause_file()).unwrap();
+
+        let made = collect(&c, None).await;
+        let checkout = made.repos[0].checkout.clone().unwrap();
+        assert_eq!(checkout.error, None);
+        assert_eq!(checkout.commit, Some(head(&on)));
+        assert_eq!(Path::new(&checkout.path), state.join("checks/1"));
+
+        std::fs::write(on.join("next"), "x").unwrap();
+        git_cmd(&on, &["add", "next"]);
+        git_cmd(&on, &["commit", "-q", "-m", "next"]);
+        c.local_paused = true;
+        let paused = collect(&c, None).await;
+        assert_ne!(
+            paused.repos[0].checkout.as_ref().unwrap().commit,
+            Some(head(&on))
+        );
+        c.local_paused = false;
+        let moved = collect(&c, None).await;
+        assert_eq!(
+            moved.repos[0].checkout.as_ref().unwrap().commit,
+            Some(head(&on))
+        );
+        assert!(!marker.exists(), "a repository hook ran");
     }
 }

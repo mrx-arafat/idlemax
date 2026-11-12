@@ -32,6 +32,8 @@ use crate::live_config::LiveConfig;
 #[derive(Clone)]
 pub struct AppState {
     refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes dispatcher steps, so a sweep and a `plan --refresh` never interleave.
+    dispatch_lock: Arc<tokio::sync::Mutex<()>>,
     store: Arc<Mutex<Store>>,
     live: Arc<LiveConfig>,
     config: Arc<Config>,
@@ -43,6 +45,7 @@ impl AppState {
         store.set_offline_after_ms(offline_after_ms(&config));
         Self {
             refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            dispatch_lock: Arc::new(tokio::sync::Mutex::new(())),
             store: Arc::new(Mutex::new(store)),
             live: Arc::new(LiveConfig::new(&paths, config.clone())),
             config: Arc::new(config),
@@ -58,6 +61,10 @@ impl AppState {
     /// `with_store` closure.
     pub fn live(&self) -> &Arc<LiveConfig> {
         &self.live
+    }
+
+    pub fn dispatch_lock(&self) -> &Arc<tokio::sync::Mutex<()>> {
+        &self.dispatch_lock
     }
 
     pub fn paths(&self) -> &Paths {

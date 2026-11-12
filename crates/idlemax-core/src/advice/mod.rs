@@ -7,7 +7,7 @@ pub mod inputs;
 mod merge;
 pub mod prompt;
 pub mod rules;
-mod text;
+pub(crate) mod text;
 
 use std::collections::BTreeSet;
 

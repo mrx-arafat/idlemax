@@ -128,13 +128,18 @@ pub async fn settings(
     Ok(Json(view))
 }
 
-/// Nothing to undo yet; later tasks drop the project's base check here.
-fn after_switch(_store: &mut Store, _id: i64, _on: bool) -> Result<(), ApiFailure> {
+/// Switching a project off drops its base check, so switching it on starts fresh. The
+/// checkout folder stays.
+fn after_switch(store: &mut Store, id: i64, on: bool) -> Result<(), ApiFailure> {
+    if !on {
+        store.delete_base_check(id)?;
+    }
     Ok(())
 }
 
-/// Nothing to undo yet; later tasks drop the project's base check here.
-fn after_settings(_store: &mut Store, _id: i64) -> Result<(), ApiFailure> {
+/// New settings may change the check, so its record starts over.
+fn after_settings(store: &mut Store, id: i64) -> Result<(), ApiFailure> {
+    store.delete_base_check(id)?;
     Ok(())
 }
 

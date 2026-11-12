@@ -873,6 +873,13 @@ A repository Herdr shows becomes a project that is off.
 These feeds carry full project paths, unlike the advisor's.
 Set `agent.dispatch_inputs_secs` to `0` to send nothing.
 
+For a switched-on project the dispatcher finds tasks in the order of the design: a failing focused check on the base branch, items of `ROADMAP.md` (or `docs/ROADMAP.md`) on the base branch that have a "Done when" line, open GitHub issues assigned to you, and your recent sessions with failing tests or an interrupted turn.
+A task without a base branch or without a check that proves it done, a roadmap item that says it needs the owner, and session work in a project you are active in go on a "needs you" list with the reason.
+
+To learn whether the check fails, the agent keeps a detached checkout of the base commit at `$IDLEMAX_HOME/checks/<project id>`, never your own folder, and the coordinator runs the project's setup and check commands there as dispatcher jobs named `dispatch-setup:<project>` and `dispatch-check:<project>`.
+The checkout is made or moved only while the worker room is `run` and no pause or kill switch is set, with repository hooks off.
+It shows up in `git worktree list` of that repository; switching the project off leaves it in place, and `git worktree remove <dir>` removes it.
+
 ## Controls
 
 Every command reads `$IDLEMAX_HOME` (default `~/.idlemax`; set but empty is an error).
