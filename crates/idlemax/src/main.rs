@@ -8,6 +8,7 @@ mod coord;
 mod dispatch;
 mod doctor;
 mod error_text;
+mod files;
 mod live_config;
 mod state;
 mod tui;

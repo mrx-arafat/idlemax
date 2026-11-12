@@ -13,8 +13,8 @@ use idlemax_core::Paths;
 use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::AppState;
-use crate::cli::files;
 use crate::coord::store::Store;
+use crate::files;
 use crate::live_config::LiveConfig;
 use crate::state::now_ms;
 
@@ -49,14 +49,13 @@ fn switch(
     mode: Mode,
 ) -> Result<ModeReply, ApiFailure> {
     let file = paths.config_file();
-    let internal = |e: anyhow::Error| ApiFailure::Internal(format!("{e:#}"));
-    let before_text = files::read_optional(&file).map_err(internal)?;
+    let before_text = files::read_optional(&file)?;
     let text = before_text.clone().unwrap_or_default();
     let edit = set_setting(&text, "dispatcher.mode", mode.as_str(), Os::current())
         .map_err(|e| ApiFailure::BadRequest(e.to_string()))?;
     let before: Mode = serde_json::from_value(edit.before.clone()).unwrap_or_default();
     if edit.changed {
-        files::save(&file, before_text.as_deref(), &edit.text).map_err(internal)?;
+        files::save(&file, before_text.as_deref(), &edit.text)?;
         let msg = format!("dispatcher mode {before} -> {mode}");
         store.append_event(EventKind::Control, None, None, &msg, now_ms())?;
     }

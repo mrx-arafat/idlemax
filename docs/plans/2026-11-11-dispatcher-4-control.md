@@ -492,12 +492,12 @@ Only keys on an explicit list can be changed this way.
 
 **Definition of Done:**
 
-- [ ] No key in `OWNER_LIMITS` starts with `agent.`, `coordinator.` or `advisor.`, and every key is found by `list_settings` for both OS values.
-- [ ] `set_limit` on `agent.command_allowlist` and on `dispatcher.mode` returns `NotALimit`, and on a listed key with a bad value returns the editor's `Invalid` error with its reason.
-- [ ] `POST /v1/limits` with a valid value rewrites `config.toml` in the temp home, leaves a backup, and returns `changed: true` with the key under `report.applied`; with `value: null` the key leaves the file.
-- [ ] `POST /v1/limits` for a key off the list is 400 and the file is unchanged.
-- [ ] The tests that were in `cli/files.rs` pass in `files.rs`, and `idlemax config set` still writes its backup.
-- [ ] Verify: `cargo test -p idlemax-core config::limits && cargo test -p idlemax --bin idlemax coord::api::limits && cargo test -p idlemax --bin idlemax files:: && cargo test -p idlemax --test config_cmd && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] No key in `OWNER_LIMITS` starts with `agent.`, `coordinator.` or `advisor.`, and every key is found by `list_settings` for both OS values.
+- [x] `set_limit` on `agent.command_allowlist` and on `dispatcher.mode` returns `NotALimit`, and on a listed key with a bad value returns the editor's `Invalid` error with its reason.
+- [x] `POST /v1/limits` with a valid value rewrites `config.toml` in the temp home, leaves a backup, and returns `changed: true` with the key under `report.applied`; with `value: null` the key leaves the file.
+- [x] `POST /v1/limits` for a key off the list is 400 and the file is unchanged.
+- [x] The tests that were in `cli/files.rs` pass in `files.rs`, and `idlemax config set` still writes its backup.
+- [x] Verify: `cargo test -p idlemax-core config::limits && cargo test -p idlemax --bin idlemax coord::api::limits && cargo test -p idlemax --bin idlemax files:: && cargo test -p idlemax --test config_cmd && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 6: Store, list and approve rule proposals
 

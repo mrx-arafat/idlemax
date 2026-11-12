@@ -1116,6 +1116,7 @@ idlemax config unset guard.require_ac_power       # back to the default
 Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake`, every `[dispatcher]` key, every `[workers]` key and every `[quota]` setting other than `quota.accounts` apply at once.
 Every `[dispatcher]` key applies without a restart on both the agent and the coordinator.
 The reply says when a setting is read only at start, and which process to restart.
+The dispatcher's limits (the `dispatcher.*` memory, disk and swap-in lines) can also be read and changed through the coordinator with `GET` and `POST /v1/limits` ([docs/API.md](docs/API.md#limits)); a device's limits are changed on that device.
 `set` replaces a list, so name every program the device may run.
 `[[quota.accounts]]` is a list of tables and stays a hand edit.
 Worked examples: [examples/config.toml](examples/config.toml) (a macOS agent) and [examples/config.server.toml](examples/config.server.toml) (a server).

@@ -1,10 +1,25 @@
 //! Adapter: replace a file in one step so a crash never leaves it half written, and keep a
-//! backup of what the user had before idlemax edited their config files.
+//! backup of what the user had before idlemax edited their config files. Used by the CLI and
+//! by the coordinator routes that edit `config.toml`.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+/// A file operation that failed: what it was doing, on which path, and the OS error.
+#[derive(Debug, thiserror::Error)]
+#[error("{op} {}", path.display())]
+pub struct FileError {
+    pub op: &'static str,
+    pub path: PathBuf,
+    #[source]
+    pub source: io::Error,
+}
+
+/// Wraps an `io::Error` with what was being done to `path`.
+fn failed(op: &'static str, path: &Path) -> impl FnOnce(io::Error) -> FileError {
+    let path = path.to_path_buf();
+    move |source| FileError { op, path, source }
+}
 
 /// Writes `bytes` to a sibling temp file, then renames it over `path`.
 /// `mode` sets the permissions; `None` keeps the existing file's and otherwise uses the umask.
@@ -29,28 +44,31 @@ pub fn backup_path(settings: &Path) -> PathBuf {
     target.with_file_name(name)
 }
 
-pub fn read_optional(path: &Path) -> Result<Option<String>> {
+pub fn read_optional(path: &Path) -> Result<Option<String>, FileError> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        Err(e) => Err(failed("reading", path)(e)),
     }
 }
 
 /// Writes `after` over `settings` (following a symlink) after copying the old file aside.
-pub fn save(settings: &Path, before: Option<&str>, after: &str) -> Result<Option<PathBuf>> {
+pub fn save(
+    settings: &Path,
+    before: Option<&str>,
+    after: &str,
+) -> Result<Option<PathBuf>, FileError> {
     if let Some(dir) = settings.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        std::fs::create_dir_all(dir).map_err(failed("creating", dir))?;
     }
     let target = std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
     let backup = before.map(|_| backup_path(&target));
     if let (Some(path), Some(old)) = (&backup, before) {
         // The copy is exactly as private as the file it copies.
         write_atomic(path, old.as_bytes(), mode_of(&target))
-            .with_context(|| format!("backing up to {}", path.display()))?;
+            .map_err(failed("backing up to", path))?;
     }
-    write_atomic(&target, after.as_bytes(), None)
-        .with_context(|| format!("writing {}", target.display()))?;
+    write_atomic(&target, after.as_bytes(), None).map_err(failed("writing", &target))?;
     Ok(backup)
 }
 

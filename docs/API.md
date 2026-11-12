@@ -23,7 +23,7 @@ Each write is in one class; a route not listed is token-only, as before.
 |---|---|
 | `Read` | every `GET` |
 | `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/dispatcher/mode` toward `off` |
-| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings` |
+| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits` |
 | token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
 
 For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.
@@ -79,6 +79,8 @@ What the lock does not stop:
 | POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose" \| "auto"}` | `{"mode", "before", "changed"}` |
 | GET | /v1/plan | | `Plan` |
 | POST | /v1/plan/refresh | | `Plan`, after a dispatcher step that asks for an orchestrator pass |
+| GET | /v1/limits | | `[Setting]`, the limits in a fixed order |
+| POST | /v1/limits | `{"key": "...", "value": "..." \| null}` | `{"key", "before", "after", "changed", "report"}` |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
 | POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
 | POST | /v1/projects/{id}/on | | `ProjectView` |
@@ -679,6 +681,17 @@ The reply is `{"mode": "off", "before": "propose", "changed": true}`; `changed` 
 A change appends one `control` event, such as `dispatcher mode propose -> off`.
 Both daemons read the `[dispatcher]` section again when the file's mtime changes, so the switch holds with no restart.
 The route is an owner action: no pause, kill switch, guard or line state holds it.
+
+## Limits
+
+The limits are the dispatcher's lines (D14): `dispatcher.hold_mem_used_pct`, `dispatcher.shed_mem_used_pct`, `dispatcher.emergency_mem_used_pct`, `dispatcher.hold_disk_free_mib`, `dispatcher.shed_disk_free_mib`, `dispatcher.emergency_disk_free_mib`, `dispatcher.swap_in_low_pages_per_sec` and `dispatcher.swap_in_high_pages_per_sec` (`OWNER_LIMITS` in `crates/idlemax-core/src/config/limits.rs`).
+Only these keys can be changed here, so the token alone never changes `agent.command_allowlist` or a `coordinator.*` key from a browser; every other key is 400 and the file is left as it was.
+`GET /v1/limits` returns a `Setting` per limit: `{"key", "value", "default", "from_file"}`.
+`POST /v1/limits` sets one with the editor `idlemax config set` uses, so a value that would stop a start is 400 with the reason, and the old file is kept as `config.toml.idlemax.bak`; `"value": null` removes the key so its default applies again.
+The reply is `{"key": "dispatcher.hold_mem_used_pct", "before": 90.0, "after": 85.0, "changed": true, "report": {"applied": ["dispatcher.hold_mem_used_pct"], "restart_agent": [], "restart_coordinator": []}}`: a key under `applied` holds now, one under the other two lists needs that process restarted.
+The route calls no daemon; both re-read the `[dispatcher]` section when the file's mtime changes.
+It changes the coordinator's own file: a device's limits are changed on that device.
+Changing a limit is owner-only (see "Auth and errors"), and no pause, guard or line state holds it.
 
 ## Projects
 

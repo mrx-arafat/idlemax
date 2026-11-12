@@ -4,7 +4,7 @@ mod client;
 mod commands;
 mod config_cmd;
 mod dispatch;
-pub(crate) mod files;
+pub(crate) use crate::files;
 mod handlers;
 mod home;
 mod hooks;

@@ -220,6 +220,10 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
         ("/v1/projects", r#"{"path":"/tmp/x"}"#),
         ("/v1/projects/1/on", "{}"),
         ("/v1/projects/1/settings", "{}"),
+        (
+            "/v1/limits",
+            r#"{"key":"dispatcher.hold_mem_used_pct","value":"85"}"#,
+        ),
     ] {
         assert_eq!(home.post_marked(coord, path, body), "403", "{path} {body}");
     }

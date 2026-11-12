@@ -7,6 +7,7 @@ mod budget;
 pub mod caller;
 pub mod http;
 mod jobs;
+mod limits;
 mod mode;
 pub(crate) mod plan;
 mod projects;
@@ -32,6 +33,7 @@ use self::caller::CallerCheck;
 use self::http::{ApiFailure, BearerToken, HostGuard};
 use super::store::{Store, StoreError};
 use super::web;
+use crate::files::FileError;
 use crate::live_config::LiveConfig;
 
 /// Shared by every handler and by the coordinator's background sweeps.
@@ -135,6 +137,7 @@ pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
         .route("/v1/dispatcher/mode", post(mode::set))
         .route("/v1/plan", get(plan::plan))
         .route("/v1/plan/refresh", post(plan::refresh))
+        .route("/v1/limits", get(limits::list).post(limits::set))
         .route("/v1/projects", get(projects::list).post(projects::add))
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))
@@ -187,6 +190,12 @@ impl From<StoreError> for ApiFailure {
             }
             other => ApiFailure::Internal(other.to_string()),
         }
+    }
+}
+
+impl From<FileError> for ApiFailure {
+    fn from(e: FileError) -> Self {
+        ApiFailure::Internal(format!("{e}: {}", e.source))
     }
 }
 
