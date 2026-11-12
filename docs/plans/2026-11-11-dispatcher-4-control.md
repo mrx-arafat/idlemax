@@ -237,7 +237,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [ ] Task 2: Serve the view and show it in `idlemax status`
 - [x] Task 3: Decide who is calling
 - [ ] Task 4: Refuse owner-only calls from a launched process
-- [ ] Task 5: Change limits through the API
+- [x] Task 5: Change limits through the API
 - [ ] Task 6: Store, list and approve rule proposals
 - [ ] Task 7: Decide and store the three kinds of notice
 - [ ] Task 8: Deliver a notice to the desktop and the inbox

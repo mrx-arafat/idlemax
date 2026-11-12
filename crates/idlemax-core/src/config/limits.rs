@@ -10,8 +10,8 @@ use super::settings::{list_settings, Setting};
 use super::{ConfigError, ReloadReport};
 use crate::types::Os;
 
-/// The limits, as exact `section.name` keys: the lines of D14. The mode is not one of them: it
-/// has its own route (A1).
+/// The limits, as exact `section.name` keys: the lines of D14, the review cap and the owner's
+/// quota reserve. The mode is not one of them: it has its own route (A1).
 pub const OWNER_LIMITS: &[&str] = &[
     "dispatcher.hold_mem_used_pct",
     "dispatcher.shed_mem_used_pct",
@@ -21,6 +21,8 @@ pub const OWNER_LIMITS: &[&str] = &[
     "dispatcher.emergency_disk_free_mib",
     "dispatcher.swap_in_low_pages_per_sec",
     "dispatcher.swap_in_high_pages_per_sec",
+    "workers.review_cap",
+    "quota.owner_reserve_pct",
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -116,6 +118,13 @@ mod tests {
             "{reason}"
         );
 
+        for (key, raw) in [
+            ("workers.review_cap", "2"),
+            ("quota.owner_reserve_pct", "40"),
+        ] {
+            let set = set_limit("", key, Some(raw), Os::Linux).unwrap();
+            assert!(set.changed, "{key}");
+        }
         let set = set_limit("", "dispatcher.hold_mem_used_pct", Some("85"), Os::Linux).unwrap();
         assert!(set.changed && set.text.contains("hold_mem_used_pct = 85"));
         let unset = set_limit(&set.text, "dispatcher.hold_mem_used_pct", None, Os::Linux).unwrap();

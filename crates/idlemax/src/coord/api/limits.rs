@@ -1,6 +1,6 @@
 //! `GET` and `POST /v1/limits`: read and change the owner's hard limits (D18.1, A2).
 //! Adapter: edits `config.toml` with the same editor as `idlemax config set` and calls no
-//! daemon, because each daemon re-reads these keys when the file's mtime changes. Changing a
+//! daemon, because each daemon reads the file again when its mtime changes. Changing a
 //! limit is owner-only (the caller check of Task 4); no pause or guard holds it (A10).
 
 use axum::extract::State;
