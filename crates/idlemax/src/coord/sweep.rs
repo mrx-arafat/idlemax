@@ -151,6 +151,8 @@ fn sweep_once(
         tracing::warn!(error = %e, "schedule sweep failed");
     }
     if prune {
+        // Before the prune: the account days need the week of snapshots the prune drops.
+        super::api::close_quota_days(store, cfg, now)?;
         let days = i64::from(cfg.coordinator.metrics_retention_days);
         let report = store.prune(now, days.saturating_mul(DAY_MS))?;
         tracing::debug!(?report, "store pruned");
@@ -321,5 +323,18 @@ mod tests {
             .iter()
             .filter(|e| e.kind == EventKind::DeviceOffline)
             .count()
+    }
+
+    #[test]
+    fn the_hourly_sweep_closes_an_ended_account_day() {
+        use crate::coord::api::budget_test_world::{claude_cfg, record_week, T0};
+        let mut store = Store::open_in_memory().unwrap();
+        record_week(&mut store);
+        super::sweep_once(&mut store, &claude_cfg(), true, false, T0).unwrap();
+        assert!(store
+            .budget_days("max", 0)
+            .unwrap()
+            .iter()
+            .any(|d| d.closed));
     }
 }

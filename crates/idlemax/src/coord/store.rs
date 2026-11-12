@@ -137,6 +137,7 @@ pub struct PruneReport {
     pub pause_spans: usize,
     pub projects: usize,
     pub runs: usize,
+    pub quota_days: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
@@ -267,6 +268,10 @@ impl Store {
                 "DELETE FROM runs WHERE state IN ('kept', 'discarded')
                    AND COALESCE(end_ms, updated_ms) < ?1",
                 [jobs_cutoff],
+            )?,
+            quota_days: tx.execute(
+                "DELETE FROM quota_days WHERE day_start_ms < ?1",
+                [history_cutoff],
             )?,
         };
         tx.execute(

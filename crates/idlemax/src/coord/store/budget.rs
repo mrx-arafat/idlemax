@@ -2,6 +2,7 @@
 //! snapshots stored after each Run's end. Reads only.
 
 use idlemax_core::quota::cost::RunSample;
+use idlemax_core::quota::owner_use::AccountDay;
 use idlemax_core::types::{QuotaSnapshot, QuotaWindowKind, UnixMs};
 use idlemax_core::worker::run::Run;
 use rusqlite::{params, OptionalExtension};
@@ -62,5 +63,106 @@ impl Store {
                 snapshot_from_row,
             )
             .optional()?)
+    }
+}
+
+// The Budget of dispatcher Spec 3 Tasks 4 and 6 writes and reads account days here.
+#[cfg_attr(not(test), allow(dead_code))]
+impl Store {
+    /// Weekly snapshots of `account` taken at or after `since_ms`, oldest first.
+    pub fn weekly_snapshots(
+        &self,
+        account: &str,
+        since_ms: UnixMs,
+    ) -> StoreResult<Vec<QuotaSnapshot>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT account, quota_window, used_pct, resets_at_ms, source, at_ms
+             FROM quota_snapshots WHERE account = ?1 AND quota_window = ?2 AND at_ms >= ?3
+             ORDER BY at_ms",
+        )?;
+        let weekly = json_text(&QuotaWindowKind::Weekly)?;
+        let rows = stmt.query_map(params![account, weekly, since_ms], snapshot_from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Closes a day: sets its four totals and keeps the Budget it had.
+    pub fn close_day(&mut self, day: &AccountDay) -> StoreResult<()> {
+        self.conn.execute(
+            "INSERT INTO quota_days (account, day_start_ms, total_pct, idlemax_pct, owner_pct,
+               runs, closed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
+             ON CONFLICT (account, day_start_ms) DO UPDATE SET
+               total_pct = excluded.total_pct, idlemax_pct = excluded.idlemax_pct,
+               owner_pct = excluded.owner_pct, runs = excluded.runs, closed = 1",
+            params![
+                day.account,
+                day.day_start_ms,
+                day.total_pct,
+                day.idlemax_pct,
+                day.owner_pct,
+                day.runs
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Records what an open day's Budget says now; a closed day keeps what it had.
+    pub fn record_open_day(
+        &mut self,
+        account: &str,
+        day_start_ms: UnixMs,
+        spendable_pct: Option<f64>,
+        basis: &str,
+        why: &str,
+    ) -> StoreResult<()> {
+        self.conn.execute(
+            "INSERT INTO quota_days (account, day_start_ms, spendable_pct, basis, why)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (account, day_start_ms) DO UPDATE SET
+               spendable_pct = excluded.spendable_pct, basis = excluded.basis, why = excluded.why
+             WHERE closed = 0",
+            params![account, day_start_ms, spendable_pct, basis, why],
+        )?;
+        Ok(())
+    }
+
+    /// The account's days that started at or after `since_ms`, newest first.
+    pub fn budget_days(&self, account: &str, since_ms: UnixMs) -> StoreResult<Vec<AccountDay>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT account, day_start_ms, spendable_pct, basis, why, total_pct, idlemax_pct,
+               owner_pct, runs, closed
+             FROM quota_days WHERE account = ?1 AND day_start_ms >= ?2
+             ORDER BY day_start_ms DESC",
+        )?;
+        let rows = stmt.query_map(params![account, since_ms], |r| {
+            Ok(AccountDay {
+                account: r.get(0)?,
+                day_start_ms: r.get(1)?,
+                spendable_pct: r.get(2)?,
+                basis: r.get(3)?,
+                why: r.get(4)?,
+                total_pct: r.get(5)?,
+                idlemax_pct: r.get(6)?,
+                owner_pct: r.get(7)?,
+                runs: r.get(8)?,
+                closed: r.get(9)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The account's Runs with a session id that started in [from_ms, to_ms).
+    pub fn runs_started_in(
+        &self,
+        account: &str,
+        from_ms: UnixMs,
+        to_ms: UnixMs,
+    ) -> StoreResult<u32> {
+        Ok(self.conn.query_row(
+            "SELECT count(*) FROM runs
+             WHERE account = ?1 AND session IS NOT NULL AND start_ms >= ?2 AND start_ms < ?3",
+            params![account, from_ms, to_ms],
+            |r| r.get(0),
+        )?)
     }
 }

@@ -116,7 +116,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 - [ ] Task 1: Needs the owner's OK: measure how each plan counts usage
 - [x] Task 2: Add the quota settings, the Tier and the OpenCode provider
 - [x] Task 3: Build the cost table from Run records
-- [ ] Task 4: Learn the owner's own use per account day
+- [x] Task 4: Learn the owner's own use per account day
 - [ ] Task 5: Compute the surplus, the daily Budget and the worker rules
 - [ ] Task 6: Gather the Budget on the coordinator and gate every worker start
 - [ ] Task 7: Leave idlemax's own worker sessions out of the owner's use
@@ -412,14 +412,14 @@ Keep these days, and later the budget each day had, in the store for 30 days, be
 
 **Definition of Done:**
 
-- [ ] With the reset 49 hours away, `day_slot` returns `days_left` 3 and a slot that ends in 1 hour.
-- [ ] Readings of 20.0 at the slot's start and 31.0 inside it, with charges of 4.0, give `total_pct` 11.0, `idlemax_pct` 4.0 and `owner_pct` 7.0.
-- [ ] A slot with no snapshot inside has `owner_pct` `None` and does not count in `days_known`.
-- [ ] Seven days with owner use of 7, 5, 0, 9, 6, 8 and 7 give `usual_daily_pct` 6.0 and `days_known` 7.
-- [ ] A fresh store has the `quota_days` table, two calls of `close_quota_days` leave one closed row per account day, and `prune` removes a row older than 30 days.
-- [ ] A day recorded with `record_open_day` and then closed keeps its `spendable_pct` and `why`, a later `record_open_day` for that day changes nothing, and `budget_days` returns it first among older days.
-- [ ] `sweep_once` with the hourly flag set closes an ended account day.
-- [ ] Verify: `cargo test -p idlemax-core quota::owner_use`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax sweep`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] With the reset 49 hours away, `day_slot` returns `days_left` 3 and a slot that ends in 1 hour.
+- [x] Readings of 20.0 at the slot's start and 31.0 inside it, with charges of 4.0, give `total_pct` 11.0, `idlemax_pct` 4.0 and `owner_pct` 7.0.
+- [x] A slot with no snapshot inside has `owner_pct` `None` and does not count in `days_known`.
+- [x] Seven days with owner use of 7, 5, 0, 9, 6, 8 and 7 give `usual_daily_pct` 6.0 and `days_known` 7.
+- [x] A fresh store has the `quota_days` table, two calls of `close_quota_days` leave one closed row per account day, and `prune` removes a row older than 30 days.
+- [x] A day recorded with `record_open_day` and then closed keeps its `spendable_pct` and `why`, a later `record_open_day` for that day changes nothing, and `budget_days` returns it first among older days.
+- [x] `sweep_once` with the hourly flag set closes an ended account day.
+- [x] Verify: `cargo test -p idlemax-core quota::owner_use`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax sweep`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 5: Compute the surplus, the daily Budget and the worker rules
 

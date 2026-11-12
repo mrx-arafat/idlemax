@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -302,4 +302,23 @@ CREATE TABLE worker_stop (
   stopped_ms INTEGER NOT NULL,
   reason TEXT NOT NULL
 ) STRICT;
+"#;
+
+/// Quota account days of dispatcher Spec 3: per account and 24-hour slot counted back from
+/// the weekly reset, the Budget the day had and, once it ended, the weekly rise, what
+/// idlemax's Runs took and the owner's own use. Kept 30 days; snapshots are kept one week.
+const V10: &str = r#"
+CREATE TABLE quota_days (
+  account TEXT NOT NULL,
+  day_start_ms INTEGER NOT NULL,
+  spendable_pct REAL,
+  basis TEXT,
+  why TEXT,
+  total_pct REAL,
+  idlemax_pct REAL,
+  owner_pct REAL,
+  runs INTEGER,
+  closed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account, day_start_ms)
+) STRICT, WITHOUT ROWID;
 "#;
