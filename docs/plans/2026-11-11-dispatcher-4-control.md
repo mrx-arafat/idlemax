@@ -241,7 +241,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [x] Task 6: Store, list and approve rule proposals
 - [x] Task 7: Decide and store the three kinds of notice
 - [x] Task 8: Deliver a notice to the desktop and the inbox
-- [ ] Task 9: Add the dispatcher controls and views to the dashboard
+- [x] Task 9: Add the dispatcher controls and views to the dashboard
 - [x] Task 10: Add the Dispatch tab to the TUI
 - [ ] Task 11: Add `idlemax mcp`
 - [ ] Task 12: Needs the owner's OK: switch control and visibility on for real
@@ -693,7 +693,7 @@ It is verified by TS-001 to TS-006.
 **Definition of Done:**
 
 - [x] TS-001 to TS-006 pass in a browser against the throwaway home, and the page has no console error.
-- [ ] The cards read correctly at a phone width and in the light and the dark theme.
+- [x] The cards read correctly at a phone width and in the light and the dark theme.
 - [x] Text typed into a limit input is still there, with the focus, after the next poll.
 - [x] Against a coordinator that answers 404 to `GET /v1/dispatcher`, the page shows today's cards and no empty dispatcher card.
 - [x] The dashboard test still finds one script tag and no HTML sink, and the script parses.
