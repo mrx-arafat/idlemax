@@ -889,8 +889,11 @@ function renderReview() {
   const box = $("review");
   const v = dispReady(box);
   if (!v) return;
+  // What waits for the owner: the runs a project's `waiting` counts (clean, needs_you). A
+  // rejected run keeps its branch but waits for nobody; `idlemax review` still lists it.
+  const waiting = v.review.filter((w) => w.state === "clean" || w.state === "needs_you");
   const note = h("div", { class: "faint", style: "margin-top:8px;font-size:12.5px" }, "Keep or discard with idlemax review keep <run> or idlemax review discard <run>.");
-  box.replaceChildren(v.review.length ? workerTable(v.review, false) : h("div", { class: "empty" }, "Nothing waits for review."), note);
+  box.replaceChildren(waiting.length ? workerTable(waiting, false) : h("div", { class: "empty" }, "Nothing waits for review."), note);
 }
 
 // One bar: what was spent of what may be spent, with the reason as its title.
