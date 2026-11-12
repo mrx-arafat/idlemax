@@ -46,6 +46,7 @@ The hard limits (memory, disk, quota, which projects are on) are not here and ca
 - Add no test the task does not need.
 - Never break behaviour that works today.
 - Commit locally on your own branch. Never push, open a pull request, deploy, touch a database, send a message or spend money.
+- Commit only the source change; never commit generated files (bytecode, build output, caches, dependency folders).
 
 ## Never touch
 
@@ -206,6 +207,9 @@ mod tests {
         };
         let text = prompt(DEFAULT_RULES, &[], &[], &[], &offer);
         assert!(text.contains("RULES:\n# idlemax rules"));
+        assert!(DEFAULT_RULES.contains(
+            "never commit generated files (bytecode, build output, caches, dependency folders)"
+        ));
         assert!(text.contains("roadmap:1:t0") && text.contains("\"sonnet\""));
         assert!(text.contains("rule_proposal") && text.contains("deleted a fixture"));
         let state = text.split("STATE:\n").nth(1).unwrap();
