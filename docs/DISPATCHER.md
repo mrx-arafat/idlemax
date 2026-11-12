@@ -323,6 +323,7 @@ A spec that needs something another spec owns uses it by the shared name below a
 | 3. Quota | `docs/plans/2026-11-11-dispatcher-3-quota.md` | D10 items 1 (the cost table) to 9, except the run record; of item 9 only the quota side (Spec 2 builds the lean launch, Spec 1 the short pass) |
 | 4. Control | `docs/plans/2026-11-11-dispatcher-4-control.md` | D12 (dashboard, TUI, MCP), D17, D18 items 1 and 4 |
 | 5. Servers | `docs/plans/2026-11-11-dispatcher-5-servers.md` | D19, D20 |
+| 6. Sandbox | `docs/plans/2026-11-13-dispatcher-6-sandbox.md` | A13 (the worker sandbox), the OS layer under D6 and D22 |
 
 ## Shared names
 
@@ -382,6 +383,7 @@ Each answer names the spec that builds it, and it overrides a spec's own recomme
 ### Safety
 
 - **A13. Worker fence strength: the owner's answer to Q22 is pending.** Until it lands, Spec 2 builds the soft fences and lists the sandbox as an Open Question.
+- **A13 answered (2026-11-13).** Decided by the orchestrator under the owner's delegation: workers run inside an OS sandbox by default where one is available, and the soft fences stay as a second layer. On Linux the sandbox is bubblewrap; on macOS it is `sandbox-exec` with a generated Seatbelt profile. A sandboxed worker writes only its worktree, the git objects and refs its commits need and a temp dir, reads the project and the toolchains but not `~/.ssh`, `~/.config/gh`, `~/.git-credentials`, the idlemax state dir or `~/.claude` beyond what its CLI needs to authenticate, and reaches the network only through an allow-list proxy that opens the model API hosts. `workers.sandbox` takes `auto` (the default: sandbox when available, soft fences with a warning when not), `required` and `off`; a `production` device always requires it. The Herdr and headless hosts both wrap the agent CLI, and `idlemax doctor` reports whether the sandbox is available. Spec 6 builds it.
 - **A14. Workers call no idlemax route.** A worker gets no idlemax token, so it cannot start, stop or switch anything; specs drop any claim that a worker can stop idlemax.
 - **A15. A credential per device.** Spec 5 gives each device's agent its own credential that reaches only the `/v1/agent/*` routes. No server runs in `auto` before that credential and the answer to Q22 exist; until then servers stay in `propose`.
 - **A16. Dispatcher work follows the lines, not the idle rule.** The orchestrator pass, the base checkout, setup and check commands, and workers are admitted by the lines of D14, not by user idle time or the pause on memory pressure `Warn`. They keep the runner's OS throttles. Plain jobs the owner queues keep the guard.
