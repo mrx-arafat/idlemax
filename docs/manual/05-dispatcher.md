@@ -308,6 +308,7 @@ A worker is stopped after `workers.max_runtime_secs` (3600) awake seconds per la
 | No idlemax token, no credential variables | the pane gets them empty, and a worker whose real environment still holds one is never briefed |
 | No untracked files of yours such as `.env` | a fresh worktree holds tracked files only |
 | No CI, release, secret or agent-config paths | `.github/`, `.gitlab-ci.yml`, `*.env`, `secrets/`, `.claude/`, `.mcp.json`, `.husky/`, `.githooks/`, `.git/hooks/`, `.envrc`, `.circleci/`, `.env.*`, `*.pem` and `*.key` are off-limits in every project unless you set `default-off-limits off`; a change there rejects the task |
+| No changes to your git config or hooks | a worktree shares `.git/config` and `hooks/` with your checkout, so every git command idlemax runs on a project passes `-c core.fsmonitor=false -c core.hooksPath=/dev/null`; the agent snapshots both before a launch, compares them when the worker ends and after the check, puts any change back, rejects the Run and raises a needs-you entry |
 | No `git push` | every remote and every push URL (any scheme, a path, a remote added later) gets a dead push address, with no credential helper and no askpass helper, for the agent and for the setup and check commands; a worker that drops its environment gets past it, which only an OS sandbox stops (A13) |
 | Codex writes and network | Codex's own `workspace-write` sandbox, approval `never` |
 | No pull requests, deploys, databases, messages or spending | the brief and `rules.md` say so, and the credential variables are missing |
@@ -358,6 +359,7 @@ When a worker finishes, idlemax checks the result before it tells you:
 - **Baseline:** the project's focused checks, recorded on the base branch before the worker started, must still pass on the worker's branch.
 - **Scope:** the diff touches only what the task needs.
   A change under an off-limits path (yours or the defaults) rejects the task; a change outside the scope paths, or a task that named no scope paths, makes it `needs_you`.
+- **Git config and hooks:** a Run whose worker changed the repository's shared git config or hooks is `rejected` however its job ended, so it is never queued again by itself; idlemax puts the files back and lists the Run under "needs you" until you keep or discard it.
 - **What is judged:** the Run's own branch `idlemax/<task>`, never whatever the worktree's `HEAD` points at. idlemax records the branch commit it judged, and a worktree whose `HEAD` is not that branch at that commit rejects the task.
 - **Independent review**, only when risk is high: an agent from a different provider (from `workers.reviewers`) reads the diff.
   Risk is high when the diff has more than `workers.review_diff_lines` (300) added plus removed lines, or touches the project's `core-paths`.
