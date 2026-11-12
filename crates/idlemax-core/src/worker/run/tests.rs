@@ -187,14 +187,46 @@ mod after_job {
     }
 
     #[test]
-    fn a_succeeded_launch_waits_in_checking_and_keeps_its_end_text() {
+    fn a_succeeded_launch_gets_the_verdict_of_its_facts() {
+        use crate::worker::report::{CheckFacts, DiffStat, FileDiff};
+
+        let facts = CheckFacts {
+            commits: 1,
+            diff: DiffStat {
+                files: vec![FileDiff {
+                    path: "src/a.rs".into(),
+                    added: 1,
+                    removed: 0,
+                }],
+            },
+            summary: Some("add a line".into()),
+            baseline_before: Some(0),
+            baseline_after: Some(0),
+            ..Default::default()
+        };
         let mut u = with_phase(update(JobStatus::Succeeded), WorkerPhase::Done);
         if let Some(w) = u.worker.as_mut() {
+            w.facts = Some(facts.clone());
             w.end_text = Some("usage limit reached".into());
         }
-        let next = moved(run(RunState::Running), u).unwrap();
-        assert_eq!(next.state, RunState::Checking);
+        let mut j = job(WorkerAction::Launch);
+        if let Some(w) = j.spec.worker.as_mut() {
+            w.scope_paths = vec!["src/a.rs".into()];
+            w.check = vec!["make".into()];
+            w.review_diff_lines = 300;
+        }
+        let next = after_job(&run(RunState::Running), &j, &u, 70).unwrap();
+        assert_eq!(next.state, RunState::Clean);
+        assert_eq!(next.verdict, Some(Verdict::Clean));
+        assert_eq!(next.summary.as_deref(), Some("add a line"));
+        assert_eq!(next.facts.check, Some(facts));
         assert_eq!(next.facts.end_text.as_deref(), Some("usage limit reached"));
+        assert_eq!(next.end_ms, Some(70));
+
+        let bare = with_phase(update(JobStatus::Succeeded), WorkerPhase::Done);
+        let next = after_job(&run(RunState::Checking), &j, &bare, 70).unwrap();
+        assert_eq!(next.state, RunState::NeedsYou);
+        assert!(next.concern.unwrap().contains("no check facts"));
     }
 
     #[test]

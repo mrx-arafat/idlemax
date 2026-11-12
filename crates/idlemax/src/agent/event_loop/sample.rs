@@ -27,6 +27,9 @@ impl Agent {
         let mut decision = match read.await {
             Ok(reading) => {
                 self.reading = reading;
+                if let Some(link) = &self.workers {
+                    link.set_readings(self.reading.quota.clone());
+                }
                 self.evaluate_room().await;
                 self.guard.evaluate(
                     &self.reading.metrics,

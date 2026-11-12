@@ -3,7 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::report::{CheckFacts, WorkerPhase, MAX_END_TEXT_CHARS};
+use super::checks::verdict;
+use super::report::{CheckFacts, WorkerPhase, WorkerReport, MAX_END_TEXT_CHARS};
 use super::{RunId, WorkerSpec};
 use crate::protocol::JobUpdate;
 use crate::quota::Provider;
@@ -174,8 +175,8 @@ pub struct RunLaunch {
 /// does not move it: another job, an action that runs no agent, or a move the states do not
 /// allow (a Run the owner stopped stays stopped).
 pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Run> {
-    let action = job.spec.worker.as_ref()?.action;
-    if !action.is_launch() || run.job != Some(job.id) {
+    let worker = job.spec.worker.as_ref()?;
+    if !worker.action.is_launch() || run.job != Some(job.id) {
         return None;
     }
     let report = update.worker.as_deref();
@@ -209,8 +210,7 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
             next.concern = Some(error());
             RunState::NeedsYou
         }
-        // Waits in `checking` for its verdict.
-        JobStatus::Succeeded => RunState::Checking,
+        JobStatus::Succeeded => return judge(next, run.state, report, worker, now_ms),
         JobStatus::Leased | JobStatus::Cancelled | JobStatus::Parked => run.state,
     };
     move_to(next, run.state, target, now_ms)
@@ -219,6 +219,33 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
 /// The first `max` characters: a device sends `end_text`, so the coordinator bounds it.
 fn clip(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
+}
+
+/// A finished launch: the verdict its check facts give (D8), the facts and the summary kept.
+fn judge(
+    mut next: Run,
+    from: RunState,
+    report: Option<&WorkerReport>,
+    worker: &WorkerSpec,
+    now_ms: UnixMs,
+) -> Option<Run> {
+    let Some(facts) = report.and_then(|r| r.facts.clone()) else {
+        next.concern = Some("the device sent no check facts for this task".into());
+        next.end_ms = Some(now_ms);
+        return move_to(next, from, RunState::NeedsYou, now_ms);
+    };
+    let judged = verdict(&facts, worker);
+    next.verdict = Some(judged.verdict);
+    next.concern = judged.concern;
+    next.summary = Some(judged.summary);
+    next.facts.check = Some(facts);
+    next.end_ms = Some(now_ms);
+    let target = match judged.verdict {
+        Verdict::Clean => RunState::Clean,
+        Verdict::NeedsYou => RunState::NeedsYou,
+        Verdict::Rejected => RunState::Rejected,
+    };
+    move_to(next, from, target, now_ms)
 }
 
 /// The Run after the sweep ended its job because the lease ran out.
@@ -232,6 +259,13 @@ pub fn after_expiry(run: &Run, job: &Job, now_ms: UnixMs) -> Option<Run> {
         ..Default::default()
     };
     after_job(run, job, &update, now_ms)
+}
+
+fn reaches(from: RunState, to: RunState) -> bool {
+    from == to
+        || from.may_become(to)
+        || (from == RunState::Starting && reaches(RunState::Running, to))
+        || (from == RunState::Running && RunState::Checking.may_become(to))
 }
 
 /// The Run after a coordinator control (`stop_all`, `cancel`) ended its job: the owner
@@ -258,11 +292,10 @@ fn back_in_queue(mut next: Run, run: &Run, error: String, now_ms: UnixMs) -> Opt
     move_to(next, run.state, RunState::Shed, now_ms)
 }
 
-/// `next` in `target` when `from` may get there; a `starting` Run whose `running` update was
-/// lost passes through `running`.
+/// `next` in `target` when `from` may get there. A Run whose `running` or `checking` update
+/// was lost passes through those states, the way a launch moves on.
 fn move_to(mut next: Run, from: RunState, target: RunState, now_ms: UnixMs) -> Option<Run> {
-    let through_running = from == RunState::Starting && RunState::Running.may_become(target);
-    if from != target && !from.may_become(target) && !through_running {
+    if !reaches(from, target) {
         return None;
     }
     if matches!(target, RunState::Running | RunState::Checking) {

@@ -3,8 +3,10 @@
 //! limits, and stops the worker by its saved pids without depending on Herdr (`watch`).
 //! Pause, resume and kill reach it as messages, the same decisions the runner gets.
 
+mod check;
 pub mod cmd;
 mod end;
+mod finish;
 pub mod herdr;
 pub mod host;
 pub mod procs;
@@ -25,8 +27,8 @@ use std::time::Duration;
 
 use idlemax_core::job_run::{allows_program, RunClock};
 use idlemax_core::protocol::{JobUpdate, RunningJob};
-use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
-use idlemax_core::worker::report::{WorkerPhase, WorkerReport};
+use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
+use idlemax_core::worker::report::{CheckFacts, WorkerPhase, WorkerReport};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 use idlemax_core::Paths;
 
@@ -63,6 +65,12 @@ enum Phase {
         /// The pane could not be closed, so the pids are killed at once.
         forced: bool,
     },
+    /// The pane is closed and its processes are gone; the facts of the turn are gathered.
+    Checking {
+        rx: Receiver<CheckFacts>,
+        cancel: Arc<AtomicBool>,
+        end: End,
+    },
 }
 
 struct Tracked {
@@ -92,6 +100,8 @@ pub struct Workers {
     poll: Duration,
     /// How long an agent may take to reach `idle`.
     idle_wait: Duration,
+    /// The agent's newest quota readings, so a review counts for the account that paid.
+    readings: Arc<Mutex<Vec<QuotaSnapshot>>>,
     tracked: BTreeMap<JobId, Tracked>,
 }
 
@@ -114,7 +124,15 @@ impl Workers {
             background,
             poll: Duration::from_secs(1),
             idle_wait: Duration::from_secs(60),
+            readings: Arc::new(Mutex::new(Vec::new())),
             tracked: BTreeMap::new(),
+        }
+    }
+
+    /// The agent's newest quota readings.
+    pub fn set_readings(&mut self, readings: Vec<QuotaSnapshot>) {
+        if let Ok(mut held) = self.readings.lock() {
+            *held = readings;
         }
     }
 
@@ -300,6 +318,7 @@ impl Workers {
         }
         let phase = match t.phase {
             Phase::Watching { .. } => WorkerPhase::Running,
+            Phase::Checking { .. } => WorkerPhase::Checking,
             _ => WorkerPhase::Preparing,
         };
         let t = &self.tracked[&id];
@@ -337,6 +356,7 @@ impl Workers {
             }
             Phase::Watching { .. } | Phase::Held => self.begin_stop(id, end, now_ms),
             Phase::Stopping { end: first, .. } => first.merge(end),
+            Phase::Checking { .. } => self.kill_check(id, end),
         }
     }
 

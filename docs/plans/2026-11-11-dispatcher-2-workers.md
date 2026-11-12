@@ -154,7 +154,7 @@ target/debug/idlemax init
 - [x] Task 5: Build the runner seam, the Herdr host and the fenced launch
 - [x] Task 6: Run one worker job on the agent from lease to exit
 - [x] Task 7: Start, hold, shed and stop workers in the agent tick
-- [ ] Task 8: Check a finished task and give it a verdict
+- [x] Task 8: Check a finished task and give it a verdict
 - [ ] Task 9: Launch from the Plan in auto mode, one worker at a time
 - [ ] Task 10: Add idlemax stop and idlemax start
 - [ ] Task 11: Add idlemax review with keep, merge and discard
@@ -577,14 +577,14 @@ A worker saying "done" counts for nothing.
 
 **Definition of Done:**
 
-- [ ] One test per rule above shows `verdict` returning `rejected`, `needs_you` with the named concern, or `clean`, and `rejected` wins over `needs_you`.
-- [ ] `scope_findings` flags a path under an off-limits folder and a path outside the scope list, and passes a diff that stays inside the list.
-- [ ] `risk_is_high` is true for 301 changed lines with a limit of 300, for a path under a core path, for a project with no check argv, and false for a small covered diff.
-- [ ] A run with one new untracked file and nothing else wrong is `clean`, and its summary names the file; one with a modified tracked file left uncommitted is `needs_you`.
-- [ ] In a temp repository with a fake host, a worker that commits one in-scope file ends with facts that give `clean`, and one that edits an off-limits file gives `rejected`.
-- [ ] A high-risk diff calls the reviewer argv once through `FakeCommands`, a `concern` answer gives `needs_you`, and the facts hold the reviewer's account, model and both readings.
-- [ ] `docs/API.md` describes `CheckFacts` and the verdict rules.
-- [ ] Verify: `cargo test -p idlemax-core worker::checks && cargo test -p idlemax-core worker::launch && cargo test -p idlemax --bin idlemax agent::worker::check && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] One test per rule above shows `verdict` returning `rejected`, `needs_you` with the named concern, or `clean`, and `rejected` wins over `needs_you`.
+- [x] `scope_findings` flags a path under an off-limits folder and a path outside the scope list, and passes a diff that stays inside the list.
+- [x] `risk_is_high` is true for 301 changed lines with a limit of 300, for a path under a core path, for a project with no check argv, and false for a small covered diff.
+- [x] A run with one new untracked file and nothing else wrong is `clean`, and its summary names the file; one with a modified tracked file left uncommitted is `needs_you`.
+- [x] In a temp repository with a fake host, a worker that commits one in-scope file ends with facts that give `clean`, and one that edits an off-limits file gives `rejected`.
+- [x] A high-risk diff calls the reviewer argv once through `FakeCommands`, a `concern` answer gives `needs_you`, and the facts hold the reviewer's account, model and both readings.
+- [x] `docs/API.md` describes `CheckFacts` and the verdict rules.
+- [x] Verify: `cargo test -p idlemax-core worker::checks && cargo test -p idlemax-core worker::launch && cargo test -p idlemax --bin idlemax agent::worker::check && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 9: Launch from the Plan in auto mode, one worker at a time
 

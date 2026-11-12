@@ -2,7 +2,7 @@
 //! tools, no hooks, no MCP servers, no saved session), and extraction of its structured
 //! JSON from the result envelope.
 
-use idlemax_core::advice::ai::{AI_PASS_CLI, AI_PASS_TOKEN_CLASS};
+use idlemax_core::advice::ai::{quiet_claude_args, AI_PASS_CLI, AI_PASS_TOKEN_CLASS};
 use idlemax_core::advice::{AiPass, AI_PASS_JOB_NAME};
 use idlemax_core::types::{CostClass, JobSpec};
 use serde_json::Value;
@@ -24,27 +24,14 @@ pub enum ClaudeError {
     NotJson(#[from] serde_json::Error),
 }
 
-/// The job that runs one AI pass. `--no-session-persistence` keeps the run out of the
-/// session files that interactive-use detection reads.
+/// The job that runs one AI pass (`quiet_claude_args`).
 pub fn pass_job(pass: &AiPass, schema: &Value) -> JobSpec {
-    let command = [
-        AI_PASS_CLI,
-        "-p",
-        "--settings",
-        "{\"disableAllHooks\":true}",
-        "--strict-mcp-config",
-        "--output-format",
-        "json",
-        "--json-schema",
-        &schema.to_string(),
-        "--no-session-persistence",
-        "--tools",
-        "",
-    ];
+    let mut command = vec![AI_PASS_CLI.to_string()];
+    command.extend(quiet_claude_args(&schema.to_string()));
     JobSpec {
         name: AI_PASS_JOB_NAME.into(),
         key: Some(format!("{AI_PASS_JOB_NAME}:{}", pass.account)),
-        command: command.iter().map(|s| s.to_string()).collect(),
+        command,
         stdin: Some(pass.prompt.clone()),
         requires: vec![AI_PASS_CLI.into()],
         priority: PRIORITY,

@@ -2,6 +2,7 @@
 //! project commands; real git runs only inside the temp dir, and no test starts `herdr`,
 //! `claude` or `codex`.
 
+mod checks;
 mod edges;
 mod stops;
 
@@ -31,6 +32,8 @@ struct TestCmds {
     calls: Mutex<Vec<Cmd>>,
     script: Mutex<HashMap<String, i32>>,
     blocking: Mutex<Option<(String, Arc<Mutex<FakeProcs>>)>>,
+    /// What a Codex reviewer writes to its `-o` file.
+    review_answer: Mutex<Option<String>>,
 }
 
 impl Commands for TestCmds {
@@ -54,6 +57,12 @@ impl Commands for TestCmds {
                 std::thread::sleep(Duration::from_millis(5));
             }
             return Ok(out(None));
+        }
+        if let Some(answer) = self.review_answer.lock().unwrap().clone() {
+            let out = cmd.args.iter().position(|a| a == "-o");
+            if let Some(path) = out.and_then(|i| cmd.args.get(i + 1)) {
+                std::fs::write(path, answer).unwrap();
+            }
         }
         let code = self.script.lock().unwrap().get(&cmd.program).copied();
         Ok(out(Some(code.unwrap_or(0))))
@@ -128,6 +137,7 @@ fn rig() -> Rig {
         calls: Mutex::new(Vec::new()),
         script: Mutex::new(HashMap::new()),
         blocking: Mutex::new(None),
+        review_answer: Mutex::new(None),
     });
     let mut workers = Workers::new(
         host.clone(),

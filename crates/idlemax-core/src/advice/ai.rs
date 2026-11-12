@@ -26,6 +26,29 @@ const MAX_WHY: usize = 600;
 const MAX_EVIDENCE: usize = 6;
 const MAX_EVIDENCE_LEN: usize = 200;
 
+/// The arguments of a one-shot `claude -p` run that answers JSON to `schema`, with no hooks,
+/// no MCP servers, no saved session and no tools: the advisor pass and a worker's reviewer.
+/// `--no-session-persistence` keeps the run out of the session files that interactive-use
+/// detection reads.
+pub fn quiet_claude_args(schema: &str) -> Vec<String> {
+    [
+        "-p",
+        "--settings",
+        "{\"disableAllHooks\":true}",
+        "--strict-mcp-config",
+        "--output-format",
+        "json",
+        "--json-schema",
+        schema,
+        "--no-session-persistence",
+        "--tools",
+        "",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
 pub fn is_ai_pass(spec: &JobSpec) -> bool {
     spec.name == AI_PASS_JOB_NAME
 }

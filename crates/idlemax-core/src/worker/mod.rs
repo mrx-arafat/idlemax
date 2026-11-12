@@ -2,6 +2,7 @@
 //! action of one worker job and the `worker` section that turns a job into a launch. Pure.
 
 pub mod brief;
+pub mod checks;
 pub mod launch;
 pub mod name;
 pub mod report;

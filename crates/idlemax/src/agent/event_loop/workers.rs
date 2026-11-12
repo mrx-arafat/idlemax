@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use idlemax_core::protocol::{JobUpdate, RunningJob};
-use idlemax_core::types::Job;
+use idlemax_core::types::{Job, QuotaSnapshot};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -28,6 +28,7 @@ const IDLE_WAIT: Duration = Duration::from_secs(60);
 enum LinkMsg {
     Worker(Msg),
     Allowlist(Vec<String>),
+    Readings(Vec<QuotaSnapshot>),
 }
 
 /// What the manager last published for the loop to read.
@@ -78,6 +79,7 @@ impl WorkerLink {
                         updates.extend(workers.handle(msg, now_ms(), awake()));
                     }
                     Ok(LinkMsg::Allowlist(list)) => workers.set_allowlist(list),
+                    Ok(LinkMsg::Readings(readings)) => workers.set_readings(readings),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
@@ -115,6 +117,11 @@ impl WorkerLink {
 
     pub fn set_allowlist(&self, list: Vec<String>) {
         let _ = self.tx.send(LinkMsg::Allowlist(list));
+    }
+
+    /// The agent's newest quota readings, for the spend of a review (D10 item 1).
+    pub fn set_readings(&self, readings: Vec<QuotaSnapshot>) {
+        let _ = self.tx.send(LinkMsg::Readings(readings));
     }
 
     /// The workers as the heartbeat reports them.

@@ -623,6 +623,32 @@ Types live in `crates/idlemax-core/src/worker/run.rs`.
 
 A worker job is an AI job (`cost = "ai"`) that stands outside the one-AI-lease rule and the one-start-per-5-hours rule in both directions: several worker jobs may hold one account, a worker job never blocks a plain AI job, and a plain one never blocks a worker job.
 
+### Checking a finished task
+
+A worker saying "done" counts for nothing (D8).
+After its turn ends the agent closes the pane, waits until none of the worker's processes is left, reports phase `checking`, and gathers `CheckFacts` in the worktree; the last update of the launch carries them as `worker.facts`:
+
+| Field | Meaning |
+|---|---|
+| `commits` | commits since the base commit |
+| `modified`, `untracked` | tracked paths left uncommitted, and new untracked paths (`git status --porcelain`) |
+| `diff.files` | `{path, added, removed}` per changed file (`git diff --numstat <base>..HEAD`) |
+| `summary` | the subject of the last commit |
+| `baseline_before`, `baseline_after` | exit code of the project's own check on the base commit and after the turn; null when there is none or it did not finish |
+| `review` | `{cli, account, model, answer, concern, quota_before, quota_after}` when a reviewer was asked |
+
+idlemax runs only the project's own check command; the task's done check is never executed.
+The risk is high when added plus removed lines exceed `workers.review_diff_lines`, a changed path lies under one of the project's `core_paths`, or the checks cannot cover the change (no check command, or no baseline).
+On high risk the agent asks the job's reviewer, always another provider than the author, with the task, the done check, the scope and the diff on standard input; a diff above 200 KiB is not sent and counts as not reviewed.
+
+The coordinator turns the facts into one verdict, the worst finding winning:
+
+- `rejected`: no commit, a changed path under an off-limits path, or a check that passed before the change and fails after it.
+- `needs_you`, with the exact concern: a changed path outside the scope paths or no scope named, tracked files left uncommitted, a check that failed before and still fails or did not finish after, the reviewer's concern, or a high risk with no review.
+- `clean` otherwise.
+
+New untracked files never change the verdict; the concern or the summary names them.
+
 ## Dispatch inputs
 
 Every `agent.dispatch_inputs_secs` (default 60, 0 sends nothing) an agent sends what it knows about the git repositories on its device.

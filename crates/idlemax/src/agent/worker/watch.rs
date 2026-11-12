@@ -17,8 +17,6 @@ use super::{brief_line, End, Phase, Workers};
 use crate::agent::runner::os::Sig;
 use tracing::warn;
 
-/// What is left of a worker this long after its pane was closed is killed by pid.
-const STOP_GRACE_MS: UnixMs = 5_000;
 /// Ticks in a row that must read the turn as over.
 const ENDED_TICKS: u8 = 2;
 /// How long the host may fail to answer before a watched worker fails.
@@ -54,6 +52,7 @@ impl Workers {
             Phase::Held => self.held(id, now_ms),
             Phase::Watching { .. } => self.watch(id, now_ms, awake_ms),
             Phase::Stopping { .. } => self.stopping(id, now_ms),
+            Phase::Checking { .. } => self.checking(id, now_ms),
         }
     }
 
@@ -346,39 +345,5 @@ impl Workers {
             end,
             forced: !closed,
         };
-    }
-
-    /// The terminal update once no pid of the worker is left; what outlives the grace, or a
-    /// pane that could not be closed, is killed by pid.
-    fn stopping(&mut self, id: JobId, now_ms: UnixMs) -> Option<JobUpdate> {
-        let pids = self.pids_of(id);
-        let t = self.tracked.get(&id)?;
-        let Phase::Stopping {
-            since_ms,
-            end,
-            forced,
-        } = &t.phase
-        else {
-            return None;
-        };
-        if !pids.is_empty() {
-            if *forced || now_ms - since_ms >= STOP_GRACE_MS {
-                if let Ok(mut procs) = self.procs.lock() {
-                    procs.signal(&pids, Sig::Kill);
-                }
-            }
-            return None;
-        }
-        let end = end.clone();
-        let mut update = self.update(t, end.status, WorkerPhase::Done, now_ms);
-        update.error = end.error;
-        update.retryable = end.retryable;
-        update.owner_stop = end.owner_stop;
-        if let Some(report) = update.worker.as_mut() {
-            report.end_text = end.end_text;
-        }
-        self.tracked.remove(&id);
-        self.forget_record(id);
-        Some(update)
     }
 }

@@ -694,6 +694,9 @@ Either way the reason names the biggest memory users outside idlemax; idlemax ne
 While a worker runs the agent samples and heartbeats every 5 s.
 Your own `idlemax review keep` and `discard` are never held by a line, a pause or the kill switch.
 
+idlemax checks every finished task itself before it tells you: a `clean` verdict means the diff stayed in the paths the task named, broke no check that passed before, and was reviewed by another provider when it was large or touched core code.
+Whether the task was done well is still your review; `needs_you` names the exact concern and `rejected` keeps the branch but never reports the task as done.
+
 **How heavy is it?**
 Measured over 10 minutes on one Apple Silicon Mac, idle, with no jobs: the coordinator and the agent each used about 0% CPU and 16 to 18 MB of memory (mean RSS; peaks of about 20 and 22 MB).
 Each 30 s sample runs about 3.5 short macOS system probes (`ioreg`, `pmset` and `sysctl`), about 74 ms in total.

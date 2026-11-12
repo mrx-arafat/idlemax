@@ -9,7 +9,7 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use idlemax_core::types::{Job, UnixMs};
+use idlemax_core::types::{Job, JobId, UnixMs};
 use idlemax_core::worker::launch::{agent_args, mcp_server_names, pane_env, Session};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
@@ -215,25 +215,47 @@ fn project_cmd(
     argv: &[String],
     limit_secs: u64,
 ) -> Result<Option<i32>, Stop> {
-    let (program, args) = argv
-        .split_first()
-        .ok_or(Stop::Failed("empty command".into()))?;
+    let fence = Fence {
+        job: ctx.job.id,
+        tag: ctx.tag,
+        remotes: &p.remotes,
+    };
+    let code = run_project(ctx.commands.as_ref(), &fence, folder, argv, limit_secs);
+    cancelled(ctx)?;
+    code.map_err(Stop::Failed)
+}
+
+/// What a project command carries so code a worker wrote meets the pane's push block.
+pub struct Fence<'a> {
+    pub job: JobId,
+    pub tag: u64,
+    pub remotes: &'a [String],
+}
+
+/// A project command in `folder` with the pane's environment pairs, the tag and the throttle
+/// (A16): its exit code, or None when it passed its limit.
+pub fn run_project(
+    commands: &dyn Commands,
+    fence: &Fence<'_>,
+    folder: &Path,
+    argv: &[String],
+    limit_secs: u64,
+) -> Result<Option<i32>, String> {
+    let (program, args) = argv.split_first().ok_or("empty command")?;
     let cmd = Cmd {
         program: program.clone(),
         args: args.to_vec(),
         cwd: Some(folder.to_path_buf()),
-        env: pane_env(ctx.job.id, ctx.tag, &p.remotes, &[]),
+        env: pane_env(fence.job, fence.tag, fence.remotes, &[]),
         stdin: None,
         limit: Duration::from_secs(limit_secs),
         throttle: true,
-        tag: Some(ctx.tag),
+        tag: Some(fence.tag),
     };
-    let out = ctx.commands.run(&cmd);
-    cancelled(ctx)?;
-    match out {
+    match commands.run(&cmd) {
         Ok(out) => Ok(out.code.or(Some(-1))),
         Err(super::cmd::CmdError::TimedOut) => Ok(None),
-        Err(e) => Err(Stop::Failed(format!("{program} could not run: {e}"))),
+        Err(e) => Err(format!("{program} could not run: {e}")),
     }
 }
 

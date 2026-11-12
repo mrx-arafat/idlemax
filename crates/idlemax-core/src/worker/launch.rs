@@ -2,6 +2,7 @@
 //! the lean, fenced arguments of each CLI (D10 item 9, D22), the pane's environment pairs and
 //! the check of the environment the agent really got. Pure.
 
+use super::checks::REVIEW_SCHEMA;
 use super::WorkerCli;
 use crate::job_run::{JOB_ID_ENV, JOB_TAG_ENV};
 use crate::types::JobId;
@@ -167,6 +168,46 @@ fn is_credential(name: &str) -> bool {
         || name.contains("DATABASE_URL")
 }
 
+/// The argv of an independent review (D8), the program first: Claude with the advisor's quiet
+/// flags, or Codex read-only and without the owner's config. The diff and the task go on
+/// standard input; Codex writes its answer to `out_file`.
+pub fn reviewer_args(
+    cli: WorkerCli,
+    model: &str,
+    schema_file: &str,
+    out_file: &str,
+) -> Result<Vec<String>, LaunchError> {
+    match cli {
+        WorkerCli::Claude => {
+            let mut argv = vec!["claude".to_string()];
+            argv.extend(crate::advice::ai::quiet_claude_args(REVIEW_SCHEMA));
+            argv.extend(["--model".to_string(), model.to_string()]);
+            Ok(argv)
+        }
+        WorkerCli::Codex => Ok([
+            "codex",
+            "exec",
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--ignore-user-config",
+            "--output-schema",
+            schema_file,
+            "-o",
+            out_file,
+            "-m",
+            model,
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()),
+        WorkerCli::Opencode | WorkerCli::Agy => Err(LaunchError::Unsupported {
+            cli: cli.as_str(),
+            missing: "no proven read-only review mode",
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +283,34 @@ mod tests {
             assert!(err.to_string().contains("MCP servers"), "{err}");
             assert!(err.to_string().starts_with(cli.as_str()), "{err}");
         }
+    }
+
+    #[test]
+    fn a_reviewer_runs_quiet_and_read_only() {
+        let claude = reviewer_args(WorkerCli::Claude, "opus", "/s.json", "/o.json").unwrap();
+        assert_eq!(claude[..3], strings(&["claude", "-p", "--settings"]));
+        assert!(claude.contains(&"--strict-mcp-config".to_string()));
+        assert!(claude.contains(&REVIEW_SCHEMA.to_string()));
+        assert_eq!(claude[claude.len() - 2..], strings(&["--model", "opus"]));
+        let codex = reviewer_args(WorkerCli::Codex, "gpt", "/s.json", "/o.json").unwrap();
+        assert_eq!(
+            codex,
+            strings(&[
+                "codex",
+                "exec",
+                "--sandbox",
+                "read-only",
+                "--ephemeral",
+                "--ignore-user-config",
+                "--output-schema",
+                "/s.json",
+                "-o",
+                "/o.json",
+                "-m",
+                "gpt"
+            ])
+        );
+        assert!(reviewer_args(WorkerCli::Agy, "m", "/s", "/o").is_err());
     }
 
     #[test]
