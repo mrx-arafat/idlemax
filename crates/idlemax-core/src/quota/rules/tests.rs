@@ -70,6 +70,7 @@ fn cfg() -> QuotaConfig {
             account("claude", Provider::Claude),
             account("codex", Provider::Codex),
         ],
+        ..QuotaConfig::default()
     }
 }
 

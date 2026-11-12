@@ -225,3 +225,16 @@ fn a_judgment_holds_until_its_task_changes() {
     w.issues[0].title = "Crash on empty input, with a test".into();
     assert_eq!(w.discover()[3].needs_you, None);
 }
+
+#[test]
+fn task_source_parses_from_str_and_roundtrips() {
+    for src in [
+        TaskSource::BrokenCheck,
+        TaskSource::Roadmap,
+        TaskSource::GithubIssue,
+        TaskSource::Session,
+    ] {
+        assert_eq!(src.as_str().parse::<TaskSource>().unwrap(), src);
+    }
+    assert!("unknown".parse::<TaskSource>().is_err());
+}

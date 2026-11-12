@@ -2,9 +2,13 @@
 //!
 //! Numbers come from 03-design-options.md and are estimates to tune after a week of data.
 
+mod config;
 mod rules;
+pub mod tier;
 
+pub use config::{QuotaConfig, QuotaConfigError};
 pub use rules::{is_limit_message, spendable, views, SpendContext, SNAPSHOT_MAX_AGE_MS};
+pub use tier::{model_for, model_key, tier_for, tier_models, tier_of, Tier, TierPick};
 
 use serde::{Deserialize, Serialize};
 
@@ -17,55 +21,6 @@ pub const WEEKLY_RESERVE_PCT: f64 = 30.0;
 /// Weekly reserve in the last 24 h before the weekly reset.
 pub const WEEKLY_FINAL_DAY_RESERVE_PCT: f64 = 15.0;
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct QuotaConfig {
-    pub accounts: Vec<AccountConfig>,
-}
-
-impl QuotaConfig {
-    pub fn account(&self, name: &str) -> Option<&AccountConfig> {
-        self.accounts.iter().find(|a| a.name == name)
-    }
-
-    pub fn validate(&self) -> Result<(), QuotaConfigError> {
-        let mut seen = std::collections::BTreeSet::new();
-        for account in &self.accounts {
-            let name_ok = account
-                .name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
-            if account.name.is_empty() || account.name.starts_with('.') || !name_ok {
-                return Err(QuotaConfigError::InvalidName(account.name.clone()));
-            }
-            if !seen.insert(account.name.as_str()) {
-                return Err(QuotaConfigError::DuplicateAccount(account.name.clone()));
-            }
-            for w in &account.windows {
-                w.validate(&account.name)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum QuotaConfigError {
-    /// Names become file names (`quota-<name>.json`): letters, digits, `.`, `_`, `-`.
-    #[error("quota account name {0:?} must be non-empty letters, digits, '.', '_' or '-'")]
-    InvalidName(String),
-    #[error("quota account {0} is listed twice")]
-    DuplicateAccount(String),
-    #[error("quota account {account}: {field} must be within 0..=100, got {value}")]
-    PercentOutOfRange {
-        account: String,
-        field: &'static str,
-        value: f64,
-    },
-    #[error("quota account {0}: rolling window minutes must be > 0")]
-    ZeroMinutes(String),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
@@ -73,6 +28,7 @@ pub enum Provider {
     Claude,
     Codex,
     Agy,
+    Opencode,
     Api,
 }
 
@@ -83,6 +39,7 @@ impl Provider {
             Provider::Claude => Some("claude"),
             Provider::Codex => Some("codex"),
             Provider::Agy => Some("agy"),
+            Provider::Opencode => Some("opencode"),
             Provider::Api => None,
         }
     }
@@ -91,7 +48,7 @@ impl Provider {
         match self {
             Provider::Claude => ProbeSource::ClaudeStatusline,
             Provider::Codex => ProbeSource::CodexSessions,
-            Provider::Agy | Provider::Api => ProbeSource::Manual,
+            Provider::Agy | Provider::Opencode | Provider::Api => ProbeSource::Manual,
         }
     }
 
@@ -106,7 +63,7 @@ impl Provider {
                 ]
             }
             Provider::Codex => vec![WindowConfig::default_for(QuotaWindowKind::Weekly)],
-            Provider::Api => Vec::new(),
+            Provider::Opencode | Provider::Api => Vec::new(),
         }
     }
 }
@@ -123,6 +80,9 @@ pub struct AccountConfig {
     pub probe: Option<ProbeSource>,
     /// Capture file, sessions dir or manual file; None means the probe's default path.
     pub probe_path: Option<String>,
+    /// Runs allowed per 24-hour day on providers whose quota cannot be read (agy, opencode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_cap_runs: Option<u32>,
 }
 
 impl AccountConfig {
@@ -167,7 +127,7 @@ impl WindowConfig {
         }
     }
 
-    fn validate(&self, account: &str) -> Result<(), QuotaConfigError> {
+    pub(crate) fn validate(&self, account: &str) -> Result<(), QuotaConfigError> {
         if self.kind == (QuotaWindowKind::Rolling { minutes: 0 }) {
             return Err(QuotaConfigError::ZeroMinutes(account.to_string()));
         }

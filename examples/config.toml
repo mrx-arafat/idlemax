@@ -31,9 +31,29 @@ command_allowlist = [
 # user_idle_min_secs = 600
 # mem_free_pct_pause = 30.0
 
+# Dispatcher quota brain settings (defaults shown; apply live on mtime change).
+# Tier models left unset mean the provider is not used for that tier.
+# [quota]
+# owner_reserve_pct = 50.0
+# safety_margin_pct = 10.0
+# five_hour_stop_pct = 60.0
+# last_day_floor_pct = 15.0
+# seed_small_pct = 3.0
+# seed_standard_pct = 8.0
+# small_task_types = ["broken_check"]
+# claude_small_model = "haiku"
+# claude_standard_model = "sonnet"
+# codex_small_model = "<model>"
+# codex_standard_model = "<model>"
+# agy_small_model = "<model>"
+# agy_standard_model = "<model>"
+# opencode_small_model = "<model>"
+# opencode_standard_model = "<model>"
+
 # Keep the accounts identical on every device and on the coordinator.
 # Windows left out use the provider defaults (reserve 40% per 5-hour window, 30% weekly,
 # 15% in the last 24 h before the weekly reset).
+# Accounts on agy or opencode set daily_cap_runs (e.g. daily_cap_runs = 5).
 [[quota.accounts]]
 name = "claude-max"
 provider = "claude"

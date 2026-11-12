@@ -6,6 +6,7 @@
 //! the orchestrator's judgment, and a ready task becomes a pick only when a pass picks it (A19).
 
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +37,24 @@ impl TaskSource {
             TaskSource::Roadmap => "roadmap",
             TaskSource::GithubIssue => "github_issue",
             TaskSource::Session => "session",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid task source: {0}")]
+pub struct ParseTaskSourceError(pub String);
+
+impl FromStr for TaskSource {
+    type Err = ParseTaskSourceError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "broken_check" => Ok(TaskSource::BrokenCheck),
+            "roadmap" => Ok(TaskSource::Roadmap),
+            "github_issue" => Ok(TaskSource::GithubIssue),
+            "session" => Ok(TaskSource::Session),
+            _ => Err(ParseTaskSourceError(s.to_string())),
         }
     }
 }

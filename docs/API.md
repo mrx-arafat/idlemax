@@ -100,7 +100,7 @@ It keeps working while the coordinator is down.
 It returns 200 once applied, 202 when the agent has not applied it within 5 s, 400 for a non-global scope or `cancel`, and 503 when the agent loop is gone.
 Creating `$IDLEMAX_HOME/PAUSE` pauses every job on the device without any API call; deleting it resumes at once.
 
-`POST /v1/local/reload` makes the agent re-read `config.toml` and apply what it can without a restart: every `[guard]` key, `agent.command_allowlist`, `agent.notify` and `agent.keep_awake`.
+`POST /v1/local/reload` makes the agent re-read `config.toml` and apply what it can without a restart: every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake` and every `[quota]` setting other than `quota.accounts`.
 It takes a fresh sample at once, so the new rule shows in `LocalStatus.guard` and can start work right away.
 The reply is `{"applied": [...], "restart_agent": [...], "restart_coordinator": [...]}`, each a list of `section.name` settings that changed in the file since the agent last read it.
 `restart_agent` lists settings the agent reads only when it starts (for example `agent.sample_secs`, `agent.profile`, `agent.listen`, `quota.accounts`); `restart_coordinator` lists `coordinator.*` and `advisor.*`.
@@ -147,6 +147,8 @@ A file that does not parse or validate is 400 with the reason, and the agent kee
 ```
 `QuotaWindowKind`.
 `QuotaSnapshot.source` is `claude_statusline`, `codex_sessions` or `manual`.
+`Provider` is `claude`, `codex`, `agy`, `opencode` or `api`.
+`Tier` is `small` or `standard`.
 `Heartbeat.interactive_use` is a list of `[cli, unix_ms]` pairs, e.g. `[["claude", 1730000000000]]`.
 
 ## Heartbeat and leases

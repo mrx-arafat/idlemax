@@ -9,6 +9,7 @@ pub const KNOWN_TOOLS: &[&str] = &[
     "claude",
     "codex",
     "agy",
+    "opencode",
     "gemini",
     // dev tooling used by the MVP jobs
     "git",

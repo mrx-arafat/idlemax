@@ -114,7 +114,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 ## Progress Tracking
 
 - [ ] Task 1: Needs the owner's OK: measure how each plan counts usage
-- [ ] Task 2: Add the quota settings, the Tier and the OpenCode provider
+- [x] Task 2: Add the quota settings, the Tier and the OpenCode provider
 - [ ] Task 3: Build the cost table from Run records
 - [ ] Task 4: Learn the owner's own use per account day
 - [ ] Task 5: Compute the surplus, the daily Budget and the worker rules
@@ -249,13 +249,13 @@ After this task the configuration can say everything the later tasks read, and n
 
 **Definition of Done:**
 
-- [ ] `Config::parse` accepts `provider = "opencode"` with `daily_cap_runs = 5`, and refuses `daily_cap_runs` on a claude account with a message that names the account and says claude and codex accounts are paced by their readings.
-- [ ] `Config::parse` refuses `five_hour_stop_pct = 140` with a message that names `quota.five_hour_stop_pct`, `small_task_types = ["broken-check"]` with a message that lists the four sources, and `claude_standard_model = "claude-opus-4"` with a message that says Opus orchestrates only.
-- [ ] `list_settings("", Os::Macos)` lists `quota.five_hour_stop_pct` with value 60, `quota.claude_small_model` with value `haiku`, `quota.claude_standard_model` with value `sonnet` and `quota.codex_small_model` with value null.
-- [ ] `tier_for` returns `Run(Small)` for (`broken_check`, 0), `Run(Standard)` for (`roadmap`, 0), `Run(Standard)` for (`broken_check`, 1) and for (`roadmap`, 1), and `NeedsYou` for any type with 2.
-- [ ] `tier_models` of the default config is `[(Claude, "haiku"), (Claude, "sonnet")]`, and `tier_of(Claude, "sonnet", ..)` is `Standard`.
-- [ ] A change of `quota.safety_margin_pct` shows under `applied` in the reload report, and a change of `quota.accounts` under `restart_agent`.
-- [ ] Verify: `cargo test -p idlemax-core quota`, `cargo test -p idlemax-core config`, `cargo test -p idlemax --test examples`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `Config::parse` accepts `provider = "opencode"` with `daily_cap_runs = 5`, and refuses `daily_cap_runs` on a claude account with a message that names the account and says claude and codex accounts are paced by their readings.
+- [x] `Config::parse` refuses `five_hour_stop_pct = 140` with a message that names `quota.five_hour_stop_pct`, `small_task_types = ["broken-check"]` with a message that lists the four sources, and `claude_standard_model = "claude-opus-4"` with a message that says Opus orchestrates only.
+- [x] `list_settings("", Os::Macos)` lists `quota.five_hour_stop_pct` with value 60, `quota.claude_small_model` with value `haiku`, `quota.claude_standard_model` with value `sonnet` and `quota.codex_small_model` with value null.
+- [x] `tier_for` returns `Run(Small)` for (`broken_check`, 0), `Run(Standard)` for (`roadmap`, 0), `Run(Standard)` for (`broken_check`, 1) and for (`roadmap`, 1), and `NeedsYou` for any type with 2.
+- [x] `tier_models` of the default config is `[(Claude, "haiku"), (Claude, "sonnet")]`, and `tier_of(Claude, "sonnet", ..)` is `Standard`.
+- [x] A change of `quota.safety_margin_pct` shows under `applied` in the reload report, and a change of `quota.accounts` under `restart_agent`.
+- [x] Verify: `cargo test -p idlemax-core quota`, `cargo test -p idlemax-core config`, `cargo test -p idlemax --test examples`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 3: Build the cost table from Run records
 

@@ -783,6 +783,7 @@ Each AI account lists its windows and the reserve kept for you:
 | `claude` | 5-hour rolling (reserve 40%), weekly (reserve 30%) | Claude Code statusline capture |
 | `codex` | weekly (reserve 30%), plus a 5-hour window if Codex reports one | newest Codex session file |
 | `agy` | 5-hour rolling (40%), weekly (30%) | manual file |
+| `opencode` | none | manual file |
 | `api` | none | manual file |
 
 The weekly reserve drops to 15% in the last 24 h before the reset.
@@ -1072,7 +1073,7 @@ idlemax config unset guard.require_ac_power       # back to the default
 ```
 
 `set` checks the value the way startup does and refuses one that would stop the agent from starting, keeps your comments, saves the previous file as `config.toml.idlemax.bak`, and asks the running agent to reload.
-Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake`, every `[dispatcher]` key and every `[workers]` key apply at once.
+Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake`, every `[dispatcher]` key, every `[workers]` key and every `[quota]` setting other than `quota.accounts` apply at once.
 Every `[dispatcher]` key applies without a restart on both the agent and the coordinator.
 The reply says when a setting is read only at start, and which process to restart.
 `set` replaces a list, so name every program the device may run.
@@ -1104,7 +1105,22 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `agent.ai_accounts` | `[]` | AI accounts this device may spend |
 | `agent.command_allowlist` | `[]` | exact `argv[0]` values a job may run; bare names resolve on the agent's PATH; empty denies all |
 | `[guard]` | preset values | any key from the guard table above |
-| `[[quota.accounts]]` | none | `name`, `provider` (`claude`, `codex`, `agy`, `api`), and optional `windows`, `probe` (`claude_statusline`, `codex_sessions`, `manual`) and `probe_path` |
+| `quota.owner_reserve_pct` | `50.0` | percent of weekly quota reserved for the owner |
+| `quota.safety_margin_pct` | `10.0` | safety margin percent subtracted from surplus |
+| `quota.five_hour_stop_pct` | `60.0` | 5-hour window usage percent at which workers stop |
+| `quota.last_day_floor_pct` | `15.0` | minimum weekly reserve on the day before reset |
+| `quota.seed_small_pct` | `3.0` | seed estimate for an unmeasured small run (weekly %) |
+| `quota.seed_standard_pct` | `8.0` | seed estimate for an unmeasured standard run (weekly %) |
+| `quota.small_task_types` | `["broken_check"]` | task sources eligible for the small tier |
+| `quota.claude_small_model` | `haiku` | Claude small tier model |
+| `quota.claude_standard_model` | `sonnet` | Claude standard tier model |
+| `quota.codex_small_model` | none | Codex small tier model |
+| `quota.codex_standard_model` | none | Codex standard tier model |
+| `quota.agy_small_model` | none | agy small tier model |
+| `quota.agy_standard_model` | none | agy standard tier model |
+| `quota.opencode_small_model` | none | OpenCode small tier model |
+| `quota.opencode_standard_model` | none | OpenCode standard tier model |
+| `[[quota.accounts]]` | none | `name`, `provider` (`claude`, `codex`, `agy`, `opencode`, `api`), optional `daily_cap_runs` (agy/opencode only), and optional `windows`, `probe` (`claude_statusline`, `codex_sessions`, `manual`) and `probe_path` |
 | `advisor.enabled` | `true` | run the advisor |
 | `advisor.ai_account` | none | account the AI pass spends; none runs the rules only |
 | `advisor.auto_accept` | `[]` | template names queued without asking |

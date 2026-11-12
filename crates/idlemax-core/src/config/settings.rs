@@ -153,4 +153,25 @@ mod tests {
         );
         assert!(find(&settings, "agent.notify").from_file);
     }
+
+    #[test]
+    fn list_settings_shows_quota_defaults() {
+        let settings = list_settings("", Os::Macos).unwrap();
+        assert_eq!(
+            find(&settings, "quota.five_hour_stop_pct").value,
+            json!(60.0)
+        );
+        assert_eq!(
+            find(&settings, "quota.claude_small_model").value,
+            json!("haiku")
+        );
+        assert_eq!(
+            find(&settings, "quota.claude_standard_model").value,
+            json!("sonnet")
+        );
+        assert_eq!(
+            find(&settings, "quota.codex_small_model").value,
+            Value::Null
+        );
+    }
 }

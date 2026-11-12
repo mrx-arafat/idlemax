@@ -12,7 +12,7 @@ use super::{Config, ConfigError};
 /// Settings the agent applies on reload, besides every `guard.*`, `dispatcher.*` and
 /// `workers.*` key (both daemons read `[dispatcher]` again when the file changes, and the
 /// coordinator reads `[workers]` at every launch step and carries what a device needs in the
-/// worker job). Anything not listed here
+/// worker job), and every `quota.*` key other than `quota.accounts`. Anything not listed here
 /// or under `coordinator.` and `advisor.` is read at agent start, so a setting added later is
 /// reported as needing a restart until someone makes it live.
 const LIVE: [&str; 3] = [
@@ -63,7 +63,8 @@ pub fn plan_reload(old: &Config, new: &Config) -> Result<ReloadReport, ConfigErr
         }
         let live = ["guard.", "dispatcher.", "workers."]
             .iter()
-            .any(|section| key.starts_with(section));
+            .any(|section| key.starts_with(section))
+            || (key.starts_with("quota.") && key != "quota.accounts");
         let list = if live || LIVE.contains(&key.as_str()) {
             &mut report.applied
         } else if key.starts_with("coordinator.") || key.starts_with("advisor.") {
@@ -150,5 +151,18 @@ mod tests {
             ["dispatcher.hold_mem_used_pct", "dispatcher.mode"]
         );
         assert!(report.restart_agent.is_empty() && report.restart_coordinator.is_empty());
+    }
+
+    #[test]
+    fn quota_settings_apply_at_once_except_accounts() {
+        let old = config("");
+        let new = config(
+            "[quota]\nsafety_margin_pct = 15.0\n[[quota.accounts]]\nname = \"test\"\nprovider = \"claude\"\n",
+        );
+        let report = plan_reload(&old, &new).unwrap();
+        assert!(report
+            .applied
+            .contains(&"quota.safety_margin_pct".to_string()));
+        assert!(report.restart_agent.contains(&"quota.accounts".to_string()));
     }
 }

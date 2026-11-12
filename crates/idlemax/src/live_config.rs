@@ -1,5 +1,5 @@
 //! Adapter: the newest `config.toml` that parsed, read again when the file changes, so both
-//! daemons see a changed `[dispatcher]` section without a restart (A2).
+//! daemons see changed `[dispatcher]` and `[quota]` sections without a restart (A2).
 //!
 //! `current` does one blocking `metadata` call, and a read when the file changed: call it
 //! inside `with_store` on the coordinator and inside `spawn_blocking` on the agent.
@@ -96,5 +96,25 @@ mod tests {
         assert_eq!(live.current().dispatcher.mode, Mode::Off);
         std::fs::remove_file(&file).unwrap();
         assert_eq!(live.current().dispatcher.hold_mem_used_pct, 80.0);
+    }
+
+    #[test]
+    fn live_config_updates_quota_settings_on_file_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        let file = paths.config_file();
+        write(&file, "", 1);
+        let live = LiveConfig::new(&paths, Config::default());
+        assert_eq!(live.current().quota.five_hour_stop_pct, 60.0);
+        assert_eq!(live.current().quota.safety_margin_pct, 10.0);
+
+        write(
+            &file,
+            "[quota]\nfive_hour_stop_pct = 75.0\nsafety_margin_pct = 15.0\n",
+            2,
+        );
+        let cfg = live.current();
+        assert_eq!(cfg.quota.five_hour_stop_pct, 75.0);
+        assert_eq!(cfg.quota.safety_margin_pct, 15.0);
     }
 }
