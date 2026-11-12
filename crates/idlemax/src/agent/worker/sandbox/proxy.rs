@@ -7,7 +7,7 @@ use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,6 +18,23 @@ use idlemax_core::worker::sandbox::host_allowed;
 const MAX_HEAD: usize = 8 * 1024;
 /// How often the accept loop looks at its stop flag.
 const POLL: Duration = Duration::from_millis(200);
+
+/// How long a connection may take to send its request head, and how many connections one
+/// worker may hold at once, so a worker cannot pin the agent's threads (review finding 11).
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    pub head_timeout: Duration,
+    pub max_conns: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            head_timeout: Duration::from_secs(30),
+            max_conns: 64,
+        }
+    }
+}
 
 /// Opens a TCP connection to `host:port`; tests map names to loopback.
 pub type Dial = fn(&str) -> io::Result<TcpStream>;
@@ -30,14 +47,27 @@ pub struct Proxy {
 
 impl Proxy {
     /// Serves `socket` for `job` with `hosts`, dialling through `dial`.
-    pub fn start(socket: &Path, job: JobId, hosts: Vec<String>, dial: Dial) -> io::Result<Self> {
+    pub fn start(
+        socket: &Path,
+        job: JobId,
+        hosts: Vec<String>,
+        dial: Dial,
+        limits: Limits,
+    ) -> io::Result<Self> {
         let _ = std::fs::remove_file(socket);
         let listener = UnixListener::bind(socket)?;
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let hosts: Arc<[String]> = hosts.into();
-        std::thread::spawn(move || accept_loop(&listener, &flag, job, &hosts, dial));
+        let serve = Serve {
+            job,
+            hosts,
+            dial,
+            limits,
+            open: Arc::new(AtomicUsize::new(0)),
+        };
+        std::thread::spawn(move || accept_loop(&listener, &flag, &serve));
         Ok(Self {
             socket: socket.to_path_buf(),
             stop,
@@ -57,30 +87,48 @@ pub fn dial_tcp(target: &str) -> io::Result<TcpStream> {
     TcpStream::connect(target)
 }
 
-fn accept_loop(
-    listener: &UnixListener,
-    stop: &AtomicBool,
+/// What every connection of one proxy shares.
+#[derive(Clone)]
+struct Serve {
     job: JobId,
-    hosts: &Arc<[String]>,
+    hosts: Arc<[String]>,
     dial: Dial,
-) {
+    limits: Limits,
+    open: Arc<AtomicUsize>,
+}
+
+fn accept_loop(listener: &UnixListener, stop: &AtomicBool, serve: &Serve) {
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
-            Ok((conn, _)) => {
-                let hosts = Arc::clone(hosts);
-                std::thread::spawn(move || handle(conn, job, &hosts, dial));
+            Ok((mut conn, _)) => {
+                if serve.open.fetch_add(1, Ordering::SeqCst) >= serve.limits.max_conns {
+                    serve.open.fetch_sub(1, Ordering::SeqCst);
+                    let _ = conn.set_nonblocking(false);
+                    let _ = conn.write_all(
+                        b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n",
+                    );
+                    continue;
+                }
+                let serve = serve.clone();
+                std::thread::spawn(move || {
+                    handle(conn, &serve);
+                    serve.open.fetch_sub(1, Ordering::SeqCst);
+                });
             }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(POLL),
             Err(_) => std::thread::sleep(POLL),
         }
     }
 }
 
-fn handle(mut conn: UnixStream, job: JobId, hosts: &[String], dial: Dial) {
+fn handle(mut conn: UnixStream, serve: &Serve) {
+    let (job, hosts, dial) = (serve.job, &serve.hosts, serve.dial);
     let _ = conn.set_nonblocking(false);
+    let _ = conn.set_read_timeout(Some(serve.limits.head_timeout));
     let Some(head) = read_head(&mut conn) else {
         return;
     };
+    // A spliced stream may stay quiet for long (a model thinking); only the head is timed.
+    let _ = conn.set_read_timeout(None);
     let first = head.lines().next().unwrap_or_default();
     let mut parts = first.split_whitespace();
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
@@ -168,7 +216,14 @@ mod tests {
         });
         let dir = tempfile::tempdir().unwrap();
         let sock = dir.path().join("proxy.sock");
-        let proxy = Proxy::start(&sock, 7, vec!["model.test".into()], dial_test).unwrap();
+        let proxy = Proxy::start(
+            &sock,
+            7,
+            vec!["model.test".into()],
+            dial_test,
+            Limits::default(),
+        )
+        .unwrap();
 
         let (status, mut s) = ask(&sock, "CONNECT model.test:443 HTTP/1.1\r\n\r\n");
         assert!(status.starts_with("HTTP/1.1 200"), "{status}");
@@ -183,5 +238,28 @@ mod tests {
 
         drop(proxy);
         assert!(!sock.exists());
+    }
+    #[test]
+    fn a_connection_that_sends_no_head_is_closed_and_one_over_the_cap_gets_503() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("p.sock");
+        let limits = Limits {
+            head_timeout: Duration::from_millis(200),
+            max_conns: 1,
+        };
+        let _proxy = Proxy::start(&sock, 7, Vec::new(), dial_tcp, limits).unwrap();
+
+        // A half-sent head holds the one slot until the timeout closes it.
+        let mut idle = UnixStream::connect(&sock).unwrap();
+        idle.write_all(b"CONNECT x").unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        let (status, _) = ask(&sock, "CONNECT model.test:443 HTTP/1.1\r\n\r\n");
+        assert!(status.starts_with("HTTP/1.1 503"), "{status}");
+
+        idle.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let started = std::time::Instant::now();
+        let mut buf = [0u8; 1];
+        assert_eq!(idle.read(&mut buf).unwrap_or(0), 0, "closed by the proxy");
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

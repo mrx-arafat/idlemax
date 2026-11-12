@@ -121,8 +121,14 @@ pub fn wrap(
         _ => None,
     };
     let socket = socket_path(&sandbox, job, tag);
-    let proxy = Proxy::start(&socket, job, plan.hosts.clone(), proxy::dial_tcp)
-        .map_err(|e| io("start its proxy", e))?;
+    let proxy = Proxy::start(
+        &socket,
+        job,
+        plan.hosts.clone(),
+        proxy::dial_tcp,
+        proxy::Limits::default(),
+    )
+    .map_err(|e| io("start its proxy", e))?;
     let fence = Fence {
         worktree: show(folder),
         git_writable: git_writable(git),
