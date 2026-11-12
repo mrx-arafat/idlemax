@@ -134,7 +134,7 @@ The repository is public: no address, host name or device id of the owner's mach
 - [x] Task 1: Add the laptop, workbox and production profiles
 - [x] Task 2: Feed the Linux readings into the worker room
 - [x] Task 3: Switch devices on and off on the coordinator
-- [ ] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
+- [x] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
 - [x] Task 5: Read each device's Claude login and check the logins in doctor
 - [x] Task 6: Keep one Budget per login and pace a server-only account
 - [x] Task 7: Run the base checks again when the day's budget is spent
@@ -461,7 +461,7 @@ Switching a device off stops its workers with their state saved and ends the dis
 - [x] `idlemax device off nope` exits non-zero, and its message lists the known device ids and names `idlemax status`.
 - [x] With `IDLEMAX_JOB_ID` in its environment and `--coord` at a closed port, `idlemax device on <id>` ends with the lock's text and `idlemax device off <id>` ends with a connection error.
 - [x] In the TUI, `t` then `y` on a device that is off yields one `DeviceSwitch` request with `on` true, `t` on a device that is on yields one with `on` false and no question, and the regenerated `dispatch-80x24.txt` holds the `devices` pane.
-- [ ] The dashboard script calls `/v1/devices/` with the encoded id for both directions, draws the toggle for a view with one device, and the dashboard test still finds one script tag and no HTML sink.
+- [x] The dashboard script calls `/v1/devices/` with the encoded id for both directions, draws the toggle for a view with one device, and the dashboard test still finds one script tag and no HTML sink.
 - [x] `dispatcher_view` over two devices gives the reported limits to the one that is not `limits_device` and an empty list to the one that is.
 - [x] `idlemax skill --check` passes and the skill lists `idlemax device on <id>`.
 - [x] Verify: `cargo test -p idlemax --test devices && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax tui:: && cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`

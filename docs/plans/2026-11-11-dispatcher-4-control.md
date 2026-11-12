@@ -236,7 +236,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [x] Task 1: Add the state labels and the dispatcher view to the core
 - [x] Task 2: Serve the view and show it in `idlemax status`
 - [x] Task 3: Decide who is calling
-- [ ] Task 4: Refuse owner-only calls from a launched process
+- [x] Task 4: Refuse owner-only calls from a launched process
 - [x] Task 5: Change limits through the API
 - [x] Task 6: Store, list and approve rule proposals
 - [x] Task 7: Decide and store the three kinds of notice
@@ -450,12 +450,12 @@ The honest list of what this does not stop goes into `README.md`.
 
 - [x] With a marked ancestor of this home and a clean calling process, `resume` exits 1 with the refusal text and the coordinator answered 403; the same call with no marked ancestor exits 0.
 - [x] With a marked ancestor that names another home, `resume` exits 0, and with a marked ancestor that has no `IDLEMAX_HOME` it is refused.
-- [ ] With a marked ancestor of this home, `POST /v1/runs/{id}/keep` with `{"merge": true}`, `POST /v1/workers/start`, `POST /v1/dispatcher/mode` toward `auto`, `POST /v1/projects/{id}/on` and `POST /v1/projects/{id}/settings` are 403, and `POST /v1/dispatcher/mode` toward `off` is not refused by the lock.
+- [x] With a marked ancestor of this home, `POST /v1/runs/{id}/keep` with `{"merge": true}`, `POST /v1/workers/start`, `POST /v1/dispatcher/mode` toward `auto`, `POST /v1/projects/{id}/on` and `POST /v1/projects/{id}/settings` are 403, and `POST /v1/dispatcher/mode` toward `off` is not refused by the lock.
 - [x] With the marker in its own environment, `idlemax resume` and `idlemax config set agent.notify true` are refused before any network call, shown by pointing `--coord` at a closed port and still getting the lock's text; with `IDLEMAX_TOKEN` also set to an empty value the text is still the lock's.
 - [x] `POST /v1/local/reload` from a process with a marked ancestor of this home is 403.
 - [x] With a lookup that returns nothing for a local caller, `resume` is 403 with the "could not find the program" text and `stop_all` is 200.
 - [x] A job the runner starts has `IDLEMAX_HOME` equal to the agent's state dir, also when its spec sets another value.
-- [ ] Verify: `cargo test -p idlemax --test worker_lock && cargo test -p idlemax --bin idlemax coord::api && cargo test -p idlemax --bin idlemax agent::api && cargo test -p idlemax --bin idlemax agent::runner && cargo test -p idlemax --test e2e && cargo test -p idlemax --test config_cmd && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax --test worker_lock && cargo test -p idlemax --bin idlemax coord::api && cargo test -p idlemax --bin idlemax agent::api && cargo test -p idlemax --bin idlemax agent::runner && cargo test -p idlemax --test e2e && cargo test -p idlemax --test config_cmd && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 5: Change limits through the API
 
@@ -692,9 +692,9 @@ It is verified by TS-001 to TS-006.
 
 **Definition of Done:**
 
-- [ ] TS-001 to TS-006 pass in a browser against the throwaway home, and the page has no console error.
+- [x] TS-001 to TS-006 pass in a browser against the throwaway home, and the page has no console error.
 - [ ] The cards read correctly at a phone width and in the light and the dark theme.
-- [ ] Text typed into a limit input is still there, with the focus, after the next poll.
+- [x] Text typed into a limit input is still there, with the focus, after the next poll.
 - [x] Against a coordinator that answers 404 to `GET /v1/dispatcher`, the page shows today's cards and no empty dispatcher card.
 - [x] The dashboard test still finds one script tag and no HTML sink, and the script parses.
 - [x] Verify: `cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
