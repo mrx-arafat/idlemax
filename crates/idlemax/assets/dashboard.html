@@ -364,6 +364,22 @@ dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14
   .sched-table td.acts { grid-area: acts; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; white-space: normal; }
   .sched-table td.acts .btn + .btn { margin-left: 0; }
 }
+/* Phone: a worker row stacks too, so the task gets the card's full width. */
+@media (max-width: 640px) {
+  .disp-table thead { display: none; }
+  .disp-table, .disp-table tbody { display: block; }
+  .disp-table tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "state start" "task task" "model model";
+    gap: 4px 10px; padding: 10px 0; border-top: 1px solid var(--line);
+  }
+  .disp-table tbody tr:first-child { border-top: 0; }
+  .disp-table td { display: block; padding: 0; border: 0; text-align: left; }
+  .disp-table td.c-state { grid-area: state; }
+  .disp-table td.c-start { grid-area: start; text-align: right; }
+  .disp-table td.c-task { grid-area: task; overflow-wrap: anywhere; }
+  .disp-table td.c-model { grid-area: model; display: flex; gap: 6px; align-items: baseline; }
+}
 @media (max-width: 560px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tiles .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }

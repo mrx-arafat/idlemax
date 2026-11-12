@@ -839,12 +839,12 @@ function workerTable(rows, withWhy) {
   return h("div", { class: "scroll" }, h("table", { class: "disp-table" },
     h("thead", null, h("tr", null, h("th", null, "State"), h("th", null, "Task"), h("th", null, "Model"), h("th", { class: "r" }, "Started"))),
     h("tbody", null, rows.map((w) => h("tr", null,
-      h("td", null, badge(w.label, w.state === "stopped" ? "warn" : w.state === "needs_you" ? "warn" : "info")),
-      h("td", null, h("div", { class: "job-name" }, `${w.project}: ${w.task}`), h("div", { class: "t2" }, w.summary),
+      h("td", { class: "c-state" }, badge(w.label, w.state === "stopped" ? "warn" : w.state === "needs_you" ? "warn" : "info")),
+      h("td", { class: "c-task" }, h("div", { class: "job-name" }, `${w.project}: ${w.task}`), h("div", { class: "t2" }, w.summary),
         w.branch ? h("div", { class: "t2 mono" }, w.branch) : null,
         withWhy && w.why ? h("details", { class: "why" }, h("summary", null, "why"), h("div", { class: "why-body" }, w.why)) : null),
-      h("td", { class: "nw" }, h("div", null, label(w.provider)), h("div", { class: "t2" }, w.model)),
-      h("td", { class: "r nw" }, rel(w.start_ms)))))));
+      h("td", { class: "c-model nw" }, h("div", null, label(w.provider)), h("div", { class: "t2" }, w.model)),
+      h("td", { class: "c-start r nw" }, rel(w.start_ms)))))));
 }
 
 function renderDispatcher() {
