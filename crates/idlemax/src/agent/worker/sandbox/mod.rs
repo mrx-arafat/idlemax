@@ -16,8 +16,9 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use idlemax_core::types::JobId;
-use idlemax_core::worker::sandbox::bwrap::{bwrap_args, ClaudeHome, Fence};
+use idlemax_core::worker::sandbox::bwrap::{bwrap_args, ClaudeHome, CodexHome, Fence};
 use idlemax_core::worker::sandbox::claude_home::sandbox_claude_json;
+use idlemax_core::worker::sandbox::codex_home::sandbox_codex_config;
 use idlemax_core::worker::WorkerCli;
 
 use super::host::Wrap;
@@ -148,6 +149,10 @@ pub fn wrap(
         WorkerCli::Claude => Some(claude_home(&sandbox, home.as_deref(), folder)?),
         _ => None,
     };
+    let codex = match cli {
+        WorkerCli::Codex => Some(codex_home(&sandbox, home.as_deref(), git.run)?),
+        _ => None,
+    };
     let socket = socket_path(&sandbox, job, tag);
     let proxy = Proxy::start(
         &socket,
@@ -171,6 +176,7 @@ pub fn wrap(
         visible: visible(home.as_deref(), &git.common, cli),
         hidden_files: Vec::new(),
         claude,
+        codex,
         proxy_socket: show(&socket),
         relay_port: RELAY_PORT,
         idlemax_bin: show(&plan.idlemax_bin),
@@ -204,6 +210,31 @@ fn keep(tag: u64, proxy: Proxy) {
 }
 
 /// The sandbox's Claude home with its `.claude.json` written for this worktree.
+/// The sandbox's Codex home of Run `run`: kept across launches so `codex resume` finds its
+/// sessions, with a `config.toml` written from the owner's one without its MCP servers, and
+/// the owner's `auth.json` to bind into it (review finding 5).
+fn codex_home(sandbox: &Path, home: Option<&Path>, run: i64) -> Result<CodexHome, String> {
+    let dir = sandbox.join("codex").join(run.to_string());
+    crate::state::create_private_dir(&dir).map_err(|e| e.to_string())?;
+    let owner_dir = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| home.map(|h| h.join(".codex")));
+    let owner = owner_dir
+        .as_deref()
+        .and_then(|d| std::fs::read_to_string(d.join("config.toml")).ok())
+        .unwrap_or_default();
+    std::fs::write(dir.join("config.toml"), sandbox_codex_config(&owner))
+        .map_err(|e| e.to_string())?;
+    let auth = owner_dir
+        .map(|d| d.join("auth.json"))
+        .filter(|p| p.is_file())
+        .map(|p| show(&p));
+    Ok(CodexHome {
+        dir: show(&dir),
+        auth,
+    })
+}
+
 fn claude_home(sandbox: &Path, home: Option<&Path>, folder: &Path) -> Result<ClaudeHome, String> {
     let dir = sandbox.join("claude");
     crate::state::create_private_dir(&dir).map_err(|e| e.to_string())?;

@@ -70,6 +70,10 @@ fn world() -> Option<World> {
         &home.join(".claude.json"),
         r#"{"userID":"u","mcpServers":{"db":{}}}"#,
     );
+    write(
+        &home.join(".codex/config.toml"),
+        "model = \"gpt-5\"\n[mcp_servers.db]\ncommand = \"psql\"\n",
+    );
     let state = home.join(".idlemax");
     write(&state.join("token"), "TOKEN\n");
     let folder = state.join("worktrees/app/t1");
@@ -266,5 +270,29 @@ fn live_finding_3_the_home_is_an_allow_list() {
     assert!(
         !w.home.join("note").exists(),
         "the temp home never reaches the owner's"
+    );
+}
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_finding_5_codex_logs_in_through_its_own_codex_home() {
+    let Some(w) = world() else { return };
+    let report = run_worker(
+        &w,
+        WorkerCli::Codex,
+        "test -n \"$CODEX_HOME\" && echo HOME-SET; \
+         grep -q SECRET \"$CODEX_HOME/auth.json\" && echo AUTH; \
+         grep -q gpt-5 \"$CODEX_HOME/config.toml\" && echo CONFIG; \
+         grep -q mcp_servers \"$CODEX_HOME/config.toml\" && echo MCP-LEAKED; \
+         mkdir -p \"$CODEX_HOME/sessions\" && echo s > \"$CODEX_HOME/sessions/one\" && echo SAVED; true",
+    );
+    for want in ["HOME-SET", "AUTH", "CONFIG", "SAVED"] {
+        assert!(report.contains(want), "{want}: {report}");
+    }
+    assert!(!report.contains("MCP-LEAKED"), "{report}");
+    let kept = w.state.join("sandbox/codex/3/sessions/one");
+    assert!(
+        kept.is_file(),
+        "a resumed Codex Run needs its sessions: {report}"
     );
 }

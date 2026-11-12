@@ -312,8 +312,13 @@ fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
     if ctx.host.is_headless() {
         return headless_args(w.cli, &w.model, session).map_err(|e| Stop::Failed(e.to_string()));
     }
-    let common = git(ctx, folder, &["rev-parse", "--git-common-dir"])?;
-    let common = folder.join(common.trim()).display().to_string();
+    // Codex's own sandbox must let a commit write where the worker's git writes: the
+    // private git dir inside the OS sandbox (A13), else the repository's common dir.
+    let common = match &ctx.sandbox {
+        Some(plan) => sandbox::private_git::dir_of(&plan.root, w.run),
+        None => folder.join(git(ctx, folder, &["rev-parse", "--git-common-dir"])?.trim()),
+    };
+    let common = common.display().to_string();
     let servers = match w.cli {
         // Fails closed: without the names no server can be switched off.
         WorkerCli::Codex => mcp_server_names(&run_ok(ctx, "codex", &["mcp", "list"], None)?)

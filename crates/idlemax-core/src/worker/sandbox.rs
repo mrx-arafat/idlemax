@@ -3,6 +3,7 @@
 
 pub mod bwrap;
 pub mod claude_home;
+pub mod codex_home;
 
 use serde::{Deserialize, Serialize};
 

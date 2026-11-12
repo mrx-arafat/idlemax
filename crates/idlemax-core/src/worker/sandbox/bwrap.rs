@@ -8,6 +8,7 @@ pub const RUN_DIR: &str = "/run/idlemax";
 pub const PROXY_SOCKET: &str = "/run/idlemax/proxy.sock";
 pub const IDLEMAX_BIN: &str = "/run/idlemax/idlemax";
 pub const CLAUDE_DIR: &str = "/run/idlemax/claude";
+pub const CODEX_DIR: &str = "/run/idlemax/codex";
 pub const RELAY_READY: &str = "/tmp/.idlemax-relay-ready";
 
 /// Variables the sandbox never passes on: the agent socket and the user bus and runtime dir,
@@ -24,6 +25,14 @@ const UNSET: [&str; 3] = [
 pub struct ClaudeHome {
     pub dir: String,
     pub credentials: Option<String>,
+}
+
+/// The sandbox's Codex home (`CODEX_HOME`): idlemax's own folder per Run, so a resumed Run
+/// finds its sessions, with the owner's `auth.json` bound into it (review finding 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexHome {
+    pub dir: String,
+    pub auth: Option<String>,
 }
 
 /// The facts of one launch the adapter found; every path is absolute and, for the hidden
@@ -50,6 +59,7 @@ pub struct Fence {
     /// Variables set inside, such as the private `GIT_DIR` of the worker's commits.
     pub env: Vec<(String, String)>,
     pub claude: Option<ClaudeHome>,
+    pub codex: Option<CodexHome>,
     pub proxy_socket: String,
     pub relay_port: u16,
     pub idlemax_bin: String,
@@ -90,6 +100,12 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
             a.bind(cred, &format!("{CLAUDE_DIR}/.credentials.json"));
         }
     }
+    if let Some(home) = &f.codex {
+        a.bind(&home.dir, CODEX_DIR);
+        if let Some(auth) = &home.auth {
+            a.bind(auth, &format!("{CODEX_DIR}/auth.json"));
+        }
+    }
     for path in &f.read_only {
         a.push(&["--ro-bind", path, path]);
     }
@@ -111,6 +127,9 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
     a.push(&["--setenv", "TMPDIR", "/tmp"]);
     if f.claude.is_some() {
         a.push(&["--setenv", "CLAUDE_CONFIG_DIR", CLAUDE_DIR]);
+    }
+    if f.codex.is_some() {
+        a.push(&["--setenv", "CODEX_HOME", CODEX_DIR]);
     }
     for (name, value) in &f.env {
         a.push(&["--setenv", name, value]);
@@ -176,6 +195,7 @@ mod tests {
                 dir: "/s/sandbox/claude".into(),
                 credentials: Some("/h/.claude/.credentials.json".into()),
             }),
+            codex: None,
             proxy_socket: "/s/sandbox/proxy-7-1.sock".into(),
             relay_port: 3128,
             idlemax_bin: "/usr/local/bin/idlemax".into(),
@@ -219,9 +239,19 @@ mod tests {
     fn codex_gets_no_claude_home_and_never_a_writable_config_or_hooks() {
         let f = Fence {
             claude: None,
+            codex: Some(CodexHome {
+                dir: "/s/sandbox/codex/3".into(),
+                auth: Some("/h/.codex/auth.json".into()),
+            }),
             ..fence()
         };
         let argv = bwrap_args(&f);
+        let line = argv.join(" ");
+        assert!(line.contains("--bind /s/sandbox/codex/3 /run/idlemax/codex --bind /h/.codex/auth.json /run/idlemax/codex/auth.json"), "{line}");
+        assert!(
+            line.contains("--setenv CODEX_HOME /run/idlemax/codex"),
+            "{line}"
+        );
         assert!(!argv.iter().any(|a| a == "CLAUDE_CONFIG_DIR"));
         let mut writable = argv.windows(2).filter(|w| w[0] == "--bind").map(|w| &w[1]);
         assert!(!writable.any(|a| a.ends_with("/hooks") || a.ends_with("/config")));
