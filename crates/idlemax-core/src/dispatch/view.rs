@@ -305,9 +305,17 @@ fn run_lines(
 pub fn unsandboxed(fact: Option<&crate::worker::sandbox::SandboxFact>) -> Option<String> {
     use crate::worker::sandbox::SandboxFact;
     match fact? {
-        SandboxFact::Wrapped => None,
+        SandboxFact::Wrapped { .. } => None,
         SandboxFact::Bare { why } => Some(plain(why)),
         SandboxFact::Off => Some("the sandbox is off (workers.sandbox)".into()),
+    }
+}
+
+/// The note of a sandboxed run, such as a Claude login that may not refresh inside it.
+pub fn sandbox_note(fact: Option<&crate::worker::sandbox::SandboxFact>) -> Option<String> {
+    match fact? {
+        crate::worker::sandbox::SandboxFact::Wrapped { note } => note.as_deref().map(plain),
+        _ => None,
     }
 }
 

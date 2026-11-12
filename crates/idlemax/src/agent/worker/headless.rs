@@ -169,7 +169,12 @@ fn write_footer(log: &Path, status: &str, code: i32) {
 /// The job's minimal environment (`job_run::inherits`), then the pane's pairs, never the token;
 /// in a scope of its own when there is one. A sandboxed launch runs the wrapper with the CLI's
 /// path after its arguments (A13), inside the same scope.
-fn command(program: &Path, launch: &Launch, scope: Option<&WorkerScope>) -> Command {
+fn command(
+    program: &Path,
+    launch: &Launch,
+    scope: Option<&WorkerScope>,
+    token: Option<&str>,
+) -> Command {
     use std::os::unix::process::CommandExt;
     let first = launch
         .wrap
@@ -190,6 +195,10 @@ fn command(program: &Path, launch: &Launch, scope: Option<&WorkerScope>) -> Comm
     if let Some(s) = scope {
         cmd.envs(s.bus_env());
     }
+    // The worker token of a sandboxed Claude, in the environment only (review finding 6).
+    if let Some(token) = token {
+        cmd.env(super::sandbox::TOKEN_VAR, token);
+    }
     cmd.env_remove(TOKEN_ENV).process_group(0);
     cmd
 }
@@ -201,6 +210,10 @@ impl WorkerHost for HeadlessHost {
             .as_ref()
             .ok_or_else(|| failed("no state directory".into()))?;
         let program = self.program(launch.cli)?;
+        let token = match launch.wrap.as_ref().and_then(|w| w.token_file.as_deref()) {
+            Some(file) => Some(super::sandbox::read_token(file).map_err(failed)?),
+            None => None,
+        };
         let (log, log_path, offset) = open_log(paths, launch.job, launch.attempt)?;
         let stderr = log
             .try_clone()
@@ -210,7 +223,7 @@ impl WorkerHost for HeadlessHost {
             write_footer(&log_path, "failed", -1);
             return Err(failed(format!("{} is not executable", program.display())));
         }
-        let spawned = command(&program, launch, self.scope.as_ref())
+        let spawned = command(&program, launch, self.scope.as_ref(), token.as_deref())
             .stdin(Stdio::piped())
             .stdout(log)
             .stderr(stderr)

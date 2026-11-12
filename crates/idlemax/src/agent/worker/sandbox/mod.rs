@@ -76,6 +76,32 @@ pub struct SandboxPlan {
     pub idlemax_bin: PathBuf,
     /// The headless host, which appends the CLI itself; a pane gets the shim.
     pub headless: bool,
+    /// `workers.claude_token_file` for a Claude worker; then `~/.claude` is not bound at all.
+    pub claude_token: Option<PathBuf>,
+}
+
+/// The variable a sandboxed Claude worker reads its worker token from.
+pub const TOKEN_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/// The worker token in `file`, which must be a regular file only its owner can read or write
+/// (`chmod 600`); the error never holds the token.
+pub fn read_token(file: &Path) -> Result<String, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let shown = file.display();
+    let meta =
+        std::fs::metadata(file).map_err(|e| format!("workers.claude_token_file {shown}: {e}"))?;
+    if !meta.is_file() || meta.permissions().mode() & 0o077 != 0 {
+        return Err(format!(
+            "workers.claude_token_file {shown} must be a file only you can read: chmod 600 {shown}"
+        ));
+    }
+    let token = std::fs::read_to_string(file)
+        .map_err(|e| format!("workers.claude_token_file {shown}: {e}"))?;
+    let token = token.trim().to_string();
+    match token.is_empty() {
+        true => Err(format!("workers.claude_token_file {shown} is empty")),
+        false => Ok(token),
+    }
 }
 
 /// The git dirs of the worktree: the shared common dir and the worktree's own admin dir.
@@ -93,6 +119,8 @@ pub struct GitDirs {
 pub struct Wrapped {
     pub wrap: Option<Wrap>,
     pub env: Vec<(String, String)>,
+    /// The CLI gets the worker token in its environment.
+    pub token: bool,
 }
 
 /// The bwrap that may run workers here, or why none can.
@@ -146,7 +174,15 @@ pub fn wrap(
         .map_err(|e| format!("the sandbox could not make its git dir: {e}"))?;
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let claude = match cli {
-        WorkerCli::Claude => Some(claude_home(&sandbox, home.as_deref(), folder)?),
+        WorkerCli::Claude => {
+            let bind_credentials = plan.claude_token.is_none();
+            Some(claude_home(
+                &sandbox,
+                home.as_deref(),
+                folder,
+                bind_credentials,
+            )?)
+        }
         _ => None,
     };
     let codex = match cli {
@@ -184,16 +220,26 @@ pub fn wrap(
     let wrap = Wrap {
         program: plan.bwrap.clone(),
         args: bwrap_args(&fence),
+        token_file: plan
+            .claude_token
+            .clone()
+            .filter(|_| cli == WorkerCli::Claude),
     };
     keep(tag, proxy);
+    let token = wrap.token_file.is_some();
     if plan.headless {
         return Ok(Wrapped {
             wrap: Some(wrap),
             env: Vec::new(),
+            token,
         });
     }
     let env = shim(&sandbox, (job, tag), cli, &wrap)?;
-    Ok(Wrapped { wrap: None, env })
+    Ok(Wrapped {
+        wrap: None,
+        env,
+        token,
+    })
 }
 
 /// Stops the proxy of the attempt `tag`, when it has one.
@@ -235,7 +281,12 @@ fn codex_home(sandbox: &Path, home: Option<&Path>, run: i64) -> Result<CodexHome
     })
 }
 
-fn claude_home(sandbox: &Path, home: Option<&Path>, folder: &Path) -> Result<ClaudeHome, String> {
+fn claude_home(
+    sandbox: &Path,
+    home: Option<&Path>,
+    folder: &Path,
+    bind_credentials: bool,
+) -> Result<ClaudeHome, String> {
     let dir = sandbox.join("claude");
     crate::state::create_private_dir(&dir).map_err(|e| e.to_string())?;
     let read = |p: &Path| {
@@ -249,7 +300,9 @@ fn claude_home(sandbox: &Path, home: Option<&Path>, folder: &Path) -> Result<Cla
     let file = dir.join(".claude.json");
     let json = sandbox_claude_json(&owner, read(&file).as_ref(), &show(folder));
     std::fs::write(&file, json.to_string()).map_err(|e| e.to_string())?;
+    // With a worker token nothing of the owner's `~/.claude` is bound (review finding 6).
     let credentials = home
+        .filter(|_| bind_credentials)
         .map(|h| h.join(".claude/.credentials.json"))
         .filter(|p| p.is_file())
         .map(|p| show(&p));
@@ -327,8 +380,17 @@ fn shim(
     let mut words = vec![quote(&show(&wrap.program))];
     words.extend(wrap.args.iter().map(|a| quote(a)));
     let name = cli.as_str();
+    // The token is read when the pane runs the shim: it reaches bwrap's environment, which the
+    // CLI inherits, and never a pane argument (review finding 6).
+    let token = match &wrap.token_file {
+        Some(file) => format!(
+            "{TOKEN_VAR}=$(cat {}) || exit 1\nexport {TOKEN_VAR}\n",
+            quote(&show(file))
+        ),
+        None => String::new(),
+    };
     let body = format!(
-        "#!/bin/sh\nPATH=${{PATH#{dir}:}}\nexport PATH\n\
+        "#!/bin/sh\nPATH=${{PATH#{dir}:}}\nexport PATH\n{token}\
          cli=$(command -v {name}) || {{ echo '{name} is not on PATH' >&2; exit 127; }}\n\
          exec {} \"$cli\" \"$@\"\n",
         words.join(" "),

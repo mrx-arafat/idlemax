@@ -51,9 +51,21 @@ impl Agent {
                 link.set_host_policy(new.workers.host, Some(profile));
             }
         }
-        if report.applies("workers.sandbox") || report.applies("workers.sandbox_hosts") {
+        let sandbox_keys = [
+            "workers.sandbox",
+            "workers.sandbox_hosts",
+            "workers.claude_token_file",
+        ];
+        if sandbox_keys.iter().any(|k| report.applies(k)) {
             if let Some(link) = &self.workers {
-                link.set_sandbox_policy(new.workers.sandbox, new.workers.sandbox_hosts.clone());
+                link.set_sandbox_policy(
+                    new.workers.sandbox,
+                    new.workers.sandbox_hosts.clone(),
+                    new.workers
+                        .claude_token_file
+                        .as_ref()
+                        .map(std::path::PathBuf::from),
+                );
             }
         }
         if report.applies("agent.notify") {

@@ -86,6 +86,22 @@ Where bubblewrap works (`idlemax doctor` shows `ok  sandbox`), each worker runs 
 - its only network is a proxy that opens port 443 of the model hosts (`workers.sandbox_hosts`);
 - every process of the worker ends with it, a detached one included.
 
+#### One step for Claude workers: a worker token
+
+A sandboxed Claude worker should sign in with a token of its own, so it never needs your `~/.claude`:
+
+```sh
+claude setup-token                                    # prints a long-lived token
+install -m 600 /dev/null ~/.idlemax-worker-token      # a file only you can read
+$EDITOR ~/.idlemax-worker-token                       # paste the token, save
+idlemax config set workers.claude_token_file ~/.idlemax-worker-token
+```
+
+The worker then gets the token in its environment only, never on a command line or in a log, and nothing of your `~/.claude` is bound into its sandbox.
+A file that others can read stops every Claude worker until you `chmod 600` it.
+Without the setting, the worker reads your credentials file read-only; its token refresh may then fail inside the sandbox, and each such Run says so (`Claude token refresh may fail inside the sandbox; set workers.claude_token_file`).
+`idlemax doctor` says which of the two a sandboxed Claude uses.
+
 ### What a worker can still reach
 
 Without the sandbox (no bubblewrap, `workers.sandbox = off`, or macOS until its sandbox is built) these fences are **soft**: a worker runs as your own user.

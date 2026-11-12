@@ -4,38 +4,51 @@
 //! namespace. A stub stands in for bwrap; no test runs bwrap itself.
 
 use std::os::unix::fs::PermissionsExt;
-use std::sync::OnceLock;
 
 use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::worker::sandbox::{SandboxFact, SandboxSetting};
 
+use super::super::choose::SandboxProbe;
 use super::*;
 
-/// A stub bwrap that runs what follows the relay's `$0` (the CLI and its arguments), never
-/// making a namespace.
-fn wrapper() -> Result<PathBuf, String> {
-    static WRAPPER: OnceLock<PathBuf> = OnceLock::new();
-    Ok(WRAPPER
-        .get_or_init(|| {
-            let dir = tempfile::tempdir().unwrap().keep();
-            let path = dir.join("bwrap");
-            // After `--` come `/bin/sh -c <script> <$0>`, then the CLI and its arguments.
-            let body = "#!/bin/sh\nwhile [ $# -gt 0 ] && [ \"$1\" != -- ]; do shift; done\n\
-                        shift 5\nexec \"$@\"\n";
-            std::fs::write(&path, body).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            path
-        })
-        .clone())
+/// A stub bwrap in the rig's own temp dir, gone with the rig: it runs what follows the relay's
+/// `$0` (the CLI and its arguments), never making a namespace.
+fn wrapper(rig: &Rig) -> SandboxProbe {
+    let path = rig._temp.path().join("bwrap");
+    // After `--` come `/bin/sh -c <script> <$0>`, then the CLI and its arguments.
+    let body = "#!/bin/sh\nwhile [ $# -gt 0 ] && [ \"$1\" != -- ]; do shift; done\n\
+                shift 5\nexec \"$@\"\n";
+    std::fs::write(&path, body).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    SandboxProbe(Arc::new(move || Ok(path.clone())))
 }
 
-fn no_bwrap() -> Result<PathBuf, String> {
-    Err("bwrap is not installed".into())
+fn no_bwrap(_: &Rig) -> SandboxProbe {
+    SandboxProbe(Arc::new(|| Err("bwrap is not installed".into())))
 }
 
-fn sandboxed(rig: &mut Rig, setting: SandboxSetting, probe: super::super::choose::SandboxProbe) {
-    rig.workers.set_sandbox_policy(setting, Default::default());
+fn sandboxed(rig: &mut Rig, setting: SandboxSetting, probe: fn(&Rig) -> SandboxProbe) {
+    with_token(rig, setting, probe, None);
+}
+
+fn with_token(
+    rig: &mut Rig,
+    setting: SandboxSetting,
+    probe: fn(&Rig) -> SandboxProbe,
+    token: Option<PathBuf>,
+) {
+    let probe = probe(rig);
+    rig.workers
+        .set_sandbox_policy(setting, Default::default(), token);
     rig.workers.policy.probe = Some(probe);
+}
+
+/// A worker token file the owner made with `claude setup-token`, mode `mode`.
+fn token_file(rig: &Rig, mode: u32) -> PathBuf {
+    let path = rig._temp.path().join("worker-token");
+    std::fs::write(&path, "sk-ant-oat-SECRET\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+    path
 }
 
 #[test]
@@ -106,7 +119,7 @@ fn a_pane_gets_the_shim_first_on_path_and_fails_closed_when_it_did_not_take() {
         "{path}"
     );
     let shim = std::fs::read_to_string(shim_dir.join("claude")).unwrap();
-    let bwrap = wrapper().unwrap().display().to_string();
+    let bwrap = rig._temp.path().join("bwrap").display().to_string();
     assert!(
         shim.contains(&format!("exec '{bwrap}' '--ro-bind' '/' '/'")),
         "{shim}"
@@ -146,4 +159,66 @@ fn a_sandbox_the_owner_switched_off_is_said_on_the_run_too() {
         .handle(Msg::Start(Box::new(job(&rig, WorkerAction::Launch))), 1, 1);
     let fact = first[0].worker.as_ref().unwrap().sandbox.clone();
     assert_eq!(fact, Some(SandboxFact::Off), "review finding 10");
+}
+
+#[test]
+fn a_worker_token_file_others_can_read_refuses_the_launch() {
+    let mut rig = rig();
+    let token = token_file(&rig, 0o644);
+    with_token(&mut rig, SandboxSetting::Auto, wrapper, Some(token));
+    let first = rig
+        .workers
+        .handle(Msg::Start(Box::new(job(&rig, WorkerAction::Launch))), 1, 1);
+    assert_eq!(first[0].status, JobStatus::Failed);
+    let why = first[0].error.clone().unwrap();
+    assert!(
+        why.contains("chmod 600") && !why.contains("SECRET"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_pane_reads_the_worker_token_in_its_shim_and_the_token_shows_nowhere() {
+    let mut rig = rig();
+    let token = token_file(&rig, 0o600);
+    with_token(&mut rig, SandboxSetting::Auto, wrapper, Some(token.clone()));
+    for _ in 0..3 {
+        rig.host
+            .push_state(AgentStatus::Idle, None, &[SHELL, AGENT]);
+    }
+    let mut now = 1_000;
+    let first = rig.workers.handle(
+        Msg::Start(Box::new(job(&rig, WorkerAction::Launch))),
+        now,
+        now,
+    );
+    let fact = first[0].worker.as_ref().unwrap().sandbox.clone();
+    assert_eq!(fact, Some(SandboxFact::Wrapped { note: None }));
+    drive(&mut rig, &mut now, terminal);
+    let start = rig.host.starts.lock().unwrap()[0].clone();
+    assert!(
+        !format!("{start:?}").contains("SECRET"),
+        "not in the pane's pairs"
+    );
+    let path = &start.env.iter().find(|(k, _)| k == "PATH").unwrap().1;
+    let shim_dir = PathBuf::from(path.split(':').next().unwrap());
+    let shim = std::fs::read_to_string(shim_dir.join("claude")).unwrap();
+    let read = format!("CLAUDE_CODE_OAUTH_TOKEN=$(cat '{}')", token.display());
+    assert!(shim.contains(&read) && !shim.contains("SECRET"), "{shim}");
+    assert!(
+        !shim.contains(".credentials.json"),
+        "no ~/.claude bind: {shim}"
+    );
+}
+
+#[test]
+fn without_a_worker_token_a_sandboxed_claude_run_carries_the_refresh_note() {
+    let mut rig = rig();
+    sandboxed(&mut rig, SandboxSetting::Auto, wrapper);
+    let first = rig
+        .workers
+        .handle(Msg::Start(Box::new(job(&rig, WorkerAction::Launch))), 1, 1);
+    let fact = first[0].worker.as_ref().unwrap().sandbox.clone();
+    let note = idlemax_core::worker::sandbox::NO_WORKER_TOKEN.to_string();
+    assert_eq!(fact, Some(SandboxFact::Wrapped { note: Some(note) }));
 }

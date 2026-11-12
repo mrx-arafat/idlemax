@@ -34,14 +34,21 @@ pub enum Probe {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SandboxFact {
-    Wrapped,
-    /// With the soft fences only, because the sandbox could not be used.
-    Bare {
-        why: String,
+    Wrapped {
+        /// Something the owner should know about this sandboxed run, such as a Claude login
+        /// that may not refresh inside it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
+    /// With the soft fences only, because the sandbox could not be used.
+    Bare { why: String },
     /// The owner switched the sandbox off (`workers.sandbox = off`).
     Off,
 }
+
+/// The Run note of a sandboxed Claude worker without `workers.claude_token_file`.
+pub const NO_WORKER_TOKEN: &str =
+    "Claude token refresh may fail inside the sandbox; set workers.claude_token_file";
 
 /// How one launch runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +90,7 @@ pub fn doctor_check(
     profile: Option<DeviceProfile>,
     probe: &Probe,
     workers_on: bool,
+    claude_token: Option<bool>,
 ) -> Check {
     const ID: &str = "sandbox";
     if !workers_on {
@@ -98,10 +106,20 @@ pub fn doctor_check(
     const FIX: &str =
         "install bubblewrap (sudo apt install bubblewrap), then run idlemax doctor again";
     match decide(setting, profile, probe) {
-        SandboxUse::Wrap => Check::ok(
-            ID,
-            "workers run inside bubblewrap with the allow-list proxy",
-        ),
+        SandboxUse::Wrap => {
+            let login = match claude_token {
+                Some(true) => "; Claude signs in with workers.claude_token_file",
+                Some(false) => {
+                    "; Claude uses your credentials file read-only, so its token refresh may \
+                     fail: set workers.claude_token_file"
+                }
+                None => "",
+            };
+            Check::ok(
+                ID,
+                format!("workers run inside bubblewrap with the allow-list proxy{login}"),
+            )
+        }
         SandboxUse::Bare(_) if setting == SandboxSetting::Off => Check::ok(
             ID,
             "off (workers.sandbox): workers run with the soft fences only",
@@ -169,16 +187,16 @@ mod tests {
     fn doctor_says_ok_warn_or_fail_for_the_sandbox() {
         use crate::doctor::Level;
         let gone = Probe::Unusable(NO_BWRAP.into());
-        let level = |s, p, probe| doctor_check(s, p, probe, true).level;
+        let level = |s, p, probe| doctor_check(s, p, probe, true, None).level;
         assert_eq!(level(SandboxSetting::Auto, None, &Probe::Usable), Level::Ok);
-        let warn = doctor_check(SandboxSetting::Auto, None, &gone, true);
+        let warn = doctor_check(SandboxSetting::Auto, None, &gone, true, None);
         assert_eq!(warn.level, Level::Warn);
         assert!(warn.detail.contains(NO_BWRAP), "{}", warn.detail);
         assert_eq!(level(SandboxSetting::Required, None, &gone), Level::Fail);
         let production = Some(DeviceProfile::Production);
         assert_eq!(level(SandboxSetting::Auto, production, &gone), Level::Fail);
         assert_eq!(level(SandboxSetting::Off, None, &gone), Level::Ok);
-        let idle = doctor_check(SandboxSetting::Required, production, &gone, false);
+        let idle = doctor_check(SandboxSetting::Required, production, &gone, false, None);
         assert_eq!(
             idle.level,
             Level::Ok,
@@ -195,6 +213,24 @@ mod tests {
             hosts,
             ["api.anthropic.com", "platform.claude.com", "claude.ai"]
         );
+    }
+
+    #[test]
+    fn doctor_says_how_a_sandboxed_claude_signs_in() {
+        let check = |claude| doctor_check(SandboxSetting::Auto, None, &Probe::Usable, true, claude);
+        let token = check(Some(true));
+        assert!(
+            token.detail.contains("workers.claude_token_file"),
+            "{}",
+            token.detail
+        );
+        let file = check(Some(false));
+        let detail = &file.detail;
+        assert!(
+            detail.contains("credentials file") && detail.contains("may fail"),
+            "{detail}"
+        );
+        assert!(!check(None).detail.contains("credentials"));
     }
 
     #[test]

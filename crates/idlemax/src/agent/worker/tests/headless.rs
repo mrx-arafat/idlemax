@@ -69,6 +69,7 @@ fn manager(rig: &Rig, bin: &Path) -> Workers {
     workers.set_sandbox_policy(
         idlemax_core::worker::sandbox::SandboxSetting::Off,
         Default::default(),
+        None,
     );
     workers.set_allowlist(vec!["claude".into(), "make".into()]);
     workers.poll = Duration::from_millis(2);

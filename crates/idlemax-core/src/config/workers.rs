@@ -44,6 +44,10 @@ pub struct WorkersConfig {
     pub sandbox: SandboxSetting,
     /// The hosts a sandboxed worker of each CLI reaches; a CLI not listed gets the defaults.
     pub sandbox_hosts: BTreeMap<String, Vec<String>>,
+    /// A file only the owner reads (mode 0600) holding a long-lived Claude token from
+    /// `claude setup-token`; a sandboxed Claude worker signs in with it, and the owner's
+    /// `~/.claude` is not bound at all (review finding 6).
+    pub claude_token_file: Option<String>,
     /// Finished tasks per project that may wait for the owner's review (D9).
     pub review_cap: u32,
     /// Seconds between two launches on one device (D13).
@@ -66,6 +70,7 @@ impl Default for WorkersConfig {
             host: WorkerHostChoice::Auto,
             sandbox: SandboxSetting::Auto,
             sandbox_hosts: BTreeMap::new(),
+            claude_token_file: None,
             review_cap: 3,
             settle_secs: 60,
             max_runtime_secs: 3600,
@@ -94,6 +99,13 @@ impl WorkersConfig {
         for (key, v) in times {
             if v == 0 {
                 return Err(format!("workers.{key}: must be above 0"));
+            }
+        }
+        if let Some(file) = &self.claude_token_file {
+            if !std::path::Path::new(file).is_absolute() {
+                return Err(format!(
+                    "workers.claude_token_file: {file:?} is not an absolute path"
+                ));
             }
         }
         for (key, list) in [("clis", &self.clis), ("reviewers", &self.reviewers)] {
@@ -156,6 +168,21 @@ mod tests {
         assert_eq!(
             cfg.workers.sandbox,
             crate::worker::sandbox::SandboxSetting::Required
+        );
+    }
+
+    #[test]
+    fn the_worker_token_file_is_an_absolute_path() {
+        let cfg =
+            Config::parse("[workers]\nclaude_token_file = \"/h/.idlemax-worker-token\"\n").unwrap();
+        assert_eq!(
+            cfg.workers.claude_token_file.as_deref(),
+            Some("/h/.idlemax-worker-token")
+        );
+        let err = Config::parse("[workers]\nclaude_token_file = \"token\"\n").unwrap_err();
+        assert!(
+            err.to_string().starts_with("workers.claude_token_file"),
+            "{err}"
         );
     }
 

@@ -273,8 +273,9 @@ fn a_sandboxed_start_runs_the_wrapper_with_the_cli_after_its_arguments() {
     l.wrap = Some(super::super::host::Wrap {
         program: "/usr/bin/bwrap".into(),
         args: vec!["--unshare-net".into(), "/run/idlemax/idlemax".into()],
+        token_file: None,
     });
-    let cmd = command(Path::new("/opt/claude"), &l, None);
+    let cmd = command(Path::new("/opt/claude"), &l, None, None);
     assert_eq!(cmd.get_program(), "/usr/bin/bwrap");
     let args: Vec<_> = cmd
         .get_args()
@@ -284,4 +285,25 @@ fn a_sandboxed_start_runs_the_wrapper_with_the_cli_after_its_arguments() {
         args[..4],
         ["--unshare-net", "/run/idlemax/idlemax", "/opt/claude", "-p"]
     );
+}
+
+#[test]
+fn a_worker_token_goes_into_the_environment_and_never_an_argument() {
+    // Review finding 6: the sandboxed Claude signs in with the owner's worker token.
+    let rig = rig();
+    let l = launch(&rig, "-p");
+    let cmd = command(
+        Path::new("/opt/claude"),
+        &l,
+        None,
+        Some("sk-ant-oat-SECRET"),
+    );
+    let env: Vec<_> = cmd.get_envs().collect();
+    let token = env.iter().find(|(k, _)| *k == "CLAUDE_CODE_OAUTH_TOKEN");
+    assert_eq!(
+        token.and_then(|(_, v)| *v),
+        Some("sk-ant-oat-SECRET".as_ref())
+    );
+    let mut words = std::iter::once(cmd.get_program()).chain(cmd.get_args());
+    assert!(!words.any(|a| a.to_string_lossy().contains("SECRET")));
 }

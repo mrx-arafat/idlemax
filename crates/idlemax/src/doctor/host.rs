@@ -237,11 +237,19 @@ pub async fn sandbox(report: &mut Report, cfg: &Config) {
     };
     let profile = cfg.agent.profile_or_default(Os::current());
     let workers_on = !cfg.workers.clis.is_empty();
+    // How a sandboxed Claude signs in: the worker token, or the credentials file (finding 6).
+    let claude = cfg
+        .workers
+        .clis
+        .iter()
+        .any(|c| c == "claude")
+        .then(|| cfg.workers.claude_token_file.is_some());
     report.push(doctor_check(
         cfg.workers.sandbox,
         Some(profile),
         &probe,
         workers_on,
+        claude,
     ));
 }
 

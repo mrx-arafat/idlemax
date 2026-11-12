@@ -40,6 +40,9 @@ pub struct Launch {
 pub struct Wrap {
     pub program: PathBuf,
     pub args: Vec<String>,
+    /// The worker token file: its contents go into the CLI's environment as
+    /// `CLAUDE_CODE_OAUTH_TOKEN`, never into an argument or a log (review finding 6).
+    pub token_file: Option<PathBuf>,
 }
 
 /// Which host started a worker; saved with it, so a stop, a kill and a recovery go to that host.

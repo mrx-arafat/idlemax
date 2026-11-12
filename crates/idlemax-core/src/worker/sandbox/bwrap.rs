@@ -96,8 +96,13 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
     a.bind(&f.tmp, "/tmp");
     if let Some(home) = &f.claude {
         a.bind(&home.dir, CLAUDE_DIR);
+        // The fallback without a worker token: the owner's credentials, read-only.
         if let Some(cred) = &home.credentials {
-            a.bind(cred, &format!("{CLAUDE_DIR}/.credentials.json"));
+            a.push(&[
+                "--ro-bind",
+                cred,
+                &format!("{CLAUDE_DIR}/.credentials.json"),
+            ]);
         }
     }
     if let Some(home) = &f.codex {
@@ -216,7 +221,7 @@ mod tests {
             --bind /code/app/.git/worktrees/t1 /code/app/.git/worktrees/t1 \
             --bind /s/sandbox/tmp/7-1 /tmp \
             --bind /s/sandbox/claude /run/idlemax/claude \
-            --bind /h/.claude/.credentials.json /run/idlemax/claude/.credentials.json \
+            --ro-bind /h/.claude/.credentials.json /run/idlemax/claude/.credentials.json \
             --ro-bind /s/sandbox/git/3/config /s/sandbox/git/3/config \
             --bind /s/sandbox/proxy-7-1.sock /run/idlemax/proxy.sock \
             --ro-bind /usr/local/bin/idlemax /run/idlemax/idlemax \

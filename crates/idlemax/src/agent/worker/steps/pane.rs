@@ -10,7 +10,7 @@ use idlemax_core::worker::launch::{env_problems, pane_env};
 use idlemax_core::worker::{name, WorkerAction};
 
 use super::super::host::{AgentStatus, Handle, HostState, Launch};
-use super::super::sandbox::Wrapped;
+use super::super::sandbox::{Wrapped, TOKEN_VAR};
 use super::{brief_path, LaunchCtx, Progress, Stop};
 
 /// Starts the agent and checks its real environment; a pane whose environment holds a
@@ -60,7 +60,11 @@ pub(super) fn start_checked(
         let pid = state.foreground.first().copied().or(state.shell_pid);
         let vars = pid.and_then(|pid| ctx.procs.lock().ok()?.environ(pid));
         let problems = match vars {
-            Some(vars) => env_problems(&vars),
+            // The worker token a sandboxed Claude was given on purpose is no leak.
+            Some(vars) => env_problems(&vars)
+                .into_iter()
+                .filter(|n| !(n == TOKEN_VAR && sandbox.is_some_and(|w| w.token)))
+                .collect::<Vec<String>>(),
             None => {
                 return Err(close(
                     ctx,

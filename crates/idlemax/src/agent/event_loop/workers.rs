@@ -35,7 +35,11 @@ enum LinkMsg {
     /// `workers.host` and the device profile, for the next worker start.
     HostPolicy(WorkerHostChoice, Option<DeviceProfile>),
     /// `workers.sandbox` and `workers.sandbox_hosts`, for the next worker start (A13).
-    SandboxPolicy(SandboxSetting, BTreeMap<String, Vec<String>>),
+    SandboxPolicy(
+        SandboxSetting,
+        BTreeMap<String, Vec<String>>,
+        Option<std::path::PathBuf>,
+    ),
 }
 
 /// What the manager last published for the loop to read.
@@ -90,8 +94,8 @@ impl WorkerLink {
                     Ok(LinkMsg::HostPolicy(setting, profile)) => {
                         workers.set_host_policy(setting, profile);
                     }
-                    Ok(LinkMsg::SandboxPolicy(setting, hosts)) => {
-                        workers.set_sandbox_policy(setting, hosts);
+                    Ok(LinkMsg::SandboxPolicy(setting, hosts, token)) => {
+                        workers.set_sandbox_policy(setting, hosts, token);
                     }
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -147,8 +151,11 @@ impl WorkerLink {
         &self,
         setting: SandboxSetting,
         hosts: BTreeMap<String, Vec<String>>,
+        claude_token: Option<std::path::PathBuf>,
     ) {
-        let _ = self.tx.send(LinkMsg::SandboxPolicy(setting, hosts));
+        let _ = self
+            .tx
+            .send(LinkMsg::SandboxPolicy(setting, hosts, claude_token));
     }
 
     /// The workers as the heartbeat reports them.

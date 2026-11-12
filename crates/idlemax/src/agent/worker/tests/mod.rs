@@ -153,6 +153,7 @@ fn rig() -> Rig {
     workers.set_sandbox_policy(
         idlemax_core::worker::sandbox::SandboxSetting::Off,
         Default::default(),
+        None,
     );
     workers.poll = Duration::from_millis(2);
     workers.background = None;

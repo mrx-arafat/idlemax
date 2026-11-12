@@ -64,6 +64,9 @@ struct Row {
     /// Why it ran without the OS sandbox, when it did (A13).
     #[serde(skip_serializing_if = "Option::is_none")]
     unsandboxed: Option<String>,
+    /// A note on its sandboxed run, such as a login that may not refresh there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sandbox_note: Option<String>,
 }
 
 pub async fn run(args: ReviewArgs, c: &ApiClient, paths: &Paths, out: &Out) -> Result<()> {
@@ -115,6 +118,7 @@ fn row(r: &Run) -> Row {
         lines: diff.map_or(0, |d| d.lines()),
         branch: r.branch.clone(),
         unsandboxed: idlemax_core::dispatch::view::unsandboxed(r.facts.sandbox.as_ref()),
+        sandbox_note: idlemax_core::dispatch::view::sandbox_note(r.facts.sandbox.as_ref()),
     }
 }
 
@@ -142,6 +146,9 @@ fn table(rows: &[Row], stopped: usize, shed: usize) -> String {
             }
             if let Some(why) = &r.unsandboxed {
                 out.push(format!("    ran without the sandbox: {why}"));
+            }
+            if let Some(note) = &r.sandbox_note {
+                out.push(format!("    {note}"));
             }
         }
     }

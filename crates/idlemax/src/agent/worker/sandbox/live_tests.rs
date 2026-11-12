@@ -93,6 +93,11 @@ fn world() -> Option<World> {
 /// Runs `script` as the worker's CLI inside the sandbox, the way the headless host does, and
 /// returns its report.
 fn run_worker(w: &World, cli: WorkerCli, script: &str) -> String {
+    run_worker_with(w, cli, script, None)
+}
+
+/// As `run_worker`, with a worker token file for Claude (review finding 6).
+fn run_worker_with(w: &World, cli: WorkerCli, script: &str, token: Option<PathBuf>) -> String {
     let stub = w
         .home
         .parent()
@@ -109,6 +114,7 @@ fn run_worker(w: &World, cli: WorkerCli, script: &str) -> String {
         root: w.state.clone(),
         hosts: vec!["localhost".into()],
         headless: true,
+        claude_token: token,
     };
     let dirs = GitDirs {
         common: w.repo.join(".git"),
@@ -119,13 +125,23 @@ fn run_worker(w: &World, cli: WorkerCli, script: &str) -> String {
     };
     let wrapped = wrap(&plan, (7, 1), cli, &w.folder, &dirs).unwrap();
     let wrap = wrapped.wrap.unwrap();
-    let status = Command::new(&wrap.program)
+    assert!(
+        !wrap.args.iter().any(|a| a.contains("SECRET-TOKEN")),
+        "never in argv"
+    );
+    let mut cmd = Command::new(&wrap.program);
+    let status = cmd
         .args(&wrap.args)
         .arg(&stub)
         .current_dir(&w.folder)
         .env_clear()
         .env("HOME", &w.home)
         .env("PATH", "/usr/bin:/bin")
+        .envs(
+            wrap.token_file
+                .as_ref()
+                .map(|f| (super::TOKEN_VAR, super::read_token(f).unwrap())),
+        )
         .status()
         .unwrap();
     super::release(1);
@@ -295,4 +311,27 @@ fn live_finding_5_codex_logs_in_through_its_own_codex_home() {
         kept.is_file(),
         "a resumed Codex Run needs its sessions: {report}"
     );
+}
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_finding_6_a_worker_token_replaces_the_owners_credentials() {
+    let Some(w) = world() else { return };
+    let probe = "test -n \"$CLAUDE_CODE_OAUTH_TOKEN\" && echo TOKEN-SET; \
+                 test -e /run/idlemax/claude/.credentials.json && echo CRED-BOUND; \
+                 echo x >> /run/idlemax/claude/.credentials.json 2>/dev/null && echo CRED-WRITABLE; true";
+    // With the token: it is in the environment, and nothing of ~/.claude is bound.
+    let file = w.home.parent().unwrap().join("worker-token");
+    write(&file, "SECRET-TOKEN\n");
+    std::fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    let report = run_worker_with(&w, WorkerCli::Claude, probe, Some(file));
+    assert!(report.contains("TOKEN-SET"), "{report}");
+    assert!(!report.contains("CRED-BOUND"), "{report}");
+    // Without it: the owner's credentials file, read-only.
+    let report = run_worker(&w, WorkerCli::Claude, probe);
+    assert!(
+        report.contains("CRED-BOUND") && !report.contains("TOKEN-SET"),
+        "{report}"
+    );
+    assert!(!report.contains("CRED-WRITABLE"), "{report}");
 }

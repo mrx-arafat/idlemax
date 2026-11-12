@@ -12,7 +12,7 @@ use idlemax_core::job_run::RunClock;
 use idlemax_core::types::{DeviceProfile, Job, UnixMs};
 use idlemax_core::worker::launch::pick_host;
 use idlemax_core::worker::sandbox::{
-    decide, default_hosts, Probe, SandboxFact, SandboxSetting, SandboxUse,
+    decide, default_hosts, Probe, SandboxFact, SandboxSetting, SandboxUse, NO_WORKER_TOKEN,
 };
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
@@ -28,8 +28,16 @@ const HERDR_ANSWER_MS: i64 = 30_000;
 /// The host picked for one launch, and the note that explains a fall back from Herdr.
 pub(super) type Chosen = (HostKind, Arc<dyn WorkerHost>, Option<String>);
 
-/// Finds the bwrap that may run workers, or says why none can (`sandbox::probe`).
-pub(super) type SandboxProbe = fn() -> Result<PathBuf, String>;
+/// Finds the bwrap that may run workers, or says why none can (`sandbox::probe`); a test
+/// gives one that names a stub in its own temp dir.
+#[derive(Clone)]
+pub(super) struct SandboxProbe(pub Arc<dyn Fn() -> Result<PathBuf, String> + Send + Sync>);
+
+impl std::fmt::Debug for SandboxProbe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SandboxProbe")
+    }
+}
 
 /// The sandbox a launch gets, and how it runs (the Run's fact; finding 8).
 pub(super) type ChosenSandbox = (Option<SandboxPlan>, Option<SandboxFact>);
@@ -43,6 +51,8 @@ pub(super) struct HostPolicy {
     herdr_answer: Option<(UnixMs, bool)>,
     sandbox: SandboxSetting,
     sandbox_hosts: BTreeMap<String, Vec<String>>,
+    /// `workers.claude_token_file` (review finding 6).
+    claude_token: Option<PathBuf>,
     /// None: the real probe (a test build never runs bwrap).
     pub(super) probe: Option<SandboxProbe>,
 }
@@ -81,14 +91,17 @@ impl Workers {
         self.policy.profile = profile;
     }
 
-    /// `workers.sandbox` and `workers.sandbox_hosts`, which a reload may change (A13).
+    /// `workers.sandbox`, `workers.sandbox_hosts` and `workers.claude_token_file`, which a
+    /// reload may change (A13).
     pub fn set_sandbox_policy(
         &mut self,
         setting: SandboxSetting,
         hosts: BTreeMap<String, Vec<String>>,
+        claude_token: Option<PathBuf>,
     ) {
         self.policy.sandbox = setting;
         self.policy.sandbox_hosts = hosts;
+        self.policy.claude_token = claude_token;
     }
 
     /// The sandbox of one launch (`decide`): wrapped, bare with a note, or refused. `off`
@@ -102,7 +115,10 @@ impl Workers {
         if self.policy.sandbox == SandboxSetting::Off {
             return Ok((None, Some(SandboxFact::Off)));
         }
-        let found = self.policy.probe.unwrap_or(default_probe)();
+        let found = match &self.policy.probe {
+            Some(probe) => (probe.0)(),
+            None => default_probe(),
+        };
         let probe = match &found {
             Ok(_) => Probe::Usable,
             Err(why) => Probe::Unusable(why.clone()),
@@ -119,14 +135,26 @@ impl Workers {
                     .unwrap_or_else(|| default_hosts(cli));
                 let idlemax_bin = std::env::current_exe()
                     .map_err(|e| format!("the sandbox cannot find idlemax itself: {e}"))?;
+                // A Claude worker signs in with the worker token when there is one; the
+                // file must be the owner's alone, or no worker starts (review finding 6).
+                let claude_token = match (cli, &self.policy.claude_token) {
+                    (WorkerCli::Claude, Some(file)) => {
+                        super::sandbox::read_token(file)?;
+                        Some(file.clone())
+                    }
+                    _ => None,
+                };
+                let note = (cli == WorkerCli::Claude && claude_token.is_none())
+                    .then(|| NO_WORKER_TOKEN.to_string());
                 let plan = SandboxPlan {
                     bwrap: found?,
                     idlemax_bin,
                     root: self.paths.root().to_path_buf(),
                     hosts,
                     headless: kind == HostKind::Headless,
+                    claude_token,
                 };
-                Ok((Some(plan), Some(SandboxFact::Wrapped)))
+                Ok((Some(plan), Some(SandboxFact::Wrapped { note })))
             }
         }
     }
