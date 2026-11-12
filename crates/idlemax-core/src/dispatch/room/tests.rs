@@ -7,7 +7,7 @@ const MIB: u64 = 1 << 20;
 fn laptop() -> WorkerRoom {
     WorkerRoom::new(RoomPolicy::new(
         &DispatcherConfig::default(),
-        &GuardPolicy::macos_laptop(),
+        &GuardPolicy::laptop(),
     ))
 }
 
@@ -136,7 +136,7 @@ fn a_low_battery_and_heat_hold_unless_the_policy_ignores_them() {
     assert_eq!(d.state, LineState::Hold);
     assert!(d.reason.contains("thermal limited"), "{}", d.reason);
 
-    let mut guard = GuardPolicy::macos_laptop();
+    let mut guard = GuardPolicy::laptop();
     guard.min_battery_pct = None;
     guard.pause_on_thermal = false;
     let lax = || WorkerRoom::new(RoomPolicy::new(&DispatcherConfig::default(), &guard));

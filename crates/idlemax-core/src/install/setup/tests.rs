@@ -164,6 +164,23 @@ fn a_finished_setup_plans_nothing_to_write_and_refuses_a_different_address() {
     let err = super::plan(&other, &existing).unwrap_err();
     assert!(matches!(err, SetupError::UrlConflict { .. }), "{err}");
 
+    // The existing file's profile is kept: naming it again passes, another one is refused.
+    let production = Request {
+        profile: Some(DeviceProfile::Production),
+        ..same
+    };
+    assert!(super::plan(&production, &existing).is_ok());
+    let workbox = Request {
+        profile: Some(DeviceProfile::Workbox),
+        ..same
+    };
+    let err = super::plan(&workbox, &existing).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("idlemax config set agent.profile workbox"),
+        "{err}"
+    );
+
     // An agent whose existing config points at itself still has nowhere to report.
     let local = Config::default();
     let agent = super::plan(

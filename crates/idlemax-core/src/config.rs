@@ -307,7 +307,7 @@ mod tests {
             (Some(127 << 20), 512, 0),
             (Some((640 << 20) + 1), 4096, 512),
         ] {
-            let mut policy = GuardPolicy::linux_server();
+            let mut policy = GuardPolicy::production();
             policy.ram_budget_mib = budget;
             let note = policy.clamp_memory(cap);
             assert_eq!(policy.ram_budget_mib, expected);
@@ -389,6 +389,39 @@ mod tests {
         assert_eq!(wb_preset.psi_mem_full_kill, Some(5.0));
         assert_eq!(wb_preset.load_per_cpu_pause, None);
         assert_eq!(wb_preset.load_per_cpu_kill, None);
-        assert_eq!(GuardPolicy::production(), GuardPolicy::linux_server());
+        // The numbers `linux_server()` had before the rename.
+        let old_server = GuardPolicy {
+            max_jobs: 1,
+            ram_budget_mib: 512,
+            kill_after_breaches: 2,
+            resume_after_clear: 2,
+            user_idle_min_secs: None,
+            require_ac_power: false,
+            min_battery_pct: None,
+            pause_on_thermal: true,
+            memory_pressure_pause: None,
+            memory_pressure_kill: None,
+            mem_free_pct_pause: None,
+            mem_free_pct_kill: None,
+            mem_available_mib_pause: Some(1024),
+            mem_available_mib_kill: Some(768),
+            swap_growth_pause: None,
+            swap_growth_kill: None,
+            swap_used_mib_pause: None,
+            swap_used_mib_kill: None,
+            swap_in_pages_per_sec_pause: Some(100.0),
+            swap_in_sustain_secs: 60,
+            psi_mem_some_pause: Some(5.0),
+            psi_mem_full_kill: Some(1.0),
+            psi_io_full_pause: Some(10.0),
+            psi_io_full_kill: Some(25.0),
+            load_per_cpu_pause: Some(0.75),
+            load_per_cpu_kill: Some(1.5),
+            load_1m_pause: None,
+            load_1m_kill: None,
+            disk_free_mib_pause: Some(2048),
+            disk_free_mib_kill: Some(1024),
+        };
+        assert_eq!(GuardPolicy::production(), old_server);
     }
 }

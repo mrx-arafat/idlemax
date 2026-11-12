@@ -7,6 +7,7 @@ use idlemax_core::install::service::{render, ServiceKind};
 use idlemax_core::install::setup::{
     unit_change, ConfigPlan, SetupPlan, StatuslinePlan, TokenPlan, UnitChange,
 };
+use idlemax_core::types::{DeviceProfile, Os};
 use idlemax_core::{Config, Paths, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
 
 use super::report::{Status, StepReport};
@@ -120,6 +121,13 @@ fn init_command(plan: &SetupPlan, token_stdin: bool) -> String {
     let mut cmd = "idlemax init".to_string();
     if plan.coord_url != DEFAULT_COORD_URL {
         cmd.push_str(&format!(" --coord-url {}", plan.coord_url));
+    }
+    // Without the flag `init` writes the OS default, not the profile setup planned.
+    if let ConfigPlan::Write(cfg) = &plan.config {
+        let default = DeviceProfile::default_for(Os::current());
+        if let Some(profile) = cfg.agent.profile.filter(|p| *p != default) {
+            cmd.push_str(&format!(" --profile {}", profile.as_str()));
+        }
     }
     if token_stdin {
         return format!("<the coordinator's token> | {cmd} --token-stdin");

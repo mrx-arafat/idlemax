@@ -60,11 +60,7 @@ pub(super) fn render(
         env.state_dir = state_dir;
     }
     let mut unit = idlemax_core::install::service::render_system(kind, &env)?;
-    let profile_str = match profile {
-        DeviceProfile::Production => "production",
-        DeviceProfile::Workbox => "workbox",
-        DeviceProfile::Laptop => "laptop",
-    };
+    let profile_str = profile.as_str();
     unit.content = format!("# target facts: cpus={cpus} memory_mib={memory_mib} profile={profile_str} config={source}\n{}", unit.content);
     Ok(unit)
 }

@@ -127,10 +127,6 @@ impl GuardPolicy {
         }
     }
 
-    pub fn macos_laptop() -> Self {
-        Self::laptop()
-    }
-
     pub fn production() -> Self {
         Self {
             max_jobs: 1,
@@ -166,10 +162,6 @@ impl GuardPolicy {
             disk_free_mib_pause: Some(2 * GIB_MIB),
             disk_free_mib_kill: Some(GIB_MIB),
         }
-    }
-
-    pub fn linux_server() -> Self {
-        Self::production()
     }
 
     pub fn workbox() -> Self {

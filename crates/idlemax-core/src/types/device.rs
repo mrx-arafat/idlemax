@@ -45,6 +45,15 @@ impl DeviceProfile {
             _ => DeviceProfile::Production,
         }
     }
+
+    /// The name `config.toml` and `--profile` use.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DeviceProfile::Laptop => "laptop",
+            DeviceProfile::Workbox => "workbox",
+            DeviceProfile::Production => "production",
+        }
+    }
 }
 
 /// macOS `memory_pressure` level.

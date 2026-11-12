@@ -302,6 +302,10 @@ fn setup_agent_profile_flag_and_default() {
     );
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("agent.profile workbox"), "{text}");
+    assert!(
+        text.contains("idlemax init --coord-url http://100.64.0.10:7878 --profile workbox"),
+        "{text}"
+    );
 
     #[cfg(target_os = "linux")]
     {

@@ -160,6 +160,14 @@ pub enum SetupError {
          it, or leave out --coord-url"
     )]
     UrlConflict { have: String, want: String },
+    #[error(
+        "config.toml already sets agent.profile to {have}, not {want}: run \
+         `idlemax config set agent.profile {want}` to change it, or leave out --profile"
+    )]
+    ProfileConflict {
+        have: &'static str,
+        want: &'static str,
+    },
 }
 
 /// The plan for `req` given what `existing` holds.
@@ -172,6 +180,13 @@ pub fn plan(req: &Request<'_>, existing: &Existing<'_>) -> Result<SetupPlan, Set
                 return Err(SetupError::UrlConflict {
                     have: have.to_string(),
                     want: want.to_string(),
+                });
+            }
+            let have_profile = cfg.agent.profile_or_default(req.os);
+            if let Some(want) = req.profile.filter(|p| *p != have_profile) {
+                return Err(SetupError::ProfileConflict {
+                    have: have_profile.as_str(),
+                    want: want.as_str(),
                 });
             }
             (ConfigPlan::Keep, have.to_string())

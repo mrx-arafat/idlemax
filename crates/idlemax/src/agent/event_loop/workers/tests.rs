@@ -100,7 +100,7 @@ fn agent(paths: &Paths, link: WorkerLink) -> Agent {
             id: "dev".into(),
             ..DeviceInfo::default()
         },
-        guard: idlemax_core::guard::Guard::new(GuardPolicy::macos_laptop()),
+        guard: idlemax_core::guard::Guard::new(GuardPolicy::laptop()),
         client: CoordClient::new("http://127.0.0.1:9", "test").unwrap(),
         probes,
         runner: Runner::new(paths.clone(), "dev".into(), config.agent.clone()),
@@ -118,7 +118,7 @@ fn agent(paths: &Paths, link: WorkerLink) -> Agent {
         worker_room: idlemax_core::dispatch::room::WorkerRoom::new(
             idlemax_core::dispatch::room::RoomPolicy::new(
                 &config.dispatcher,
-                &GuardPolicy::macos_laptop(),
+                &GuardPolicy::laptop(),
             ),
         ),
         live: Arc::new(crate::live_config::LiveConfig::new(paths, config.clone())),
