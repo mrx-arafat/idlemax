@@ -835,16 +835,36 @@ function modeSwitch(mode) {
   }, label(m))));
 }
 
-function workerTable(rows, withWhy) {
+// `review` adds the owner's keep, merge and discard to each row.
+function workerTable(rows, withWhy, review) {
   return h("div", { class: "scroll" }, h("table", { class: "disp-table" },
-    h("thead", null, h("tr", null, h("th", null, "State"), h("th", null, "Task"), h("th", null, "Model"), h("th", { class: "r" }, "Started"))),
+    h("thead", null, h("tr", null, h("th", null, "State"), h("th", null, "Task"), h("th", null, "Model"), h("th", { class: "r" }, "Started"), review ? h("th", null, "") : null)),
     h("tbody", null, rows.map((w) => h("tr", null,
       h("td", null, badge(w.label, w.state === "stopped" ? "warn" : w.state === "needs_you" ? "warn" : "info")),
       h("td", null, h("div", { class: "job-name" }, `${w.project}: ${w.task}`), h("div", { class: "t2" }, w.summary),
         w.branch ? h("div", { class: "t2 mono" }, w.branch) : null,
         withWhy && w.why ? h("details", { class: "why" }, h("summary", null, "why"), h("div", { class: "why-body" }, w.why)) : null),
       h("td", { class: "nw" }, h("div", null, label(w.provider)), h("div", { class: "t2" }, w.model)),
-      h("td", { class: "r nw" }, rel(w.start_ms)))))));
+      h("td", { class: "r nw" }, rel(w.start_ms)),
+      review ? h("td", { class: "nw" }, reviewButtons(w)) : null)))));
+}
+
+function reviewButtons(w) {
+  const btn = (text, cls, how) => h("button", { class: `btn sm${cls}`, type: "button", onclick: (e) => reviewRun(e.currentTarget, w, how) }, text);
+  return h("div", { class: "seg" }, btn("Keep", "", "keep"), btn("Merge", "", "merge"), btn("Discard", " danger", "discard"));
+}
+
+// The owner's review of one finished task: the device's agent does the work on disk.
+async function reviewRun(btn, w, how) {
+  const branch = w.branch || `run ${w.run}`;
+  const ask = {
+    keep: [`Keep ${branch}?`, "Its worktree folder is removed; the branch stays in the repository.", "Keep"],
+    merge: [`Keep and merge ${branch}?`, "It is merged into your current branch, only when your checkout is clean and there is no conflict; otherwise nothing changes.", "Merge"],
+    discard: [`Discard ${branch}?`, "The branch and its worktree are deleted. Git refuses while work is left in the folder.", "Discard"],
+  }[how];
+  if (!await confirmBox(ask[0], ask[1], ask[2], how === "discard")) return;
+  const path = how === "discard" ? `/v1/runs/${w.run}/discard` : `/v1/runs/${w.run}/keep`;
+  act(btn, `${ask[2]} sent to ${w.device}`, () => api("POST", path, how === "discard" ? undefined : { merge: how === "merge" }));
 }
 
 function renderDispatcher() {
@@ -889,8 +909,8 @@ function renderReview() {
   const box = $("review");
   const v = dispReady(box);
   if (!v) return;
-  const note = h("div", { class: "faint", style: "margin-top:8px;font-size:12.5px" }, "Keep or discard with idlemax review keep <run> or idlemax review discard <run>.");
-  box.replaceChildren(v.review.length ? workerTable(v.review, false) : h("div", { class: "empty" }, "Nothing waits for review."), note);
+  const note = h("div", { class: "faint", style: "margin-top:8px;font-size:12.5px" }, "Each asks first. The same: idlemax review keep <run> [--merge] or idlemax review discard <run>.");
+  box.replaceChildren(v.review.length ? workerTable(v.review, false, true) : h("div", { class: "empty" }, "Nothing waits for review."), note);
 }
 
 // One bar: what was spent of what may be spent, with the reason as its title.

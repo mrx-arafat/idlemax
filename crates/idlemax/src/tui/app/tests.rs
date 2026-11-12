@@ -91,7 +91,11 @@ fn why_pane_asks_for_the_selected_waiting_job_only_when_its_reasons_changed() {
 fn dispatch_app() -> App {
     let view = json!({"at_ms": 0, "mode": "off", "picked_by": "no orchestrator pass",
         "devices": [{"id": "mac", "state": "run", "reason": "room for 1", "open_slots": 1}],
-        "projects": [{"id": 2, "name": "site", "device": "mac", "enabled": false}]});
+        "projects": [{"id": 2, "name": "site", "device": "mac", "enabled": false}],
+        "review": [{"run": 9, "device": "mac", "project": "site", "task": "Fix the sync test",
+            "state": "clean", "label": "ready for review", "summary": "fix the sync test",
+            "why": "small", "provider": "claude", "account": "max", "model": "sonnet",
+            "branch": "idlemax/fix-sync", "start_ms": 0}]});
     let limit = |key: &str| json!({"key": key, "value": 90.0, "default": 90.0, "from_file": false});
     let snap = Snapshot {
         dispatcher: Some(serde_json::from_value(view).unwrap()),
@@ -227,4 +231,39 @@ fn without_a_dispatcher_view_no_key_on_the_tab_sends_a_request() {
     // The stop key is on every tab: it is a different route from the view.
     press(&mut app, 'x');
     assert!(app.confirm.is_some());
+}
+
+#[test]
+fn keep_merge_and_discard_of_the_selected_task_ask_first() {
+    let mut app = dispatch_app();
+    pane(&mut app, "review");
+    for (c, want) in [
+        (
+            'k',
+            Request::KeepRun {
+                run: 9,
+                merge: false,
+            },
+        ),
+        (
+            'M',
+            Request::KeepRun {
+                run: 9,
+                merge: true,
+            },
+        ),
+        ('D', Request::DiscardRun(9)),
+    ] {
+        assert_eq!(press(&mut app, c), None, "{c}");
+        let prompt = app
+            .confirm
+            .as_ref()
+            .map(|c| c.prompt.clone())
+            .unwrap_or_default();
+        assert!(prompt.contains("idlemax/fix-sync"), "{prompt}");
+        assert_eq!(press(&mut app, 'y'), Some(want), "{c}");
+    }
+    pane(&mut app, "projects");
+    assert_eq!(press(&mut app, 'k'), None);
+    assert!(app.confirm.is_none());
 }

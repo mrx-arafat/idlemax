@@ -13,6 +13,7 @@ use idlemax_core::quota::QuotaView;
 use idlemax_core::report::Report;
 use idlemax_core::schedule::{ScheduleId, ScheduleView};
 use idlemax_core::types::{Event, Job, JobId, Recommendation, UnixMs};
+use idlemax_core::worker::RunId;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::MissedTickBehavior;
 
@@ -76,6 +77,12 @@ pub enum Request {
     },
     ApproveRule(i64),
     RejectRule(i64),
+    /// Keep a finished task's branch, merging it into the owner's branch when `merge`.
+    KeepRun {
+        run: RunId,
+        merge: bool,
+    },
+    DiscardRun(RunId),
 }
 
 impl Request {
@@ -103,6 +110,9 @@ impl Request {
             } => format!("{key} = {v}"),
             Request::ApproveRule(id) => format!("rule {id} added to rules.md"),
             Request::RejectRule(id) => format!("rule {id} rejected"),
+            Request::KeepRun { run, merge: false } => format!("keep run {run}"),
+            Request::KeepRun { run, merge: true } => format!("keep and merge run {run}"),
+            Request::DiscardRun(run) => format!("discard run {run}"),
         }
     }
 }
@@ -255,6 +265,8 @@ async fn perform(c: &ApiClient, req: Request) -> Update {
         Request::Why(id) => return Update::Why(id, c.why(id).await.map_err(|e| e.describe())),
         Request::StopWorkers => c.stop_all_workers("tui").await.map(|_| ()),
         Request::StartWorkers => c.start_workers().await.map(|_| ()),
+        Request::KeepRun { run, merge } => c.keep_run(run, merge).await.map(|_| ()),
+        Request::DiscardRun(run) => c.discard_run(run).await.map(|_| ()),
         Request::SetMode(mode) => c.set_mode_named(&mode).await.map(|_| ()),
         Request::SwitchProject { id, on, .. } => c.switch_project(id, on).await.map(|_| ()),
         Request::SetLimit { key, value } => {

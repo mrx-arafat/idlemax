@@ -38,6 +38,7 @@ const CALLS: &[(&str, &[&str])] = &[
     ),
     ("/v1/quota", &["/v1/quota"]),
     ("/v1/report", &["/v1/report"]),
+    ("/v1/runs/", &["/v1/runs/1/keep", "/v1/runs/1/discard"]),
     ("/v1/schedules", &["/v1/schedules"]),
     (
         "/v1/schedules/",
@@ -49,14 +50,9 @@ const CALLS: &[(&str, &[&str])] = &[
     ("/v1/workers/stop", &["/v1/workers/stop"]),
 ];
 
-/// Called by the page before their route lands: the worker stop and start of dispatcher Spec 2
-/// Task 10, and the device switch of Spec 5. The page copes with their 404.
-const PENDING: &[&str] = &[
-    "/v1/workers/start",
-    "/v1/workers/stop",
-    "/v1/devices/mac/on",
-    "/v1/devices/mac/off",
-];
+/// Called by the page before their route lands: the device switch of Spec 5. The page copes
+/// with their 404.
+const PENDING: &[&str] = &["/v1/devices/mac/on", "/v1/devices/mac/off"];
 
 /// The static prefix of every `/v1/` path in the script: up to its first `${`, `?`, quote
 /// or other character no path has.

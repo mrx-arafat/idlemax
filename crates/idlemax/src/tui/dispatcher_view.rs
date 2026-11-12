@@ -294,7 +294,7 @@ fn worker_detail(w: &WorkerLine, review: bool) -> Vec<Line<'static>> {
         let run = w.run;
         lines.push(
             Line::from(format!(
-                "keep or discard: idlemax review keep {run} | idlemax review discard {run}"
+                "k keeps, M merges, D discards (each asks first); or idlemax review keep|discard {run}"
             ))
             .cyan(),
         );
@@ -365,6 +365,7 @@ pub fn pane_keys(pane: Pane) -> &'static str {
         Pane::Projects => "v pane  t switch  m mode  g start",
         Pane::Limits => "v pane  e edit  m mode  g start",
         Pane::Rules => "v pane  a/d approve/reject",
+        Pane::Review => "v pane  k keep  M merge  D discard",
         _ => "v pane  m mode  g start",
     }
 }
