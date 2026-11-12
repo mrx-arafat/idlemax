@@ -6,6 +6,7 @@ pub mod advice;
 pub mod capacity;
 pub mod config;
 pub mod control;
+pub mod dispatch;
 pub mod doctor;
 pub mod explain;
 pub mod guard;

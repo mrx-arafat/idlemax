@@ -6,11 +6,13 @@ use crate::quota::{QuotaConfig, QuotaConfigError};
 use crate::types::{DeviceProfile, Os};
 use crate::{DEFAULT_AGENT_LISTEN, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
 
+mod dispatcher;
 mod edit;
 mod guard_policy;
 mod reload;
 mod settings;
 
+pub use dispatcher::{parse_worker_model, DispatcherConfig};
 pub use edit::{find_setting, set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, MemoryCap, SwapGrowth, AGENT_OVERHEAD_MIB};
 pub use reload::{plan_reload, ReloadReport};
@@ -45,6 +47,7 @@ pub struct Config {
     pub guard: toml::Table,
     pub quota: QuotaConfig,
     pub advisor: AdvisorConfig,
+    pub dispatcher: DispatcherConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -156,12 +159,14 @@ impl Config {
         Ok(toml::to_string_pretty(self)?)
     }
 
-    /// Checks `[guard]` overrides against both presets, and the quota accounts.
+    /// Checks `[guard]` overrides against both presets, the quota accounts and the
+    /// dispatcher lines.
     pub fn validate(&self) -> Result<(), ConfigError> {
         for os in [Os::Macos, Os::Linux] {
             self.guard_policy(os)?;
         }
         self.quota.validate()?;
+        self.dispatcher.validate().map_err(ConfigError::Guard)?;
         Ok(())
     }
 

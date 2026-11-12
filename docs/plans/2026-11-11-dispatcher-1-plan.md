@@ -205,7 +205,7 @@ target/debug/idlemax init
 
 ## Progress Tracking
 
-- [ ] Task 1: Add the dispatcher settings and the worker room rule
+- [x] Task 1: Add the dispatcher settings and the worker room rule
 - [ ] Task 2: Keep projects in the store and switch them with `idlemax project`
 - [ ] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
 - [ ] Task 4: Read memory used and swap-in on macOS and report the room
@@ -297,15 +297,15 @@ The rule reads memory used percent, the swap-in rate, free disk, the battery cha
 
 **Definition of Done:**
 
-- [ ] On a 16 GiB sample at 80 percent used, 9 GiB of free disk, swap-in at 2 pages per second for 90 s, user idle 0 s, memory pressure `Warn` and on battery at 80 percent, the state is `run` with 3 open slots.
-- [ ] The first sample after start is `hold` with a reason that names swap-in, and the same readings 60 s later are `run`.
-- [ ] Memory at 89.9, 90, 95 and 98 percent gives `run`, `hold`, `shed` and `emergency`; free disk of 4095, 2047 and 1023 MiB gives `hold`, `shed` and `emergency`.
-- [ ] One sample above the low swap-in rate turns `run` into `hold` for the next 60 s, and 60 s above the high rate gives `shed`.
-- [ ] A battery at 39 percent with a floor of 40 gives `hold` with a reason that names the battery, a thermal flag gives `hold` with `thermal limited`, and both give `run` when the policy has no floor and `pause_on_thermal` is false.
-- [ ] `mem_used_pct` of `None` gives `hold`, and a state other than `run` always has 0 open slots.
-- [ ] `Config::parse("[dispatcher]\nhold_mem_used_pct = 96\n")` fails with one line that starts with `dispatcher.hold_mem_used_pct`, and an empty file parses with mode `propose` and `worker_models` of `["claude:sonnet"]`.
-- [ ] `plan_reload` puts a changed `dispatcher.hold_mem_used_pct` and a changed `dispatcher.mode` under `applied`.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::room`, `cargo test -p idlemax-core config`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] On a 16 GiB sample at 80 percent used, 9 GiB of free disk, swap-in at 2 pages per second for 90 s, user idle 0 s, memory pressure `Warn` and on battery at 80 percent, the state is `run` with 3 open slots.
+- [x] The first sample after start is `hold` with a reason that names swap-in, and the same readings 60 s later are `run`.
+- [x] Memory at 89.9, 90, 95 and 98 percent gives `run`, `hold`, `shed` and `emergency`; free disk of 4095, 2047 and 1023 MiB gives `hold`, `shed` and `emergency`.
+- [x] One sample above the low swap-in rate turns `run` into `hold` for the next 60 s, and 60 s above the high rate gives `shed`.
+- [x] A battery at 39 percent with a floor of 40 gives `hold` with a reason that names the battery, a thermal flag gives `hold` with `thermal limited`, and both give `run` when the policy has no floor and `pause_on_thermal` is false.
+- [x] `mem_used_pct` of `None` gives `hold`, and a state other than `run` always has 0 open slots.
+- [x] `Config::parse("[dispatcher]\nhold_mem_used_pct = 96\n")` fails with one line that starts with `dispatcher.hold_mem_used_pct`, and an empty file parses with mode `propose` and `worker_models` of `["claude:sonnet"]`.
+- [x] `plan_reload` puts a changed `dispatcher.hold_mem_used_pct` and a changed `dispatcher.mode` under `applied`.
+- [x] Verify: `cargo test -p idlemax-core dispatch::room`, `cargo test -p idlemax-core config`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 2: Keep projects in the store and switch them with `idlemax project`
 

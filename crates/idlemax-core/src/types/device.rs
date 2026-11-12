@@ -64,6 +64,9 @@ pub struct MetricsSnapshot {
     pub mem_total_bytes: u64,
     pub mem_available_bytes: u64,
     pub mem_free_pct: f64,
+    /// App, wired and compressed memory over the total, as Activity Monitor shows it; None
+    /// where it is not read.
+    pub mem_used_pct: Option<f64>,
     pub swap_total_bytes: u64,
     pub swap_used_bytes: u64,
     pub disk_free_bytes: u64,

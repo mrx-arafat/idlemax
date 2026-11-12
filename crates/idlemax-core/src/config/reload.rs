@@ -9,7 +9,8 @@ use serde_json::Value;
 use super::settings::json;
 use super::{Config, ConfigError};
 
-/// Settings the agent applies on reload, besides every `guard.*` key. Anything not listed here
+/// Settings the agent applies on reload, besides every `guard.*` and `dispatcher.*` key (both
+/// daemons read `[dispatcher]` again when the file changes). Anything not listed here
 /// or under `coordinator.` and `advisor.` is read at agent start, so a setting added later is
 /// reported as needing a restart until someone makes it live.
 const LIVE: [&str; 3] = [
@@ -58,7 +59,8 @@ pub fn plan_reload(old: &Config, new: &Config) -> Result<ReloadReport, ConfigErr
         if old.get(key) == new.get(key) {
             continue;
         }
-        let list = if key.starts_with("guard.") || LIVE.contains(&key.as_str()) {
+        let live = key.starts_with("guard.") || key.starts_with("dispatcher.");
+        let list = if live || LIVE.contains(&key.as_str()) {
             &mut report.applied
         } else if key.starts_with("coordinator.") || key.starts_with("advisor.") {
             &mut report.restart_coordinator
@@ -133,5 +135,16 @@ mod tests {
         let back = plan_reload(&new, &old).unwrap();
         assert!(back.applies("guard.require_ac_power"));
         assert!(plan_reload(&new, &new).unwrap().is_empty());
+    }
+
+    #[test]
+    fn every_dispatcher_key_applies_without_a_restart() {
+        let new = config("[dispatcher]\nhold_mem_used_pct = 80\nmode = \"off\"\n");
+        let report = plan_reload(&config(""), &new).unwrap();
+        assert_eq!(
+            report.applied,
+            ["dispatcher.hold_mem_used_pct", "dispatcher.mode"]
+        );
+        assert!(report.restart_agent.is_empty() && report.restart_coordinator.is_empty());
     }
 }

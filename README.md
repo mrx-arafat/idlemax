@@ -972,7 +972,7 @@ idlemax config unset guard.require_ac_power       # back to the default
 ```
 
 `set` checks the value the way startup does and refuses one that would stop the agent from starting, keeps your comments, saves the previous file as `config.toml.idlemax.bak`, and asks the running agent to reload.
-Every `[guard]` key, `agent.command_allowlist`, `agent.notify` and `agent.keep_awake` apply at once.
+Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake` and every `[dispatcher]` key apply at once.
 The reply says when a setting is read only at start, and which process to restart.
 `set` replaces a list, so name every program the device may run.
 `[[quota.accounts]]` is a list of tables and stays a hand edit.
@@ -1006,6 +1006,17 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `advisor.enabled` | `true` | run the advisor |
 | `advisor.ai_account` | none | account the AI pass spends; none runs the rules only |
 | `advisor.auto_accept` | `[]` | template names queued without asking |
+| `dispatcher.mode` | `propose` | `off` plans nothing; `propose` shows what the dispatcher would launch and launches nothing |
+| `dispatcher.hold_mem_used_pct` | `90.0` | at this memory used percent no new worker starts |
+| `dispatcher.shed_mem_used_pct` | `95.0` | at this memory used percent idlemax stops its newest worker |
+| `dispatcher.emergency_mem_used_pct` | `98.0` | at this memory used percent every idlemax worker stops |
+| `dispatcher.hold_disk_free_mib` | `4096` | below this free disk no new worker starts |
+| `dispatcher.shed_disk_free_mib` | `2048` | below this free disk idlemax stops its newest worker |
+| `dispatcher.emergency_disk_free_mib` | `1024` | below this free disk every idlemax worker stops |
+| `dispatcher.swap_in_low_pages_per_sec` | `10.0` | swap-in must stay at or under this for a minute before a worker starts |
+| `dispatcher.swap_in_high_pages_per_sec` | `100.0` | swap-in above this for a minute sheds a worker |
+| `dispatcher.worker_mem_mib` | `512` | memory one worker is expected to take; sets how many workers fit under the hold line |
+| `dispatcher.worker_models` | `["claude:sonnet"]` | models a worker may use, as `provider:model` |
 
 A window entry looks like `{ kind = "rolling", minutes = 300, reserve_pct = 40.0 }` or `{ kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 }`.
 TOML has no null, so a `[guard]` override cannot switch a check off; set a value that never trips instead.
