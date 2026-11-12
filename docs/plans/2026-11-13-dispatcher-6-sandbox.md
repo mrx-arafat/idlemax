@@ -27,7 +27,7 @@ This plan answers A13 (Q22) as the orchestrator decided it under the owner's del
 
 1. **Default `auto`, `required` on production.**
    `workers.sandbox` takes `auto` (the default), `required` and `off`.
-   `auto` wraps every worker when the sandbox probe passes, and launches with the soft fences only when it does not, saying so in the job's first update, the Run's facts and `idlemax doctor`.
+   `auto` wraps every worker when the sandbox probe passes, and launches with the soft fences only when it does not, saying so as the Run's `sandbox` fact (sent with every update of the attempt, since the coordinator drops `error` of a running update), one event, `idlemax review`, the dashboard, a needs-you line for the device, and `idlemax doctor`; `off` is said the same way (review findings 8 and 10).
    `required` refuses the launch with the probe's reason.
    A `production` device treats `auto` as `required`, and `Config::validate` refuses `off` beside `agent.profile = "production"` (as it refuses `workers.host = "herdr"` there).
 2. **Linux: bubblewrap only.**
@@ -46,6 +46,7 @@ This plan answers A13 (Q22) as the orchestrator decided it under the owner's del
    At each launch idlemax writes its `.claude.json` from the owner's one with only the keys the CLI needs to run (`oauthAccount`, `userID`, `hasCompletedOnboarding`, onboarding and theme flags) and the worktree marked trusted, so no trust dialog appears in a sandboxed start.
    The owner's `mcpServers` and `projects` never enter it.
    The owner's credentials file `~/.claude/.credentials.json` is bound read-write at `$CLAUDE_CONFIG_DIR/.credentials.json`, so a token refresh inside the sandbox updates the owner's login instead of forking it (Open Question 1).
+   Codex gets the same: `CODEX_HOME` points at `$IDLEMAX_HOME/sandbox/codex/<run>`, kept per Run so `codex resume` finds its sessions, with a `config.toml` written from the owner's without `mcp_servers` and the owner's `auth.json` bound in (review finding 5).
 6. **The worker's git is private.**
    Inside the sandbox `GIT_DIR` is a folder of idlemax's own (`$IDLEMAX_HOME/sandbox/git/<run>`) with its own refs, index and objects, and the owner's objects as a read-only alternate; its `config`, `hooks` and `objects/info` are bound read-only.
    No ref, log or `packed-refs` of the owner's repository is writable (review finding 1).
@@ -108,7 +109,7 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 | A token refresh writes `.credentials.json` with an atomic rename, which fails on a bind-mounted file, so the worker's login ends after a few hours | Medium | Medium | Open Question 1; Task 8 runs a worker past a refresh; the fallback is to bind the owner's `~/.claude` folder's credentials directory instead of the file |
 | The pane's shell start-up files rewrite `PATH`, so the shim is skipped and the worker runs bare | Medium | High | The launch checks the agent's mount namespace after the start and fails closed when the sandbox was meant to apply (Task 4) |
 | An allow-list too narrow (a telemetry or login host) makes the CLI hang or fail | Medium | Medium | `workers.sandbox_hosts` is a setting; the proxy logs each refused host at info, so the first proof run names what is missing |
-| `auto` silently runs bare on a laptop without bwrap | High | Medium | Doctor warns, the job's first update and the Run say "no sandbox: <why>", and `required` is one setting away |
+| `auto` silently runs bare on a laptop without bwrap | High | Medium | Doctor warns, the Run keeps the `bare` fact with the reason, an event, the review, the dashboard and a needs-you line say it, and `required` is one setting away |
 
 ## Goal Verification
 
@@ -144,7 +145,7 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 **Key Decisions / Notes:**
 
-- `SandboxSetting { Auto, Required, Off }`, serialized snake case, default `Auto`; `workers.sandbox_hosts` is a table from CLI name to hosts, empty by default, which means the defaults of `default_hosts(cli)`: Claude `api.anthropic.com`, `console.anthropic.com`, `claude.ai`, `statsig.anthropic.com`; Codex `api.openai.com`, `chatgpt.com`, `auth.openai.com`.
+- `SandboxSetting { Auto, Required, Off }`, serialized snake case, default `Auto`; `workers.sandbox_hosts` is a table from CLI name to hosts, empty by default, which means the defaults of `default_hosts(cli)`: Claude `api.anthropic.com`, `platform.claude.com`, `claude.ai` (review finding 7: Claude Code's network page); Codex `api.openai.com`, `chatgpt.com`, `auth.openai.com`.
 - `Probe` is `Usable` or `Unusable(String)` (the reason, such as "bwrap is not installed").
 - `decide(setting, profile, probe) -> SandboxUse` returns `Wrap`, `Bare(note)` or `Refuse(reason)`; `Off` gives `Bare("the sandbox is off (workers.sandbox)")`; a production profile reads `Auto` as `Required`.
 - `host_allowed(hosts, target)` takes `host:port` and allows only port 443 and an exact host match, case-insensitive, never a suffix.
@@ -289,7 +290,7 @@ Needs `bubblewrap` installed on the device, which needs the owner's sudo.
 
 ## Open Questions
 
-1. **Credentials refresh across a bind mount.** If Claude writes `.credentials.json` by an atomic rename, the rename fails on a bound file. Task 8 finds out; the fallback binds the owner's credential directory instead.
+1. **Credentials refresh across a bind mount (review finding 6, open).** If Claude writes `.credentials.json` by an atomic rename, the rename fails on a bound file, and a refresh by the owner outside leaves the sandbox on the old inode. Binding the credentials' directory instead means binding the owner's whole `~/.claude` writable, where a worker could add hooks to `settings.json` that run in the owner's own sessions and read every project's transcripts. Not done; the proposed way is a long-lived token for workers (`claude setup-token`, passed in the worker's environment, never in argv), with the file bind only as a fallback. Needs the owner's choice.
 2. **Claude Code's own sandbox inside bwrap.** It would add a per-command layer for the CLI's Bash tool, but needs bwrap inside bwrap; not turned on until proven.
 3. **The allow-list.** Claude's hosts are from its network page (code.claude.com/docs/en/network-config, read 2026-11-13): `api.anthropic.com`, `platform.claude.com` (OAuth refresh) and `claude.ai`. Codex's are from its documentation and still to be seen in a real run. The sandbox has no DNS on purpose (`/run` is a tmpfs); a tool that resolves a name before it connects fails, while every CLI call goes through the proxy's `CONNECT` by name.
 4. **A CLI installed under a hidden folder.** Claude's "local" install lives in `~/.claude/local`, which the sandbox hides, so the CLI would not start inside it. Task 8 checks where the CLI resolves; the fix is a read-only bind of the CLI's own install folder.
