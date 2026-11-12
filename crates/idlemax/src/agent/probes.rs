@@ -9,7 +9,7 @@ use idlemax_core::types::{DeviceInfo, MetricsSnapshot, QuotaSnapshot, UnixMs};
 use idlemax_core::Paths;
 
 use super::metrics::{disk, Sampler};
-use super::quota_probe::{self, ProbeDirs};
+use super::quota_probe::{self, OwnSessions, ProbeDirs};
 use super::ring::MetricsRing;
 
 #[derive(Debug, Clone, Default)]
@@ -29,6 +29,7 @@ pub struct Probes {
     quota: QuotaConfig,
     quota_dirs: ProbeDirs,
     agent_cfg: AgentConfig,
+    own_sessions: OwnSessions,
 }
 
 impl Probes {
@@ -48,6 +49,7 @@ impl Probes {
             quota,
             quota_dirs: ProbeDirs::from_env(paths),
             agent_cfg,
+            own_sessions: OwnSessions::new(),
         }
     }
 
@@ -84,7 +86,11 @@ impl Probes {
         Reading {
             kill_switch: kill_switch_present(&self.pause_file),
             quota: quota_probe::probe(&self.quota, &self.quota_dirs, now_ms),
-            interactive_use: quota_probe::interactive_use(&self.quota_dirs, now_ms),
+            interactive_use: quota_probe::interactive_use(
+                &self.quota_dirs,
+                &mut self.own_sessions,
+                now_ms,
+            ),
             metrics,
         }
     }

@@ -291,15 +291,17 @@ fn interactive_use_detects_agy_session_newest_mtime() {
         claude_dir: None,
         codex_dir: None,
         agy_dir: Some(agy_root),
+        worktrees_dir: None,
     };
 
     let now_ms = s2_mtime + 5000;
-    let active = interactive_use(&dirs, now_ms);
+    let mut own = OwnSessions::new();
+    let active = interactive_use(&dirs, &mut own, now_ms);
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].0, "agy");
     assert_eq!(active[0].1, s2_mtime);
 
     // If now_ms is before file mtime, clamps to now_ms
-    let clamped = interactive_use(&dirs, s2_mtime - 1000);
+    let clamped = interactive_use(&dirs, &mut own, s2_mtime - 1000);
     assert_eq!(clamped[0].1, s2_mtime - 1000);
 }

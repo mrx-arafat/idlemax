@@ -119,7 +119,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 - [x] Task 4: Learn the owner's own use per account day
 - [x] Task 5: Compute the surplus, the daily Budget and the worker rules
 - [ ] Task 6: Gather the Budget on the coordinator and gate every worker start
-- [ ] Task 7: Leave idlemax's own worker sessions out of the owner's use
+- [x] Task 7: Leave idlemax's own worker sessions out of the owner's use
 - [x] Task 8: Offer accounts and check picks in pure code
 - [ ] Task 9: Stop an account's workers at the 5-hour line and after a rate limit
 - [ ] Task 10: Hold Spec 1's plan and orchestrator pass to the Budget and the tier
@@ -628,12 +628,12 @@ This also ends the effect, named in roadmap item 11, that a worker's session len
 
 **Definition of Done:**
 
-- [ ] With an owner's Claude session file and a newer one whose `cwd` is under the worktrees folder, `interactive_use` reports the owner's file time for `claude`.
-- [ ] With only worker session files, `claude` is absent from the list.
-- [ ] With six worker session files newer than the owner's, it reports the owner's file time.
-- [ ] With more worker session files than `OWN_SESSION_WALK`, it reports the newest file's time.
-- [ ] A file classified once is not read again: after the first call the test empties the worker's file, and the second call still skips it.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax quota_probe`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] With an owner's Claude session file and a newer one whose `cwd` is under the worktrees folder, `interactive_use` reports the owner's file time for `claude`.
+- [x] With only worker session files, `claude` is absent from the list.
+- [x] With six worker session files newer than the owner's, it reports the owner's file time.
+- [x] With more worker session files than `OWN_SESSION_WALK`, it reports the newest file's time.
+- [x] A file classified once is not read again: after the first call the test empties the worker's file, and the second call still skips it.
+- [x] Verify: `cargo test -p idlemax --bin idlemax quota_probe`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 8: Offer accounts and check picks in pure code
 

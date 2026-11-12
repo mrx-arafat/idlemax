@@ -149,7 +149,7 @@ A file that does not parse or validate is 400 with the reason, and the agent kee
 `QuotaSnapshot.source` is `claude_statusline`, `codex_sessions` or `manual`.
 `Provider` is `claude`, `codex`, `agy`, `opencode` or `api`.
 `Tier` is `small` or `standard`.
-`Heartbeat.interactive_use` is a list of `[cli, unix_ms]` pairs, e.g. `[["claude", 1730000000000]]`.
+`Heartbeat.interactive_use` is a list of `[cli, unix_ms]` pairs for the owner's newest session (leaving out idlemax's workers), e.g. `[["claude", 1730000000000]]`.
 
 ## Heartbeat and leases
 

@@ -12,10 +12,13 @@ use idlemax_core::types::{ProbeSource, QuotaSnapshot, QuotaWindowKind, UnixMs};
 use idlemax_core::Paths;
 use serde::Deserialize;
 
+pub mod own_sessions;
+pub use own_sessions::{interactive_use, OwnSessions};
+
 /// Codex session files checked, newest mtime first. Old files get their mtime bumped
 /// without new events, so the newest event timestamp decides, not the newest mtime.
 const CODEX_CANDIDATES: usize = 3;
-const TAIL_START_BYTES: u64 = 64 * 1024;
+pub const TAIL_START_BYTES: u64 = 64 * 1024;
 const TAIL_MAX_BYTES: u64 = 2 * 1024 * 1024;
 const WALK_MAX_DEPTH: usize = 6;
 
@@ -68,6 +71,8 @@ pub struct ProbeDirs {
     pub codex_dir: Option<PathBuf>,
     /// `~/.gemini/antigravity-cli`; no env override is read, none is verified for agy.
     pub agy_dir: Option<PathBuf>,
+    /// `$IDLEMAX_HOME/worktrees`: dedicated directory for worker git worktrees.
+    pub worktrees_dir: Option<PathBuf>,
 }
 
 impl ProbeDirs {
@@ -79,6 +84,7 @@ impl ProbeDirs {
                 .or_else(|| home.as_ref().map(|h| h.join(".claude"))),
             codex_dir: env_dir("CODEX_HOME").or_else(|| home.as_ref().map(|h| h.join(".codex"))),
             agy_dir: home.map(|h| h.join(".gemini/antigravity-cli")),
+            worktrees_dir: Some(paths.worktrees_dir()),
         }
     }
 }
@@ -140,34 +146,6 @@ fn default_path(
             .ok_or(ProbeError::NoDefaultPath("codex sessions")),
         ProbeSource::Manual => Ok(dirs.state_dir.join(format!("quota-{account}.json"))),
     }
-}
-
-/// (cli name, newest session file mtime) for Claude, Codex and agy. idlemax's own AI jobs
-/// count too, which only lengthens the hold.
-pub fn interactive_use(dirs: &ProbeDirs, now_ms: UnixMs) -> Vec<(String, UnixMs)> {
-    let sources = [
-        (
-            "claude",
-            dirs.claude_dir.as_ref().map(|d| d.join("projects")),
-        ),
-        ("codex", dirs.codex_dir.as_ref().map(|d| d.join("sessions"))),
-        ("agy", dirs.agy_dir.as_ref().map(|d| d.join("brain"))),
-    ];
-    let mut out = Vec::new();
-    for (cli, dir) in sources {
-        let Some(dir) = dir else { continue };
-        match jsonl_files(&dir) {
-            Ok(files) => out.extend(
-                files
-                    .iter()
-                    .map(|(t, _)| *t)
-                    .max()
-                    .map(|t| (cli.to_string(), t.min(now_ms))),
-            ),
-            Err(e) => tracing::debug!(cli, "interactive use: {e}"),
-        }
-    }
-    out
 }
 
 /// Claude Code statusline JSON (the whole stdin object or just its `rate_limits`).
@@ -340,7 +318,7 @@ fn parse_codex_line(line: &str, account: &str, mtime: UnixMs) -> Option<Vec<Quot
 }
 
 /// (mtime, path) of every `*.jsonl` under `root`, symlinks not followed.
-fn jsonl_files(root: &Path) -> Result<Vec<(UnixMs, PathBuf)>, ProbeError> {
+pub(crate) fn jsonl_files(root: &Path) -> Result<Vec<(UnixMs, PathBuf)>, ProbeError> {
     fs::metadata(root).map_err(ProbeError::io(root))?;
     let mut out = Vec::new();
     let mut stack = vec![(root.to_path_buf(), 0)];

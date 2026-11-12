@@ -27,7 +27,8 @@ pub async fn accounts(report: &mut Report, cfg: &Config, paths: Option<&Paths>) 
     let dirs = ProbeDirs::from_env(paths);
     let (quota_cfg, probe_dirs) = (cfg.quota.clone(), dirs.clone());
     let probed = tokio::task::spawn_blocking(move || {
-        let interactive = quota_probe::interactive_use(&probe_dirs, now);
+        let mut own_sessions = quota_probe::OwnSessions::new();
+        let interactive = quota_probe::interactive_use(&probe_dirs, &mut own_sessions, now);
         let results = quota_cfg
             .accounts
             .iter()
