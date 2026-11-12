@@ -212,17 +212,11 @@ fn claude_home(sandbox: &Path, home: Option<&Path>, folder: &Path) -> Result<Cla
     })
 }
 
-/// What the worker's git writes: its private git dir. Never the owner's refs, logs or
-/// `packed-refs` (review finding 1).
+/// What the worker's git writes: its private git dir, and the worktree's admin dir. Never
+/// the owner's refs, logs, `packed-refs` (review finding 1) or objects (finding 2), which the
+/// worker reads through its alternate.
 fn git_writable(git: &GitDirs, private: &Path) -> Vec<String> {
-    let mut out: Vec<String> = [git.common.join("objects")]
-        .iter()
-        .filter(|p| p.exists())
-        .map(|p| show(p))
-        .collect();
-    out.push(show(&git.admin));
-    out.push(show(private));
-    out
+    vec![show(&git.admin), show(private)]
 }
 
 /// The `names` under `home` that exist, plus `extra` (the state dir) when it is a folder.

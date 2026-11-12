@@ -192,3 +192,22 @@ fn env_path(name: &str) -> PathBuf {
 fn show(p: &Path) -> String {
     p.display().to_string()
 }
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_finding_2_a_worker_cannot_delete_the_owners_objects() {
+    let Some(w) = world() else { return };
+    let report = run_worker(
+        &w,
+        WorkerCli::Claude,
+        "objects=$(cat \"$GIT_DIR/objects/info/alternates\"); \
+         find \"$objects\" -type f -path '*/[0-9a-f][0-9a-f]/*' -exec rm -f {} + && echo DELETED; \
+         ls \"$objects\"/[0-9a-f][0-9a-f] | head -3; true",
+    );
+    let ok = Command::new("git")
+        .args(["-C", &show(&w.repo), "cat-file", "-e", "main^{tree}"])
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "the owner's objects were deleted: {report}");
+}
