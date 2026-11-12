@@ -39,7 +39,7 @@ Workers rest the same way: one limit message stops that account's workers with t
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboard-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/dashboard-light.png">
-  <img alt="The idlemax web dashboard: a MacBook and a server with guard verdicts and metrics, two recurring schedules, three queued jobs that each say why they are waiting, three running jobs, two pieces of advice, and Claude and Codex quota windows with the reserve marked on each bar" src="docs/assets/dashboard-light.png">
+  <img alt="The idlemax web dashboard: the Dispatcher card with its mode switch, Stop workers and two workers, a Needs you item, two runs waiting for review, the Budget, project switches, the dispatcher limits, the Did it help report, an offline Mac, and four worker jobs" src="docs/assets/dashboard-light.png">
 </picture>
 
 The web dashboard follows your system theme.
