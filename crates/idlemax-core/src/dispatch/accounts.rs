@@ -155,6 +155,7 @@ mod tests {
                 provider,
                 ..AccountConfig::default()
             }],
+            ..QuotaConfig::default()
         }
     }
 
