@@ -118,6 +118,9 @@ rm -rf ~/.idlemax   # only if you want your history gone too
 Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, the end-to-end test (a coordinator and an agent running one job), live runs in temporary state folders (including `job add --wait`, `why`, `logs`, `inbox`, `schedule`, `statusline`, `hooks` and `setup`), the TUI at 80x24 and 120x40, and the web dashboard in Chrome.
 CI runs the full suite on macOS and Ubuntu.
 
+It has run live with real AI on a Linux server (Ubuntu, `workbox` profile): real statusline quota readings, real Opus orchestrator passes on real repos (sending owner and infra items to needs you), about 60 real Claude Sonnet and Haiku workers in Herdr with checks and verdicts, stop and start, and review keep.
+A production server rollout and the Mac install are still unproven.
+
 | Area | Limit |
 |---|---|
 | Linux | verified on one Ubuntu 24.04 host with systemd 255 (`scripts/verify-linux.sh`: kernel signals, capped user scopes, a memory hog killed at `MemoryMax`, a CPU job held to its quota, `systemd-analyze verify` on both units); a production server rollout has not run |
