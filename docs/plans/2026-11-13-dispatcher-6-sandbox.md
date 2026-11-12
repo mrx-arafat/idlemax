@@ -119,7 +119,7 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 ## Progress Tracking
 
 - [x] Task 1: Add the sandbox setting and the pure decision
-- [ ] Task 2: Build the bwrap arguments and the sandbox's Claude home
+- [x] Task 2: Build the bwrap arguments and the sandbox's Claude home
 - [ ] Task 3: Serve the allow-list proxy and the in-sandbox relay
 - [ ] Task 4: Wrap the agent CLI in both hosts and check it took
 - [ ] Task 5: Report the sandbox in doctor
@@ -176,13 +176,13 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 **Definition of Done:**
 
-- [ ] A test pins the full argv for a Claude headless launch, including that the tmpfs over `$IDLEMAX_HOME` comes before the bind of the worktree that lives under it, and that `config` and `hooks` of the common dir are never bound writable.
-- [ ] A missing hidden path is left out of the argv.
-- [ ] `sandbox_claude_json` drops `mcpServers` and the owner's `projects`, keeps `oauthAccount`, and marks the worktree trusted.
+- [x] A test pins the full argv for a Claude headless launch, including that the tmpfs over `$IDLEMAX_HOME` comes before the bind of the worktree that lives under it, and that `config` and `hooks` of the common dir are never bound writable.
+- [x] A missing hidden path is left out of the argv.
+- [x] `sandbox_claude_json` drops `mcpServers` and the owner's `projects`, keeps `oauthAccount`, and marks the worktree trusted.
 
 **Verify:**
 
-- [ ] `cargo test -p idlemax-core sandbox`
+- [x] `cargo test -p idlemax-core sandbox`
 
 ### Task 3: Serve the allow-list proxy and the in-sandbox relay
 

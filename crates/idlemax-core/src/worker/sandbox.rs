@@ -1,6 +1,9 @@
 //! Domain: the worker sandbox of A13: whether one launch is wrapped in the OS sandbox, runs
 //! with the soft fences only, or is refused, and which network hosts its proxy opens. Pure.
 
+pub mod bwrap;
+pub mod claude_home;
+
 use serde::{Deserialize, Serialize};
 
 use super::WorkerCli;
