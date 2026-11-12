@@ -271,22 +271,26 @@ mod gather_tests {
     #[test]
     fn a_server_only_account_holds_only_the_server_margin_for_the_owner() {
         let mut store = Store::open_in_memory().unwrap();
-        readings(&mut store, T0, 40.0, 10.0, T0 + 72 * HOUR);
-        let cfg = claude_cfg();
-        let spendable = |store: &Store| budgets_now(store, &cfg, &cfg, T0)[0].spendable_pct;
+        // No use this week, so only the hold for the owner and the safety margin are kept.
+        readings(&mut store, T0, 0.0, 1.0, T0 + 72 * HOUR);
+        let mut cfg = claude_cfg();
+        let spendable =
+            |store: &Store, cfg: &Config| budgets_now(store, cfg, cfg, T0)[0].spendable_pct;
+        let near = |got: f64, want: f64| assert!((got - want).abs() < 1e-9, "{got} != {want}");
 
         // No device row says who uses the account: the owner's full reserve holds.
-        let reserve = spendable(&store);
-        assert!((reserve - 40.0 / 3.0).abs() < 1e-9, "{reserve}");
+        let reserve = spendable(&store, &cfg);
+        near(reserve, 40.0 / 3.0);
 
-        // Listed only by a server, the hold is the 5.0 margin minus the owner's week (0).
+        // Listed only by a server, the owner keeps just the 5.0 margin: 100 - 10 - 5 over 3 days.
         device(&mut store, "wb", DeviceProfile::Production, &["max"]);
-        let server_only = spendable(&store);
-        assert!((server_only - 50.0 / 3.0).abs() < 1e-9, "{server_only}");
+        near(spendable(&store, &cfg), 85.0 / 3.0);
+        cfg.quota.server_only_margin_pct = 20.0;
+        near(spendable(&store, &cfg), 70.0 / 3.0);
 
         // A laptop that lists it too takes the override away again.
         device(&mut store, "lap", DeviceProfile::Laptop, &["max"]);
-        assert!((spendable(&store) - reserve).abs() < 1e-9);
+        near(spendable(&store, &cfg), reserve);
     }
 
     #[test]

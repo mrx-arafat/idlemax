@@ -182,6 +182,23 @@ fn not_logged_in_and_login_unknown() {
 
     // An unrelated device is not refused
     assert!(usable_on(&problems, "other-dev", "claude-a").is_ok());
+
+    // A login without an id, or no reading at all, cannot be told apart either.
+    let no_id = Login::In { id: None };
+    for login in [Some(&no_id), None] {
+        let dev = [DeviceLogins {
+            device: "dev",
+            profile: DeviceProfile::Production,
+            accounts: &dev1_accs,
+            has_claude: true,
+            claude_login: login,
+        }];
+        let kinds: Vec<_> = account_problems(&cfg, &dev, &[], 1000)
+            .into_iter()
+            .map(|p| p.kind)
+            .collect();
+        assert_eq!(kinds, [ProblemKind::LoginUnknown], "{login:?}");
+    }
 }
 
 #[test]

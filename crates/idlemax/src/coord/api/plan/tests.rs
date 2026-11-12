@@ -516,7 +516,7 @@ fn an_account_closed_on_a_device_is_taken_out_of_its_list_with_a_note() {
         .find(|n| n.starts_with("mac: max"))
         .unwrap();
     assert!(
-        note.contains("not logged in to Claude") && note.contains("claude login"),
+        note.contains("not logged in to Claude") && note.contains("run claude auth login on"),
         "{note}"
     );
     crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0 + 2_000, false).unwrap();

@@ -34,8 +34,6 @@ pub fn device_logins(devices: &[DeviceView]) -> Vec<DeviceLogins<'_>> {
         .collect()
 }
 
-// SHORTCUT: Spec 5 Task 1 renames `MacosLaptop` to `Laptop` and `LinuxServer` to `Workbox` or
-// `Production`; match the new `Laptop` name here when that task lands.
 fn is_laptop(profile: DeviceProfile) -> bool {
     profile == DeviceProfile::Laptop
 }
@@ -122,7 +120,7 @@ pub fn account_problems(
                             "device {} lists account {} but is not logged in to Claude",
                             d.device, account.name
                         ),
-                        fix: format!("run claude login on {}", d.device),
+                        fix: format!("run claude auth login on {}", d.device),
                     });
                 }
                 Some(Login::Unknown { .. }) | Some(Login::In { id: None }) | None => {
@@ -381,44 +379,35 @@ pub fn server_only(cfg: &QuotaConfig, account: &str, devices: &[DeviceLogins<'_>
         return false;
     }
 
-    if acc.provider == Provider::Claude {
-        let mut listing_ids = BTreeSet::new();
-        for d in &listing {
-            match d.claude_login {
-                Some(Login::In { id: Some(ref id) }) => {
-                    listing_ids.insert(id.as_str());
-                }
-                _ => return false,
-            }
-        }
-        if listing_ids.len() != 1 {
-            return false;
-        }
-        let Some(&login_id) = listing_ids.iter().next() else {
-            return false;
-        };
+    acc.provider != Provider::Claude || claude_login_is_server_only(&listing, devices)
+}
 
-        for d in devices.iter().filter(|d| is_laptop(d.profile)) {
-            // A laptop that reports In with the id a listing device reports makes it false
-            if let Some(Login::In { id: Some(ref id) }) = d.claude_login {
-                if id == login_id {
-                    return false;
-                }
+/// The listing devices share one known Claude login, and no laptop is or may be on it.
+fn claude_login_is_server_only(
+    listing: &[&DeviceLogins<'_>],
+    devices: &[DeviceLogins<'_>],
+) -> bool {
+    let mut ids = BTreeSet::new();
+    for d in listing {
+        match d.claude_login {
+            Some(Login::In { id: Some(id) }) => {
+                ids.insert(id.as_str());
             }
-            // And so does a laptop with has_claude that reports Unknown, In without an id or nothing
-            if d.has_claude {
-                match d.claude_login {
-                    None | Some(Login::Unknown { .. }) | Some(Login::In { id: None }) => {
-                        return false;
-                    }
-                    Some(Login::Out) => {}
-                    Some(Login::In { id: Some(_) }) => {}
-                }
-            }
+            _ => return false,
         }
     }
-
-    true
+    let (Some(&login_id), 1) = (ids.iter().next(), ids.len()) else {
+        return false;
+    };
+    devices.iter().filter(|d| is_laptop(d.profile)).all(|d| {
+        match d.claude_login {
+            // The laptop is on the same login.
+            Some(Login::In { id: Some(id) }) => id != login_id,
+            // A laptop with claude that cannot say which login it holds may be on it.
+            None | Some(Login::Unknown { .. }) | Some(Login::In { id: None }) => !d.has_claude,
+            Some(Login::Out) => true,
+        }
+    })
 }
 
 #[cfg(test)]
