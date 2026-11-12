@@ -1,5 +1,7 @@
 use idlemax_core::protocol::Heartbeat;
+use idlemax_core::quota::login::Login;
 use idlemax_core::quota::{AccountConfig, Provider};
+use idlemax_core::types::DeviceProfile;
 use idlemax_core::types::{QuotaSnapshot, QuotaWindowKind};
 
 use super::*;
@@ -251,6 +253,61 @@ mod gather_tests {
         record_open_days(&mut store, &cfg, &cfg, T0).unwrap();
         let today = &store.budget_days("max", 0).unwrap()[0];
         assert!(today.spendable_pct.is_some() && today.basis.is_some() && today.why.is_some());
+    }
+
+    /// A device row: its profile, the accounts it lists and its Claude login.
+    fn device(store: &mut Store, id: &str, profile: DeviceProfile, listed: &[&str]) {
+        let mut hb = Heartbeat::default();
+        hb.device.id = id.into();
+        hb.device.profile = profile;
+        hb.device.capabilities = vec!["claude".into()];
+        hb.device.ai_accounts = listed.iter().map(|a| a.to_string()).collect();
+        hb.device.claude_login = Some(Login::In {
+            id: Some("org-1".into()),
+        });
+        store.record_heartbeat(&hb, T0).unwrap();
+    }
+
+    #[test]
+    fn a_server_only_account_holds_only_the_server_margin_for_the_owner() {
+        let mut store = Store::open_in_memory().unwrap();
+        readings(&mut store, T0, 40.0, 10.0, T0 + 72 * HOUR);
+        let cfg = claude_cfg();
+        let spendable = |store: &Store| budgets_now(store, &cfg, &cfg, T0)[0].spendable_pct;
+
+        // No device row says who uses the account: the owner's full reserve holds.
+        let reserve = spendable(&store);
+        assert!((reserve - 40.0 / 3.0).abs() < 1e-9, "{reserve}");
+
+        // Listed only by a server, the hold is the 5.0 margin minus the owner's week (0).
+        device(&mut store, "wb", DeviceProfile::Production, &["max"]);
+        let server_only = spendable(&store);
+        assert!((server_only - 50.0 / 3.0).abs() < 1e-9, "{server_only}");
+
+        // A laptop that lists it too takes the override away again.
+        device(&mut store, "lap", DeviceProfile::Laptop, &["max"]);
+        assert!((spendable(&store) - reserve).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_status_lists_a_split_name_with_its_fix() {
+        use idlemax_core::quota::identity::ProblemKind;
+        let mut store = Store::open_in_memory().unwrap();
+        let cfg = claude_cfg();
+        device(&mut store, "one", DeviceProfile::Production, &["max"]);
+        let mut hb = Heartbeat::default();
+        hb.device.id = "two".into();
+        hb.device.ai_accounts = vec!["max".into()];
+        hb.device.capabilities = vec!["claude".into()];
+        hb.device.claude_login = Some(Login::In {
+            id: Some("org-2".into()),
+        });
+        store.record_heartbeat(&hb, T0).unwrap();
+        let status = crate::coord::api::jobs::cluster_status(&store, &cfg, T0).unwrap();
+        let problems = status.account_problems.unwrap();
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].kind, ProblemKind::SplitName);
+        assert!(problems[0].fix.contains("[[quota.accounts]]"));
     }
 }
 

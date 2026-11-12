@@ -29,6 +29,9 @@ fn beat(store: &mut Store, at: UnixMs, five: f64, state: LineState, running: &[i
     hb.device.id = "mac".into();
     hb.device.ai_accounts = vec!["max".into()];
     hb.device.capabilities = vec!["claude".into()];
+    hb.device.claude_login = Some(idlemax_core::quota::login::Login::In {
+        id: Some("org-1".into()),
+    });
     hb.quota = vec![
         snap(rolling_5h(), five),
         snap(QuotaWindowKind::Weekly, 30.0),

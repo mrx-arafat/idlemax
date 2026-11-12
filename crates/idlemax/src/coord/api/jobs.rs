@@ -11,6 +11,7 @@ use idlemax_core::control::{
     admit_job, global_paused, paused_accounts, plan_control, unknown_scope,
 };
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
+use idlemax_core::quota::identity::{account_problems, device_logins};
 use idlemax_core::quota::{self, QuotaView, SpendContext, MINUTE_MS, WEEK_MINUTES};
 use idlemax_core::types::{
     ControlAction, ControlScope, Event, EventKind, Job, JobId, JobSpec, JobStatus,
@@ -249,6 +250,9 @@ pub(super) fn cluster_status(
     };
     let capacities = device_capacities(&input, &snap.devices);
     let paused_accounts = paused_accounts(&snap.paused);
+    let weekly = store.latest_quota()?;
+    let account_problems =
+        account_problems(&cfg.quota, &device_logins(&snap.devices), &weekly, now);
     let mut devices = snap.devices;
     for (dv, capacity) in devices.iter_mut().zip(capacities) {
         dv.capacity = Some(capacity);
@@ -262,6 +266,7 @@ pub(super) fn cluster_status(
         devices,
         jobs: store.job_counts()?,
         open_advice: u64::try_from(open_advice).unwrap_or(u64::MAX),
+        account_problems: Some(account_problems),
     })
 }
 

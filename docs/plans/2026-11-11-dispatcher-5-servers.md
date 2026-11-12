@@ -601,14 +601,14 @@ Tell Spec 3's Budget when an account is used only by servers, so the owner's res
 
 **Definition of Done:**
 
-- [ ] Two devices that list `claude-a` and report the same login id give no problem, and `usable_on` allows both.
-- [ ] Two different login ids under `claude-a` give one `SplitName` that names both devices, and `usable_on` refuses `claude-a` on both with the fix in its text.
-- [ ] One login id under `claude-a` and `claude-b`, in that config order, leaves `claude-a` usable and refuses `claude-b`.
-- [ ] A device that lists `claude-a` and reports `Out` gives `NotLoggedIn` for that device only, and one that reports `Unknown` gives `LoginUnknown` with a message that starts with `cannot tell whether`.
-- [ ] Two `codex` accounts with fresh weekly readings of 41.0 and 41.5 that reset 2 minutes apart give one `SameReading` and stay usable; readings of 41.0 and 47.0 give none.
-- [ ] `server_only` is true for a `claude` account listed by two `workbox` devices while a `laptop` reports another login id, false once the `laptop` lists it, false when the `laptop` reports the same id without listing it, false with one `OwnerMayUse` warning when the `laptop` has `claude` and reports nothing, and false for an account nobody lists.
-- [ ] `server_only` is true for a `codex` account listed only by `workbox` devices whatever a `laptop` reports.
-- [ ] For an account listed only by `workbox` devices, the Budget from `budgets` equals the one `budget` gives with an override of 5.0, and for an account a `laptop` lists it equals the one with no override.
+- [x] Two devices that list `claude-a` and report the same login id give no problem, and `usable_on` allows both.
+- [x] Two different login ids under `claude-a` give one `SplitName` that names both devices, and `usable_on` refuses `claude-a` on both with the fix in its text.
+- [x] One login id under `claude-a` and `claude-b`, in that config order, leaves `claude-a` usable and refuses `claude-b`.
+- [x] A device that lists `claude-a` and reports `Out` gives `NotLoggedIn` for that device only, and one that reports `Unknown` gives `LoginUnknown` with a message that starts with `cannot tell whether`.
+- [x] Two `codex` accounts with fresh weekly readings of 41.0 and 41.5 that reset 2 minutes apart give one `SameReading` and stay usable; readings of 41.0 and 47.0 give none.
+- [x] `server_only` is true for a `claude` account listed by two `workbox` devices while a `laptop` reports another login id, false once the `laptop` lists it, false when the `laptop` reports the same id without listing it, false with one `OwnerMayUse` warning when the `laptop` has `claude` and reports nothing, and false for an account nobody lists.
+- [x] `server_only` is true for a `codex` account listed only by `workbox` devices whatever a `laptop` reports.
+- [x] For an account listed only by `workbox` devices, the Budget from `budgets` equals the one `budget` gives with an override of 5.0, and for an account a `laptop` lists it equals the one with no override.
 - [ ] With `claude-a` closed on one of two devices, the Plan gives that device no pick on `claude-a`, holds a note with the fix, and `launch_due` does not relaunch a `shed` run of that pair.
 - [ ] `GET /v1/status` carries `account_problems`, `idlemax quota` prints each with its fix, `dispatcher_view` lists a `SplitName` under `needs_you`, and the README and `docs/API.md` describe the rules and the new setting.
 - [ ] Verify: `cargo test -p idlemax-core quota::identity && cargo test -p idlemax-core quota::config && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax coord::api::budget && cargo test -p idlemax --bin idlemax coord::dispatch && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`

@@ -831,6 +831,14 @@ An old AI job (`cost = "ai"` with no `worker` section, such as the advisor's pas
 
 The dispatcher's orchestrator pass is an old AI job that skips the headroom row.
 
+One account name means one login on every device, and one login has one name, so two devices on the same login share one Budget and different logins never do.
+The coordinator checks this from the logins the agents report (`claude auth status --json`, no token is read) and closes what breaks it for workers; `idlemax quota` prints each problem with its fix under the table, and the plan names each closed device and account pair.
+A Claude account is closed on a device that lists it and reports a logged-out login, or no login it can read (`cannot tell whether`: run `idlemax doctor` there); an account name with two different logins is closed everywhere (give one login its own `[[quota.accounts]]` entry); and when two names resolve to one login every name after the first is closed (use one name on every device).
+For Codex, the name you give in `agent.ai_accounts` on each device is the account; list the same name on every device where that login is used. Two Codex names whose weekly readings reset within 5 minutes and read within 1 point of each other raise a warning that they may be one login.
+An account that only servers list (no laptop lists it, and for Claude no laptop reports or may report the same login) is a server-only account: its Budget holds only `quota.server_only_margin_pct` for you and learns nothing about your use, and its surplus is paced evenly over the days to the reset.
+A laptop that has `claude` but reports no login keeps the full reserve and raises an `OwnerMayUse` warning; add a `[[quota.accounts]]` entry for the laptop's own Claude account so its agent reports the login.
+Old AI jobs keep the device rule they have.
+
 A worker's Budget is the account's surplus: what of the weekly window would expire unused at the reset, given your usual daily use (learned from the last 7 account days, with half the week reserved for you until then) and a 10% safety margin, spread over the account days left.
 An account day is a 24-hour slot counted back from the weekly reset.
 `agy` and `opencode` accounts have no usage reading, so they run on `daily_cap_runs`, a fixed number of worker Runs per UTC day that you set in `[[quota.accounts]]`; without it no worker starts on them.
@@ -1207,6 +1215,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `quota.safety_margin_pct` | `10.0` | safety margin percent subtracted from surplus |
 | `quota.five_hour_stop_pct` | `60.0` | 5-hour window usage percent at which workers stop |
 | `quota.last_day_floor_pct` | `15.0` | minimum weekly reserve on the day before reset |
+| `quota.server_only_margin_pct` | `5.0` | weekly percent held for you on an account only servers use |
 | `quota.seed_small_pct` | `3.0` | seed estimate for an unmeasured small run (weekly %) |
 | `quota.seed_standard_pct` | `8.0` | seed estimate for an unmeasured standard run (weekly %) |
 | `quota.small_task_types` | `["broken_check"]` | task sources eligible for the small tier |

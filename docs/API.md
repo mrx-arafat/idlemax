@@ -383,6 +383,12 @@ An older coordinator cannot read the new profile names, so the coordinator is up
 - `{"state": "out"}`: logged out.
 - `{"state": "unknown", "reason": "..."}`: status could not be determined (e.g. timeout or parse error).
 
+`ClusterStatus.account_problems` (in `GET /v1/status`) lists what breaks "one account name, one login" for Claude accounts and the Codex same-reading warning; it is absent from a coordinator that predates it, which a client reads as unknown.
+Each entry is `{"kind", "accounts", "devices", "message", "fix"}` with `kind` one of `not_logged_in`, `login_unknown`, `split_name`, `one_login_two_names`, `same_reading` and `owner_may_use`.
+The first four close the account for workers on the devices named (all devices for `split_name`; every name after the first for `one_login_two_names`), `same_reading` and `owner_may_use` only warn.
+The plan takes a closed account out of that device's `ai_accounts` and adds a note with the message and the fix.
+`quota.server_only_margin_pct` (default 5.0) is the weekly percent held for the owner on an account that only servers list.
+
 ## How much of each device is used
 
 `GET /v1/status` (and the reply of `POST /v1/control`) answers "how much is used, how much is idle, and why" without a `why` call per job.

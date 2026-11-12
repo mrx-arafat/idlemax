@@ -233,6 +233,9 @@ pub(crate) fn pass_world() -> (Store, Config, impl Fn(&mut Store, UnixMs)) {
         hb.device.id = "mac".into();
         hb.device.ai_accounts = vec!["max".into()];
         hb.device.capabilities = vec!["claude".into()];
+        hb.device.claude_login = Some(idlemax_core::quota::login::Login::In {
+            id: Some("org-1".into()),
+        });
         hb.quota = vec![
             snap(rolling_5h(), 20.0),
             snap(QuotaWindowKind::Weekly, 30.0),
@@ -371,6 +374,9 @@ fn five_hour_at(store: &mut Store, at: UnixMs, five_pct: f64) {
     hb.device.id = "mac".into();
     hb.device.ai_accounts = vec!["max".into()];
     hb.device.capabilities = vec!["claude".into()];
+    hb.device.claude_login = Some(idlemax_core::quota::login::Login::In {
+        id: Some("org-1".into()),
+    });
     hb.quota = vec![
         snap(rolling_5h(), five_pct),
         snap(QuotaWindowKind::Weekly, 30.0),
@@ -472,4 +478,35 @@ async fn a_pass_proposes_a_rule_for_a_rejected_run_and_it_waits_open() {
     let all: Vec<idlemax_core::dispatch::proposal::Proposal> = res.json().await.unwrap();
     assert_eq!(all.len(), 1, "{all:?}");
     assert_eq!((all[0].run, all[0].status), (run.id, ProposalStatus::Open));
+}
+
+#[test]
+fn an_account_closed_on_a_device_is_taken_out_of_its_list_with_a_note() {
+    use idlemax_core::protocol::Heartbeat;
+    use idlemax_core::quota::login::Login;
+    let (mut store, cfg, _) = pass_world();
+    let mut hb = Heartbeat::default();
+    hb.device.id = "mac".into();
+    hb.device.ai_accounts = vec!["max".into()];
+    hb.device.capabilities = vec!["claude".into()];
+    hb.device.claude_login = Some(Login::Out);
+    hb.room = Some(idlemax_core::dispatch::room::RoomDecision {
+        state: idlemax_core::dispatch::room::LineState::Run,
+        open_slots: 2,
+        ..Default::default()
+    });
+    store.record_heartbeat(&hb, T0 + 1_000).unwrap();
+
+    let plan = gather_plan(&store, &cfg, &cfg, T0 + 2_000).unwrap().plan;
+    let note = plan
+        .notes
+        .iter()
+        .find(|n| n.starts_with("mac: max"))
+        .unwrap();
+    assert!(
+        note.contains("not logged in to Claude") && note.contains("claude login"),
+        "{note}"
+    );
+    crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0 + 2_000, false).unwrap();
+    assert_eq!(passes(&store), 0);
 }

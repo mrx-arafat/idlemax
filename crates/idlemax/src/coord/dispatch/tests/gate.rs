@@ -23,6 +23,9 @@ fn beat_both(store: &mut Store, at: UnixMs, max_five: f64, pro_five: f64) {
     hb.device.id = "mac".into();
     hb.device.ai_accounts = vec!["max".into(), "pro".into()];
     hb.device.capabilities = vec!["claude".into(), "codex".into()];
+    hb.device.claude_login = Some(idlemax_core::quota::login::Login::In {
+        id: Some("org-1".into()),
+    });
     hb.quota = vec![
         snap("max", rolling_5h(), max_five),
         snap("max", QuotaWindowKind::Weekly, 30.0),

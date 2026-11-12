@@ -267,6 +267,11 @@ pub struct ClusterStatus {
     /// empty).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accounts: Option<Vec<AccountCapacity>>,
+    /// Account names that break "one login, one name" or have no known login on a device
+    /// that lists them (Spec 5); absent from a coordinator that predates it (unknown, not
+    /// empty).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_problems: Option<Vec<crate::quota::AccountProblem>>,
 }
 
 /// POST /v1/control and POST /v1/local/control (local accepts Global scope only).

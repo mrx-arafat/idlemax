@@ -375,3 +375,25 @@ fn the_budget_table_shows_percent_or_runs_and_why_a_closed_account_runs_no_worke
     let old: QuotaView = serde_json::from_str(r#"{"account":"claude-max"}"#).unwrap();
     assert!(!quota(&[old], &[], NOW).contains("BUDGET"));
 }
+
+#[test]
+fn account_problems_print_one_line_each_with_the_fix() {
+    use idlemax_core::quota::{AccountProblem, ProblemKind};
+    let problem = AccountProblem {
+        kind: ProblemKind::SplitName,
+        accounts: vec!["claude-a".into()],
+        devices: vec!["one".into(), "two".into()],
+        message: "account claude-a has different Claude logins across devices".into(),
+        fix: "give one login its own [[quota.accounts]] entry".into(),
+    };
+    assert_eq!(super::account_problems(&[]), "");
+    let text = super::account_problems(&[problem]);
+    assert!(
+        text.contains("account claude-a has different Claude logins"),
+        "{text}"
+    );
+    assert!(
+        text.contains("fix: give one login its own [[quota.accounts]] entry"),
+        "{text}"
+    );
+}

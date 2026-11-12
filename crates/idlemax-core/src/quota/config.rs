@@ -17,6 +17,7 @@ pub struct QuotaConfig {
     pub last_day_floor_pct: f64,
     pub seed_small_pct: f64,
     pub seed_standard_pct: f64,
+    pub server_only_margin_pct: f64,
     pub small_task_types: Vec<String>,
     pub claude_small_model: Option<String>,
     pub claude_standard_model: Option<String>,
@@ -38,6 +39,7 @@ impl Default for QuotaConfig {
             last_day_floor_pct: 15.0,
             seed_small_pct: 3.0,
             seed_standard_pct: 8.0,
+            server_only_margin_pct: 5.0,
             small_task_types: vec!["broken_check".into()],
             claude_small_model: Some("haiku".into()),
             claude_standard_model: Some("sonnet".into()),
@@ -79,6 +81,7 @@ impl QuotaConfig {
             ("quota.last_day_floor_pct", self.last_day_floor_pct),
             ("quota.seed_small_pct", self.seed_small_pct),
             ("quota.seed_standard_pct", self.seed_standard_pct),
+            ("quota.server_only_margin_pct", self.server_only_margin_pct),
         ];
         for (key, val) in pcts {
             if !(0.0..=100.0).contains(&val) || val.is_nan() {
@@ -271,6 +274,13 @@ daily_cap_runs = 0
         let err = Config::parse(bad_pct).unwrap_err().to_string();
         assert!(
             err.contains("quota.five_hour_stop_pct"),
+            "expected setting name in {err}"
+        );
+
+        let bad_server_margin = "[quota]\nserver_only_margin_pct = -1.0\n";
+        let err = Config::parse(bad_server_margin).unwrap_err().to_string();
+        assert!(
+            err.contains("quota.server_only_margin_pct"),
             "expected setting name in {err}"
         );
 

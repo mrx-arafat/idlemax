@@ -8,6 +8,7 @@ use idlemax_core::quota::budget::{budget, Budget, BudgetInput};
 use idlemax_core::quota::cost::{
     cost_table, expected, run_costs, tier_costs, CostKey, CostTable, RunCost, RunSample,
 };
+use idlemax_core::quota::identity::{device_logins, server_only};
 use idlemax_core::quota::owner_use::{day_slot, owner_use, utc_day_slot, DaySlot, DAY_MS};
 use idlemax_core::quota::spend::{gate, Gate};
 use idlemax_core::quota::{tier_of, AccountConfig, QuotaConfig, QuotaView, Tier};
@@ -15,6 +16,7 @@ use idlemax_core::types::{QuotaWindowKind, UnixMs};
 use idlemax_core::worker::pace::{measuring_week_end, week_spend, MEASURING_WEEK_MS};
 use idlemax_core::Config;
 
+use crate::coord::api::offline_after_ms;
 use crate::coord::store::{Store, StoreError};
 
 const WEEK_MS: i64 = 7 * DAY_MS;
@@ -80,6 +82,26 @@ struct Shared {
     paused: Vec<String>,
     hits: Vec<(String, UnixMs)>,
     interactive: Vec<(String, UnixMs)>,
+    /// Accounts only servers use (D19): the owner's reserve drops to a small margin.
+    server_only: Vec<String>,
+}
+
+/// The accounts of `cfg` that every known listing device is a server for, from the device
+/// rows the coordinator holds.
+fn server_only_accounts(
+    store: &Store,
+    cfg: &Config,
+    now: UnixMs,
+) -> Result<Vec<String>, StoreError> {
+    let devices = store.devices(now, offline_after_ms(cfg))?;
+    let logins = device_logins(&devices);
+    Ok(cfg
+        .quota
+        .accounts
+        .iter()
+        .filter(|a| server_only(&cfg.quota, &a.name, &logins))
+        .map(|a| a.name.clone())
+        .collect())
 }
 
 /// One Budget per entry of `[[quota.accounts]]`, in that order, and the cost table.
@@ -95,6 +117,7 @@ pub fn budgets_with_table(
         paused: paused_accounts(&store.paused_scopes()?),
         hits: store.limit_hits(now.saturating_sub(WEEK_MS))?,
         interactive: store.interactive_use()?,
+        server_only: server_only_accounts(store, cfg, now)?,
     };
     let list = cfg
         .quota
@@ -161,7 +184,10 @@ fn account_budget(
         committed_pct: committed,
         runs_today: store.runs_started_in(&a.name, slot.start_ms, slot.end_ms)?,
         measuring_left_pct: measuring_left(store, &a.name, now)?,
-        owner_reserve_override_pct: None,
+        owner_reserve_override_pct: shared
+            .server_only
+            .contains(&a.name)
+            .then_some(q.server_only_margin_pct),
         limit_hit_ms: shared
             .hits
             .iter()

@@ -5,6 +5,7 @@
 pub mod budget;
 mod config;
 pub mod cost;
+pub mod identity;
 pub mod login;
 pub mod owner_use;
 pub mod pass;
@@ -14,6 +15,10 @@ pub mod surplus;
 pub mod tier;
 
 pub use config::{QuotaConfig, QuotaConfigError};
+pub use identity::{
+    account_problems, device_logins, server_only, usable_on, AccountProblem, DeviceLogins,
+    ProblemKind,
+};
 pub use login::{claude_login, codex_login, keep_last_good, Login, LOGIN_KEEP_MS};
 pub use rules::{is_limit_message, spendable, views, SpendContext, SNAPSHOT_MAX_AGE_MS};
 pub use tier::{model_for, model_key, tier_for, tier_models, tier_of, Tier, TierPick};

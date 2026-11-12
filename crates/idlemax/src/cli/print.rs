@@ -3,7 +3,7 @@
 use idlemax_core::dispatch::view::DispatcherView;
 use idlemax_core::doctor::Report;
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
-use idlemax_core::quota::QuotaView;
+use idlemax_core::quota::{AccountProblem, QuotaView};
 use idlemax_core::types::{ControlScope, Event, Job, Recommendation, UnixMs};
 
 use super::rows::{self, guard_summary, rel};
@@ -144,6 +144,15 @@ pub fn quota(views: &[QuotaView], paused_accounts: &[String], now_ms: UnixMs) ->
         Some(budgets) => format!("{windows}\n\n{budgets}"),
         None => windows,
     }
+}
+
+/// One line per account problem with its fix, for under the quota table; empty for none.
+pub fn account_problems(problems: &[AccountProblem]) -> String {
+    problems
+        .iter()
+        .map(|p| format!("{} (fix: {})", p.message, p.fix))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn advice(list: &[Recommendation], now_ms: UnixMs) -> String {

@@ -142,7 +142,16 @@ pub async fn quota(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
     let (views_in, status) = tokio::try_join!(c.quota(), c.status())?;
     out.emit_with(
         &views_in,
-        |v| print::quota(v, &status.paused_accounts, now),
+        |v| {
+            let table = print::quota(v, &status.paused_accounts, now);
+            let problems =
+                print::account_problems(status.account_problems.as_deref().unwrap_or_default());
+            if problems.is_empty() {
+                table
+            } else {
+                format!("{table}\n\n{problems}")
+            }
+        },
         || {
             let windows = lists::quota(&views_in, &status.paused_accounts, now, out.fields())?;
             Ok(crate::cli::out::budget::with_budgets(
