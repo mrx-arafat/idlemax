@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use super::fnv64;
 use super::inputs::RepoReport;
 use super::project::Project;
-use crate::types::{ActivePolicy, Admission, CostClass, Job, JobId, JobSpec, JobStatus, UnixMs};
+use crate::types::{
+    ActivePolicy, Admission, CostClass, DeviceProfile, Job, JobId, JobSpec, JobStatus, UnixMs,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -128,6 +130,12 @@ fn ended(job: &Job) -> String {
         text.push_str(&format!(": {e}"));
     }
     text
+}
+
+/// Whether a device of this profile runs base checks: the check job is `cpu_heavy`, which a
+/// `production` device never takes, so one queued there would wait for ever (Spec 5 Task 7).
+pub fn checks_run_on(profile: DeviceProfile) -> bool {
+    crate::scheduler::cost_allowed(profile, CostClass::CpuHeavy)
 }
 
 /// The dispatcher job of one phase, run in the base checkout and admitted by the lines (A16).

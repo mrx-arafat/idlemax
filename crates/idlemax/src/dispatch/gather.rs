@@ -4,6 +4,7 @@
 use idlemax_core::advice::{merge_inputs, SessionMeta};
 use idlemax_core::dispatch::accounts::account_uses;
 use idlemax_core::dispatch::accounts::AccountUse;
+use idlemax_core::dispatch::check::checks_run_on;
 use idlemax_core::dispatch::check::BaseCheck;
 use idlemax_core::dispatch::inputs::StoredRepo;
 use idlemax_core::dispatch::orchestrator::{is_pass, pass_due, DueInput, Offer};
@@ -299,6 +300,14 @@ fn notes(
     let mut out = Vec::new();
     for v in projects.iter().filter(|v| v.project.enabled) {
         let p = &v.project;
+        let device = devices.iter().find(|d| d.info.id == p.device);
+        if device.is_some_and(|d| !checks_run_on(d.info.profile)) {
+            out.push(format!(
+                "{}: base checks do not run on a production device",
+                p.name
+            ));
+            continue;
+        }
         if p.settings.check_command.is_empty() {
             continue;
         }

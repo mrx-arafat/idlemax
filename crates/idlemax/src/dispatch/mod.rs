@@ -13,7 +13,9 @@ pub mod rules_file;
 pub use gather::{gather_plan, project_views, Gathered};
 pub use orchestrate::ingest_pass;
 
+use idlemax_core::control::device_gate;
 use idlemax_core::control::may_assign;
+use idlemax_core::dispatch::check::checks_run_on;
 use idlemax_core::dispatch::check::{check_job, next_step, BaseCheck, CheckStep, Phase};
 use idlemax_core::dispatch::inputs::StoredRepo;
 use idlemax_core::dispatch::project::{Project, ProjectView};
@@ -63,7 +65,10 @@ fn recheck_due_projects(
     let projects = store.list_projects(None)?;
 
     for dev in &devices {
-        let allowed = dev.online && may_assign(&paused_scopes, &dev.info.id, dev.local_paused);
+        let allowed = dev.online
+            && may_assign(&paused_scopes, &dev.info.id, dev.local_paused)
+            && device_gate(dev).is_none()
+            && checks_run_on(dev.info.profile);
         if !allowed {
             continue;
         }
@@ -120,7 +125,7 @@ fn base_checks_step(store: &mut Store, now: UnixMs) -> Result<(), StoreError> {
     let open: Vec<String> = store
         .devices(now, i64::MAX)?
         .into_iter()
-        .filter(|d| idlemax_core::control::device_gate(d).is_none())
+        .filter(|d| device_gate(d).is_none() && checks_run_on(d.info.profile))
         .map(|d| d.info.id)
         .collect();
     for view in store.list_projects(None)? {

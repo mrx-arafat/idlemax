@@ -127,6 +127,13 @@ fn recheck_queues_nothing_when_propose_or_paused_or_not_due() {
     crate::dispatch::step(&mut store, &cfg, &auto, "", T0, false).unwrap();
     assert!(store.queued_jobs().unwrap().is_empty());
 
+    // An off device rechecks nothing either.
+    put_passed_check(&mut store, lib.id, 25);
+    store.set_device_dispatch("workbox", false, T0).unwrap();
+    crate::dispatch::step(&mut store, &cfg, &auto, "", T0, false).unwrap();
+    assert!(store.queued_jobs().unwrap().is_empty());
+    store.set_device_dispatch("workbox", true, T0).unwrap();
+
     put_passed_check(&mut store, lib.id, 25);
     store
         .apply_control(
@@ -140,6 +147,40 @@ fn recheck_queues_nothing_when_propose_or_paused_or_not_due() {
         .unwrap();
     crate::dispatch::step(&mut store, &cfg, &auto, "", T0, false).unwrap();
     assert!(store.queued_jobs().unwrap().is_empty());
+}
+
+#[test]
+fn a_production_device_runs_no_base_check_and_the_plan_says_why() {
+    use idlemax_core::types::DeviceProfile;
+    let (mut store, cfg, lib) = spent_world();
+    let mut hb = Heartbeat::default();
+    hb.device.id = "workbox".into();
+    hb.device.ai_accounts = vec!["oc".into()];
+    hb.device.profile = DeviceProfile::Production;
+    store.record_heartbeat(&hb, T0).unwrap();
+    let mut auto = cfg.clone();
+    auto.dispatcher.mode = Mode::Auto;
+
+    // No record: Spec 1 would queue the setup or the check now.
+    crate::dispatch::step(&mut store, &cfg, &auto, "", T0, false).unwrap();
+    let names: Vec<String> = store
+        .queued_jobs()
+        .unwrap()
+        .into_iter()
+        .map(|j| j.spec.name)
+        .collect();
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.starts_with("dispatch-setup") || n.starts_with("dispatch-check")),
+        "{names:?}"
+    );
+    let plan = gather_plan(&store, &cfg, &auto, T0).unwrap().plan;
+    let note = format!(
+        "{}: base checks do not run on a production device",
+        lib.name
+    );
+    assert!(plan.notes.contains(&note), "{:?}", plan.notes);
 }
 
 #[test]

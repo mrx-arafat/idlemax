@@ -704,6 +704,7 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 The coordinator's dispatcher step runs a switched-on project's base check again on the same commit when its device's quota is spent for today: the mode is `auto`, no owner stop is stored, the device is online and not paused, no account the device lists is usable and at least one has the Budget basis `spent` or `five_hour_stop`, and the last check finished more than 24 hours ago.
 It does this by deleting the project's `base_checks` row, so the existing check job (`dispatch-setup` or `dispatch-check`, admitted by the lines) is queued again; no new route or field is added.
 The run costs no quota, and a failed check becomes a `broken_check` task as before.
+An off device rechecks nothing, and a `production` device runs no base check at all, since it never takes the `cpu_heavy` check job: the plan notes `<project>: base checks do not run on a production device` instead.
 
 ### The orchestrator pass
 

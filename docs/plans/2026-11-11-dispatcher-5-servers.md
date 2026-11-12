@@ -137,7 +137,7 @@ The repository is public: no address, host name or device id of the owner's mach
 - [ ] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
 - [x] Task 5: Read each device's Claude login and check the logins in doctor
 - [ ] Task 6: Keep one Budget per login and pace a server-only account
-- [ ] Task 7: Run the base checks again when the day's budget is spent
+- [x] Task 7: Run the base checks again when the day's budget is spent
 - [ ] Task 8: Add the headless runner
 - [x] Task 9: Give each device its own credential
 - [x] Task 10: Refuse a public coordinator address and write the server rollout
@@ -659,9 +659,9 @@ A failing check becomes a Task of source `broken_check` through Spec 1's own che
 - [x] `budget_spent` is true for accounts with the bases `spent` and `five_hour_stop`, false when one account is usable, false for no accounts and false for one `paused` account.
 - [x] `checks_due` returns nothing when `allowed` or `spent` is false, for a project checked 23 hours ago and for one with an active check, and returns a project checked 25 hours ago.
 - [x] A coordinator test with a `workbox` that is on, mode `auto`, one account with the basis `spent` and a check that passed 25 hours ago runs `step` and finds one new queued `dispatch-check` job for the same base commit; a second `step` queues nothing more.
-- [ ] The same test queues nothing in mode `propose`, for an off device, while a global pause holds the device, and for a check that passed 23 hours ago.
+- [x] The same test queues nothing in mode `propose`, for an off device, while a global pause holds the device, and for a check that passed 23 hours ago.
 - [x] After the new check job is reported as failed with exit code 1, `discover` returns one Task with the source `broken_check` for that project.
-- [ ] For a `production` device with one project on, `step` queues no `dispatch-setup` and no `dispatch-check` job and the Plan holds the note.
+- [x] For a `production` device with one project on, `step` queues no `dispatch-setup` and no `dispatch-check` job and the Plan holds the note.
 - [x] The README and `docs/API.md` say when checks run again and that they cost no quota.
 - [x] Verify: `cargo test -p idlemax-core worker::free_checks && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
