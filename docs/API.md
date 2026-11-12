@@ -548,12 +548,13 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 - Per device, `room` is the worker room the agent reported (`hold` with `this agent reports no worker room` when it sent none), and `held` says why the device takes nothing whatever its room: `offline`, `paused by you: idlemax resume`, or `kill switch or local pause is on`.
   A device takes picks only in `propose` mode, not held, with the room at `run`; it has `room.open_slots` slots.
 - Each pick names `project`, `task`, `title`, `provider`, `account`, `model`, the orchestrator's `reason`, `by: "orchestrator"`, the `scope_paths` the orchestrator named and the `avoid_paths` a worker must not touch.
-  A pick comes only from an orchestrator pass and only when its task is offered to that device, its account is usable and listed in the device's `agent.ai_accounts` with the provider's CLI installed, and its model is in `dispatcher.worker_models`.
+  A pick comes only from an orchestrator pass and only when its task is offered to that device, its account is usable and listed in the device's `agent.ai_accounts` with the provider's CLI installed, and the quota rules place it: its account's Budget has room for the Run's estimate, and its model is the one the task's tier sets for that provider (`quota.<provider>_small_model` or `quota.<provider>_standard_model`).
   A task in a project the owner is active in is picked only when no other project of the device has a ready task, never while the owner's changed-file list is cut, and then carries those files in `avoid_paths`.
 - `empty` counts the slots left over with one reason: no ready task, tasks the orchestrator has not judged, why the next pick could not be used, or that the orchestrator picked nothing more.
 - `not_judged` lists the ready tasks no orchestrator pass has seen, in plan order; they never fill a slot.
 - `needs_you` lists the tasks that need the owner, each with its reason in `needs_you`.
-- `accounts` applies the simple rule: an account is usable while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota, with a fresh weekly reading and no usage limit in the current window; agy and API accounts have no reading and are not usable.
+- `accounts` lists one entry per configured account: `usable` and `why` are its Budget's (see `GET /v1/quota`), and the two used percents come from the readings.
+- A stored pick is checked again against the Budgets each time the plan is built: a placed pick takes the model of its task's tier (its reason gains `(model set by the tier rule)` when that differs from what the orchestrator named), and a refused one fills no slot; the empty slot's reason is `<task title>: <refusal text>`, such as `needs 8.0%, 5.3% left today`, `the owner is using this account and codex-pro has room`, `no model is set: idlemax config set quota.codex_small_model <model>`, or `account claude-max may not be spent: <the Budget's why>`.
 - `notes` holds per-project lines, such as a focused check that has not run on the base commit yet and why, and `<device>: herdr gave no folders` for a device whose newest feed came without a Herdr view.
 
 ### The orchestrator pass
@@ -570,6 +571,10 @@ Its answer must be:
             "reason": "small, and its done check is a command", "scope_paths": ["src/sync.rs"]}],
  "needs_you": [{"task": "roadmap:3:dark-mode", "reason": "the item needs a design decision"}]}
 ```
+
+In the pass input each task carries `tier` (`small`, `standard`, or `needs_you` after two failed checks), and `accounts` is the quota part: at most 8 accounts with room, each with its name, provider, `unit`, `left_pct`, `owner_active` and per tier the model and the estimated cost of one Run, plus `more_accounts`, the number left out.
+No pass is queued while no offered account has room for one Run of its cheapest tier.
+A pick is then checked against the quota rules: it takes the model of its task's tier; a pick refused for good (an account not offered, a tier model that is not set, a task that failed its checks twice) is dropped and its refusal named under `dropped`; one that only does not fit now (over the day's budget, or on an account the owner is using while a free one has room) is kept.
 
 At most 8 picks, 20 needs-you entries, 300 characters per reason and 20 scope paths of at most 300 characters per pick; a shape error, an unknown field or a length over a limit rejects the whole answer.
 A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.

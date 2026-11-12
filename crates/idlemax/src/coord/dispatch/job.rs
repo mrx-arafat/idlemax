@@ -4,7 +4,7 @@
 use idlemax_core::dispatch::plan::Pick;
 use idlemax_core::dispatch::project::ProjectView;
 use idlemax_core::dispatch::task::Task;
-use idlemax_core::quota::Provider;
+use idlemax_core::quota::{model_for, Provider, Tier};
 use idlemax_core::types::{ActivePolicy, CostClass, JobSpec, UnixMs};
 use idlemax_core::worker::{name, Baseline, Reviewer, WorkerAction, WorkerCli, WorkerSpec};
 
@@ -53,9 +53,9 @@ pub(super) fn worker_spec(
     }
 }
 
-/// The first usable account of another provider whose CLI may review, with its first model.
+/// The first usable account of another provider whose CLI may review, with its standard
+/// tier model.
 pub(super) fn reviewer(step: &LaunchStep<'_>, g: &Gathered, pick: &Pick) -> Option<Reviewer> {
-    let models = step.live.dispatcher.models();
     g.plan
         .accounts
         .iter()
@@ -68,7 +68,7 @@ pub(super) fn reviewer(step: &LaunchStep<'_>, g: &Gathered, pick: &Pick) -> Opti
                 .iter()
                 .any(|r| r == cli.as_str())
                 .then_some(())?;
-            let model = models.iter().find(|(p, _)| *p == a.provider)?.1.clone();
+            let model = model_for(a.provider, Tier::Standard, &step.live.quota)?.to_string();
             Some(Reviewer {
                 cli,
                 model,

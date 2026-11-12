@@ -908,12 +908,17 @@ A task without a base branch or without a check that proves it done, a roadmap i
 To learn whether the check fails, the agent keeps a detached checkout of the base commit at `$IDLEMAX_HOME/checks/<project id>`, never your own folder, and the coordinator runs the project's setup and check commands there as dispatcher jobs named `dispatch-setup:<project>` and `dispatch-check:<project>`.
 The checkout is made or moved only while the worker room is `run` and no pause or kill switch is set, with repository hooks off.
 The orchestrator is one short `claude -p --model opus` job that reads a compact summary of the offered tasks, projects and usable accounts plus the rules in `$IDLEMAX_HOME/rules.md`, and answers with picks: task, account, model, scope paths and a one-sentence reason, and the tasks it sends to "needs you".
-It runs with no tools, no hooks and no MCP servers, only when its inputs changed (at most once an hour by itself) or on `idlemax plan --refresh`, and only on a Claude account the simple rule below allows.
+It runs with no tools, no hooks and no MCP servers, only when its inputs changed (at most once an hour by itself) or on `idlemax plan --refresh`, and only on a Claude account whose Budget is usable, while some account has room for one more Run today.
 It decides which task, provider and model fill a slot; it cannot decide whether a slot exists, and a pick naming anything it was not offered is dropped.
 A task it sends to "needs you" stays there until the task changes.
 Edit `rules.md` to change how it judges; the hard limits are not in that file.
 Nothing is ever picked without the orchestrator: a ready task no orchestrator pass has seen is listed under "not judged by the orchestrator" and fills no slot.
-An AI account may be used while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota.
+An AI account may be used while its Budget for today is usable (see [AI quota maximizer](#ai-quota-maximizer)); the Budget replaced the earlier simple rule of a 5-hour window under 60 percent and a 10 percent cap.
+
+Each task runs on a model tier.
+A task whose type is in `quota.small_task_types` (by default only `broken_check`) starts on the small tier (`quota.claude_small_model`, `haiku`), every other task on the standard tier (`quota.claude_standard_model`, `sonnet`).
+A task that failed its checks once is tried once more on the standard tier, in a new Run and a fresh session; after a second failure it goes on the "needs you" list with `failed its checks twice`.
+The orchestrator names the account; the model follows from the tier and that account's provider, and a provider whose tier model is not set gets no worker for that tier.
 
 It shows up in `git worktree list` of that repository; switching the project off leaves it in place, and `git worktree remove <dir>` removes it.
 
@@ -1146,7 +1151,6 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `dispatcher.swap_in_low_pages_per_sec` | `10.0` | swap-in must stay at or under this for a minute before a worker starts |
 | `dispatcher.swap_in_high_pages_per_sec` | `100.0` | swap-in above this for a minute sheds a worker |
 | `dispatcher.worker_mem_mib` | `512` | memory one worker is expected to take; sets how many workers fit under the hold line |
-| `dispatcher.worker_models` | `["claude:sonnet"]` | models a worker may use, as `provider:model` |
 | `workers.clis` | `[]` | agent CLIs that may run workers, `claude` or `codex`; empty means no worker starts |
 | `workers.reviewers` | `[]` | agent CLIs that may review a high-risk diff, `claude` or `codex` |
 | `workers.review_cap` | `3` | finished tasks per project that may wait for your review before idlemax moves on |

@@ -113,6 +113,8 @@ pub struct PlanInput<'a> {
     pub pass: Option<&'a PassResult>,
     pub picked_by: &'a str,
     pub notes: &'a [String],
+    /// Picks the quota rules refused now (task id, the refusal's text); they fill no slot.
+    pub refused: &'a [(String, String)],
 }
 
 /// The ready tasks of a device's switched-on projects, in plan order: projects by priority
@@ -199,28 +201,7 @@ fn device_plan(input: &PlanInput<'_>, dv: &DeviceView, used: &mut BTreeSet<Strin
         0
     };
     let offered = offered(input, &dv.info.id);
-    let mut picks = Vec::new();
-    let mut first_refusal = None;
-    for pp in input.pass.map(|p| p.picks.as_slice()).unwrap_or_default() {
-        if picks.len() >= slots as usize {
-            break;
-        }
-        let Some(task) = offered
-            .iter()
-            .find(|t| t.id == pp.task && !used.contains(&t.id))
-        else {
-            continue;
-        };
-        match check_pick(input, dv, &offered, task, pp) {
-            Ok(pick) => {
-                used.insert(task.id.clone());
-                picks.push(pick);
-            }
-            Err(why) => {
-                first_refusal.get_or_insert(why);
-            }
-        }
-    }
+    let (picks, first_refusal) = fill_slots(input, dv, &offered, slots, used);
     let left = slots.saturating_sub(u32::try_from(picks.len()).unwrap_or(u32::MAX));
     let empty = (left > 0).then(|| EmptySlots {
         count: left,
@@ -233,6 +214,44 @@ fn device_plan(input: &PlanInput<'_>, dv: &DeviceView, used: &mut BTreeSet<Strin
         picks,
         empty,
     }
+}
+
+/// The pass's picks that fill this device's slots, in the pass's order, and why the first
+/// pick that could not was refused.
+fn fill_slots(
+    input: &PlanInput<'_>,
+    dv: &DeviceView,
+    offered: &[&Task],
+    slots: u32,
+    used: &mut BTreeSet<String>,
+) -> (Vec<Pick>, Option<String>) {
+    let mut picks = Vec::new();
+    let mut first_refusal = None;
+    for pp in input.pass.map(|p| p.picks.as_slice()).unwrap_or_default() {
+        if picks.len() >= slots as usize {
+            break;
+        }
+        let Some(task) = offered
+            .iter()
+            .find(|t| t.id == pp.task && !used.contains(&t.id))
+        else {
+            continue;
+        };
+        if let Some((_, why)) = input.refused.iter().find(|(id, _)| *id == task.id) {
+            first_refusal.get_or_insert(format!("{}: {why}", task.title));
+            continue;
+        }
+        match check_pick(input, dv, offered, task, pp) {
+            Ok(pick) => {
+                used.insert(task.id.clone());
+                picks.push(pick);
+            }
+            Err(why) => {
+                first_refusal.get_or_insert(why);
+            }
+        }
+    }
+    (picks, first_refusal)
 }
 
 /// The reason for the slots left over: the first that applies.
@@ -280,11 +299,11 @@ fn check_pick(
     if !info.capabilities.iter().any(|c| c == cli) {
         return Err(format!("{title}: {cli} is not installed on {}", info.id));
     }
-    let provider = provider_name(account.provider);
     if !input.models.contains(&(account.provider, pp.model.clone())) {
+        let provider = provider_name(account.provider);
         return Err(format!(
-            "{title}: no model {} is set: idlemax config set dispatcher.worker_models {provider}:{}",
-            pp.model, pp.model
+            "{title}: no tier of {provider} uses the model {}",
+            pp.model
         ));
     }
     let avoid = owner_rule(input, offered, task)?;

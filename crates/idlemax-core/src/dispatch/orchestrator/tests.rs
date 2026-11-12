@@ -53,6 +53,7 @@ fn validate_keeps_offered_picks_and_drops_the_rest_by_name() {
         tasks: &refs,
         accounts: &accounts,
         models: &models,
+        quota: None,
     };
     let output = out(json!([
         pick("a", "max", "sonnet", &["src/a.rs", "tests"]),
@@ -131,6 +132,7 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         tasks: &refs,
         accounts,
         models: &models,
+        quota: None,
     };
     let (open, held) = ([device(LineState::Run)], [device(LineState::Hold)]);
     let ok_offer = offer(&usable);
@@ -144,6 +146,7 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         fingerprint: "new",
         newest: None,
         pass_active: false,
+        room: true,
     };
     assert_eq!(
         pass_due(&base),
@@ -185,4 +188,118 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         ..recent
     })
     .is_ok());
+}
+
+#[test]
+fn validate_places_each_pick_on_its_tier_and_keeps_one_that_may_fit_later() {
+    use crate::quota::budget::BudgetUnit;
+    use crate::quota::cost::{CostBasis, CostTable};
+    use crate::quota::pass::{AccountOffer, TierOffer};
+    use crate::quota::{QuotaConfig, Tier};
+    let mut fix = task("fix");
+    fix.source = TaskSource::BrokenCheck;
+    let tasks = [fix, task("big")];
+    let refs: Vec<&Task> = tasks.iter().collect();
+    let accounts = [
+        account("max", Provider::Claude, true),
+        account("cx", Provider::Codex, true),
+    ];
+    let tier = |tier, model: &str| TierOffer {
+        tier,
+        model: model.into(),
+        est_pct: 0.0,
+        basis: CostBasis::Seed,
+    };
+    let offer_of = |name: &str, provider, left_pct, tiers| AccountOffer {
+        account: name.into(),
+        provider,
+        unit: BudgetUnit::WeeklyPct,
+        left_pct,
+        owner_active: false,
+        tiers,
+    };
+    let account_offers = [
+        offer_of(
+            "max",
+            Provider::Claude,
+            5.0,
+            vec![tier(Tier::Small, "haiku"), tier(Tier::Standard, "sonnet")],
+        ),
+        offer_of(
+            "cx",
+            Provider::Codex,
+            50.0,
+            vec![tier(Tier::Standard, "gpt")],
+        ),
+    ];
+    let cfg = QuotaConfig {
+        codex_standard_model: Some("gpt".into()),
+        ..QuotaConfig::default()
+    };
+    let table = CostTable::default();
+    let quota = QuotaOffer {
+        accounts: &account_offers,
+        table: &table,
+        cfg: &cfg,
+        failed: &[],
+    };
+    let models = vec![
+        (Provider::Claude, "haiku".to_string()),
+        (Provider::Claude, "sonnet".to_string()),
+        (Provider::Codex, "gpt".to_string()),
+    ];
+    let offer = Offer {
+        tasks: &refs,
+        accounts: &accounts,
+        models: &models,
+        quota: Some(&quota),
+    };
+    let output = out(json!([
+        pick("fix", "max", "sonnet", &[]),
+        pick("big", "max", "sonnet", &[]),
+    ]));
+    let result = validate(&output, &offer).unwrap();
+    let placed: Vec<(&str, &str)> = result
+        .picks
+        .iter()
+        .map(|p| (p.task.as_str(), p.model.as_str()))
+        .collect();
+    assert_eq!(placed, [("fix", "haiku"), ("big", "sonnet")], "{result:?}");
+
+    let on_codex = out(json!([pick("fix", "cx", "gpt", &[])]));
+    let result = validate(&on_codex, &offer).unwrap();
+    assert!(result.picks.is_empty());
+    assert!(
+        result.dropped[0].contains("quota.codex_small_model"),
+        "{:?}",
+        result.dropped
+    );
+}
+
+#[test]
+fn no_pass_runs_when_no_account_has_room() {
+    let tasks = [task("a")];
+    let refs: Vec<&Task> = tasks.iter().collect();
+    let usable = [account("max", Provider::Claude, true)];
+    let models = models();
+    let offer = Offer {
+        tasks: &refs,
+        accounts: &usable,
+        models: &models,
+        quota: None,
+    };
+    let open = [device(LineState::Run)];
+    let input = DueInput {
+        now_ms: NOW,
+        mode: Mode::Propose,
+        asked: true,
+        devices: &open,
+        paused: &[],
+        offer: &offer,
+        fingerprint: "x",
+        newest: None,
+        pass_active: false,
+        room: false,
+    };
+    assert_eq!(pass_due(&input), Err(NO_ROOM.into()));
 }

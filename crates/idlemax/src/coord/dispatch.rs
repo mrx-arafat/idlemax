@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use idlemax_core::control::paused_accounts;
-use idlemax_core::dispatch::accounts::{AccountUse, FIVE_HOUR_STOP_PCT, MEASURING_WEEK_CAP_PCT};
+use idlemax_core::dispatch::accounts::{AccountUse, MEASURING_WEEK_CAP_PCT};
 use idlemax_core::dispatch::plan::{DevicePlan, Pick, PickedBy};
 use idlemax_core::dispatch::task::Task;
 use idlemax_core::dispatch::Mode;
@@ -106,6 +106,10 @@ fn stop_spent_accounts(
     }
     Ok(())
 }
+
+/// The 5-hour line of the simple account rule; the Budget's `stops_workers` replaces this
+/// stop site in Spec 3 Task 9.
+const FIVE_HOUR_STOP_PCT: f64 = 60.0;
 
 /// Stops the live workers of `scope` with their state saved: `stopped` for the owner's global
 /// stop, `shed` for an account.

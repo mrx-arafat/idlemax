@@ -51,9 +51,11 @@ fn beat(store: &mut Store, at: UnixMs, five: f64, state: LineState, running: &[i
 }
 
 /// The world of Spec 1's pass tests with a pass that picked both roadmap items, and a live
-/// config in `auto` with Claude workers allowed.
+/// config in `auto` with Claude workers allowed. A Run is estimated at 1 percent, so the
+/// measuring week's 10 percent (A7) leaves room for the launches these tests are about.
 fn world() -> (Store, Config, Config) {
-    let (mut store, cfg, _) = pass_world();
+    let (mut store, mut cfg, _) = pass_world();
+    cfg.quota.seed_standard_pct = 1.0;
     crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0, false).unwrap();
     let pick = |task: &str, reason: &str| {
         serde_json::json!({"task": task, "account": "max", "model": "sonnet",
@@ -305,8 +307,15 @@ fn a_spent_account_sheds_its_worker_which_resumes_when_the_device_let_it_go() {
 
 #[test]
 fn a_slot_refused_on_ten_sweeps_for_one_reason_leaves_one_event() {
-    let (mut store, cfg, mut live) = world();
-    live.workers.clis.clear();
+    // The project is at its review cap: with no worker CLI the plan would drop the picks
+    // before a launch could refuse them (Spec 3 Task 8).
+    let (mut store, cfg, live) = world();
+    for (i, state) in [RunState::Clean, RunState::NeedsYou, RunState::Running]
+        .into_iter()
+        .enumerate()
+    {
+        put_run(&mut store, &format!("other:{i}"), state, T0);
+    }
     let mut refusals = Refusals::default();
     for i in 0..10 {
         let at = T0 + 10_000 + i * 15_000;

@@ -103,6 +103,7 @@ struct World {
     tasks: Vec<Task>,
     accounts: Vec<AccountUse>,
     pass: Option<PassResult>,
+    refused: Vec<(String, String)>,
 }
 
 impl World {
@@ -116,6 +117,7 @@ impl World {
             tasks: vec![task("a", 1), task("b", 1)],
             accounts: vec![account(true)],
             pass: None,
+            refused: Vec::new(),
         }
     }
 
@@ -143,6 +145,7 @@ impl World {
             pass: self.pass.as_ref(),
             picked_by: "no orchestrator pass yet",
             notes: &[],
+            refused: &self.refused,
         })
     }
 }
@@ -253,4 +256,27 @@ fn a_held_device_and_mode_off_pick_nothing() {
     let mut off = World::new().with_pass(&["a"]);
     off.mode = Mode::Off;
     assert!(off.build().devices[0].picks.is_empty());
+}
+
+#[test]
+fn a_refused_pick_names_its_refusal_and_the_next_pick_fills_the_slot() {
+    let mut w = World::new().with_pass(&["a", "b"]);
+    w.devices = vec![device(1)];
+    w.refused = vec![("a".into(), "needs 8.0%, 5.3% left today".into())];
+    let plan = w.build();
+    let ids: Vec<&str> = plan.devices[0]
+        .picks
+        .iter()
+        .map(|p| p.task.as_str())
+        .collect();
+    assert_eq!(ids, ["b"]);
+
+    w.tasks.truncate(1);
+    let w = w.with_pass(&["a"]);
+    let plan = w.build();
+    assert!(plan.devices[0].picks.is_empty());
+    assert_eq!(
+        plan.devices[0].empty.as_ref().unwrap().reason,
+        "Do a: needs 8.0%, 5.3% left today"
+    );
 }

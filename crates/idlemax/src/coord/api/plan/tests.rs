@@ -157,6 +157,8 @@ pub(crate) fn pass_world() -> (Store, Config, impl Fn(&mut Store, UnixMs)) {
         provider: Provider::Claude,
         ..AccountConfig::default()
     }];
+    // Spec 2's worker CLIs: an account no worker can start on is never offered (A21).
+    cfg.workers.clis = vec!["claude".into()];
     let beat = move |store: &mut Store, at: UnixMs| {
         let snap = |window, used| QuotaSnapshot {
             account: "max".into(),
@@ -288,4 +290,87 @@ fn a_pass_runs_once_and_its_picks_and_judgments_last_until_things_change() {
     store.set_project_enabled(id, false).unwrap();
     let plan = gather_plan(&store, &cfg, &cfg, at).unwrap().plan;
     assert!(plan.devices[0].picks.is_empty());
+}
+
+/// Re-sends the readings of `max` with the 5-hour window at `five_pct`.
+fn five_hour_at(store: &mut Store, at: UnixMs, five_pct: f64) {
+    use idlemax_core::protocol::Heartbeat;
+    use idlemax_core::quota::rolling_5h;
+    use idlemax_core::types::{QuotaSnapshot, QuotaWindowKind};
+    let snap = |window, used| QuotaSnapshot {
+        account: "max".into(),
+        window,
+        used_pct: used,
+        resets_at_ms: Some(at + 3_600_000),
+        source: Default::default(),
+        at_ms: at,
+    };
+    let mut hb = Heartbeat::default();
+    hb.device.id = "mac".into();
+    hb.device.ai_accounts = vec!["max".into()];
+    hb.device.capabilities = vec!["claude".into()];
+    hb.quota = vec![
+        snap(rolling_5h(), five_pct),
+        snap(QuotaWindowKind::Weekly, 30.0),
+    ];
+    hb.room = Some(idlemax_core::dispatch::room::RoomDecision {
+        state: idlemax_core::dispatch::room::LineState::Run,
+        open_slots: 2,
+        ..Default::default()
+    });
+    store.record_heartbeat(&hb, at).unwrap();
+}
+
+#[test]
+fn a_pick_on_an_account_at_the_five_hour_stop_names_the_budgets_reason() {
+    let (mut store, cfg, _beat) = pass_world();
+    crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0, false).unwrap();
+    let envelope = serde_json::json!({"type": "result", "structured_output": {
+        "picks": [{"task": "roadmap:1:faster-sync", "account": "max", "model": "sonnet",
+                   "reason": "small", "scope_paths": []}], "needs_you": []}});
+    finish(&mut store, &cfg, &envelope.to_string(), T0 + 2_000);
+    five_hour_at(&mut store, T0 + 3_000, 62.0);
+    let plan = gather_plan(&store, &cfg, &cfg, T0 + 3_000).unwrap().plan;
+    assert!(plan.devices[0].picks.is_empty());
+    let reason = &plan.devices[0].empty.as_ref().unwrap().reason;
+    assert!(
+        reason.contains("5h window 62% used, stop line 60%"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn a_task_that_failed_its_checks_twice_needs_the_owner() {
+    use idlemax_core::worker::run::{Run, RunLaunch, RunState, Verdict};
+    let (mut store, cfg, _beat) = pass_world();
+    for _ in 0..2 {
+        let run = store
+            .insert_run(
+                &Run {
+                    device: "mac".into(),
+                    task: "roadmap:1:faster-sync".into(),
+                    account: "max".into(),
+                    start_ms: T0,
+                    updated_ms: T0,
+                    ..Run::default()
+                },
+                &RunLaunch::default(),
+            )
+            .unwrap();
+        let rejected = Run {
+            state: RunState::Rejected,
+            verdict: Some(Verdict::Rejected),
+            ..run
+        };
+        store.update_run(&rejected, RunState::Starting).unwrap();
+    }
+    crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0, false).unwrap();
+    let plan = gather_plan(&store, &cfg, &cfg, T0).unwrap().plan;
+    let judged = plan
+        .needs_you
+        .iter()
+        .find(|t| t.id == "roadmap:1:faster-sync")
+        .expect("judged");
+    assert_eq!(judged.needs_you.as_deref(), Some("failed its checks twice"));
+    assert!(!plan.not_judged.iter().any(|t| t.id == judged.id));
 }

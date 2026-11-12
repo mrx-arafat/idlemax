@@ -14,7 +14,10 @@ use super::task::Task;
 use super::{fnv64, DispatchError, Mode};
 use crate::control::may_assign;
 use crate::protocol::DeviceView;
+use crate::quota::cost::CostTable;
+use crate::quota::pass::{check_picks, AccountOffer, PickFacts};
 use crate::quota::Provider;
+use crate::quota::QuotaConfig;
 use crate::types::{is_dispatcher_job, ControlScope, DeviceId, JobSpec, UnixMs};
 
 #[cfg(test)]
@@ -36,6 +39,27 @@ pub struct Offer<'a> {
     /// The usable accounts.
     pub accounts: &'a [AccountUse],
     pub models: &'a [(Provider, String)],
+    /// The quota side of Spec 3: what each pick must fit. None only where a test checks the
+    /// answer's shape alone.
+    pub quota: Option<&'a QuotaOffer<'a>>,
+}
+
+/// The accounts with room, the cost table, the live `[quota]` and each task's failed checks.
+pub struct QuotaOffer<'a> {
+    pub accounts: &'a [AccountOffer],
+    pub table: &'a CostTable,
+    pub cfg: &'a QuotaConfig,
+    /// (task id, Runs whose verdict is `rejected`).
+    pub failed: &'a [(String, u32)],
+}
+
+impl QuotaOffer<'_> {
+    pub fn failed_checks(&self, task: &str) -> u32 {
+        self.failed
+            .iter()
+            .find(|(t, _)| t == task)
+            .map_or(0, |(_, n)| *n)
+    }
 }
 
 /// What decides whether the pass's inputs changed (A20).
@@ -59,6 +83,8 @@ pub struct DueInput<'a> {
     pub newest: Option<(&'a str, UnixMs)>,
     /// A pass job is queued, leased, running or paused.
     pub pass_active: bool,
+    /// An offered account has room for one Run of its cheapest tier (`quota::pass::any_room`).
+    pub room: bool,
 }
 
 /// The account and device a due pass runs on.
@@ -67,6 +93,10 @@ pub struct DuePass {
     pub account: String,
     pub device: DeviceId,
 }
+
+/// Why `pass_due` refuses when no account could place a worker: a pass would only spend Opus
+/// quota (D10.9).
+pub const NO_ROOM: &str = "no account has room for one more Run today";
 
 /// Why `pass_due` refuses because a pass job is already active.
 pub const PASS_ACTIVE: &str = "an orchestrator pass is already queued or running";
@@ -147,6 +177,9 @@ pub fn pass_due(input: &DueInput<'_>) -> Result<DuePass, String> {
     let Some((account, device)) = due else {
         return Err("no Claude account may be spent on a device with an open slot".into());
     };
+    if !input.room {
+        return Err(NO_ROOM.into());
+    }
     if input.pass_active {
         return Err(PASS_ACTIVE.into());
     }
@@ -226,7 +259,45 @@ pub fn validate(output: &Value, offer: &Offer<'_>) -> Result<PassResult, Dispatc
             None => result.picks.push(p),
         }
     }
+    if let Some(q) = offer.quota {
+        place(&mut result, offer.tasks, q);
+    }
     Ok(result)
+}
+
+/// Runs the quota check on the accepted picks: a placed pick takes its tier's model, a pick
+/// refused for good is dropped with the refusal's text, and one refused for now stays, since
+/// a slot that opens later may take it.
+fn place(result: &mut PassResult, tasks: &[&Task], q: &QuotaOffer<'_>) {
+    let source = |id: &str| {
+        tasks
+            .iter()
+            .find(|t| t.id == id)
+            .map_or("", |t| t.source.as_str())
+    };
+    let facts: Vec<PickFacts<'_>> = result
+        .picks
+        .iter()
+        .map(|p| PickFacts {
+            account: &p.account,
+            model: &p.model,
+            task_type: source(&p.task),
+            failed_checks: q.failed_checks(&p.task),
+        })
+        .collect();
+    let checked = check_picks(&facts, q.accounts, q.table, q.cfg);
+    let mut kept = Vec::new();
+    for (mut pick, outcome) in std::mem::take(&mut result.picks).into_iter().zip(checked) {
+        match outcome {
+            Ok(placed) => {
+                pick.model = placed.model;
+                kept.push(pick);
+            }
+            Err(r) if r.is_final() => result.dropped.push(format!("{}: {r}", pick.task)),
+            Err(_) => kept.push(pick),
+        }
+    }
+    result.picks = kept;
 }
 
 fn check_lengths(out: &Output) -> Result<(), String> {
@@ -268,7 +339,8 @@ fn pick_problem(p: &PassPick, offer: &Offer<'_>, so_far: &PassResult) -> Option<
     let Some(account) = offer.accounts.iter().find(|a| a.account == p.account) else {
         return Some(format!("account {} was not offered", p.account));
     };
-    if !offer.models.contains(&(account.provider, p.model.clone())) {
+    // With the quota side the model follows the task's tier and is set in `place`.
+    if offer.quota.is_none() && !offer.models.contains(&(account.provider, p.model.clone())) {
         return Some(format!(
             "model {} was not offered for {}",
             p.model, p.account

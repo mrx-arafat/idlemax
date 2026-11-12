@@ -13,7 +13,7 @@ mod reload;
 mod settings;
 mod workers;
 
-pub use dispatcher::{parse_worker_model, DispatcherConfig};
+pub use dispatcher::DispatcherConfig;
 pub use edit::{find_setting, set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, MemoryCap, SwapGrowth, AGENT_OVERHEAD_MIB};
 pub use reload::{plan_reload, ReloadReport};

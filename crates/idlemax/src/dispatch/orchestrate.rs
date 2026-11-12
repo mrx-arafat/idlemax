@@ -4,12 +4,14 @@
 
 use idlemax_core::control::plan_control;
 use idlemax_core::dispatch::orchestrator::{
-    fingerprint, is_pass, pass_due, schema, taking_devices, validate, DueInput, FingerprintParts,
-    Offer, PASS_ACTIVE,
+    fingerprint, is_pass, pass_due, schema, taking_devices, validate, DueInput, DuePass,
+    FingerprintParts, Offer, PASS_ACTIVE,
 };
+use idlemax_core::dispatch::plan::PassResult;
 use idlemax_core::dispatch::prompt::prompt;
 use idlemax_core::dispatch::task::{digest, Task};
 use idlemax_core::protocol::ControlRequest;
+use idlemax_core::quota::pass::any_room;
 use idlemax_core::types::{ControlAction, ControlScope, EventKind, JobId, JobStatus, UnixMs};
 use idlemax_core::Config;
 
@@ -30,30 +32,18 @@ pub fn pass_step(
 ) -> Result<(), StoreError> {
     let inputs = read_inputs(store, cfg, live, now)?;
     forget_changed_judgments(store, &inputs.tasks)?;
+    judge_twice_failed(store, &inputs, now)?;
     record_failed_pass(store, &inputs, now)?;
     let (tasks, accounts) = inputs.offered();
+    let quota = inputs.quota.offer();
     let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
         models: &inputs.models,
+        quota: Some(&quota),
     };
     let print = pass_fingerprint(store, &inputs, &offer, rules)?;
-    let newest = inputs
-        .newest
-        .as_ref()
-        .map(|r| (r.fingerprint.as_str(), r.queued_ms));
-    let due = pass_due(&DueInput {
-        now_ms: now,
-        mode: inputs.mode,
-        asked,
-        devices: &inputs.devices,
-        paused: &inputs.paused,
-        offer: &offer,
-        fingerprint: &print,
-        newest,
-        pass_active: inputs.pass_active,
-    });
-    match due {
+    match due_now(&inputs, &offer, &print, asked) {
         Ok(due) => {
             let text = prompt(
                 rules,
@@ -62,19 +52,56 @@ pub fn pass_step(
                 &inputs.projects,
                 &offer,
             );
-            let spec = pass_job(&due, text, &schema());
-            spec.validate().map_err(StoreError::InvalidSpec)?;
-            if let Added::New(job) = store.insert_job_once(&spec, now)? {
-                let msg = format!("{} queued on {}", job.spec.name, due.account);
-                store.append_event(EventKind::JobQueued, None, Some(job.id), &msg, now)?;
-                let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-                store.insert_pass(job.id, &due.account, &print, &ids, now)?;
-            }
-            Ok(())
+            queue_pass(store, &due, text, &print, &tasks, now)
         }
         Err(why) if why != PASS_ACTIVE => cancel_queued_pass(store, &why, now),
         Err(_) => Ok(()),
     }
+}
+
+/// Whether a pass is due now (A20), and on which account and device.
+fn due_now(
+    inputs: &Inputs,
+    offer: &Offer<'_>,
+    print: &str,
+    asked: bool,
+) -> Result<DuePass, String> {
+    let newest = inputs
+        .newest
+        .as_ref()
+        .map(|r| (r.fingerprint.as_str(), r.queued_ms));
+    pass_due(&DueInput {
+        now_ms: inputs.now,
+        mode: inputs.mode,
+        asked,
+        devices: &inputs.devices,
+        paused: &inputs.paused,
+        offer,
+        fingerprint: print,
+        newest,
+        pass_active: inputs.pass_active,
+        room: any_room(&inputs.quota.offers),
+    })
+}
+
+/// Queues the pass job and records what it was offered.
+fn queue_pass(
+    store: &mut Store,
+    due: &DuePass,
+    prompt_text: String,
+    print: &str,
+    tasks: &[&Task],
+    now: UnixMs,
+) -> Result<(), StoreError> {
+    let spec = pass_job(due, prompt_text, &schema());
+    spec.validate().map_err(StoreError::InvalidSpec)?;
+    if let Added::New(job) = store.insert_job_once(&spec, now)? {
+        let msg = format!("{} queued on {}", job.spec.name, due.account);
+        store.append_event(EventKind::JobQueued, None, Some(job.id), &msg, now)?;
+        let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
+        store.insert_pass(job.id, &due.account, print, &ids, now)?;
+    }
+    Ok(())
 }
 
 /// The fingerprint of A20: the devices that take picks, every ready task and every task a
@@ -122,6 +149,21 @@ fn forget_changed_judgments(store: &mut Store, tasks: &[Task]) -> Result<(), Sto
     }
     Ok(())
 }
+
+/// D10.6: a task whose checks failed on two Runs needs the owner; the judgment takes it out
+/// of the offer until the task changes.
+fn judge_twice_failed(store: &mut Store, inputs: &Inputs, now: UnixMs) -> Result<(), StoreError> {
+    for (id, failed) in &inputs.quota.failed {
+        let task = inputs.tasks.iter().find(|t| t.id == *id);
+        if let Some(t) = task.filter(|_| *failed >= 2) {
+            store.judge_task(id, &digest(t), FAILED_TWICE, now)?;
+        }
+    }
+    Ok(())
+}
+
+/// The "needs you" reason of a task that failed its checks twice.
+pub const FAILED_TWICE: &str = "failed its checks twice";
 
 /// A pass job that ended without a result writes how it ended into its row.
 fn record_failed_pass(store: &mut Store, inputs: &Inputs, now: UnixMs) -> Result<(), StoreError> {
@@ -184,10 +226,12 @@ pub fn ingest_pass(
     }
     let inputs = read_inputs(store, cfg, live, now)?;
     let (tasks, accounts) = inputs.offered();
+    let quota = inputs.quota.offer();
     let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
         models: &inputs.models,
+        quota: Some(&quota),
     };
     let checked = structured_output(output)
         .map_err(|e| e.to_string())
@@ -207,8 +251,19 @@ pub fn ingest_pass(
     };
     result.seen = row.offered.clone();
     store.finish_pass(row.id, Ok(&result), now)?;
+    record_result(store, &inputs.tasks, &result, job, now)
+}
+
+/// Sends the tasks the pass judged to "needs you", and logs what it returned.
+fn record_result(
+    store: &mut Store,
+    tasks: &[Task],
+    result: &PassResult,
+    job: JobId,
+    now: UnixMs,
+) -> Result<(), StoreError> {
     for (task, reason) in &result.needs_you {
-        if let Some(t) = inputs.tasks.iter().find(|t| t.id == *task) {
+        if let Some(t) = tasks.iter().find(|t| t.id == *task) {
             store.judge_task(task, &digest(t), reason, now)?;
         }
     }

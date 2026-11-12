@@ -166,3 +166,14 @@ impl Store {
         )?)
     }
 }
+
+impl Store {
+    /// Per task id, how many of its Runs ended with the verdict `rejected` (D10.6).
+    pub fn failed_checks(&self) -> StoreResult<Vec<(String, u32)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT task, count(*) FROM runs WHERE verdict = 'rejected' GROUP BY task ORDER BY task",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+}

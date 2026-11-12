@@ -2,7 +2,6 @@
 //! pure rules (`discover`, `account_uses`, `build`). Writes nothing.
 
 use idlemax_core::advice::{merge_inputs, SessionMeta};
-use idlemax_core::control::paused_accounts;
 use idlemax_core::dispatch::accounts::account_uses;
 use idlemax_core::dispatch::accounts::AccountUse;
 use idlemax_core::dispatch::check::BaseCheck;
@@ -14,10 +13,12 @@ use idlemax_core::dispatch::room::LineState;
 use idlemax_core::dispatch::task::{discover, Task, TaskInput};
 use idlemax_core::dispatch::Mode;
 use idlemax_core::protocol::DeviceView;
-use idlemax_core::quota::Provider;
+use idlemax_core::quota::pass::any_room;
+use idlemax_core::quota::{tier_models, Provider};
 use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
 use idlemax_core::Config;
 
+use super::quota_side::QuotaSide;
 use crate::coord::api::{offline_after_ms, quota_views};
 use crate::coord::store::{PassRow, Store, StoreError};
 
@@ -45,6 +46,8 @@ pub struct Inputs {
     pub newest_result: Option<PassRow>,
     /// A pass job is queued, leased, running or paused.
     pub pass_active: bool,
+    /// Budgets, account offers, the cost table and failed checks (Spec 3).
+    pub quota: QuotaSide,
 }
 
 /// `cfg` is the coordinator's start config and gives `[quota]`; `live` is the newest
@@ -61,11 +64,7 @@ pub fn read_inputs(
     let repos = store.dispatch_inputs()?;
     let checks = store.base_checks()?;
     let newest_result = store.newest_pass(true)?;
-    let scoped: Vec<(String, Vec<String>)> = newest_result
-        .iter()
-        .flat_map(|r| r.result.iter().flat_map(|p| p.picks.iter()))
-        .map(|p| (p.task.clone(), p.scope_paths.clone()))
-        .collect();
+    let scoped = scoped(newest_result.as_ref());
     let (github, _) = merge_inputs(&store.advisor_inputs()?, now);
     let tasks = discover(&TaskInput {
         now_ms: now,
@@ -78,18 +77,13 @@ pub fn read_inputs(
         scoped: &scoped,
     });
     let views = quota_views(store, cfg, now)?;
-    let spent = super::spend::spent_week(store, cfg, now)?;
-    let accounts = account_uses(&cfg.quota, &views, &paused_accounts(&paused), &spent);
+    let quota = QuotaSide::read(store, cfg, live, &views, now)?;
+    let accounts = account_uses(&quota.budgets, &views);
     let mut notes = notes(&projects, &repos, &checks, &devices);
     // Discovery goes silent when Herdr is missing or renamed a key; say so (Risks table).
-    notes.extend(
-        store
-            .devices_without_herdr()?
-            .into_iter()
-            .map(|d| format!("{d}: herdr gave no folders")),
-    );
-    let pass_active = store.active_jobs()?.iter().any(|j| is_pass(&j.spec))
-        || store.queued_jobs()?.iter().any(|j| is_pass(&j.spec));
+    let silent = store.devices_without_herdr()?.into_iter();
+    notes.extend(silent.map(|d| format!("{d}: herdr gave no folders")));
+    let pass_active = pass_active(store)?;
     Ok(Inputs {
         now,
         mode: live.dispatcher.mode,
@@ -99,12 +93,28 @@ pub fn read_inputs(
         repos,
         tasks,
         accounts,
-        models: live.dispatcher.models(),
+        models: tier_models(&live.quota),
         notes,
         newest: store.newest_pass(false)?,
         newest_result,
         pass_active,
+        quota,
     })
+}
+
+/// (task id, scope paths) of the newest pass's picks.
+fn scoped(newest: Option<&PassRow>) -> Vec<(String, Vec<String>)> {
+    newest
+        .iter()
+        .flat_map(|r| r.result.iter().flat_map(|p| p.picks.iter()))
+        .map(|p| (p.task.clone(), p.scope_paths.clone()))
+        .collect()
+}
+
+/// A pass job is queued, leased, running or paused.
+fn pass_active(store: &Store) -> Result<bool, StoreError> {
+    Ok(store.active_jobs()?.iter().any(|j| is_pass(&j.spec))
+        || store.queued_jobs()?.iter().any(|j| is_pass(&j.spec)))
 }
 
 impl Inputs {
@@ -112,6 +122,7 @@ impl Inputs {
         &'a self,
         pass: Option<&'a PassResult>,
         picked_by: &'a str,
+        refused: &'a [(String, String)],
     ) -> PlanInput<'a> {
         PlanInput {
             now_ms: self.now,
@@ -126,13 +137,14 @@ impl Inputs {
             pass,
             picked_by,
             notes: &self.notes,
+            refused,
         }
     }
 
     /// What a pass is offered: the ready tasks of every device, in plan order, the usable
     /// accounts and the models.
     pub fn offered(&self) -> (Vec<&Task>, Vec<AccountUse>) {
-        let input = self.plan_input(None, "");
+        let input = self.plan_input(None, "", &[]);
         let mut tasks: Vec<&Task> = Vec::new();
         for d in &self.devices {
             for t in offered(&input, &d.info.id) {
@@ -154,12 +166,18 @@ pub fn gather_plan(
     now: UnixMs,
 ) -> Result<Gathered, StoreError> {
     let inputs = read_inputs(store, cfg, live, now)?;
-    let pass = inputs
+    let stored = inputs
         .newest_result
         .as_ref()
         .and_then(|r| r.result.as_ref());
+    let (tasks, _) = inputs.offered();
+    let checked = stored.map(|p| inputs.quota.recheck(p, &tasks));
+    let (pass, refused) = match &checked {
+        Some((p, r)) => (Some(p), r.as_slice()),
+        None => (None, &[][..]),
+    };
     let picked_by = picked_by(&inputs);
-    let plan = build(&inputs.plan_input(pass, &picked_by));
+    let plan = build(&inputs.plan_input(pass, &picked_by, refused));
     Ok(Gathered {
         plan,
         tasks: inputs.tasks,
@@ -183,10 +201,12 @@ fn picked_by(inputs: &Inputs) -> String {
         return format!("no orchestrator pass: the last pass failed: {error}");
     }
     let (tasks, accounts) = inputs.offered();
+    let quota = inputs.quota.offer();
     let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
         models: &inputs.models,
+        quota: Some(&quota),
     };
     let due = pass_due(&DueInput {
         now_ms: inputs.now,
@@ -198,6 +218,7 @@ fn picked_by(inputs: &Inputs) -> String {
         fingerprint: "",
         newest: None,
         pass_active: false,
+        room: any_room(&inputs.quota.offers),
     });
     match due {
         Ok(_) => "no orchestrator pass yet: one is due".into(),
