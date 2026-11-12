@@ -130,6 +130,14 @@ impl Store {
         Ok(())
     }
 
+    /// True when an owner stop is stored (`worker_stop` table has a row).
+    pub fn has_worker_stop(&self) -> StoreResult<bool> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM worker_stop", [], |r| r.get(0))?;
+        Ok(count > 0)
+    }
+
     /// Records a queued pass: what it was offered and the inputs' fingerprint.
     pub fn insert_pass(
         &mut self,

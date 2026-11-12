@@ -695,6 +695,12 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 - A stored pick is checked again against the Budgets each time the plan is built: a placed pick takes the model of its task's tier (its reason gains `(model set by the tier rule)` when that differs from what the orchestrator named), and a refused one fills no slot; the empty slot's reason is `<task title>: <refusal text>`, such as `needs 8.0%, 5.3% left today`, `the owner is using this account and codex-pro has room`, `no model is set: idlemax config set quota.codex_small_model <model>`, or `account claude-max may not be spent: <the Budget's why>`.
 - `notes` holds per-project lines, such as a focused check that has not run on the base commit yet and why, and `<device>: herdr gave no folders` for a device whose newest feed came without a Herdr view.
 
+### Base checks when the day's budget is spent
+
+The coordinator's dispatcher step runs a switched-on project's base check again on the same commit when its device's quota is spent for today: the mode is `auto`, no owner stop is stored, the device is online and not paused, no account the device lists is usable and at least one has the Budget basis `spent` or `five_hour_stop`, and the last check finished more than 24 hours ago.
+It does this by deleting the project's `base_checks` row, so the existing check job (`dispatch-setup` or `dispatch-check`, admitted by the lines) is queued again; no new route or field is added.
+The run costs no quota, and a failed check becomes a `broken_check` task as before.
+
 ### The orchestrator pass
 
 The coordinator's dispatcher step (every minute, and on `POST /v1/plan/refresh`) queues one `dispatch-orchestrator-pass` job when a pass is due: the mode is `propose`, a device takes picks and has a ready task, a usable Claude account is listed on such a device with `claude` installed, no pass job is active, and, unless the pass was asked for, its inputs changed since the newest pass and that pass was queued at least an hour ago.

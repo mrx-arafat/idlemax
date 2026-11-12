@@ -122,4 +122,6 @@ pub(super) fn ingest_feed(
 }
 
 #[cfg(test)]
+mod recheck_tests;
+#[cfg(test)]
 pub(crate) mod tests;

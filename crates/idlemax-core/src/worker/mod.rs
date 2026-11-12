@@ -4,6 +4,7 @@
 pub mod brief;
 pub mod checks;
 pub mod control;
+pub mod free_checks;
 pub mod launch;
 pub mod name;
 pub mod pace;

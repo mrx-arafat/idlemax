@@ -13,13 +13,16 @@ pub mod rules_file;
 pub use gather::{gather_plan, project_views, Gathered};
 pub use orchestrate::ingest_pass;
 
+use idlemax_core::control::may_assign;
 use idlemax_core::dispatch::check::{check_job, next_step, BaseCheck, CheckStep, Phase};
 use idlemax_core::dispatch::inputs::StoredRepo;
-use idlemax_core::dispatch::project::Project;
+use idlemax_core::dispatch::project::{Project, ProjectView};
 use idlemax_core::dispatch::Mode;
 use idlemax_core::types::{EventKind, JobId, UnixMs};
+use idlemax_core::worker::free_checks::{budget_spent, checks_due, CheckState};
 use idlemax_core::Config;
 
+use crate::coord::api::{budgets, offline_after_ms, quota_views};
 use crate::coord::store::{Added, Store, StoreError};
 
 /// The coordinator's periodic dispatcher step: moves each switched-on project's base check
@@ -35,9 +38,79 @@ pub fn step(
     asked: bool,
 ) -> Result<(), StoreError> {
     if live.dispatcher.mode != Mode::Off {
+        recheck_due_projects(store, cfg, live, now)?;
         base_checks_step(store, now)?;
     }
     orchestrate::pass_step(store, cfg, live, rules, now, asked)
+}
+
+/// Resets base checks for switched-on projects on spent devices where the check is due.
+fn recheck_due_projects(
+    store: &mut Store,
+    cfg: &Config,
+    live: &Config,
+    now: UnixMs,
+) -> Result<(), StoreError> {
+    if live.dispatcher.mode != Mode::Auto || store.has_worker_stop()? {
+        return Ok(());
+    }
+    let offline_after = offline_after_ms(cfg);
+    let devices = store.devices(now, offline_after)?;
+    let views = quota_views(store, cfg, now)?;
+    let all_budgets = budgets(store, cfg, live, &views, now)?;
+    let paused_scopes = store.paused_scopes()?;
+    let checks = store.base_checks()?;
+    let projects = store.list_projects(None)?;
+
+    for dev in &devices {
+        let allowed = dev.online && may_assign(&paused_scopes, &dev.info.id, dev.local_paused);
+        if !allowed {
+            continue;
+        }
+
+        let dev_budgets: Vec<_> = all_budgets
+            .iter()
+            .filter(|b| dev.info.ai_accounts.iter().any(|a| a == &b.account))
+            .collect();
+        let spent = budget_spent(&dev_budgets);
+        if !spent {
+            continue;
+        }
+
+        let states = project_states(store, &dev.info.id, &projects, &checks)?;
+        for proj_id in checks_due(now, allowed, spent, &states) {
+            store.delete_base_check(proj_id)?;
+        }
+    }
+    Ok(())
+}
+
+fn project_states(
+    store: &Store,
+    device: &str,
+    projects: &[ProjectView],
+    checks: &[BaseCheck],
+) -> Result<Vec<CheckState>, StoreError> {
+    let mut states = Vec::new();
+    for p in projects.iter().map(|v| &v.project) {
+        if !p.enabled || p.device != device {
+            continue;
+        }
+        let rec = checks.iter().find(|c| c.project == p.id);
+        let active = match rec.and_then(|r| r.job) {
+            Some(id) => match store.get_job(id)? {
+                Some(j) => !j.status.is_terminal(),
+                None => false,
+            },
+            None => false,
+        };
+        states.push(CheckState {
+            project: p.id,
+            last_ms: rec.and_then(|r| r.finished_ms),
+            active,
+        });
+    }
+    Ok(states)
 }
 
 /// One step of every switched-on project's base check on a switched-on device.

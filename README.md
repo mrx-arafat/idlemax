@@ -957,6 +957,8 @@ A task without a base branch or without a check that proves it done, a roadmap i
 
 To learn whether the check fails, the agent keeps a detached checkout of the base commit at `$IDLEMAX_HOME/checks/<project id>`, never your own folder, and the coordinator runs the project's setup and check commands there as dispatcher jobs named `dispatch-setup:<project>` and `dispatch-check:<project>`.
 The checkout is made or moved only while the worker room is `run` and no pause or kill switch is set, with repository hooks off.
+When a device has no quota left for today (every account it lists is spent or at its 5-hour stop) and the mode is `auto`, the same check runs again on each of its switched-on projects whose last check finished more than 24 hours ago, so the next day starts with a list of what is broken.
+The repeat check costs no quota: it is an ordinary dispatcher job, held by the lines, any pause and the kill switch, and a stored owner stop.
 The orchestrator is one short `claude -p --model opus` job that reads a compact summary of the offered tasks, projects and usable accounts plus the rules in `$IDLEMAX_HOME/rules.md`, and answers with picks: task, account, model, scope paths and a one-sentence reason, and the tasks it sends to "needs you".
 It runs with no tools, no hooks and no MCP servers, only when its inputs changed (at most once an hour by itself) or on `idlemax plan --refresh`, and only on a Claude account whose Budget is usable, while some account has room for one more Run today.
 It decides which task, provider and model fill a slot; it cannot decide whether a slot exists, and a pick naming anything it was not offered is dropped.
