@@ -44,6 +44,7 @@ impl Refusals {
         }
         self.0.insert(key.clone(), why.to_string());
         let msg = format!("{key} not launched: {why}");
+        tracing::info!("{msg}");
         store.append_event(EventKind::Control, None, None, &msg, now)?;
         Ok(())
     }
@@ -137,31 +138,85 @@ fn launch_on(
     }
     for pick in &device.picks {
         let key = format!("{}: {}", pick.project, pick.title);
-        let PickedBy::Orchestrator = pick.by;
         let Some(task) = g.tasks.iter().find(|t| t.id == pick.task) else {
             continue;
         };
-        let why = match task_open(&facts.runs, &task.id) {
-            TaskOpen::Busy => continue,
-            TaskOpen::Closed => {
-                Some("its last two runs were rejected or discarded: it needs you".into())
-            }
-            TaskOpen::Open => under_cap(&facts.runs, &pick.project, step.live.workers.review_cap)
-                .or_else(|| {
-                    let verdict =
-                        facts
-                            .gates
-                            .start(&pick.account, &pick.model, task.source.as_str());
-                    let account = facts.account(g, &pick.account, verdict);
-                    facts.may_launch(step, device, pick.provider, account.as_ref(), None)
-                }),
-        };
-        match why {
+        match pick_hold(step, g, device, &facts, pick, task) {
             None => return launch_pick(store, step, g, device, pick, task, &facts.gates),
+            Some(why) if why == IN_FLIGHT => continue,
             Some(why) => refusals.note(store, key, &why, step.now)?,
         }
     }
     Ok(())
+}
+
+const IN_FLIGHT: &str = "a run of this task is in flight";
+
+/// Why the launch step holds `pick` now; None when it may launch.
+fn pick_hold(
+    step: &LaunchStep<'_>,
+    g: &Gathered,
+    device: &DevicePlan,
+    facts: &DeviceFacts,
+    pick: &Pick,
+    task: &Task,
+) -> Option<String> {
+    let PickedBy::Orchestrator = pick.by;
+    match task_open(&facts.runs, &task.id) {
+        TaskOpen::Busy => Some(IN_FLIGHT.into()),
+        TaskOpen::Closed => {
+            Some("its last two runs were rejected or discarded: it needs you".into())
+        }
+        TaskOpen::Open => under_cap(&facts.runs, &pick.project, step.live.workers.review_cap)
+            .or_else(|| {
+                let verdict = facts
+                    .gates
+                    .start(&pick.account, &pick.model, task.source.as_str());
+                let account = facts.account(g, &pick.account, verdict);
+                facts.may_launch(step, device, pick.provider, account.as_ref(), None)
+            }),
+    }
+}
+
+/// The plan, with each pick in `auto` saying why the launch step holds it, so a pick that
+/// never launches is not silent (the owner's stop holds every pick the same way).
+pub fn plan_with_holds(
+    store: &Store,
+    cfg: &Config,
+    live: &Config,
+    now: UnixMs,
+) -> Result<Gathered, StoreError> {
+    let mut g = gather_plan(store, cfg, live, now)?;
+    if live.dispatcher.mode != Mode::Auto {
+        return Ok(g);
+    }
+    let stop = store
+        .worker_stop()?
+        .map(|(_, why)| format!("stopped by you: {why}"));
+    let step = LaunchStep {
+        cfg,
+        live,
+        rules: "",
+        now,
+    };
+    let mut held = Vec::new();
+    for device in &g.plan.devices {
+        let facts = DeviceFacts::read(store, &step, &device.device)?;
+        for pick in &device.picks {
+            let task = g.tasks.iter().find(|t| t.id == pick.task);
+            let why = match (&stop, task) {
+                (Some(stop), _) => Some(stop.clone()),
+                (None, Some(task)) => pick_hold(&step, &g, device, &facts, pick, task),
+                (None, None) => None,
+            };
+            held.push(why);
+        }
+    }
+    let picks = g.plan.devices.iter_mut().flat_map(|d| d.picks.iter_mut());
+    for (pick, why) in picks.zip(held) {
+        pick.held = why;
+    }
+    Ok(g)
 }
 
 fn launch_pick(

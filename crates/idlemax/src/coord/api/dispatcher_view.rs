@@ -15,8 +15,8 @@ use super::budget::budgets;
 use super::http::ApiFailure;
 use super::AppState;
 use crate::agent::metrics::default_device_id;
+use crate::coord::dispatch::plan_with_holds;
 use crate::coord::store::{Store, StoreError};
-use crate::dispatch::gather_plan;
 use crate::state::now_ms;
 
 /// Runs read per state; the view never reads the whole history (the dashboard polls it).
@@ -52,7 +52,7 @@ pub fn gather_view(
     live: &Config,
     now: UnixMs,
 ) -> Result<DispatcherView, StoreError> {
-    let gathered = gather_plan(store, cfg, live, now)?;
+    let gathered = plan_with_holds(store, cfg, live, now)?;
     let plan = gathered.plan;
     let paused: Vec<_> = store
         .active_jobs()?

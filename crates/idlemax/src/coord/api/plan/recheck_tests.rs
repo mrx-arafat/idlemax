@@ -16,6 +16,7 @@ use super::super::projects::project_views;
 use super::tests::feed;
 use super::*;
 use crate::coord::store::Store;
+use crate::dispatch::gather_plan;
 
 const T0: UnixMs = 1_800_000_000_000;
 

@@ -16,8 +16,8 @@ use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::offline_after_ms;
 use super::AppState;
+use crate::coord::dispatch::plan_with_holds;
 use crate::coord::store::Store;
-use crate::dispatch::gather_plan;
 use crate::state::now_ms;
 
 /// `GET /v1/plan`: what the dispatcher would launch now and why; it launches nothing.
@@ -26,7 +26,7 @@ pub async fn plan(State(app): State<AppState>) -> Result<Json<Plan>, ApiFailure>
     let live = std::sync::Arc::clone(app.live());
     let gathered = app
         .with_store(move |store, cfg| {
-            Ok::<_, ApiFailure>(gather_plan(store, cfg, &live.current(), now)?)
+            Ok::<_, ApiFailure>(plan_with_holds(store, cfg, &live.current(), now)?)
         })
         .await?;
     Ok(Json(gathered.plan))
@@ -46,7 +46,7 @@ pub async fn refresh(State(app): State<AppState>, who: Who) -> Result<Json<Plan>
             let live = live.current();
             let rules = crate::dispatch::rules_file::read(&paths);
             crate::dispatch::step(store, cfg, &live, &rules, now, true)?;
-            Ok::<_, ApiFailure>(gather_plan(store, cfg, &live, now)?)
+            Ok::<_, ApiFailure>(plan_with_holds(store, cfg, &live, now)?)
         })
         .await?;
     Ok(Json(gathered.plan))

@@ -225,12 +225,14 @@ fn pick_lines(p: &Pick) -> Vec<String> {
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_default();
-    vec![
+    let mut lines = vec![
         format!("  pick {}  {source}  {}", p.project, p.title),
         format!("    {provider}  {}  {}", p.account, p.model),
         format!("    scope: {}", words(&p.scope_paths)),
         format!("    why: {}", p.reason),
-    ]
+    ];
+    lines.extend(p.held.as_ref().map(|h| format!("    held: {h}")));
+    lines
 }
 
 pub fn plan_node(plan: &Plan) -> Result<Node, serde_json::Error> {

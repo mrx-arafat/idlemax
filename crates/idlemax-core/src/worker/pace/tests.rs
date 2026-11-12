@@ -4,7 +4,7 @@ use super::*;
 use crate::quota::Provider;
 use crate::types::QuotaWindowKind;
 use crate::worker::report::{CheckFacts, ReviewFacts};
-use crate::worker::run::RunFacts;
+use crate::worker::run::{RunFacts, Verdict};
 
 fn run(id: i64, project: &str, task: &str, state: RunState, start: UnixMs) -> Run {
     Run {
@@ -199,11 +199,23 @@ fn a_task_is_open_until_a_run_holds_it_and_closed_after_two_failures() {
     // One failed check leaves the task open for a second attempt (Spec 3 Task 10, D10.6).
     let once = [run(1, "a", "t", RunState::Rejected, 1)];
     assert_eq!(task_open(&once, "t"), TaskOpen::Open);
-    let then_discarded = [
-        run(1, "a", "t", RunState::Discarded, 1),
-        run(2, "a", "t", RunState::Rejected, 2),
-    ];
+    let mut worked = run(1, "a", "t", RunState::Discarded, 1);
+    worked.verdict = Some(Verdict::NeedsYou);
+    let then_discarded = [worked, run(2, "a", "t", RunState::Rejected, 2)];
     assert_eq!(task_open(&then_discarded, "t"), TaskOpen::Closed);
+}
+
+#[test]
+fn a_run_discarded_before_it_did_anything_is_no_try_and_no_spend() {
+    let mut never = [
+        run(1, "a", "t", RunState::Discarded, 1_000),
+        run(2, "a", "t", RunState::Discarded, 2_000),
+    ];
+    never[0].end_ms = Some(1_500);
+    never[1].end_ms = Some(2_500);
+    assert_eq!(task_open(&never, "t"), TaskOpen::Open);
+    let readings = [weekly(40.0, 1_000), weekly(45.0, 2_500)];
+    assert_eq!(week_spend(&never, "max", &readings, 0, 10_000), 0.0);
 }
 
 fn weekly(pct: f64, at: UnixMs) -> QuotaSnapshot {

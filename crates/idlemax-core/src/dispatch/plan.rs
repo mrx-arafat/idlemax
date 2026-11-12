@@ -45,6 +45,9 @@ pub struct Pick {
     /// Paths a worker must not touch: the project's off-limits paths, plus the owner's
     /// changed files while the owner is active in the project.
     pub avoid_paths: Vec<String>,
+    /// In `auto`, why the launch step holds this pick now; absent when it may launch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -329,6 +332,7 @@ fn check_pick(
         by: PickedBy::Orchestrator,
         scope_paths: pp.scope_paths.clone(),
         avoid_paths: avoid,
+        held: None,
     })
 }
 

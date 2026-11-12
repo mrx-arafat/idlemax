@@ -228,6 +228,20 @@ fn a_project_at_its_review_cap_gets_no_launch() {
     assert_eq!(runs(&store).len(), 3);
     let events = store.events(0).unwrap();
     assert!(events.iter().any(|e| e.message.contains("the cap is 3")));
+    // The plan says why its picks wait, so a pick that never launches is not silent.
+    let plan = plan_with_holds(&store, &cfg, &live, now).unwrap().plan;
+    let held: Vec<_> = plan
+        .devices
+        .iter()
+        .flat_map(|d| &d.picks)
+        .map(|p| p.held.clone())
+        .collect();
+    assert!(!held.is_empty(), "{plan:?}");
+    assert!(
+        held.iter()
+            .all(|h| h.as_deref().is_some_and(|h| h.contains("the cap is 3"))),
+        "{held:?}"
+    );
 }
 
 #[test]

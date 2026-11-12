@@ -7,7 +7,7 @@ use crate::dispatch::accounts::AccountUse;
 use crate::dispatch::room::{LineState, RoomDecision};
 use crate::types::{JobId, QuotaSnapshot, UnixMs};
 
-use super::run::{Run, RunState};
+use super::run::{Run, RunFacts, RunState};
 
 const DAY_MS: UnixMs = 86_400_000;
 /// The measuring week of an account lasts this long from its first Run (A7).
@@ -119,7 +119,10 @@ pub enum TaskOpen {
 }
 
 pub fn task_open(runs: &[Run], task: &str) -> TaskOpen {
-    let mut mine: Vec<&Run> = runs.iter().filter(|r| r.task == task).collect();
+    let mut mine: Vec<&Run> = runs
+        .iter()
+        .filter(|r| r.task == task && !never_worked(r))
+        .collect();
     mine.sort_by_key(|r| (r.start_ms, r.id));
     let failed = |r: &&Run| matches!(r.state, RunState::Rejected | RunState::Discarded);
     if mine.len() >= 2 && mine[mine.len() - 2..].iter().all(failed) {
@@ -136,6 +139,12 @@ pub fn task_open(runs: &[Run], task: &str) -> TaskOpen {
     }
 }
 
+/// A Run the owner discarded before it did anything, say one whose worker never started: no
+/// verdict and no facts. It is no try at its task and no spend of its account.
+fn never_worked(r: &Run) -> bool {
+    r.state == RunState::Discarded && r.verdict.is_none() && r.facts == RunFacts::default()
+}
+
 /// The weekly percent one account spent: its Runs in the window and the reviews it paid for,
 /// merged into intervals that do not overlap, each adding the rise of the weekly reading
 /// over it once, never below zero; the newest reading stands in for a Run still in flight.
@@ -149,7 +158,7 @@ pub fn week_spend(
 ) -> f64 {
     let mut spans: Vec<(UnixMs, UnixMs)> = runs
         .iter()
-        .filter(|r| r.account == account && r.launches > 0)
+        .filter(|r| r.account == account && r.launches > 0 && !never_worked(r))
         .map(|r| (r.start_ms, r.end_ms.unwrap_or(now_ms)))
         .collect();
     spans.extend(reviews_paid(runs, account));
