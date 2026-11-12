@@ -197,7 +197,8 @@ mod gather_tests {
         let start = T0 - 3 * DAY_MS;
         readings(&mut store, start, 40.0, 5.0, reset);
         add_run(&mut store, "max", start, Some(start + HOUR), true);
-        readings(&mut store, start + 2 * HOUR, 46.0, 11.0, reset);
+        // At the Run's end, so Spec 2's `week_spend` reads the rise of 6.
+        readings(&mut store, start + HOUR, 46.0, 11.0, reset);
         readings(&mut store, T0, 50.0, 10.0, reset);
         let b = &budgets_now(&store, &claude_cfg(), &claude_cfg(), T0)[0];
         assert_eq!(b.basis, BudgetBasis::Measuring, "{b:?}");

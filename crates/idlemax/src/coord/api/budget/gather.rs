@@ -12,6 +12,7 @@ use idlemax_core::quota::owner_use::{day_slot, owner_use, utc_day_slot, DaySlot,
 use idlemax_core::quota::spend::{gate, Gate};
 use idlemax_core::quota::{tier_of, AccountConfig, QuotaConfig, QuotaView, Tier};
 use idlemax_core::types::{QuotaWindowKind, UnixMs};
+use idlemax_core::worker::pace::{measuring_week_end, week_spend, MEASURING_WEEK_MS};
 use idlemax_core::Config;
 
 use crate::coord::store::{Store, StoreError};
@@ -159,7 +160,7 @@ fn account_budget(
         spent_today_pct: ended_in(slot.start_ms, slot.end_ms),
         committed_pct: committed,
         runs_today: store.runs_started_in(&a.name, slot.start_ms, slot.end_ms)?,
-        measuring_left_pct: measuring_left(store, &a.name, &charges, now)?,
+        measuring_left_pct: measuring_left(store, &a.name, now)?,
         owner_reserve_override_pct: None,
         limit_hit_ms: shared
             .hits
@@ -191,32 +192,20 @@ fn last_use(interactive: &[(String, UnixMs)], a: &AccountConfig) -> Option<UnixM
         .max()
 }
 
-// SHORTCUT: the measuring week is read from the Run records here, because Spec 2's
-// `pace::week_spend` and `pace::measuring_week_end` are not on this branch yet; call them
-// instead once Spec 2 Task 4 lands.
 /// While the account's first Run is under seven days old: the 10 percent cap of A7 minus what
-/// the Runs since then cost; None after that, and for an account with no Run yet.
-fn measuring_left(
-    store: &Store,
-    account: &str,
-    charges: &[(Option<UnixMs>, f64)],
-    now: UnixMs,
-) -> Result<Option<f64>, StoreError> {
-    let Some(first) = store
-        .runs_of_account(account, 0)?
-        .first()
-        .map(|r| r.start_ms)
-    else {
+/// the Runs since then cost by Spec 2's `week_spend`; None after that, and for an account
+/// with no Run yet.
+fn measuring_left(store: &Store, account: &str, now: UnixMs) -> Result<Option<f64>, StoreError> {
+    let runs = store.runs_of_account(account, 0)?;
+    let Some(first) = runs.iter().map(|r| r.start_ms).min() else {
         return Ok(None);
     };
-    if now >= first + WEEK_MS {
+    if now >= measuring_week_end(first) {
         return Ok(None);
     }
-    let spent: f64 = charges
-        .iter()
-        .filter(|(end, _)| end.is_some_and(|e| e >= first))
-        .map(|(_, pct)| pct)
-        .sum();
+    // The reading before the first Run is the base its rise is measured from.
+    let weekly = store.weekly_readings(account, first - MEASURING_WEEK_MS)?;
+    let spent = week_spend(&runs, account, &weekly, first, now);
     Ok(Some((MEASURING_WEEK_CAP_PCT - spent).max(0.0)))
 }
 
