@@ -8,9 +8,6 @@ use crate::quota::budget::Budget;
 use crate::quota::{rolling_5h, Provider, QuotaView, WindowState};
 use crate::types::QuotaWindowKind;
 
-/// The measuring week's cap of A7, in percent of the weekly window.
-pub const MEASURING_WEEK_CAP_PCT: f64 = 10.0;
-
 /// One account as the dispatcher sees it.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]

@@ -18,6 +18,8 @@ pub struct QuotaConfig {
     pub seed_small_pct: f64,
     pub seed_standard_pct: f64,
     pub server_only_margin_pct: f64,
+    /// The measuring week's cap (A7), in percent of the weekly window.
+    pub measuring_week_cap_pct: f64,
     pub small_task_types: Vec<String>,
     pub claude_small_model: Option<String>,
     pub claude_standard_model: Option<String>,
@@ -40,6 +42,7 @@ impl Default for QuotaConfig {
             seed_small_pct: 3.0,
             seed_standard_pct: 8.0,
             server_only_margin_pct: 5.0,
+            measuring_week_cap_pct: 10.0,
             small_task_types: vec!["broken_check".into()],
             claude_small_model: Some("haiku".into()),
             claude_standard_model: Some("sonnet".into()),
@@ -87,6 +90,13 @@ impl QuotaConfig {
             if !(0.0..=100.0).contains(&val) || val.is_nan() {
                 return Err(QuotaConfigError::InvalidPercent { key, value: val });
             }
+        }
+        let cap = self.measuring_week_cap_pct;
+        if !(cap > 0.0 && cap <= 100.0) {
+            return Err(QuotaConfigError::InvalidPercent {
+                key: "quota.measuring_week_cap_pct",
+                value: cap,
+            });
         }
         Ok(())
     }

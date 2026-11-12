@@ -558,7 +558,7 @@ Types live in `crates/idlemax-core/src/quota/budget.rs`.
 | `learned` | yes | the hold is the owner's usual daily use until the reset, from 7 known days |
 | `reserve` | yes | fewer than 7 days are known, so `quota.owner_reserve_pct` of the week is held for the owner |
 | `last_day` | yes | the day before the reset: everything above `quota.last_day_floor_pct` may be spent |
-| `measuring` | yes | the account's first week of Runs, capped at 10 percent of the weekly window |
+| `measuring` | yes | the account's first week of Runs, capped at `quota.measuring_week_cap_pct` (10 by default) percent of the weekly window |
 | `daily_cap` | yes | an account on `daily_cap_runs` |
 | `paused` | no | `idlemax pause --account` |
 | `resting` | no | a usage limit rests the account until `rests_until_ms` |

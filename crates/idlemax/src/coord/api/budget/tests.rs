@@ -205,6 +205,12 @@ mod gather_tests {
         let b = &budgets_now(&store, &claude_cfg(), &claude_cfg(), T0)[0];
         assert_eq!(b.basis, BudgetBasis::Measuring, "{b:?}");
         assert!(b.spendable_pct <= b.spent_pct + 4.0 + 1e-9, "{b:?}");
+        assert!(b.why.contains("4% of the week's cap is left"), "{b:?}");
+        // The cap is a live setting: at 8 the same week leaves 2.
+        let mut live = claude_cfg();
+        live.quota.measuring_week_cap_pct = 8.0;
+        let b = &budgets_now(&store, &claude_cfg(), &live, T0)[0];
+        assert!(b.why.contains("2% of the week's cap is left"), "{b:?}");
 
         let mut late = Store::open_in_memory().unwrap();
         readings(&mut late, T0, 50.0, 10.0, reset);

@@ -1217,6 +1217,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `quota.five_hour_stop_pct` | `60.0` | 5-hour window usage percent at which workers stop |
 | `quota.last_day_floor_pct` | `15.0` | minimum weekly reserve on the day before reset |
 | `quota.server_only_margin_pct` | `5.0` | weekly percent held for you on an account only servers use |
+| `quota.measuring_week_cap_pct` | `10.0` | weekly percent idlemax may spend in an account's first week of Runs (above 0, at most 100); applies live |
 | `quota.seed_small_pct` | `3.0` | seed estimate for an unmeasured small run (weekly %) |
 | `quota.seed_standard_pct` | `8.0` | seed estimate for an unmeasured standard run (weekly %) |
 | `quota.small_task_types` | `["broken_check"]` | task sources eligible for the small tier |

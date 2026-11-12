@@ -3,7 +3,6 @@
 //! pure `quota::budget`. `cfg` gives the accounts, `live` every other `[quota]` key (A2).
 
 use idlemax_core::control::paused_accounts;
-use idlemax_core::dispatch::accounts::MEASURING_WEEK_CAP_PCT;
 use idlemax_core::quota::budget::{budget, Budget, BudgetInput};
 use idlemax_core::quota::cost::{
     cost_table, expected, run_costs, tier_costs, CostKey, CostTable, RunCost, RunSample,
@@ -183,7 +182,7 @@ fn account_budget(
         spent_today_pct: ended_in(slot.start_ms, slot.end_ms),
         committed_pct: committed,
         runs_today: store.runs_started_in(&a.name, slot.start_ms, slot.end_ms)?,
-        measuring_left_pct: measuring_left(store, &a.name, now)?,
+        measuring_left_pct: measuring_left(store, &a.name, q.measuring_week_cap_pct, now)?,
         owner_reserve_override_pct: shared
             .server_only
             .contains(&a.name)
@@ -218,10 +217,15 @@ fn last_use(interactive: &[(String, UnixMs)], a: &AccountConfig) -> Option<UnixM
         .max()
 }
 
-/// While the account's first Run is under seven days old: the 10 percent cap of A7 minus what
-/// the Runs since then cost by Spec 2's `week_spend`; None after that, and for an account
-/// with no Run yet.
-fn measuring_left(store: &Store, account: &str, now: UnixMs) -> Result<Option<f64>, StoreError> {
+/// While the account's first Run is under seven days old: the cap of A7
+/// (`quota.measuring_week_cap_pct`) minus what the Runs since then cost by Spec 2's
+/// `week_spend`; None after that, and for an account with no Run yet.
+fn measuring_left(
+    store: &Store,
+    account: &str,
+    cap_pct: f64,
+    now: UnixMs,
+) -> Result<Option<f64>, StoreError> {
     let runs = store.runs_of_account(account, 0)?;
     let Some(first) = runs.iter().map(|r| r.start_ms).min() else {
         return Ok(None);
@@ -232,7 +236,7 @@ fn measuring_left(store: &Store, account: &str, now: UnixMs) -> Result<Option<f6
     // The reading before the first Run is the base its rise is measured from.
     let weekly = store.weekly_readings(account, first - MEASURING_WEEK_MS)?;
     let spent = week_spend(&runs, account, &weekly, first, now);
-    Ok(Some((MEASURING_WEEK_CAP_PCT - spent).max(0.0)))
+    Ok(Some((cap_pct - spent).max(0.0)))
 }
 
 /// The Budgets of one moment and the cost table behind them: what every worker start of a
