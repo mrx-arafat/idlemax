@@ -117,6 +117,13 @@ pub const D_PROJECTS: Spec = Spec {
     min_width: 10,
     empty: "No project yet. Add one with `idlemax project add <path>`.",
 };
+pub const D_DEVICES: Spec = Spec {
+    header: &["ON", "DEVICE", "LINE", "REASON"],
+    flex: &[3],
+    drop: &[3],
+    min_width: 10,
+    empty: "No device has sent a heartbeat yet.",
+};
 pub const D_LIMITS: Spec = Spec {
     header: &["KEY", "VALUE", "DEFAULT", "SET IN"],
     flex: &[0],

@@ -1114,7 +1114,7 @@ p/r pause/resume job 3  k cancel job  w close  PgUp/PgDn scroll  x stop workers 
 The pane asks for one job's reasons only when it opens, when you move to another job, or when that job's headline changed in the last refresh.
 An empty tab says what to run next, for example `idlemax job add <spec.toml>`.
 
-The Dispatch tab shows one pane at a time, and `v` moves to the next: workers, would launch (then the ready tasks the orchestrator did not judge), needs you, review, budget, projects, limits (a device's own limits are listed read-only) and rules.
+The Dispatch tab shows one pane at a time, and `v` moves to the next: workers, would launch (then the ready tasks the orchestrator did not judge), needs you, review, budget, projects, devices (on or off, line state and reason), limits (headed with the device whose `config.toml` they change; every other device's own limits are listed read-only) and rules.
 The pane's title carries the dispatcher mode and each device's line state, and the box under it explains the selected row.
 A coordinator without the dispatcher view gets one line saying so, and no key on that tab sends anything.
 
@@ -1134,7 +1134,7 @@ A coordinator without the dispatcher view gets one line saying so, and no key on
 | `v` | on Dispatch, show the next pane |
 | `m` | on Dispatch, move to the next mode: off, propose, auto (asks first, except toward off) |
 | `g` | on Dispatch, start the stopped workers (asks first) |
-| `t` | on the projects pane, switch the selected project (on asks first) |
+| `t` | on the projects or devices pane, switch the selected project or device (on asks first; a device switched off stops its workers with their state saved) |
 | `e` | on the limits pane, type a new value in the footer: `Enter` saves, the word `default` puts back the default (an empty value sends nothing), `Esc` closes |
 | `a`, `d` | on the rules pane, approve (asks first) or reject the selected proposal |
 | `k`, `M`, `D` | on the review pane, keep, keep and merge, or discard the selected finished task (each asks first and names the branch) |
@@ -1150,7 +1150,7 @@ The page reads `GET /v1/why` once per refresh for all of them and asks for one j
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, pause, resume or remove a schedule, and accept or dismiss advice.
 The Dispatcher card comes first: the mode switch (`off`, `propose`, `auto`, which asks first), each device's line state and reason, `Stop workers` (and `Start` while a worker is stopped by you; a coordinator without the worker stop gets a stop-all instead, which `Resume` lifts), the workers with their label, summary, model and a `why` line, what would launch next and who picked it.
-Beside it are the cards Needs you, Waiting for review (Keep, Merge and Discard per task, each asking first, the same as `idlemax review keep` and `discard`), Budget (today's spend of the day's share per account, then the earlier days), Projects (on asks first, off does not), Limits (each owner limit with its default, Save and `default`) and Rule proposals (Approve asks first).
+Beside it are the cards Needs you, Waiting for review (Keep, Merge and Discard per task, each asking first, the same as `idlemax review keep` and `discard`), Budget (today's spend of the day's share per account, then the earlier days), Projects (each device's switch, then each project's; on asks first, off does not), Limits (headed with the device whose `config.toml` it changes: each owner limit with its default, Save and `default`, then every other device's own limits read-only) and Rule proposals (Approve asks first).
 A coordinator without the dispatcher view shows none of these cards.
 
 **HTTP API.**

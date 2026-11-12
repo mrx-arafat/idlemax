@@ -29,7 +29,8 @@ fn view() -> Value {
     };
     json!({"at_ms": NOW, "mode": "propose",
         "picked_by": "orchestrator pass 12 min ago on claude max (sonnet)",
-        "devices": [{"id": "mac", "state": "run", "reason": "memory 41% used", "open_slots": 1,
+        "limits_device": "server",
+        "devices": [{"id": "mac", "enabled": true, "state": "run", "reason": "memory 41% used", "open_slots": 1,
                      "limits": [limit("dispatcher.hold_mem_used_pct", 85.0, true)]}],
         "projects": [
             {"id": 1, "name": "app", "device": "mac", "enabled": true, "waiting": 2, "review_cap": 3},

@@ -3,7 +3,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 1/8 workers | mode propose | mac run ────────────────────────────────────────┐
+┌ 1/9 workers | mode propose | mac run ────────────────────────────────────────┐
 │  STATE           PROJECT  TASK             MODEL   AGE        SUMMARY        │
 │> working         app      roadmap:1:task…  sonnet  31m ago    Add dark mode… │
 │  stopped by you  app      roadmap:1:task…  sonnet  1h00m ago  Speed up the … │
@@ -28,7 +28,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 2/8 would launch | mode propose | mac run ───────────────────────────────────┐
+┌ 2/9 would launch | mode propose | mac run ───────────────────────────────────┐
 │  DEVICE  PROJECT  TASK            MODEL   NOTE                               │
 │> mac     app      Export as CSV   sonnet                                     │
 │          site     Fix the footer          not judged by the orchestrator     │
@@ -53,7 +53,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 3/8 needs you | mode propose | mac run ──────────────────────────────────────┐
+┌ 3/9 needs you | mode propose | mac run ──────────────────────────────────────┐
 │  KIND  SUBJECT                     REASON                                    │
 │> task  app: Pick the release date  the item says it needs the owner          │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -78,7 +78,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 4/8 review | mode propose | mac run ─────────────────────────────────────────┐
+┌ 4/9 review | mode propose | mac run ─────────────────────────────────────────┐
 │  STATE             PROJECT  TASK              AGE        SUMMARY             │
 │> ready for review  app      roadmap:1:task-3  2h00m ago  Fix the login test… │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -103,7 +103,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 5/8 budget | mode propose | mac run ─────────────────────────────────────────┐
+┌ 5/9 budget | mode propose | mac run ─────────────────────────────────────────┐
 │  ACCOUNT  DAY     SPENT  OF    LEFT                                          │
 │> max      today   2.5%   6.0%  3.5%                                          │
 │  max      1d ago  6.0%   6.0%  0.0%                                          │
@@ -128,7 +128,7 @@ idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 6/8 projects | mode propose | mac run ───────────────────────────────────────┐
+┌ 6/9 projects | mode propose | mac run ───────────────────────────────────────┐
 │  ON   NAME  DEVICE  WAITING FOR REVIEW                                       │
 │> on   app   mac     2/3                                                      │
 │  off  site  mac     0/3                                                      │
@@ -148,12 +148,37 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 p/r pause/resume all  v pane  t switch  m mode  g start  x stop workers  q quit
+##### devices
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
+┌ 7/9 devices | mode propose | mac run ────────────────────────────────────────┐
+│  ON  DEVICE  LINE  REASON                                                    │
+│> on  mac     run   memory 41% used                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ details ─────────────────────────────────────────────────────────────────────┐
+│t switches the selected device; on asks first, off stops its workers, state   │
+│saved.                                                                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume all  v pane  t switch  m mode  g start  x stop workers  q quit
 ##### limits
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 7/8 limits | mode propose | mac run ─────────────────────────────────────────┐
+┌ 8/9 limits of server | mode propose | mac run ───────────────────────────────┐
 │  KEY                           VALUE  DEFAULT  SET IN                        │
 │> dispatcher.hold_mem_used_pct  88.0   90.0     config.toml                   │
 │  dispatcher.shed_mem_used_pct  95.0   90.0     default                       │
@@ -173,45 +198,20 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 p/r pause/resume all  v pane  e edit  m mode  g start  x stop workers  q quit
-##### rules
-idlemax http://127.0.0.1:7878   running   updated 2s ago
-global: running | paused accounts: claude-work
-jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 8/8 rules | mode propose | mac run ──────────────────────────────────────────┐
-│  ID  RUN  LINE                              REASON                           │
-│> 4   3    Never edit scripts/release.sh w…  run 3 changed the release scrip… │
-└──────────────────────────────────────────────────────────────────────────────┘
-┌ details ─────────────────────────────────────────────────────────────────────┐
-│Never edit scripts/release.sh without asking.                                 │
-│run 3 changed the release script and needed you                               │
-│from run 3; a approves (asks first), d rejects                                │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  v pane  a/d approve/reject  x stop workers  q quit
 ##### limits: a read-only row
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 7/8 limits | mode propose | mac run ─────────────────────────────────────────┐
-│  KEY                           VALUE  DEFAULT  SET IN                        │
-│  dispatcher.hold_mem_used_pct  88.0   90.0     config.toml                   │
-│  dispatcher.shed_mem_used_pct  95.0   90.0     default                       │
-│  workers.review_cap            3.0    90.0     default                       │
-│> dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
+┌ 6/9 projects | mode propose | mac run ───────────────────────────────────────┐
+│  ON   NAME  DEVICE  WAITING FOR REVIEW                                       │
+│  on   app   mac     2/3                                                      │
+│> off  site  mac     0/3                                                      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ details ─────────────────────────────────────────────────────────────────────┐
-│read-only: change it on that device with idlemax config set.                  │
+│t switches the selected project; on asks first, off does not.                 │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -222,47 +222,47 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  v pane  e edit  m mode  g start  x stop workers  q quit
+p/r pause/resume all  v pane  t switch  m mode  g start  x stop workers  q quit
 ##### limits: typing a value
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 7/8 limits | mode propose | mac run ─────────────────────────────────────────┐
-│  KEY                           VALUE  DEFAULT  SET IN                        │
-│  dispatcher.hold_mem_used_pct  88.0   90.0     config.toml                   │
-│  dispatcher.shed_mem_used_pct  95.0   90.0     default                       │
-│> workers.review_cap            3.0    90.0     default                       │
-│  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-┌ details ─────────────────────────────────────────────────────────────────────┐
-│e edits the selected limit: type the value, Enter saves, the word default puts│
-│it back.                                                                      │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-workers.review_cap = 92_ (Enter saves, `default` resets, Esc closes)
+e: select a limit on the limits pane (v)
 ##### the stop question
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 7/8 limits | mode propose | mac run ─────────────────────────────────────────┐
-│  KEY                           VALUE  DEFAULT  SET IN                        │
-│  dispatcher.hold_mem_used_pct  88.0   90.0     config.toml                   │
-│  dispatcher.shed_mem_used_pct  95.0   90.0     default                       │
-│> workers.review_cap            3.0    90.0     default                       │
-│  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
-└───────┌ confirm ─────────────────────────────────────────────────────┐───────┘
-┌ detail│Stop every worker now? They continue only after start.        │───────┐
-│e edits│                                                              │lt puts│
-│it back│y confirm, any other key cancels                              │       │
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  i┌ confirm ─────────────────────────────────────────────────────┐       │
+│  40  n│Stop every worker now? They continue only after start.        │       │
+│       │                                                              │       │
+│       │y confirm, any other key cancels                              │       │
 │       └──────────────────────────────────────────────────────────────┘       │
 │                                                                              │
 │                                                                              │
@@ -272,22 +272,22 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  v pane  e edit  m mode  g start  x stop workers  q quit
+e: select a limit on the limits pane (v)
 ##### a refusal from the caller lock
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌ 7/8 limits | mode propose | mac run ─────────────────────────────────────────┐
-│  KEY                           VALUE  DEFAULT  SET IN                        │
-│  dispatcher.hold_mem_used_pct  88.0   90.0     config.toml                   │
-│  dispatcher.shed_mem_used_pct  95.0   90.0     default                       │
-│> workers.review_cap            3.0    90.0     default                       │
-│  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
-└──────────────────────────────────────────────────────────────────────────────┘
-┌ details ─────────────────────────────────────────────────────────────────────┐
-│e edits the selected limit: type the value, Enter saves, the word default puts│
-│it back.                                                                      │
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ID  NAME                       STATUS     AGE      RESULT / WHY             │
+│> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
+│  45  pr-review-drafts-claude-…  parked     45m ago  ai_account claude-work:… │
+│  44  repo-health-project-a      failed     44m ago  exit 2                   │
+│  43  kb-refresh                 paused     43m ago  load 1m 9.40 is above 8… │
+│  41  index-refresh              running    41m ago  running 12m              │
+│  40  nightly-audit              succeeded  40m ago  exit 0                   │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

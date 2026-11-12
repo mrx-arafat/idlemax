@@ -1,7 +1,9 @@
 //! Delivery: draws the Dispatch tab from the `DispatcherView`: one pane at a time, as a
 //! table under a title with the mode and the line state, and the selected row's details.
 
-use idlemax_core::dispatch::view::{DispatcherView, NeedsYouLine, ProjectLine, WorkerLine};
+use idlemax_core::dispatch::view::{
+    DeviceLine, DispatcherView, NeedsYouLine, ProjectLine, WorkerLine,
+};
 use idlemax_core::types::UnixMs;
 use idlemax_core::worker::run::RunState;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -64,11 +66,15 @@ fn title(v: &DispatcherView, pane: Pane) -> String {
         .iter()
         .map(|d| format!("{} {}", d.id, d.state.as_str()))
         .collect();
+    let name = match (pane, &v.limits_device) {
+        (Pane::Limits, Some(own)) => format!("limits of {own}"),
+        _ => pane.title().to_string(),
+    };
     format!(
         " {}/{} {} | mode {} | {} ",
         pane.index() + 1,
         Pane::ALL.len(),
-        pane.title(),
+        name,
         v.mode.as_str(),
         lines.join(", ")
     )
@@ -94,6 +100,22 @@ fn pane_table(
             &table::D_PROJECTS,
             v.projects.iter().map(project_row).collect(),
         ),
+        Pane::Devices => {
+            let on = |e: Option<bool>| match e {
+                Some(true) => "on",
+                Some(false) => "off",
+                None => "-",
+            };
+            let row = |x: &DeviceLine| {
+                plain(vec![
+                    on(x.enabled).into(),
+                    x.id.clone(),
+                    x.state.as_str().into(),
+                    x.reason.clone(),
+                ])
+            };
+            (&table::D_DEVICES, v.devices.iter().map(row).collect())
+        }
         Pane::Limits => (&table::D_LIMITS, limit_rows(d, v)),
         Pane::Rules => {
             let row = |p: &&Proposal| {
@@ -257,6 +279,9 @@ fn details(d: &Snapshot, v: &DispatcherView, pane: Pane, sel: Option<usize>) -> 
         Pane::Projects => Some(vec![Line::from(
             "t switches the selected project; on asks first, off does not.",
         )]),
+        Pane::Devices => Some(vec![Line::from(
+            "t switches the selected device; on asks first, off stops its workers, state saved.",
+        )]),
         Pane::Limits => Some(limit_detail(d, i)),
         Pane::Rules => open_proposals(d).get(i).map(|p| {
             vec![
@@ -363,6 +388,7 @@ pub fn input_text(input: &LimitInput) -> String {
 pub fn pane_keys(pane: Pane) -> &'static str {
     match pane {
         Pane::Projects => "v pane  t switch  m mode  g start",
+        Pane::Devices => "v pane  t switch  m mode  g start",
         Pane::Limits => "v pane  e edit  m mode  g start",
         Pane::Rules => "v pane  a/d approve/reject",
         Pane::Review => "v pane  k keep  M merge  D discard",

@@ -70,6 +70,11 @@ pub enum Request {
         name: String,
         on: bool,
     },
+    /// Switch a device on or off for dispatcher work.
+    DeviceSwitch {
+        id: String,
+        on: bool,
+    },
     /// `value` None puts the limit back to its default.
     SetLimit {
         key: String,
@@ -102,6 +107,9 @@ impl Request {
             Request::SetMode(mode) => format!("mode {mode}"),
             Request::SwitchProject { name, on, .. } => {
                 format!("project {name} {}", if *on { "on" } else { "off" })
+            }
+            Request::DeviceSwitch { id, on } => {
+                format!("device {id} {}", if *on { "on" } else { "off" })
             }
             Request::SetLimit { key, value: None } => format!("{key} back to its default"),
             Request::SetLimit {
@@ -269,6 +277,7 @@ async fn perform(c: &ApiClient, req: Request) -> Update {
         Request::DiscardRun(run) => c.discard_run(run).await.map(|_| ()),
         Request::SetMode(mode) => c.set_mode_named(&mode).await.map(|_| ()),
         Request::SwitchProject { id, on, .. } => c.switch_project(id, on).await.map(|_| ()),
+        Request::DeviceSwitch { id, on } => c.switch_device(&id, on).await.map(|_| ()),
         Request::SetLimit { key, value } => {
             let req = LimitRequest { key, value };
             c.set_limit(&req).await.map(|_| ())

@@ -26,18 +26,20 @@ pub enum Pane {
     Review,
     Budget,
     Projects,
+    Devices,
     Limits,
     Rules,
 }
 
 impl Pane {
-    pub const ALL: [Pane; 8] = [
+    pub const ALL: [Pane; 9] = [
         Pane::Workers,
         Pane::Launch,
         Pane::Needs,
         Pane::Review,
         Pane::Budget,
         Pane::Projects,
+        Pane::Devices,
         Pane::Limits,
         Pane::Rules,
     ];
@@ -50,6 +52,7 @@ impl Pane {
             Pane::Review => "review",
             Pane::Budget => "budget",
             Pane::Projects => "projects",
+            Pane::Devices => "devices",
             Pane::Limits => "limits",
             Pane::Rules => "rules",
         }
@@ -89,6 +92,7 @@ pub fn pane_rows(d: &Snapshot, pane: Pane) -> usize {
         Pane::Review => v.review.len(),
         Pane::Budget => v.budgets.iter().map(|b| b.days.len()).sum(),
         Pane::Projects => v.projects.len(),
+        Pane::Devices => v.devices.len(),
         Pane::Limits => d.limits.len() + v.devices.iter().map(|x| x.limits.len()).sum::<usize>(),
         Pane::Rules => open_proposals(d).len(),
     }
@@ -161,6 +165,7 @@ impl App {
                 "Start the stopped workers again? They continue where they were.".into(),
                 Request::StartWorkers,
             ),
+            't' if self.pane == Pane::Devices => return Some(self.switch_device(now_ms)),
             't' => return Some(self.switch_project(now_ms)),
             'e' => self.edit_limit(now_ms),
             'a' | 'd' => return Some(self.decide_rule(c == 'a', now_ms)),
@@ -220,6 +225,31 @@ impl App {
         let prompt = format!(
             "Switch project {} on? The dispatcher may then plan and launch workers on it.",
             p.name
+        );
+        self.ask(prompt, request);
+        None
+    }
+
+    /// Like a project: on asks first, off does not (D19).
+    fn switch_device(&mut self, now_ms: UnixMs) -> Option<Request> {
+        let d = self
+            .selected_row()
+            .and_then(|i| self.view()?.devices.get(i));
+        let Some(d) = d else {
+            self.flash("t: no device on this pane".into(), true, now_ms);
+            return None;
+        };
+        let on = d.enabled != Some(true);
+        let request = Request::DeviceSwitch {
+            id: d.id.clone(),
+            on,
+        };
+        if !on {
+            return Some(request);
+        }
+        let prompt = format!(
+            "Switch device {} on? The dispatcher may then launch workers there.",
+            d.id
         );
         self.ask(prompt, request);
         None

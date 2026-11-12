@@ -962,7 +962,8 @@ function renderProjects() {
   const box = $("projects");
   const v = dispReady(box);
   if (!v) return;
-  const devices = v.devices.length > 1 ? v.devices.filter((d) => d.enabled != null) : [];
+  // Drawn whenever the coordinator knows the switch: a lone Mac starts off and needs it (D19).
+  const devices = v.devices.filter((d) => d.enabled != null);
   const rows = [
     ...devices.map((d) => h("div", { class: "row" }, toggle(d.enabled, d.id, (e) => switchDevice(e.currentTarget, d)), h("strong", null, d.id), h("span", { class: "faint" }, "device"))),
     ...v.projects.map((p) => h("div", { class: "row" }, toggle(p.enabled, p.name, (e) => switchProject(e.currentTarget, p)),
@@ -1005,6 +1006,9 @@ function renderLimits() {
   if (state.errors.limits) { box.replaceChildren(h("div", { class: "err" }, state.errors.limits)); return; }
   if (state.limits === undefined) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
   const own = state.limits ? state.limits.map(limitRow) : [h("div", { class: "muted" }, "This coordinator cannot change limits.")];
+  // Whose config.toml the inputs change: only the coordinator's own machine (A23).
+  const whose = state.dispatcher && state.dispatcher.limits_device;
+  $("h-limits").textContent = whose ? `Limits of ${whose}` : "Limits";
   const others = ((state.dispatcher && state.dispatcher.devices) || []).filter((d) => (d.limits || []).length).map((d) =>
     h("div", { class: "acct" }, h("div", { class: "acct-h" }, h("span", { class: "name" }, d.id), badge("read-only", "")),
       h("div", { class: "disp-list" }, d.limits.map((s) => h("div", { class: "row" }, h("span", { class: "mono" }, s.key), h("span", { class: "num", style: "margin-left:auto" }, String(s.value))))),

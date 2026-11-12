@@ -230,6 +230,8 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
         ("/v1/workers/start", ""),
         ("/v1/runs/1/keep", r#"{"merge":false}"#),
         ("/v1/runs/1/discard", ""),
+        ("/v1/devices/lock/on", ""),
+        ("/v1/devices/lock/credential", ""),
     ] {
         assert_eq!(home.post_marked(coord, path, body), "403", "{path} {body}");
     }
@@ -245,6 +247,9 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
         home.post_marked(coord, "/v1/projects/999999/off", "{}"),
         "404"
     );
+    // A device switched off is a stop: the lock lets it through (200, or 404 before the
+    // agent's first heartbeat).
+    assert_ne!(home.post_marked(coord, "/v1/devices/lock/off", ""), "403");
 
     assert_eq!(home.post_marked(&home.agent, "/v1/local/reload", ""), "403");
     let pause = r#"{"action":"pause","scope":{"type":"global"}}"#;

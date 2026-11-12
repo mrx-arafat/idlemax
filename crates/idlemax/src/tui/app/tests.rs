@@ -90,7 +90,9 @@ fn why_pane_asks_for_the_selected_waiting_job_only_when_its_reasons_changed() {
 /// A coordinator with the dispatcher view: one project off, two limits and an open proposal.
 fn dispatch_app() -> App {
     let view = json!({"at_ms": 0, "mode": "off", "picked_by": "no orchestrator pass",
-        "devices": [{"id": "mac", "state": "run", "reason": "room for 1", "open_slots": 1}],
+        "devices": [{"id": "mac", "enabled": false, "state": "run", "reason": "room for 1",
+                     "open_slots": 1},
+                    {"id": "box", "enabled": true, "state": "hold", "reason": "memory 91%"}],
         "projects": [{"id": 2, "name": "site", "device": "mac", "enabled": false}],
         "review": [{"run": 9, "device": "mac", "project": "site", "task": "Fix the sync test",
             "state": "clean", "label": "ready for review", "summary": "fix the sync test",
@@ -116,7 +118,7 @@ fn dispatch_app() -> App {
 
 /// Moves the Dispatch tab to the pane with this title.
 fn pane(app: &mut App, title: &str) {
-    for _ in 0..8 {
+    for _ in 0..super::super::dispatcher::Pane::ALL.len() {
         if app.pane.title() == title {
             return;
         }
@@ -265,5 +267,24 @@ fn keep_merge_and_discard_of_the_selected_task_ask_first() {
     }
     pane(&mut app, "projects");
     assert_eq!(press(&mut app, 'k'), None);
+    assert!(app.confirm.is_none());
+}
+
+#[test]
+fn t_switches_the_selected_device_asking_only_toward_on() {
+    let mut app = dispatch_app();
+    pane(&mut app, "devices");
+    assert_eq!(press(&mut app, 't'), None);
+    let on = Request::DeviceSwitch {
+        id: "mac".into(),
+        on: true,
+    };
+    assert_eq!(press(&mut app, 'y'), Some(on));
+    key(&mut app, KeyCode::Down);
+    let off = Request::DeviceSwitch {
+        id: "box".into(),
+        on: false,
+    };
+    assert_eq!(press(&mut app, 't'), Some(off));
     assert!(app.confirm.is_none());
 }
