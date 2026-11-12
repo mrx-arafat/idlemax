@@ -179,6 +179,22 @@ mod tests {
     }
 
     #[test]
+    fn a_feed_without_herdr_is_named_in_the_plan_notes() {
+        let mut store = Store::open_in_memory().unwrap();
+        let cfg = Config::default();
+        let mut inputs = feed();
+        inputs.herdr = false;
+        ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+        let plan = gather_plan(&store, &cfg, &cfg, T0).unwrap().plan;
+        assert!(
+            plan.notes
+                .contains(&"mac: herdr gave no folders".to_string()),
+            "{:?}",
+            plan.notes
+        );
+    }
+
+    #[test]
     fn a_step_queues_one_check_job_in_the_base_checkout() {
         use idlemax_core::dispatch::inputs::Checkout;
         use idlemax_core::dispatch::project::ProjectSettings;

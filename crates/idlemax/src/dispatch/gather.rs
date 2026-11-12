@@ -80,7 +80,14 @@ pub fn read_inputs(
     });
     let views = quota_views(store, cfg, now)?;
     let accounts = account_uses(&cfg.quota, &views, &paused_accounts(&paused), &[]);
-    let notes = notes(&projects, &repos, &checks, &devices);
+    let mut notes = notes(&projects, &repos, &checks, &devices);
+    // Discovery goes silent when Herdr is missing or renamed a key; say so (Risks table).
+    notes.extend(
+        store
+            .devices_without_herdr()?
+            .into_iter()
+            .map(|d| format!("{d}: herdr gave no folders")),
+    );
     let pass_active = store.active_jobs()?.iter().any(|j| is_pass(&j.spec))
         || store.queued_jobs()?.iter().any(|j| is_pass(&j.spec));
     Ok(Inputs {

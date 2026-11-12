@@ -497,7 +497,7 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 - `not_judged` lists the ready tasks no orchestrator pass has seen, in plan order; they never fill a slot.
 - `needs_you` lists the tasks that need the owner, each with its reason in `needs_you`.
 - `accounts` applies the simple rule: an account is usable while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota, with a fresh weekly reading and no usage limit in the current window; agy and API accounts have no reading and are not usable.
-- `notes` holds per-project lines, such as a focused check that has not run on the base commit yet and why.
+- `notes` holds per-project lines, such as a focused check that has not run on the base commit yet and why, and `<device>: herdr gave no folders` for a device whose newest feed came without a Herdr view.
 
 ### The orchestrator pass
 

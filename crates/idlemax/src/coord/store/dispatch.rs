@@ -65,6 +65,22 @@ impl Store {
         Ok(repos)
     }
 
+    /// The devices whose newest feed came without a Herdr view.
+    pub fn devices_without_herdr(&self) -> StoreResult<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT payload FROM dispatch_inputs ORDER BY device")?;
+        let rows = stmt.query_map([], |r| json_col::<DispatchInputs>(r, 0))?;
+        let mut out = Vec::new();
+        for inputs in rows {
+            let inputs = inputs?;
+            if !inputs.herdr {
+                out.push(inputs.device);
+            }
+        }
+        Ok(out)
+    }
+
     /// Every project's current base check.
     pub fn base_checks(&self) -> StoreResult<Vec<BaseCheck>> {
         let mut stmt = self.conn.prepare_cached(
