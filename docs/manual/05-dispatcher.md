@@ -190,6 +190,7 @@ It is told to build scope paths from the project's files, adding every file the 
 - A named path that matches no file is kept as a new file when its folder exists, so a task can create `seqs/pascal.py` next to the other files in `seqs/`.
 - A file the task's title or done check names joins the scope when its folder exists.
 - A named path that matches no file and sits in no existing folder widens the scope to the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
+- When the device reported no file list for the project (an older agent, for example), the named scope paths are kept as given and never widened.
 
 - It runs with no tools, no hooks and no MCP servers.
 - It runs when its inputs changed, at most once an hour by itself, or on `idlemax plan --refresh`.
