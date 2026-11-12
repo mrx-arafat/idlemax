@@ -14,6 +14,7 @@ mod init_cmd;
 mod job;
 mod job_wait;
 mod logs;
+mod mcp;
 mod mode;
 mod noop;
 mod out;

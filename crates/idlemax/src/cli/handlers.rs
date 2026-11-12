@@ -3,7 +3,8 @@
 //! next-step hints to the output boundary.
 
 use anyhow::Result;
-use idlemax_core::protocol::ControlRequest;
+use idlemax_core::dispatch::view::DispatcherView;
+use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus, UnixMs};
 
 use super::out::dispatcher_view::{self, StatusOut};
@@ -27,15 +28,23 @@ pub async fn status(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
     out.emit_with(
         &both,
         |b| print::status(b.status, b.dispatcher, now),
-        || {
-            let mut node = views::status(&s, now, out.fields())?;
-            if let (Some(v), Node::Obj(fields)) = (&view, &mut node) {
-                fields.push(("dispatcher".into(), dispatcher_view::node(v, now)));
-            }
-            Ok(node)
-        },
+        || status_node(&s, view.as_ref(), now, out.fields()),
         &hints::status(s.devices.len(), s.global_paused),
     )
+}
+
+/// The TOON of `idlemax status`, also the text of the MCP `status` tool.
+pub(super) fn status_node(
+    s: &ClusterStatus,
+    view: Option<&DispatcherView>,
+    now: UnixMs,
+    fields: &[String],
+) -> Result<Node> {
+    let mut node = views::status(s, now, fields)?;
+    if let (Some(v), Node::Obj(fields)) = (view, &mut node) {
+        fields.push(("dispatcher".into(), dispatcher_view::node(v, now)));
+    }
+    Ok(node)
 }
 
 pub async fn why(c: &ApiClient, id: JobId, out: &Out) -> Result<()> {

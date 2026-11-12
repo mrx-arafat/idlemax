@@ -25,6 +25,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 - `idlemax stop`: stop every AI worker with its state saved; nothing launches until idlemax start
 - `idlemax start`: let the stopped workers continue their sessions
 - `idlemax review`: see each finished task with its verdict, then keep it (--merge to merge) or discard it
+- `idlemax mcp`: serve status, start, stop, project on and off and finished work to an agent CLI over MCP
 - `idlemax pause`: hold jobs everywhere, or on one `--device`, `--account` or `--job`
 - `idlemax stop-all`: kill running jobs and hold new ones
 - `idlemax doctor`: check this device's setup and get the fix for anything wrong

@@ -92,3 +92,15 @@ impl ApiClient {
         self.get("/v1/dispatcher").await
     }
 }
+
+impl ApiClient {
+    /// The owner's stop of every worker, with `reason` for the event log; they continue only
+    /// after `start_workers`.
+    pub async fn stop_all_workers(&self, reason: &str) -> Result<StopReply> {
+        let req = StopRequest {
+            scope: idlemax_core::types::ControlScope::Global,
+            reason: Some(reason.to_string()),
+        };
+        self.stop_workers(&req).await
+    }
+}

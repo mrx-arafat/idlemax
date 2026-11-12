@@ -98,6 +98,8 @@ pub(super) enum Cmd {
     Statusline(statusline::StatuslineArgs),
     /// Interactive dashboard
     Tui,
+    /// MCP server on stdio for agent CLIs: status, start, stop, project on/off, finished work
+    Mcp,
     /// Check this device's setup; prints one line per check and the fix for anything wrong
     Doctor,
     /// Talk to this device's agent directly; works while the coordinator is down

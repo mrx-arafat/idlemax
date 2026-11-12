@@ -11,9 +11,9 @@ use super::init_cmd::run_init;
 use super::out::OWNER_ONLY_HELP;
 use super::project::ProjectCmd;
 use super::{
-    config_cmd, handlers, home, hooks, inbox, job, logs, mode, out, plan, print, project, report,
-    review, rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli, CliError,
-    ClientError, ExitWith, Out, Peer,
+    config_cmd, handlers, home, hooks, inbox, job, logs, mcp, mode, out, plan, print, project,
+    report, review, rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli,
+    CliError, ClientError, ExitWith, Out, Peer,
 };
 use crate::state::{self, now_ms};
 
@@ -40,6 +40,8 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
         Cmd::Doctor => return run_doctor(coord, out).await,
         Cmd::Hooks(args) => return hooks::run(coord, args, out).await,
         Cmd::Skill(args) => return skill::run(args, out),
+        // Before the state dir: the handshake must work on a device that is not set up.
+        Cmd::Mcp => return mcp::run(coord).await,
         other => other,
     };
     let paths = state::paths_from_env()?;
@@ -146,6 +148,8 @@ fn access_of(cmd: &Cmd) -> Access {
         | Cmd::Service(_)
         | Cmd::Statusline(_)
         | Cmd::Tui
+        // Its tools carry their own check.
+        | Cmd::Mcp
         | Cmd::Doctor
         | Cmd::Hooks(_)
         | Cmd::Skill(_) => Access::Read,
@@ -243,7 +247,8 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         | Cmd::Inbox { .. }
         | Cmd::Doctor
         | Cmd::Hooks(_)
-        | Cmd::Skill(_) => {
+        | Cmd::Skill(_)
+        | Cmd::Mcp => {
             bail!("not a coordinator command")
         }
     }

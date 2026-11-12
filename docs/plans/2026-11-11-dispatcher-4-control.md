@@ -790,13 +790,13 @@ A process that idlemax launched gets no on-switch from it.
 
 **Definition of Done:**
 
-- [ ] Over a pipe, `initialize`, `notifications/initialized`, `tools/list` and `tools/call status` get correct replies, `tools/list` names exactly the six tools, and every stdout line parses as JSON.
-- [ ] `initialize` with the version `2025-03-26` is answered with `2025-06-18`.
-- [ ] The `status` reply text holds the label of a seeded worker.
-- [ ] With `IDLEMAX_JOB_ID` in the server's environment, `start` and `project_on` return `isError: true` with the lock's text, shown with `--coord` at a closed port.
-- [ ] In a home with no token, the handshake succeeds and `tools/call status` returns `isError: true` naming `idlemax setup`.
+- [x] Over a pipe, `initialize`, `notifications/initialized`, `tools/list` and `tools/call status` get correct replies, `tools/list` names exactly the six tools, and every stdout line parses as JSON.
+- [x] `initialize` with the version `2025-03-26` is answered with `2025-06-18`.
+- [x] The `status` reply text holds the label of a seeded worker.
+- [x] With `IDLEMAX_JOB_ID` in the server's environment, `start` and `project_on` return `isError: true` with the lock's text, shown with `--coord` at a closed port.
+- [x] In a home with no token, the handshake succeeds and `tools/call status` returns `isError: true` naming `idlemax setup`.
 - [ ] `sh scripts/test-mcp-clients.sh` passes for each agent CLI installed on the machine, and `idlemax skill --check` passes.
-- [ ] Verify: `cargo test -p idlemax-core mcp && cargo test -p idlemax --test mcp && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax-core mcp && cargo test -p idlemax --test mcp && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 12: Needs the owner's OK: switch control and visibility on for real
 

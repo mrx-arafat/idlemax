@@ -465,6 +465,10 @@ Nothing here is required, and each piece removes a guess the agent would otherwi
   `skills/idlemax/SKILL.md` is a generated [Agent Skill](https://agentskills.io) for agents without hooks, or for anyone who prefers loading it on demand.
   The hook and the skill reach the same goal, so you need only one.
 - **One line to hand work to idle capacity:** `idlemax job add --wait -- <command>`.
+- **An MCP server.**
+  `idlemax mcp` speaks the Model Context Protocol on stdin and stdout and is a thin client of the coordinator, with six tools: `status` (what `idlemax status` prints), `start` and `stop` (the dispatcher's workers), `project_on` and `project_off` (by project name) and `finished_work` (the tasks waiting for your review).
+  Add it once per agent CLI with one of `claude mcp add --scope user idlemax -- idlemax mcp`, `codex mcp add idlemax -- idlemax mcp`, `opencode mcp add --global idlemax -- idlemax mcp` or `agy mcp add idlemax idlemax mcp`.
+  A job or worker that idlemax started gets no `start` or `project_on` from it, and the coordinator refuses those again (see [Who may switch idlemax on](#who-may-switch-idlemax-on)).
 
 ### Output an agent can read
 
@@ -1021,6 +1025,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax hooks install \| uninstall \| status [--claude] [--codex] [--opencode]` | start every agent session with idlemax's state, see [Session hooks and the skill](#session-hooks-and-the-skill); `--dry-run` previews |
 | `idlemax skill [--check]` | print the generated agent skill, or check the committed copy is current |
 | `idlemax tui` | terminal dashboard |
+| `idlemax mcp` | MCP server on stdio for an agent CLI, see [Use it from an AI agent](#use-it-from-an-ai-agent) |
 | `idlemax local status \| pause \| resume \| stop-all` | this device's agent directly, on `agent.listen` |
 
 **Terminal dashboard.**

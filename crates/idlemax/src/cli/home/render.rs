@@ -70,6 +70,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "see each finished task with its verdict, then keep it (--merge to merge) or discard it",
     ),
     (
+        "idlemax mcp",
+        "serve status, start, stop, project on and off and finished work to an agent CLI over MCP",
+    ),
+    (
         "idlemax pause",
         "hold jobs everywhere, or on one `--device`, `--account` or `--job`",
     ),
