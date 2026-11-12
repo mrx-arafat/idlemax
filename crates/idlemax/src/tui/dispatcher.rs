@@ -7,6 +7,8 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, Tab};
 use super::feed::{Request, Snapshot};
+use idlemax_core::dispatch::proposal::ProposalStatus;
+
 use crate::cli::Proposal;
 
 /// What the stop key asks on every tab.
@@ -71,7 +73,10 @@ pub struct LimitInput {
 
 /// The proposals still waiting for a decision, in the order the coordinator lists them.
 pub fn open_proposals(d: &Snapshot) -> Vec<&Proposal> {
-    d.proposals.iter().filter(|p| p.status == "open").collect()
+    d.proposals
+        .iter()
+        .filter(|p| p.status == ProposalStatus::Open)
+        .collect()
 }
 
 /// Rows of `pane`: what the selection moves over.
@@ -104,7 +109,8 @@ impl App {
     }
 
     /// Keys of the limit input, which comes before every other key: Esc closes it, Enter
-    /// sends it, and an empty value puts the limit back to its default.
+    /// sends it. The word `default` puts the limit back to its default; an empty value sends
+    /// nothing, so a slip of Enter never relaxes a safety line.
     pub(super) fn input_key(&mut self, key: KeyEvent) -> Option<Request> {
         let input = self.input.as_mut()?;
         match key.code {
@@ -115,7 +121,11 @@ impl App {
             KeyCode::Esc => self.input = None,
             KeyCode::Enter => {
                 let LimitInput { key, text } = self.input.take()?;
-                let value = Some(text.trim().to_string()).filter(|v| !v.is_empty());
+                let value = match text.trim() {
+                    "" => return None,
+                    "default" => None,
+                    v => Some(v.to_string()),
+                };
                 return Some(Request::SetLimit { key, value });
             }
             _ => {}
@@ -134,7 +144,8 @@ impl App {
         }
         let KeyCode::Char(c) = code else { return None };
         if self.view().is_none() {
-            if c == 'q' || c.is_ascii_digit() {
+            // The stop key is on every tab, and its route is not the view's.
+            if c == 'q' || c == 'x' || c.is_ascii_digit() {
                 return None;
             }
             self.flash(NO_VIEW.into(), true, now_ms);

@@ -32,7 +32,9 @@ pub fn render(
     now_ms: UnixMs,
 ) {
     let Some(v) = &d.dispatcher else {
-        return empty_state(f, area, NO_VIEW);
+        // A view that failed says why; one the coordinator lacks says to update it.
+        let text = d.notes.first().map_or(NO_VIEW, String::as_str);
+        return empty_state(f, area, text);
     };
     let (spec, rows) = pane_table(d, v, pane, now_ms);
     let wanted = u16::try_from(rows.len() + 3).unwrap_or(u16::MAX);
@@ -43,7 +45,12 @@ pub fn render(
     .areas(area);
     let block = Block::bordered().title(title(v, pane));
     table_in(f, list, spec, rows, state, block);
-    let lines = details(d, v, pane, state.selected());
+    let mut lines: Vec<Line> = d
+        .notes
+        .iter()
+        .map(|n| Line::from(n.clone()).red())
+        .collect();
+    lines.extend(details(d, v, pane, state.selected()));
     let p = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .block(Block::bordered().title(" details "));
@@ -337,7 +344,7 @@ fn budget_detail(v: &DispatcherView, i: usize) -> Option<Vec<Line<'static>>> {
 
 fn limit_detail(d: &Snapshot, i: usize) -> Vec<Line<'static>> {
     let text = if i < d.limits.len() {
-        "e edits the selected limit: type the value, Enter saves, an empty value puts back the default."
+        "e edits the selected limit: type the value, Enter saves, the word default puts it back."
     } else {
         "read-only: change it on that device with idlemax config set."
     };
@@ -347,7 +354,7 @@ fn limit_detail(d: &Snapshot, i: usize) -> Vec<Line<'static>> {
 /// The footer while a limit is typed.
 pub fn input_text(input: &LimitInput) -> String {
     format!(
-        "{} = {}_  (Enter saves, empty = default, Esc closes)",
+        "{} = {}_  (Enter saves, `default` resets, Esc closes)",
         input.key, input.text
     )
 }

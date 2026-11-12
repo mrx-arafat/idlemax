@@ -126,16 +126,21 @@ fn key(app: &mut App, code: KeyCode) -> Option<Request> {
 }
 
 #[test]
-fn x_asks_once_before_it_stops_the_workers() {
+fn x_asks_once_before_it_stops_the_workers_on_every_tab() {
     let mut app = dispatch_app();
-    press(&mut app, '2');
-    assert_eq!(press(&mut app, 'x'), None);
-    let prompt = app.confirm.as_ref().map(|c| c.prompt.as_str());
-    assert_eq!(
-        prompt,
-        Some("Stop every worker now? They continue only after start.")
-    );
-    assert_eq!(press(&mut app, 'y'), Some(Request::StopWorkers));
+    for (i, tab) in Tab::ALL.iter().enumerate() {
+        let digit = char::from_digit(i as u32 + 1, 10).unwrap();
+        press(&mut app, digit);
+        assert_eq!(app.tab, *tab);
+        assert_eq!(press(&mut app, 'x'), None, "{tab:?}");
+        let prompt = app.confirm.as_ref().map(|c| c.prompt.as_str());
+        assert_eq!(
+            prompt,
+            Some("Stop every worker now? They continue only after start."),
+            "{tab:?}"
+        );
+        assert_eq!(press(&mut app, 'y'), Some(Request::StopWorkers), "{tab:?}");
+    }
     press(&mut app, 'x');
     assert_eq!(press(&mut app, 'n'), None);
 }
@@ -164,6 +169,20 @@ fn a_limit_is_typed_in_the_footer_and_sent_once() {
     press(&mut app, '1');
     assert_eq!(key(&mut app, KeyCode::Esc), None);
     assert!(app.input.is_none() && !app.quit);
+
+    // A slip of Enter sends nothing; a reset to the default needs the word.
+    press(&mut app, 'e');
+    assert_eq!(key(&mut app, KeyCode::Enter), None);
+    assert!(app.input.is_none());
+    press(&mut app, 'e');
+    for c in "default".chars() {
+        press(&mut app, c);
+    }
+    let reset = Request::SetLimit {
+        key: "workers.review_cap".into(),
+        value: None,
+    };
+    assert_eq!(key(&mut app, KeyCode::Enter), Some(reset));
 }
 
 #[test]
@@ -201,8 +220,11 @@ fn without_a_dispatcher_view_no_key_on_the_tab_sends_a_request() {
     app.apply(Update::Snapshot(Box::default(), 0), 0);
     press(&mut app, '7');
     assert_eq!(app.tab, Tab::Dispatch);
-    for c in "xmgtevadpPRsk".chars() {
+    for c in "mgtevadpPRsk".chars() {
         assert_eq!(press(&mut app, c), None, "{c}");
         assert!(app.confirm.is_none(), "{c} asked");
     }
+    // The stop key is on every tab: it is a different route from the view.
+    press(&mut app, 'x');
+    assert!(app.confirm.is_some());
 }

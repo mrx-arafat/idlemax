@@ -2,25 +2,10 @@
 //! mode by name, the worker stop and start, and the rule proposals.
 
 use idlemax_core::config::{LimitReply, LimitRequest, Setting};
-use idlemax_core::types::UnixMs;
-use serde::{Deserialize, Serialize};
+pub use idlemax_core::dispatch::proposal::Proposal;
 use serde_json::{json, Value};
 
 use super::{ApiClient, Result};
-
-/// One rule proposal as `GET /v1/proposals` lists it.
-// SHORTCUT: mirrors the wire shape Spec 4 Task 6 fixes, ceiling: drifts if Task 6 changes
-// it, upgrade trigger: Task 6 lands its core type, then use that one.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Proposal {
-    pub id: i64,
-    pub at_ms: UnixMs,
-    pub run: i64,
-    pub line: String,
-    pub reason: String,
-    pub status: String,
-}
 
 impl ApiClient {
     pub async fn limits(&self) -> Result<Vec<Setting>> {

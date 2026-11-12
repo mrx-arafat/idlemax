@@ -161,8 +161,8 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ details ─────────────────────────────────────────────────────────────────────┐
-│e edits the selected limit: type the value, Enter saves, an empty value puts  │
-│back the default.                                                             │
+│e edits the selected limit: type the value, Enter saves, the word default puts│
+│it back.                                                                      │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -236,8 +236,8 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ details ─────────────────────────────────────────────────────────────────────┐
-│e edits the selected limit: type the value, Enter saves, an empty value puts  │
-│back the default.                                                             │
+│e edits the selected limit: type the value, Enter saves, the word default puts│
+│it back.                                                                      │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -247,7 +247,7 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-workers.review_cap = 92_ (Enter saves, empty = default, Esc closes)
+workers.review_cap = 92_ (Enter saves, `default` resets, Esc closes)
 ##### the stop question
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
@@ -261,8 +261,8 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
 └───────┌ confirm ─────────────────────────────────────────────────────┐───────┘
 ┌ detail│Stop every worker now? They continue only after start.        │───────┐
-│e edits│                                                              │ puts  │
-│back th│y confirm, any other key cancels                              │       │
+│e edits│                                                              │lt puts│
+│it back│y confirm, any other key cancels                              │       │
 │       └──────────────────────────────────────────────────────────────┘       │
 │                                                                              │
 │                                                                              │
@@ -286,8 +286,8 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │  dispatcher.hold_mem_used_pct  85.0   90.0     mac read-only                 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ details ─────────────────────────────────────────────────────────────────────┐
-│e edits the selected limit: type the value, Enter saves, an empty value puts  │
-│back the default.                                                             │
+│e edits the selected limit: type the value, Enter saves, the word default puts│
+│it back.                                                                      │
 │                                                                              │
 │                                                                              │
 │                                                                              │

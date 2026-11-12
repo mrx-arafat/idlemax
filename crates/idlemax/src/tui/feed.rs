@@ -5,6 +5,7 @@ use std::sync::mpsc::Sender;
 use std::time::Duration;
 
 use idlemax_core::config::{LimitRequest, Setting};
+use idlemax_core::dispatch::label::plain;
 use idlemax_core::dispatch::view::DispatcherView;
 use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
@@ -42,6 +43,8 @@ pub struct Snapshot {
     pub limits: Vec<Setting>,
     /// The rule proposals (empty from a coordinator without `/v1/proposals`).
     pub proposals: Vec<Proposal>,
+    /// One line per optional feed that failed for another reason than a missing route.
+    pub notes: Vec<String>,
 }
 
 /// An action the user confirmed in the dashboard.
@@ -168,31 +171,33 @@ async fn fetch_report(c: &ApiClient, zone: Zone) -> Option<Update> {
 }
 
 async fn fetch(c: &ApiClient) -> Update {
-    let all = tokio::try_join!(
-        c.status(),
-        c.jobs(None, JOB_LIMIT),
-        c.quota(),
-        c.advice(),
-        c.events(EVENT_LIMIT),
-        or_empty(c.schedules()),
-        or_empty(c.why_summaries(JOB_LIMIT)),
-        or_none(c.dispatcher()),
-        or_empty(c.limits()),
-        or_empty(c.proposals())
+    let (all, (dispatcher, limits, proposals)) = tokio::join!(
+        async {
+            tokio::try_join!(
+                c.status(),
+                c.jobs(None, JOB_LIMIT),
+                c.quota(),
+                c.advice(),
+                c.events(EVENT_LIMIT),
+                or_empty(c.schedules()),
+                or_empty(c.why_summaries(JOB_LIMIT)),
+            )
+        },
+        async { tokio::join!(c.dispatcher(), c.limits(), c.proposals()) }
     );
+    // The dispatcher's feeds are best effort: a failing one (an invalid config.toml, a
+    // failing plan) must not blank every tab when the owner most needs to see what is wrong.
+    let mut notes = Vec::new();
+    let dispatcher = optional(dispatcher, "dispatcher view", &mut notes);
+    let limits = optional(limits, "limits", &mut notes).unwrap_or_default();
+    let mut proposals = optional(proposals, "rule proposals", &mut notes).unwrap_or_default();
+    for p in &mut proposals {
+        // Text the orchestrator wrote goes to a terminal: one line, no escape.
+        p.line = plain(&p.line);
+        p.reason = plain(&p.reason);
+    }
     match all {
-        Ok((
-            status,
-            jobs,
-            quota,
-            advice,
-            events,
-            schedules,
-            why,
-            dispatcher,
-            limits,
-            proposals,
-        )) => Update::Snapshot(
+        Ok((status, jobs, quota, advice, events, schedules, why)) => Update::Snapshot(
             Box::new(Snapshot {
                 status,
                 jobs,
@@ -204,6 +209,7 @@ async fn fetch(c: &ApiClient) -> Update {
                 dispatcher,
                 limits,
                 proposals,
+                notes,
             }),
             now_ms(),
         ),
@@ -222,13 +228,16 @@ async fn or_empty<T>(
     }
 }
 
-/// A coordinator older than the dispatcher view answers 404: the tab says so.
-async fn or_none<T>(
-    call: impl Future<Output = Result<T, ClientError>>,
-) -> Result<Option<T>, ClientError> {
-    match call.await {
-        Err(ClientError::Api { status: 404, .. }) => Ok(None),
-        other => other.map(Some),
+/// One optional feed: None from a coordinator that predates it (404), and None with a note
+/// for any other failure.
+fn optional<T>(r: Result<T, ClientError>, what: &str, notes: &mut Vec<String>) -> Option<T> {
+    match r {
+        Ok(v) => Some(v),
+        Err(ClientError::Api { status: 404, .. }) => None,
+        Err(e) => {
+            notes.push(format!("{what} not available: {}", e.describe()));
+            None
+        }
     }
 }
 
@@ -258,5 +267,42 @@ async fn perform(c: &ApiClient, req: Request) -> Update {
     match result {
         Ok(()) => Update::Done(label),
         Err(e) => Update::Failed(format!("{label}: {}", e.describe())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+    use axum::routing::get;
+    use axum::{Json, Router};
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn a_failing_optional_feed_is_a_note_and_the_rest_still_shows() {
+        let list = || get(|| async { Json(json!([])) });
+        let router = Router::new()
+            .route("/v1/status", get(|| async { Json(json!({})) }))
+            .route("/v1/jobs", list())
+            .route("/v1/quota", list())
+            .route("/v1/advice", list())
+            .route("/v1/events", list())
+            .route(
+                "/v1/limits",
+                get(|| async { StatusCode::SERVICE_UNAVAILABLE }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        let client = ApiClient::new(&url, "t".repeat(32)).unwrap();
+        let Update::Snapshot(snap, _) = fetch(&client).await else {
+            panic!("the snapshot failed");
+        };
+        assert!(snap.dispatcher.is_none() && snap.limits.is_empty());
+        assert_eq!(snap.notes.len(), 1, "{:?}", snap.notes);
+        assert!(snap.notes[0].starts_with("limits not available"));
     }
 }

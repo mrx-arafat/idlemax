@@ -1093,7 +1093,7 @@ A coordinator without the dispatcher view gets one line saying so, and no key on
 | `m` | on Dispatch, move to the next mode: off, propose, auto (asks first, except toward off) |
 | `g` | on Dispatch, start the stopped workers (asks first) |
 | `t` | on the projects pane, switch the selected project (on asks first) |
-| `e` | on the limits pane, type a new value in the footer: `Enter` saves, an empty value puts back the default, `Esc` closes |
+| `e` | on the limits pane, type a new value in the footer: `Enter` saves, the word `default` puts back the default (an empty value sends nothing), `Esc` closes |
 | `a`, `d` | on the rules pane, approve (asks first) or reject the selected proposal |
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
 | `q`, `Esc`, `Ctrl-C` | quit |
