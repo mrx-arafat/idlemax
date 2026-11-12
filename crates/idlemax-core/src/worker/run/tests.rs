@@ -117,6 +117,7 @@ mod after_job {
         let next = moved(starting, u).unwrap();
         assert_eq!(next.state, RunState::Running);
         assert_eq!(next.start_tries, 0);
+        assert_eq!(next.running_ms, Some(70), "when the worker first ran");
         assert_eq!(next.session.as_deref(), Some("sess"));
         assert_eq!(next.branch.as_deref(), Some("idlemax/t"));
         assert_eq!(next.worktree.as_deref(), Some("/w"));

@@ -159,6 +159,7 @@ fn may_launch_needs_every_condition() {
         launches: 1,
         start_tries: 0,
         start_ms: 0,
+        running_ms: None,
         end_ms: None,
         updated_ms: 0,
         quota_before: Vec::new(),
@@ -216,6 +217,13 @@ fn a_run_discarded_before_it_did_anything_is_no_try_and_no_spend() {
     assert_eq!(task_open(&never, "t"), TaskOpen::Open);
     let readings = [weekly(40.0, 1_000), weekly(45.0, 2_500)];
     assert_eq!(week_spend(&never, "max", &readings, 0, 10_000), 0.0);
+
+    // One that ran, even with no facts yet (discarded mid-work), is a try and spends.
+    let mut ran = never.clone();
+    ran[0].running_ms = Some(1_100);
+    ran[1].running_ms = Some(2_100);
+    assert_eq!(task_open(&ran, "t"), TaskOpen::Closed);
+    assert!(week_spend(&ran, "max", &readings, 0, 10_000) > 0.0);
 }
 
 fn weekly(pct: f64, at: UnixMs) -> QuotaSnapshot {

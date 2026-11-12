@@ -691,7 +691,7 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
   A device takes picks only in `propose` mode, not held, with the room at `run`; it has `room.open_slots` slots.
 - Each pick names `project`, `task`, `title`, `provider`, `account`, `model`, the orchestrator's `reason`, `by: "orchestrator"`, the `scope_paths` the orchestrator named and the `avoid_paths` a worker must not touch.
   The pass sees each project's `files` and is told to name scope paths only from them; when a named path matches none of the project's files, the scope becomes the whole project (`["**"]`, off-limits paths still hold) and the reason gains `(scope widened: the named paths did not exist)`.
-  In `auto` a pick the launch step holds says why in `held`, such as `its last two runs were rejected or discarded: it needs you`, the review cap or a Budget's refusal, or `stopped by you: <reason>`; the coordinator also logs each new refusal at info. A Run the owner discarded before it had a verdict or any facts (its worker never started) counts as no try and no spend.
+  In `auto` a pick the launch step holds says why in `held`, such as `its last two runs were rejected or discarded: it needs you`, the review cap or a Budget's refusal, or `stopped by you: <reason>`; the coordinator also logs each new refusal at info. A Run the owner discarded whose worker never reached `running` (`running_ms` is null) counts as no try and no spend; one discarded mid-work still counts.
   A pick comes only from an orchestrator pass and only when its task is offered to that device, its account is usable and listed in the device's `agent.ai_accounts` with the provider's CLI installed, and the quota rules place it: its account's Budget has room for the Run's estimate, and its model is the one the task's tier sets for that provider (`quota.<provider>_small_model` or `quota.<provider>_standard_model`).
   A task in a project the owner is active in is picked only when no other project of the device has a ready task, never while the owner's changed-file list is cut, and then carries those files in `avoid_paths`.
 - `empty` counts the slots left over with one reason: no ready task, tasks the orchestrator has not judged, why the next pick could not be used, or that the orchestrator picked nothing more.
@@ -848,7 +848,7 @@ Types live in `crates/idlemax-core/src/worker/run.rs`.
  "source": "roadmap", "branch": "idlemax/roadmap-3-1a2b3c", "worktree": "/Users/me/.idlemax/worktrees/app/roadmap-3-1a2b3c",
  "provider": "claude", "account": "max", "model": "sonnet", "session": "0b6e...",
  "state": "running", "verdict": null, "concern": null, "reason": "the oldest ready roadmap item",
- "summary": null, "facts": {}, "job": 17, "launches": 1, "start_tries": 0,
+ "summary": null, "facts": {}, "job": 17, "launches": 1, "start_tries": 0, "running_ms": 1730000060000,
  "start_ms": 1762900000000, "end_ms": null, "updated_ms": 1762900060000,
  "quota_before": [QuotaSnapshot], "quota_after": []}
 ```
@@ -862,7 +862,7 @@ Types live in `crates/idlemax-core/src/worker/run.rs`.
   `clean`, `needs_you` and `rejected` to `kept` or `discarded`;
   `kept` and `discarded` to nothing.
 - `verdict` is `clean`, `needs_you` or `rejected`, and stays after a keep or a discard; `concern` says why for the last two.
-- `reason` is why the task was picked, `source` is the task's source, `job` is the live or last job of the Run, `launches` counts its jobs and `start_tries` the launches in a row that never reached `running`.
+- `reason` is why the task was picked, `source` is the task's source, `job` is the live or last job of the Run, `launches` counts its jobs, `start_tries` the launches in a row that never reached `running`, and `running_ms` is when its worker first reached `running` (null while it never did).
 - `quota_before` and `quota_after` hold the account's readings per window at the first launch and at the end of the last one.
 - `GET /v1/runs` filters by `state` (400 for an unknown one) and `project`, and answers with at most `limit` runs (default 100, at most 1000).
 - `GET /v1/runs/{id}` answers 404 with `run <id> not found` for an unknown id.

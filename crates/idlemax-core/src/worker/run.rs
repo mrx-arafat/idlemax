@@ -156,6 +156,8 @@ pub struct Run {
     /// Launches in a row that never reached `running`.
     pub start_tries: u32,
     pub start_ms: UnixMs,
+    /// When the worker first reached `running`; None while it never started.
+    pub running_ms: Option<UnixMs>,
     pub end_ms: Option<UnixMs>,
     pub updated_ms: UnixMs,
     pub quota_before: Vec<QuotaSnapshot>,
@@ -336,6 +338,7 @@ fn move_to(mut next: Run, from: RunState, target: RunState, now_ms: UnixMs) -> O
     }
     if matches!(target, RunState::Running | RunState::Checking) {
         next.start_tries = 0;
+        next.running_ms.get_or_insert(now_ms);
     }
     if target == RunState::NeedsYou {
         next.end_ms = Some(now_ms);

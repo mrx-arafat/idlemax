@@ -13,7 +13,8 @@ use super::{enum_col, enum_text, json_col, json_text, sql_limit, Store, StoreErr
 pub(super) const COLUMNS: &str =
     "id, device, project, task, task_title, source, branch, worktree, \
     provider, account, model, session, state, verdict, concern, reason, summary, facts, \
-    quota_before, quota_after, job, launches, start_tries, start_ms, end_ms, updated_ms";
+    quota_before, quota_after, job, launches, start_tries, start_ms, end_ms, updated_ms, \
+    running_ms";
 
 impl Store {
     pub fn get_run(&self, id: RunId) -> StoreResult<Option<Run>> {
@@ -115,9 +116,9 @@ pub(super) fn insert_run(conn: &Connection, run: &Run, launch: &RunLaunch) -> St
         "INSERT INTO runs (device, project, task, task_title, source, branch, worktree,
                provider, account, model, session, state, verdict, concern, reason, summary,
                facts, quota_before, quota_after, job, launches, start_tries, start_ms, end_ms,
-               updated_ms, launch)
+               updated_ms, launch, running_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-               ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+               ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
         params![
             run.device,
             run.project,
@@ -145,6 +146,7 @@ pub(super) fn insert_run(conn: &Connection, run: &Run, launch: &RunLaunch) -> St
             run.end_ms,
             run.updated_ms,
             json_text(launch)?,
+            run.running_ms,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -226,7 +228,7 @@ pub(super) fn update_run(conn: &Connection, run: &Run, expect: RunState) -> Stor
         "UPDATE runs SET branch = ?2, worktree = ?3, session = ?4, state = ?5, verdict = ?6,
            concern = ?7, summary = ?8, facts = ?9, quota_before = ?10, quota_after = ?11,
            job = ?12, launches = ?13, start_tries = ?14, end_ms = ?15, updated_ms = ?16,
-           reason = ?17
+           reason = ?17, running_ms = ?19
          WHERE id = ?1 AND state = ?18",
         params![
             run.id,
@@ -247,6 +249,7 @@ pub(super) fn update_run(conn: &Connection, run: &Run, expect: RunState) -> Stor
             run.updated_ms,
             run.reason,
             expect.as_str(),
+            run.running_ms,
         ],
     )?;
     Ok(changed == 1)
@@ -284,6 +287,7 @@ pub(super) fn run_from_row(r: &Row<'_>) -> rusqlite::Result<Run> {
         start_ms: r.get(23)?,
         end_ms: r.get(24)?,
         updated_ms: r.get(25)?,
+        running_ms: r.get(26)?,
     })
 }
 

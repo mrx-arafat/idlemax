@@ -1,7 +1,8 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13];
+pub(super) const MIGRATIONS: &[&str] =
+    &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -372,4 +373,15 @@ CREATE TABLE device_credentials (
   digest TEXT NOT NULL UNIQUE,
   created_ms INTEGER NOT NULL
 ) STRICT, WITHOUT ROWID;
+"#;
+
+/// When a Run's worker first reached `running`, so a Run discarded before it ever started is
+/// told apart from one discarded mid-work (no try, no spend only for the first).
+const V14: &str = r#"
+ALTER TABLE runs ADD COLUMN running_ms INTEGER;
+-- Older Runs: every one counts as started except one discarded with no verdict and no facts
+-- whose worker could not be started, the rule they were judged by before.
+UPDATE runs SET running_ms = start_ms
+ WHERE NOT (state = 'discarded' AND verdict IS NULL AND facts = '{}'
+            AND concern LIKE 'the worker could not be started%');
 "#;

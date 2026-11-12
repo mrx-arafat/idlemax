@@ -7,7 +7,7 @@ use crate::dispatch::accounts::AccountUse;
 use crate::dispatch::room::{LineState, RoomDecision};
 use crate::types::{JobId, QuotaSnapshot, UnixMs};
 
-use super::run::{Run, RunFacts, RunState};
+use super::run::{Run, RunState};
 
 const DAY_MS: UnixMs = 86_400_000;
 /// The measuring week of an account lasts this long from its first Run (A7).
@@ -139,10 +139,10 @@ pub fn task_open(runs: &[Run], task: &str) -> TaskOpen {
     }
 }
 
-/// A Run the owner discarded before it did anything, say one whose worker never started: no
-/// verdict and no facts. It is no try at its task and no spend of its account.
+/// A Run the owner discarded whose worker never reached `running` (and so has no verdict):
+/// no try at its task and no spend of its account. One discarded mid-work still counts.
 fn never_worked(r: &Run) -> bool {
-    r.state == RunState::Discarded && r.verdict.is_none() && r.facts == RunFacts::default()
+    r.state == RunState::Discarded && r.running_ms.is_none() && r.verdict.is_none()
 }
 
 /// The weekly percent one account spent: its Runs in the window and the reviews it paid for,
