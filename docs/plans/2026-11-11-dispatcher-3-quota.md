@@ -117,7 +117,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 - [x] Task 2: Add the quota settings, the Tier and the OpenCode provider
 - [x] Task 3: Build the cost table from Run records
 - [x] Task 4: Learn the owner's own use per account day
-- [ ] Task 5: Compute the surplus, the daily Budget and the worker rules
+- [x] Task 5: Compute the surplus, the daily Budget and the worker rules
 - [ ] Task 6: Gather the Budget on the coordinator and gate every worker start
 - [ ] Task 7: Leave idlemax's own worker sessions out of the owner's use
 - [ ] Task 8: Offer accounts and check picks in pure code
@@ -518,20 +518,20 @@ This builds the reserve, the daily pacing, the 5-hour stop, the last-day sweep, 
 
 **Definition of Done:**
 
-- [ ] Learned: weekly reading 40, usual use 6 a day with 7 days known, reset in 72 hours, margin 10, nothing spent today: `spendable_pct` is 32 divided by 3, and the basis is `learned`.
-- [ ] Reserve: 3 days known with usual use 4, weekly reading 20 of which idlemax spent 8 on earlier days (so the owner's use this week is 12), reset in 96 hours, margin 10, reserve 50: the hold is 38, `spendable_pct` is 8.0, and the basis is `reserve`.
-- [ ] Last day: weekly reading 70, reset in 20 hours, floor 15, 5 spent today: `spendable_pct` is 20.0, `left_pct` is 15.0, and the basis is `last_day`.
-- [ ] Measuring: the learned case with `measuring_left_pct` 4 gives `spendable_pct` 4.0 and the basis `measuring`.
-- [ ] A 5-hour reading of 62 gives `usable` false, basis `five_hour_stop`, and the `why` `5h window 62% used, stop line 60%: no worker runs until it resets`.
-- [ ] A weekly row in state `no_data` gives `usable` false with basis `no_data`, and `spent_today_pct` equal to `spendable_pct` gives basis `spent` with a `why` that names the start of the next account day.
-- [ ] `owner_reserve_override_pct` of 5 with the owner's use this week at 0 gives a hold of 5.
-- [ ] A cap of 5 with 3 Runs today gives `spendable_pct` 100, `spent_pct` 60, `left_pct` 40, `usable` true, basis `daily_cap` and the `why` `daily cap: 3 of 5 runs used today`; 5 of 5 gives basis `spent`; an opencode account without a cap gives basis `no_cap`.
-- [ ] `owner_active` is true for a last use 10 minutes ago and false for 40 minutes ago.
-- [ ] `gate` refuses a missing Budget, refuses an estimate of 8.0 against `left_pct` 5.3 with both numbers, allows 3.0, and refuses a closed Budget with its `why`.
-- [ ] `stops_workers` is true for `resting` and `five_hour_stop` and false for the other ten bases.
-- [ ] `offers` of a usable account the owner is using and a usable one the owner is not using returns both, the second first; an unusable Budget is never returned.
-- [ ] With the weekly window at 97 percent resetting in 30 hours and the 5-hour window at 40 percent, a hit now rests the account until the weekly reset; with the weekly at 50 and the 5-hour at 100 it rests until the 5-hour reset; with no reset known it rests 300 minutes; a hit from before the running cycle rests nothing; a Budget with such a hit has basis `resting` and `rests_until_ms` set.
-- [ ] Verify: `cargo test -p idlemax-core quota::budget`, `cargo test -p idlemax-core quota::spend`, `cargo test -p idlemax-core quota::rules`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Learned: weekly reading 40, usual use 6 a day with 7 days known, reset in 72 hours, margin 10, nothing spent today: `spendable_pct` is 32 divided by 3, and the basis is `learned`.
+- [x] Reserve: 3 days known with usual use 4, weekly reading 20 of which idlemax spent 8 on earlier days (so the owner's use this week is 12), reset in 96 hours, margin 10, reserve 50: the hold is 38, `spendable_pct` is 8.0, and the basis is `reserve`.
+- [x] Last day: weekly reading 70, reset in 20 hours, floor 15, 5 spent today: `spendable_pct` is 20.0, `left_pct` is 15.0, and the basis is `last_day`.
+- [x] Measuring: the learned case with `measuring_left_pct` 4 gives `spendable_pct` 4.0 and the basis `measuring`.
+- [x] A 5-hour reading of 62 gives `usable` false, basis `five_hour_stop`, and the `why` `5h window 62% used, stop line 60%: no worker runs until it resets`.
+- [x] A weekly row in state `no_data` gives `usable` false with basis `no_data`, and `spent_today_pct` equal to `spendable_pct` gives basis `spent` with a `why` that names the start of the next account day.
+- [x] `owner_reserve_override_pct` of 5 with the owner's use this week at 0 gives a hold of 5.
+- [x] A cap of 5 with 3 Runs today gives `spendable_pct` 100, `spent_pct` 60, `left_pct` 40, `usable` true, basis `daily_cap` and the `why` `daily cap: 3 of 5 runs used today`; 5 of 5 gives basis `spent`; an opencode account without a cap gives basis `no_cap`.
+- [x] `owner_active` is true for a last use 10 minutes ago and false for 40 minutes ago.
+- [x] `gate` refuses a missing Budget, refuses an estimate of 8.0 against `left_pct` 5.3 with both numbers, allows 3.0, and refuses a closed Budget with its `why`.
+- [x] `stops_workers` is true for `resting` and `five_hour_stop` and false for the other ten bases.
+- [x] `offers` of a usable account the owner is using and a usable one the owner is not using returns both, the second first; an unusable Budget is never returned.
+- [x] With the weekly window at 97 percent resetting in 30 hours and the 5-hour window at 40 percent, a hit now rests the account until the weekly reset; with the weekly at 50 and the 5-hour at 100 it rests until the 5-hour reset; with no reset known it rests 300 minutes; a hit from before the running cycle rests nothing; a Budget with such a hit has basis `resting` and `rests_until_ms` set.
+- [x] Verify: `cargo test -p idlemax-core quota::budget`, `cargo test -p idlemax-core quota::spend`, `cargo test -p idlemax-core quota::rules`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 6: Gather the Budget on the coordinator and gate every worker start
 

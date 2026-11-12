@@ -315,7 +315,7 @@ fn job_span_block(account: &AccountConfig, ctx: &SpendContext<'_>) -> Option<Str
 }
 
 /// "3d 4h", "2h 5m", "42m".
-fn duration(ms: i64) -> String {
+pub(super) fn duration(ms: i64) -> String {
     let mins = ms.max(0) / MINUTE_MS;
     let (d, h, m) = (mins / 1440, mins % 1440 / 60, mins % 60);
     match (d, h) {

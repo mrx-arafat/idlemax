@@ -2,10 +2,13 @@
 //!
 //! Numbers come from 03-design-options.md and are estimates to tune after a week of data.
 
+pub mod budget;
 mod config;
 pub mod cost;
 pub mod owner_use;
 mod rules;
+pub mod spend;
+pub mod surplus;
 pub mod tier;
 
 pub use config::{QuotaConfig, QuotaConfigError};
