@@ -305,6 +305,9 @@ fn a_spent_account_sheds_its_worker_which_resumes_when_the_device_let_it_go() {
     let worker = next.spec.worker.unwrap();
     assert_eq!(worker.action, WorkerAction::Resume);
     assert_eq!(worker.session.as_deref(), Some("sess-1"));
+    // The relaunch names its own Run, as the first launch does.
+    assert_eq!(worker.run, first.id);
+    assert_eq!(next.spec.key, Some(format!("run-{}", first.id)));
     assert_eq!(runs(&store).len(), 2);
 }
 

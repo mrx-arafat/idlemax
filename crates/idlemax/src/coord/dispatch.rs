@@ -246,6 +246,9 @@ fn relaunch(store: &mut Store, step: &LaunchStep<'_>, run: &Run) -> Result<(), S
         return Ok(());
     };
     let worker = WorkerSpec {
+        // The stored launch predates the Run's id; without it every relaunch shares the key
+        // `run-0` and a second one is refused as a duplicate.
+        run: run.id,
         action: if run.session.is_some() {
             WorkerAction::Resume
         } else {
