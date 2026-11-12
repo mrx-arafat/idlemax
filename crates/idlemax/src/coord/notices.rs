@@ -4,7 +4,7 @@
 
 use idlemax_core::notify::notice::{
     daily_summary, finished_batch, job_item, needs_batch, run_item, summary_key, summary_window,
-    DayFacts, Item, NEEDS_REARM_MS,
+    DayFacts, Item, Notice, NEEDS_REARM_MS,
 };
 use idlemax_core::quota::owner_use::DAY_MS;
 use idlemax_core::types::UnixMs;
@@ -12,6 +12,19 @@ use idlemax_core::Config;
 
 use super::api::gather_view;
 use super::store::{Store, StoreError};
+
+/// The notices a heartbeat with `notices_after` gets: at most 20, oldest first, none older
+/// than a day, so a new device gets no old backlog. None for an agent that sent no cursor.
+pub fn for_agent(
+    store: &Store,
+    after: Option<i64>,
+    now: UnixMs,
+) -> Result<Vec<Notice>, StoreError> {
+    match after {
+        Some(after) => store.notices_after(after, now - DAY_MS, 20),
+        None => Ok(Vec::new()),
+    }
+}
 
 /// Runs the three steps; each logs its own failure, so a failing view (the whole plan,
 /// every 15 s) never holds back finished tasks or the daily summary.

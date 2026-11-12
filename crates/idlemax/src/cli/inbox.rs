@@ -8,6 +8,7 @@ use idlemax_core::job_run::inbox::{parse_note, sort_entries, InboxEntry};
 use idlemax_core::types::JobId;
 use idlemax_core::Paths;
 
+use super::out::toon::Node;
 use super::out::{hints, lists};
 use super::{print, CliError, Out};
 
@@ -52,6 +53,11 @@ pub fn run_list(paths: &Paths, out: &Out) -> Result<()> {
         || Ok(lists::inbox(&entries, out.fields())?),
         &hints::inbox(entries.len()),
     )
+}
+
+/// The `job` cell of a note: the job id, or the text `n<id>` for a notice.
+pub(super) fn job_node(e: &InboxEntry) -> Node {
+    e.job_id.map_or_else(|| Node::str(e.reference()), Node::Int)
 }
 
 fn table_text(entries: &[InboxEntry]) -> String {

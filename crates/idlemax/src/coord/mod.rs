@@ -3,7 +3,7 @@
 
 pub mod api;
 mod dispatch;
-mod notices;
+pub(crate) mod notices;
 mod schedule;
 pub(crate) mod server;
 pub mod store;
