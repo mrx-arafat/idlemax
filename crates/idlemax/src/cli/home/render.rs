@@ -42,7 +42,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "idlemax quota",
-        "see AI account windows and the headroom to spend",
+        "see AI account windows, today's budget per account and why",
     ),
     ("idlemax advise", "review the advisor's recommendations"),
     (

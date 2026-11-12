@@ -111,12 +111,10 @@ pub async fn quota(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
         &views_in,
         |v| print::quota(v, &status.paused_accounts, now),
         || {
-            Ok(lists::quota(
-                &views_in,
-                &status.paused_accounts,
-                now,
-                out.fields(),
-            )?)
+            let windows = lists::quota(&views_in, &status.paused_accounts, now, out.fields())?;
+            Ok(crate::cli::out::budget::with_budgets(
+                windows, &views_in, now,
+            ))
         },
         &hints::quota(views_in.len()),
     )

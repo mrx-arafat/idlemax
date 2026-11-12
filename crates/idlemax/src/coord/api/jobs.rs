@@ -155,8 +155,15 @@ pub async fn events(
 /// `GET /v1/quota`.
 pub async fn quota(State(app): State<AppState>) -> Result<Json<Vec<QuotaView>>, ApiFailure> {
     let now = now_ms();
-    let views =
-        app.with_store(move |store, cfg| Ok::<_, ApiFailure>(quota_views(store, cfg, now)?));
+    let live = std::sync::Arc::clone(app.live());
+    let views = app.with_store(move |store, cfg| {
+        let mut views = quota_views(store, cfg, now)?;
+        let list = super::budgets(store, cfg, &live.current(), &views, now)?;
+        for v in &mut views {
+            v.budget = list.iter().find(|b| b.account == v.account).cloned();
+        }
+        Ok::<_, ApiFailure>(views)
+    });
     Ok(Json(views.await?))
 }
 

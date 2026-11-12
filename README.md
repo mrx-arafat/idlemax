@@ -809,14 +809,22 @@ A worker's Budget is the account's surplus: what of the weekly window would expi
 An account day is a 24-hour slot counted back from the weekly reset.
 `agy` and `opencode` accounts have no usage reading, so they run on `daily_cap_runs`, a fixed number of worker Runs per UTC day that you set in `[[quota.accounts]]`; without it no worker starts on them.
 
-`idlemax quota` shows each window and says why an account is or is not spendable (demo data):
+`idlemax quota` shows each window and says why an account is or is not spendable for old AI jobs (the `SPEND` and `WHY` columns), and under it each account's budget for today (demo data):
 
 ```text
 ACCOUNT     WINDOW  USED  RESERVE  HEADROOM  RESETS     SPEND  WHY
 claude-max  5h      34%   40%      26%       in 1h19m   no     another AI job holds this account's lease; an AI job alre...
 claude-max  week    41%   30%      29%       in 3d4h    no     another AI job holds this account's lease; an AI job alre...
 codex-pro   week    31%   15%      54%       in 18h59m  yes    weekly window in its final third, resets in 18h 59m
+
+ACCOUNT     BUDGET  SPENT   LEFT    WORKERS  DAY ENDS  WHY
+claude-max  7.3%    2.0%    5.3%    yes      in 5h10m  41% used, the owner's usual use holds 18%, margin 10%: 31% surplus over 4 days
+agy-main    5 runs  3 runs  2 runs  yes      in 9h02m  daily cap: 3 of 5 runs used today
 ```
+
+The budget is what dispatcher workers may spend on the account today: its share of the quota that would expire unused at the reset, after your usual use and a safety margin.
+`SPENT` is what idlemax's Runs that ended today cost, `LEFT` what is still free after the running ones, and `WORKERS` says whether a worker may start now, with the reason under `WHY`.
+On an `agy` or `opencode` account the budget is counted in Runs per day, from `daily_cap_runs`.
 
 **Ban-risk stance.**
 idlemax only launches the unmodified official CLIs (`claude -p`, `codex exec`, `agy -p`) with your own login, on the device where you logged in.

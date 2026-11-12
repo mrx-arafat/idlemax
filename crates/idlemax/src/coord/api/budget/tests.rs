@@ -252,3 +252,44 @@ mod gather_tests {
         assert!(today.spendable_pct.is_some() && today.basis.is_some() && today.why.is_some());
     }
 }
+
+#[tokio::test]
+async fn the_quota_route_carries_each_accounts_budget_on_its_rows() {
+    use crate::coord::api::tests::{mac_heartbeat, Api};
+    use crate::state::now_ms;
+    use idlemax_core::quota::rolling_5h;
+    let api = Api::start_with(claude_cfg()).await;
+    let now = now_ms();
+    let snap = |window, used| QuotaSnapshot {
+        account: "max".into(),
+        window,
+        used_pct: used,
+        resets_at_ms: Some(now + 2 * DAY_MS),
+        source: Default::default(),
+        at_ms: now,
+    };
+    let mut hb = mac_heartbeat(Vec::new());
+    hb.quota = vec![
+        snap(rolling_5h(), 10.0),
+        snap(QuotaWindowKind::Weekly, 30.0),
+    ];
+    api.post("/v1/agent/heartbeat", &hb).await;
+    let rows: Vec<serde_json::Value> = api
+        .get_as("/v1/quota", "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["budget"], rows[1]["budget"]);
+    let b = &rows[0]["budget"];
+    assert!(b["spendable_pct"].is_number() && b["spent_pct"].is_number() && b["why"].is_string());
+    let costs = b["costs"].as_array().unwrap();
+    assert_eq!(costs.len(), 2);
+    for c in costs {
+        assert!(
+            c["est_pct"].is_number() && c["basis"].is_string() && c["samples"].is_number(),
+            "{c}"
+        );
+    }
+}

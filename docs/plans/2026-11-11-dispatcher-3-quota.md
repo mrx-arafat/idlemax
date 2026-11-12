@@ -123,7 +123,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 - [x] Task 8: Offer accounts and check picks in pure code
 - [ ] Task 9: Stop an account's workers at the 5-hour line and after a rate limit
 - [ ] Task 10: Hold Spec 1's plan and orchestrator pass to the Budget and the tier
-- [ ] Task 11: Show the Budget in `idlemax quota` and `GET /v1/quota`
+- [x] Task 11: Show the Budget in `idlemax quota` and `GET /v1/quota`
 - [ ] Task 12: Needs the owner's OK: run the measuring week and tune the numbers
 
 > Source of truth for completion: `spec-implement` toggles `[ ]` to `[x]` here.
@@ -875,12 +875,12 @@ Nothing about the windows table changes.
 
 **Definition of Done:**
 
-- [ ] `GET /v1/quota` on a store with one account returns rows that each carry the same `budget` object, with `spendable_pct`, `spent_pct`, `why` and one `costs` line per tier with `est_pct`, `basis` and `samples`.
-- [ ] A row without `budget` deserializes, and `idlemax quota` then prints the windows table alone.
-- [ ] The budget table prints percent for a `weekly_pct` account and runs for a `daily_cap_runs` account, and a closed account shows `no` under `WORKERS` with its `why`.
-- [ ] `idlemax quota --json` output contains `"budget"`.
-- [ ] `skills/idlemax/SKILL.md` matches what `idlemax skill` prints, which the `skill` integration test checks.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax quota`, `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `GET /v1/quota` on a store with one account returns rows that each carry the same `budget` object, with `spendable_pct`, `spent_pct`, `why` and one `costs` line per tier with `est_pct`, `basis` and `samples`.
+- [x] A row without `budget` deserializes, and `idlemax quota` then prints the windows table alone.
+- [x] The budget table prints percent for a `weekly_pct` account and runs for a `daily_cap_runs` account, and a closed account shows `no` under `WORKERS` with its `why`.
+- [x] `idlemax quota --json` output contains `"budget"`.
+- [x] `skills/idlemax/SKILL.md` matches what `idlemax skill` prints, which the `skill` integration test checks.
+- [x] Verify: `cargo test -p idlemax --bin idlemax quota`, `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 12: Needs the owner's OK: run the measuring week and tune the numbers
 

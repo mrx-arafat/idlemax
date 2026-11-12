@@ -34,7 +34,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/jobs/{id}/cancel | | `Job` |
 | GET | /v1/jobs/{id}/why | | `Explanation` |
 | GET | /v1/why?limit= | | `[WhySummary]` |
-| GET | /v1/quota | | `[quota::QuotaView]`; a row carries `limited` while a usage limit seen in the current window rests the account |
+| GET | /v1/quota | | `[quota::QuotaView]`; a row carries `limited` while a usage limit seen in the current window rests the account, and `budget`, the account's Budget for today |
 | GET | /v1/report?days=&since_ms=&label= | | `Report` |
 | POST | /v1/control | `ControlRequest` | `ClusterStatus` |
 | GET | /v1/events?limit= | | `[Event]` |
@@ -456,6 +456,56 @@ Worker jobs (with a `worker` section) on the agent:
   Each such kill names the line, the room's reason and the three biggest memory users outside idlemax, and its Run becomes `shed`.
 - A `keep`, `keep_merge` or `discard` starts unless the agent is shutting down, whatever the line state, the kill switch or a pause says, gets no hold, and is never killed by a line or by a shutdown.
 - While any worker is tracked the agent samples and heartbeats every 5 s.
+
+## The budget of each AI account
+
+Each row of `GET /v1/quota` carries `budget`, the account's Budget for today, repeated on every row of that account as `spendable` and `reasons` are.
+`spendable` and `reasons` stay the verdict for old AI jobs; `budget` is what dispatcher workers may spend.
+A coordinator that predates the field omits it.
+Types live in `crates/idlemax-core/src/quota/budget.rs`.
+
+```json
+{"account": "claude-max", "provider": "claude", "unit": "weekly_pct",
+ "day_start_ms": 1730000000000, "day_end_ms": 1730086400000,
+ "spendable_pct": 7.3, "spent_pct": 2.0, "left_pct": 5.3, "usable": true,
+ "rests_until_ms": null, "owner_active": false, "cap_runs": null, "runs_today": 4,
+ "costs": [{"tier": "small", "model": "haiku", "est_pct": 0.4, "basis": "same_model",
+            "samples": 9, "five_hour_pct": 2.1},
+           {"tier": "standard", "model": "sonnet", "est_pct": 8.0, "basis": "seed",
+            "samples": 2, "five_hour_pct": null}],
+ "basis": "learned",
+ "why": "30% used, the owner's usual use holds 18%, margin 10%: 42% surplus over 3 days"}
+```
+
+- The account day is a 24-hour slot counted back from the weekly reset, from `day_start_ms` to `day_end_ms`; an account with no reset time known, and every account on a daily cap, uses the UTC day.
+- `unit` is `weekly_pct`, where every percent is of the weekly window, or `daily_cap_runs` for an `agy` or `opencode` account with `daily_cap_runs`, where `spendable_pct` is 100, `spent_pct` is 100 times `runs_today` over `cap_runs`, and `left_pct` the rest.
+- `spendable_pct` is today's share of the surplus (what would expire unused at the reset, minus the owner's hold and `quota.safety_margin_pct`, over the days left), `spent_pct` what idlemax's Runs that ended today cost, and `left_pct` the spendable rest after the running Runs' estimates.
+- `usable` is false when a rule closes the account; `basis` names the rule and `why` says it with its numbers.
+- `rests_until_ms` is set while a usage limit rests the account; `owner_active` is true while the owner used the provider's CLI in the last 30 minutes.
+- `costs` has one line per tier whose model is set: the estimated cost of one Run in percent of the weekly window (`est_pct`), how it was found (`basis`), the samples behind it, and the 5-hour mean once there are 5.
+
+| `basis` | Usable | Meaning |
+|---|---|---|
+| `learned` | yes | the hold is the owner's usual daily use until the reset, from 7 known days |
+| `reserve` | yes | fewer than 7 days are known, so `quota.owner_reserve_pct` of the week is held for the owner |
+| `last_day` | yes | the day before the reset: everything above `quota.last_day_floor_pct` may be spent |
+| `measuring` | yes | the account's first week of Runs, capped at 10 percent of the weekly window |
+| `daily_cap` | yes | an account on `daily_cap_runs` |
+| `paused` | no | `idlemax pause --account` |
+| `resting` | no | a usage limit rests the account until `rests_until_ms` |
+| `no_data` | no | no fresh weekly reading with a reset time, or stale 5-hour data |
+| `no_cap` | no | an `agy` or `opencode` account without `daily_cap_runs` |
+| `not_for_workers` | no | an `api` account |
+| `five_hour_stop` | no | the 5-hour window is at or above `quota.five_hour_stop_pct` |
+| `spent` | no | nothing is left today |
+
+| Cost `basis` | Meaning |
+|---|---|
+| `measured` | the mean of at least 5 measured Runs of this account, model and task type |
+| `same_model` | the mean of at least 5 measured Runs of this model over every task type |
+| `seed` | the tier's starting value, `quota.seed_small_pct` or `quota.seed_standard_pct` |
+
+Account days are kept 30 days in the coordinator's `quota_days` table with the budget each day had and, once it ended, the weekly rise, what idlemax's Runs took and the owner's own use.
 
 ## Advice
 

@@ -229,6 +229,10 @@ pub struct QuotaView {
     /// window resets. Repeated on every row of the account.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limited: Option<String>,
+    /// The account's Budget for today, repeated on every row of the account; only
+    /// `GET /v1/quota` fills it, and a coordinator that predates it omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<budget::Budget>,
     /// Evaluation time.
     pub at_ms: UnixMs,
 }

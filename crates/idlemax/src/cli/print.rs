@@ -133,7 +133,11 @@ pub fn quota(views: &[QuotaView], paused_accounts: &[String], now_ms: UnixMs) ->
         .iter()
         .map(|q| rows::quota_cells(q, paused_accounts.contains(&q.account), now_ms))
         .collect();
-    table(&rows::QUOTA_HEADER, &rows)
+    let windows = table(&rows::QUOTA_HEADER, &rows);
+    match crate::cli::out::budget::budget_table(views, now_ms) {
+        Some(budgets) => format!("{windows}\n\n{budgets}"),
+        None => windows,
+    }
 }
 
 pub fn advice(list: &[Recommendation], now_ms: UnixMs) -> String {

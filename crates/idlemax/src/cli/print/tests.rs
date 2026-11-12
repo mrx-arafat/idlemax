@@ -3,7 +3,7 @@
 use idlemax_core::protocol::{ClusterStatus, JobCounts, LocalStatus};
 use idlemax_core::types::{GuardAction, GuardDecision};
 
-use super::{local_status, summary};
+use super::{local_status, quota, summary};
 
 #[test]
 fn keep_awake_is_a_separate_status_line_only_when_reported() {
@@ -247,4 +247,75 @@ fn status_fields_pick_device_columns_and_a_missing_accounts_list_is_not_an_empty
     let none = status(r#","accounts":[]"#);
     assert!(encode(&views::status(&none, 0, &[]).unwrap()).contains("0 AI accounts configured"));
     assert!(super::status(&none, 0).contains("no AI accounts configured"));
+}
+
+#[test]
+fn the_budget_table_shows_percent_or_runs_and_why_a_closed_account_runs_no_worker() {
+    use idlemax_core::quota::budget::{Budget, BudgetBasis, BudgetUnit};
+    use idlemax_core::quota::{Provider, QuotaView};
+    const NOW: i64 = 1_800_000_000_000;
+    let budget = |account: &str, unit, cap, usable, why: &str| Budget {
+        account: account.into(),
+        provider: Provider::Claude,
+        unit,
+        day_start_ms: NOW,
+        day_end_ms: NOW + 3_600_000,
+        spendable_pct: 7.3,
+        spent_pct: 2.0,
+        left_pct: 5.3,
+        usable,
+        rests_until_ms: None,
+        owner_active: false,
+        cap_runs: cap,
+        runs_today: 3,
+        costs: Vec::new(),
+        basis: if usable {
+            BudgetBasis::Learned
+        } else {
+            BudgetBasis::Paused
+        },
+        why: why.into(),
+    };
+    let row = |b: Budget| QuotaView {
+        account: b.account.clone(),
+        budget: Some(b),
+        ..QuotaView::default()
+    };
+    let views = [
+        row(budget(
+            "claude-max",
+            BudgetUnit::WeeklyPct,
+            None,
+            true,
+            "learned",
+        )),
+        row(budget(
+            "agy-main",
+            BudgetUnit::DailyCapRuns,
+            Some(5),
+            true,
+            "daily cap",
+        )),
+        row(budget(
+            "codex",
+            BudgetUnit::WeeklyPct,
+            None,
+            false,
+            "paused by you",
+        )),
+    ];
+    let text = quota(&views, &[], NOW);
+    assert!(text.contains("claude-max  7.3%"), "{text}");
+    assert!(
+        text.contains("agy-main    5 runs  3 runs  2 runs  yes"),
+        "{text}"
+    );
+    let codex = text.lines().rfind(|l| l.starts_with("codex ")).unwrap();
+    assert!(
+        codex.contains(" no ") && codex.ends_with("paused by you"),
+        "{codex}"
+    );
+
+    let old: QuotaView = serde_json::from_str(r#"{"account":"claude-max"}"#).unwrap();
+    assert!(!quota(&[old], &[], NOW).contains("BUDGET"));
 }

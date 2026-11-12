@@ -17,7 +17,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 - `idlemax job add <spec.toml>`: queue a job from a TOML spec, or a command after `--`
 - `idlemax why <id>`: see why a job is not running and what to change
 - `idlemax config set <setting> <value>`: change a setting, such as the guard rules or the program allowlist, with no restart
-- `idlemax quota`: see AI account windows and the headroom to spend
+- `idlemax quota`: see AI account windows, today's budget per account and why
 - `idlemax advise`: review the advisor's recommendations
 - `idlemax project list`: see the projects idlemax knows and switch one on or off
 - `idlemax plan`: see which workers the dispatcher would launch now and why
