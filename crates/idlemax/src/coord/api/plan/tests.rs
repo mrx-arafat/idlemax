@@ -153,6 +153,59 @@ fn a_step_queues_one_check_job_in_the_base_checkout() {
 }
 
 #[test]
+fn a_check_job_that_ends_is_recorded_without_waiting_for_the_next_step() {
+    use idlemax_core::dispatch::inputs::Checkout;
+    use idlemax_core::dispatch::project::ProjectSettings;
+    use idlemax_core::protocol::JobUpdate;
+    use idlemax_core::types::JobStatus;
+    let mut store = Store::open_in_memory().unwrap();
+    mac_on(&mut store);
+    let cfg = Config::default();
+    let mut inputs = feed();
+    inputs.repos[1].base_commit = Some("c1".into());
+    inputs.repos[1].checkout = Some(Checkout {
+        path: "/state/checks/2".into(),
+        commit: Some("c1".into()),
+        error: None,
+    });
+    ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+    let lib = store.list_projects(None).unwrap()[1].project.clone();
+    store.set_project_enabled(lib.id, true).unwrap();
+    let settings = ProjectSettings {
+        base_branch: Some("main".into()),
+        check_command: vec!["cargo".into(), "test".into()],
+        ..Default::default()
+    };
+    store.set_project_settings(lib.id, &settings).unwrap();
+    crate::dispatch::step(&mut store, &cfg, &cfg, "", T0, false).unwrap();
+    let job = store.base_checks().unwrap().pop().unwrap().job.unwrap();
+    let leased = store
+        .lease_job(job, "mac", T0 + 60_000, T0)
+        .unwrap()
+        .unwrap();
+    let update = JobUpdate {
+        seq: 1,
+        id: job,
+        device: "mac".into(),
+        attempt: leased.attempts,
+        status: JobStatus::Succeeded,
+        at_ms: T0 + 1_000,
+        exit_code: Some(0),
+        ..Default::default()
+    };
+    super::super::agents::on_job_update(&mut store, &update, T0 + 1_000).unwrap();
+
+    let plan = gather_plan(&store, &cfg, &cfg, T0 + 2_000).unwrap().plan;
+    assert!(
+        !plan.notes.iter().any(|n| n.contains("has not run")),
+        "{:?}",
+        plan.notes
+    );
+    let rec = store.base_checks().unwrap().pop().unwrap();
+    assert_eq!(rec.passed, Some(true));
+}
+
+#[test]
 fn an_off_device_gets_no_project_and_no_check_and_on_runs_the_check_again() {
     use idlemax_core::dispatch::inputs::Checkout;
     use idlemax_core::dispatch::project::ProjectSettings;

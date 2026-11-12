@@ -147,6 +147,36 @@ fn base_checks_step(store: &mut Store, now: UnixMs) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Writes a base check's result as soon as its job ends, so the plan does not keep saying
+/// the check has not run until the next dispatcher step. Only a result is written here; a
+/// next phase is still queued by `step`.
+pub fn record_check_job(store: &mut Store, job: JobId, now: UnixMs) -> Result<(), StoreError> {
+    let Some(rec) = store
+        .base_checks()?
+        .into_iter()
+        .find(|c| c.job == Some(job))
+    else {
+        return Ok(());
+    };
+    let Some(p) = store
+        .list_projects(None)?
+        .into_iter()
+        .map(|v| v.project)
+        .find(|p| p.id == rec.project)
+    else {
+        return Ok(());
+    };
+    let repos = store.dispatch_inputs()?;
+    let repo = repos
+        .iter()
+        .find(|r| r.device == p.device && r.repo.path == p.path);
+    let job = store.get_job(job)?;
+    match next_step(&p, repo.map(|r| &r.repo), Some(&rec), job.as_ref()) {
+        done @ CheckStep::Done { .. } => apply_check_step(store, &p, repo, done, now),
+        _ => Ok(()),
+    }
+}
+
 /// Queues the job of a phase, or writes the result.
 fn apply_check_step(
     store: &mut Store,

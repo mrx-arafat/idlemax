@@ -229,6 +229,9 @@ pub(super) fn on_job_update_with(
         tracing::debug!(job = job.id, device = %update.device, "stale job update ignored");
         return Ok(None);
     };
+    if next.status.is_terminal() && job.spec.name.starts_with("dispatch-check:") {
+        crate::dispatch::record_check_job(store, job.id, now)?;
+    }
     let ai_done = next.status == JobStatus::Succeeded && ingests(&job.spec);
     Ok(update.output_tail.clone().filter(|_| ai_done))
 }
