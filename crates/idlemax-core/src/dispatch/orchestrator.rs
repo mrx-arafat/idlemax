@@ -28,7 +28,9 @@ pub const PASS_JOB_NAME: &str = "dispatch-orchestrator-pass";
 /// The orchestrator is Opus, always (D2, A21).
 pub const PASS_MODEL: &str = "opus";
 pub const PASS_MIN_GAP_MS: i64 = 3_600_000;
-const MAX_PICKS: usize = 8;
+/// As many picks as a pass is offered tasks at most, so every open slot the budget can pay
+/// for gets one; 8 left a server with 126 slots running one worker.
+pub const MAX_PICKS: usize = 64;
 const MAX_NEEDS_YOU: usize = 20;
 const MAX_REASON_CHARS: usize = 300;
 const MAX_SCOPE_PATHS: usize = 20;

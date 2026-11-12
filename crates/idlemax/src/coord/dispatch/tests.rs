@@ -370,3 +370,28 @@ fn nothing_is_launched_while_the_owners_stop_is_stored() {
 }
 
 mod gate;
+
+#[test]
+fn a_task_a_run_holds_is_offered_to_no_pass_and_the_plan_picks_it_not() {
+    let (mut store, cfg, live) = world();
+    put_run(&mut store, FASTER, RunState::Kept, T0);
+    put_run(&mut store, DARK, RunState::Discarded, T0);
+    let inputs = crate::dispatch::read_inputs(&store, &cfg, &live, T0 + 10_000).unwrap();
+    let (offered, _) = inputs.offered();
+    let ids: Vec<&str> = offered.iter().map(|t| t.id.as_str()).collect();
+    assert!(!ids.contains(&FASTER), "{ids:?}");
+    assert!(
+        ids.contains(&DARK),
+        "a Run discarded with nothing in it holds nothing: {ids:?}"
+    );
+    let plan = plan_with_holds(&store, &cfg, &live, T0 + 10_000)
+        .unwrap()
+        .plan;
+    let picked: Vec<_> = plan
+        .devices
+        .iter()
+        .flat_map(|d| &d.picks)
+        .map(|p| p.task.as_str())
+        .collect();
+    assert!(!picked.contains(&FASTER), "{picked:?}");
+}

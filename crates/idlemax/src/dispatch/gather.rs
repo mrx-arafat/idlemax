@@ -18,6 +18,8 @@ use idlemax_core::quota::identity::AccountProblem;
 use idlemax_core::quota::pass::any_room;
 use idlemax_core::quota::{tier_models, Provider, QuotaView};
 use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
+use idlemax_core::worker::pace::{task_open, TaskOpen};
+use idlemax_core::worker::run::Run;
 use idlemax_core::Config;
 
 use super::quota_side::QuotaSide;
@@ -50,6 +52,10 @@ pub struct Inputs {
     pub projects: Vec<ProjectView>,
     pub repos: Vec<StoredRepo>,
     pub tasks: Vec<Task>,
+    /// The tasks no Run holds, which alone the plan and a pass see: a Run in flight, waiting
+    /// for review or kept has its own path (Spec 2), and a task closed after two failed Runs
+    /// needs the owner.
+    pub open: Vec<Task>,
     pub accounts: Vec<AccountUse>,
     pub models: Vec<(Provider, String)>,
     pub notes: Vec<String>,
@@ -93,6 +99,7 @@ pub fn read_inputs(
         judgments: &store.judgments()?,
         scoped: &scoped,
     });
+    let open = open_tasks(&tasks, &store.list_runs(None, None, 0)?);
     let views = quota_views(store, cfg, now)?;
     let quota = QuotaSide::read(store, cfg, live, &views, now)?;
     let accounts = account_uses(&quota.budgets, &views);
@@ -111,6 +118,7 @@ pub fn read_inputs(
         projects,
         repos,
         tasks,
+        open,
         accounts,
         models: tier_models(&live.quota),
         notes,
@@ -121,6 +129,25 @@ pub fn read_inputs(
         views,
     })
 }
+
+/// The tasks a new Run may take, with a closed one turned into a "needs you" task.
+fn open_tasks(tasks: &[Task], runs: &[Run]) -> Vec<Task> {
+    let mut open = Vec::new();
+    for t in tasks {
+        match task_open(runs, &t.id) {
+            TaskOpen::Open => open.push(t.clone()),
+            TaskOpen::Busy => {}
+            TaskOpen::Closed => open.push(Task {
+                needs_you: t.needs_you.clone().or_else(|| Some(CLOSED.into())),
+                ..t.clone()
+            }),
+        }
+    }
+    open
+}
+
+/// Why a task whose last two Runs failed is not offered again.
+pub const CLOSED: &str = "its last two runs were rejected or discarded";
 
 /// (task id, scope paths) of the newest pass's picks.
 fn scoped(newest: Option<&PassRow>) -> Vec<(String, Vec<String>)> {
@@ -151,7 +178,7 @@ impl Inputs {
             paused: &self.paused,
             projects: &self.projects,
             repos: &self.repos,
-            tasks: &self.tasks,
+            tasks: &self.open,
             accounts: &self.accounts,
             models: &self.models,
             pass,

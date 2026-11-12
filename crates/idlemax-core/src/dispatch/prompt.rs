@@ -78,7 +78,7 @@ pub fn prompt(
     projects: &[ProjectView],
     offer: &Offer<'_>,
 ) -> String {
-    let mut cap = 64;
+    let mut cap = super::orchestrator::MAX_PICKS;
     let mut body = summary(devices, paused, projects, offer, cap).to_string();
     while body.len() > MAX_STATE_BYTES && cap > 1 {
         cap /= 2;

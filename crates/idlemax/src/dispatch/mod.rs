@@ -10,6 +10,8 @@ mod quota_side;
 pub mod repo;
 pub mod rules_file;
 
+#[cfg(test)]
+pub use gather::read_inputs;
 pub use gather::{gather_plan, project_views, Gathered};
 pub use orchestrate::ingest_pass;
 

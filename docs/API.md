@@ -710,6 +710,7 @@ An off device rechecks nothing, and a `production` device runs no base check at 
 ### The orchestrator pass
 
 The coordinator's dispatcher step (every minute, and on `POST /v1/plan/refresh`) queues one `dispatch-orchestrator-pass` job when a pass is due: the mode is `propose`, a device takes picks and has a ready task, a usable Claude account is listed on such a device with `claude` installed, no pass job is active, and, unless the pass was asked for, its inputs changed since the newest pass and that pass was queued at least an hour ago.
+A ready task is one no Run holds: a task with a Run that is not `discarded` with nothing in it (no verdict, no facts) is never offered, since a Run in flight, waiting for review or kept follows its own path, and a task whose last two Runs were rejected or discarded is listed under `needs_you`.
 The inputs are the devices that take picks, every ready task and every task a stored judgment holds (by id and a digest of source, title and done check), the usable accounts, the models and the text of `rules.md`.
 A queued pass that stops being due for any other reason is cancelled with that reason.
 
@@ -726,7 +727,7 @@ In the pass input each task carries `tier` (`small`, `standard`, or `needs_you` 
 No pass is queued while no offered account has room for one Run of its cheapest tier.
 A pick is then checked against the quota rules: it takes the model of its task's tier; a pick refused for good (an account not offered, a tier model that is not set, a task that failed its checks twice) is dropped and its refusal named under `dropped`; one that only does not fit now (over the day's budget, or on an account the owner is using while a free one has room) is kept.
 
-At most 8 picks, 20 needs-you entries, 300 characters per reason and 20 scope paths of at most 300 characters per pick; a shape error, an unknown field or a length over a limit rejects the whole answer.
+At most 64 picks (as many as a pass is offered tasks), 20 needs-you entries, 300 characters per reason and 20 scope paths of at most 300 characters per pick; a shape error, an unknown field or a length over a limit rejects the whole answer.
 A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.
 Each `needs_you` task is stored as a judgment that lasts until the task's digest changes.
 The plan uses the newest pass with a result; `picked_by` reads `orchestrator pass <age> ago`.

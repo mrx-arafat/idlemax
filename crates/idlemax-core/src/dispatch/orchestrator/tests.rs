@@ -72,8 +72,10 @@ fn validate_keeps_offered_picks_and_drops_the_rest_by_name() {
     let mut extra = pick("a", "max", "sonnet", &[]);
     extra["command"] = json!("rm -rf /");
     assert!(validate(&out(json!([extra])), &offer).is_err());
-    let nine: Vec<Value> = (0..9).map(|_| pick("a", "max", "sonnet", &[])).collect();
-    assert!(validate(&out(json!(nine)), &offer).is_err());
+    let over: Vec<Value> = (0..=MAX_PICKS)
+        .map(|_| pick("a", "max", "sonnet", &[]))
+        .collect();
+    assert!(validate(&out(json!(over)), &offer).is_err());
 
     let both = json!({"picks": [pick("a", "max", "sonnet", &[])],
                       "needs_you": [{"task": "a", "reason": "vague"}]});
