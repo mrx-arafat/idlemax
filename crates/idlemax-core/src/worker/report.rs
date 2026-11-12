@@ -88,6 +88,10 @@ pub struct ReviewFacts {
 pub struct CheckFacts {
     /// Commits since the base commit.
     pub commits: u32,
+    /// The commit of the Run's branch that was judged; None when the branch is gone.
+    pub tip: Option<String>,
+    /// The worktree's HEAD was not the Run's branch at that commit.
+    pub head_off_branch: bool,
     /// Tracked paths left modified and uncommitted.
     pub modified: Vec<String>,
     /// New untracked paths.

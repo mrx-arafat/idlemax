@@ -234,7 +234,7 @@ An agent that predates the field treats it as a plain job.
 
 `JobSpec.worker` turns a job into one step of a worker Run, and only the coordinator's dispatcher sets it: `POST /v1/jobs`, schedules and advice accept refuse it with 400, and `idlemax job add` refuses it in a spec file.
 It is absent on the wire for a plain job, and a spec with it must have `cost = "ai"`.
-It holds `run` (the Run id), `action` (`launch`, `resume`, `keep`, `keep_merge` or `discard`), `project`, `task` (the task slug), `task_title`, `done_check` (text for the worker and reviewer, never run by idlemax), `repo`, `base_branch`, `branch` and `worktree` (set for every action except a first `launch`), `cli` (`claude`, `codex`, `opencode` or `agy`), `model`, `session`, `setup` and `check` (argv lists), `baseline` (`{"base_commit", "passed"}` from the dispatcher's check job, when known), `scope_paths`, `off_limits`, `core_paths`, `reviewer` (`{"cli", "model", "account"}`), `review_diff_lines`, `blocked_secs`, `setup_secs` and `check_secs`.
+It holds `run` (the Run id), `action` (`launch`, `resume`, `keep`, `keep_merge` or `discard`), `project`, `task` (the task slug), `task_title`, `done_check` (text for the worker and reviewer, never run by idlemax), `repo`, `base_branch`, `branch` and `worktree` (set for every action except a first `launch`), `tip` (on a review, the branch commit the launch's check judged), `cli` (`claude`, `codex`, `opencode` or `agy`), `model`, `session`, `setup` and `check` (argv lists), `baseline` (`{"base_commit", "passed"}` from the dispatcher's check job, when known), `scope_paths`, `off_limits`, `core_paths`, `reviewer` (`{"cli", "model", "account"}`), `review_diff_lines`, `blocked_secs`, `setup_secs` and `check_secs`.
 The brief travels in `stdin`, which no operator response returns.
 
 ### Limits and retention
@@ -873,7 +873,7 @@ Types live in `crates/idlemax-core/src/worker/run.rs`.
 The owner's review (D16): `POST /v1/runs/{id}/keep` with `{"merge": bool}` and `POST /v1/runs/{id}/discard` create one worker job with the action `keep`, `keep_merge` or `discard`, leased to the Run's device with `key` `run-<id>`.
 They answer 404 for an unknown Run (the error names `idlemax review`) and 409 for a Run with a live job, one already `kept` or `discarded`, or one in another state: keep takes `clean`, `needs_you` and `rejected`, discard also `stopped` and `shed`.
 These jobs are owner actions: a heartbeat reply carries a leased one even when the device, the account or everything is paused, and the agent starts it whatever the line state, the kill switch or a pause says.
-On the device, `keep` removes the worktree folder with git's safe removal and leaves the branch; `keep_merge` first checks that the owner's checkout is clean and on a branch, tests the merge with `git merge-tree --write-tree` (git 2.38 or newer), runs `git merge --no-edit` with a 120 s limit, and on a failure after it started runs `git merge --abort`; `discard` removes the folder and then the branch.
+On the device, `keep` removes the worktree folder with git's safe removal and leaves the branch; `keep_merge` refuses unless `refs/heads/<branch>` still points at `tip`, the commit the check judged, then checks that the owner's checkout is clean and on a branch, tests the merge of `tip` with `git merge-tree --write-tree` (git 2.38 or newer), runs `git merge --no-edit <tip>` with a 120 s limit, and on a failure after it started runs `git merge --abort`; `discard` removes the folder and then the branch.
 A refusal ends the job `failed` with why and what to do, and leaves the Run and the tree as they were; a succeeded keep makes the Run `kept` and a succeeded discard `discarded`, with the verdict kept.
 
 A worker job is an AI job (`cost = "ai"`) that stands outside the one-AI-lease rule and the one-start-per-5-hours rule in both directions: several worker jobs may hold one account, a worker job never blocks a plain AI job, and a plain one never blocks a worker job.
@@ -885,9 +885,11 @@ After its turn ends the agent closes the pane, waits until none of the worker's 
 
 | Field | Meaning |
 |---|---|
-| `commits` | commits since the base commit |
+| `commits` | commits since the base commit on the Run's branch (`refs/heads/<branch>`), never whatever `HEAD` points at |
+| `tip` | the commit of the Run's branch that was judged; null when the branch is gone |
+| `head_off_branch` | the worktree's `HEAD` was not the Run's branch at `tip` |
 | `modified`, `untracked` | tracked paths left uncommitted, and new untracked paths (`git status --porcelain`) |
-| `diff.files` | `{path, added, removed}` per changed file (`git diff --numstat <base>..HEAD`) |
+| `diff.files` | `{path, added, removed}` per changed file (`git diff --numstat <base>..<tip>`) |
 | `summary` | the subject of the last commit |
 | `baseline_before`, `baseline_after` | exit code of the project's own check on the base commit and after the turn; null when there is none or it did not finish |
 | `review` | `{cli, account, model, answer, concern, quota_before, quota_after}` when a reviewer was asked |
@@ -898,7 +900,7 @@ On high risk the agent asks the job's reviewer, always another provider than the
 
 The coordinator turns the facts into one verdict, the worst finding winning:
 
-- `rejected`: no commit, a changed path under an off-limits path, or a check that passed before the change and fails after it.
+- `rejected`: no commit, a worktree `HEAD` that is not the Run's branch at its tip, a changed path under an off-limits path, or a check that passed before the change and fails after it.
 - `needs_you`, with the exact concern: a changed path outside the scope paths or no scope named, tracked files left uncommitted, a check that failed before and still fails or did not finish after, the reviewer's concern, or a high risk with no review.
 - `clean` otherwise.
 

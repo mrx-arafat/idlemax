@@ -42,7 +42,8 @@ pub fn review(
     match w.action {
         WorkerAction::Keep => keep(commands, worktrees_dir, repo, &folder, &branch),
         WorkerAction::KeepMerge => {
-            merge(commands, repo, &branch)?;
+            let tip = checked_tip(commands, repo, &branch, w.tip.as_deref())?;
+            merge(commands, repo, &branch, &tip)?;
             keep(commands, worktrees_dir, repo, &folder, &branch)
                 .map(|done| format!("merged {branch} into your branch; {done}"))
         }
@@ -108,10 +109,40 @@ fn remove_folder(
     })
 }
 
-/// Merges `branch` into the owner's current branch, or says why it will not: a checkout with
-/// uncommitted changes, a detached HEAD, a conflict, or a merge that fails once started, which
-/// is aborted so the checkout is as it was.
-fn merge(commands: &dyn Commands, repo: &Path, branch: &str) -> Result<(), String> {
+/// The commit the launch's check judged, while `refs/heads/<branch>` still points at it: a
+/// branch moved since would merge work no check has seen.
+fn checked_tip(
+    commands: &dyn Commands,
+    repo: &Path,
+    branch: &str,
+    tip: Option<&str>,
+) -> Result<String, String> {
+    let tip = tip.ok_or_else(|| {
+        format!(
+            "{branch} has no checked commit to merge; merge it by hand, or keep it without --merge"
+        )
+    })?;
+    let full = format!("refs/heads/{branch}^{{commit}}");
+    let now = git(
+        commands,
+        repo,
+        &["rev-parse", "--verify", "-q", &full],
+        GIT_LIMIT,
+    )
+    .map(|s| s.trim().to_string())
+    .unwrap_or_default();
+    match now == tip {
+        true => Ok(tip.to_string()),
+        false => Err(format!(
+            "{branch} has moved since its check; look at it and merge it by hand, or keep it without --merge"
+        )),
+    }
+}
+
+/// Merges `tip`, the checked commit of `branch`, into the owner's current branch, or says why
+/// it will not: a checkout with uncommitted changes, a detached HEAD, a conflict, or a merge
+/// that fails once started, which is aborted so the checkout is as it was.
+fn merge(commands: &dyn Commands, repo: &Path, branch: &str, tip: &str) -> Result<(), String> {
     let shown = repo.display();
     let dirty = git(commands, repo, &["status", "--porcelain"], GIT_LIMIT)?;
     if !dirty.trim().is_empty() {
@@ -124,7 +155,7 @@ fn merge(commands: &dyn Commands, repo: &Path, branch: &str) -> Result<(), Strin
             "your checkout {shown} is on a detached HEAD; check out a branch and run the merge again"
         ));
     }
-    let probe = ["merge-tree", "--write-tree", "HEAD", branch];
+    let probe = ["merge-tree", "--write-tree", "HEAD", tip];
     let tested = run(commands, repo, &probe, GIT_LIMIT)?;
     match tested.code {
         Some(0) => {}
@@ -139,7 +170,9 @@ fn merge(commands: &dyn Commands, repo: &Path, branch: &str) -> Result<(), Strin
             )
         }
     }
-    let merged = run(commands, repo, &["merge", "--no-edit", branch], MERGE_LIMIT);
+    let message = format!("Merge branch '{branch}'");
+    let args = ["merge", "--no-edit", "-m", &message, tip];
+    let merged = run(commands, repo, &args, MERGE_LIMIT);
     match merged {
         Ok(out) if out.code == Some(0) => Ok(()),
         failed => {

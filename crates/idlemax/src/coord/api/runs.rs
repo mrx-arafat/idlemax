@@ -248,6 +248,7 @@ fn review_spec(run: &Run, saved: WorkerSpec, action: WorkerAction) -> JobSpec {
         action,
         branch: run.branch.clone(),
         worktree: run.worktree.clone(),
+        tip: run.facts.check.as_ref().and_then(|f| f.tip.clone()),
         ..saved
     };
     JobSpec {

@@ -109,6 +109,9 @@ fn rejections(facts: &CheckFacts, scope: &ScopeFindings) -> Vec<String> {
     if facts.commits == 0 {
         found.push("no commit was made".to_string());
     }
+    if facts.head_off_branch {
+        found.push("the worktree's HEAD is not the Run's branch at its tip".to_string());
+    }
     if !scope.off_limits.is_empty() {
         let paths = scope.off_limits.join(", ");
         found.push(format!("changed off-limits paths: {paths}"));

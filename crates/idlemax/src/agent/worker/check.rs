@@ -31,6 +31,8 @@ pub struct CheckCtx {
     pub job: JobId,
     pub tag: u64,
     pub folder: PathBuf,
+    /// The Run's own branch: the check judges it, never whatever HEAD points at.
+    pub branch: String,
     pub base_commit: String,
     pub remotes: Vec<String>,
     /// The agent's newest quota readings, so a review counts for the account that paid.
@@ -47,7 +49,10 @@ pub fn spawn(ctx: CheckCtx) -> Receiver<CheckFacts> {
 }
 
 fn gather(ctx: &CheckCtx) -> CheckFacts {
-    let range = format!("{}..HEAD", ctx.base_commit);
+    let (tip, head_off_branch) = branch_tip(ctx);
+    // A branch that is gone has nothing to judge: the empty range finds no commit.
+    let target = tip.clone().unwrap_or_else(|| ctx.base_commit.clone());
+    let range = format!("{}..{target}", ctx.base_commit);
     let commits = git(ctx, &["rev-list", "--count", &range])
         .and_then(|out| out.trim().parse().ok())
         .unwrap_or(0);
@@ -56,7 +61,7 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
     let numstat_args = ["diff", "--numstat", "-z", "--no-renames", &range];
     let diff = numstat(&git(ctx, &numstat_args).unwrap_or_default());
     let summary = (commits > 0)
-        .then(|| git(ctx, &["log", "-1", "--format=%s"]))
+        .then(|| git(ctx, &["log", "-1", "--format=%s", &target]))
         .flatten()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
@@ -67,6 +72,8 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
     };
     let mut facts = CheckFacts {
         commits,
+        tip,
+        head_off_branch,
         modified,
         untracked,
         diff,
@@ -87,6 +94,22 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
         facts.review = Some(review(ctx, reviewer, &range));
     }
     facts
+}
+
+/// The commit of the Run's branch, and whether the worktree's HEAD is anything but that
+/// branch at that commit: a worker could commit on the branch and move HEAD elsewhere.
+fn branch_tip(ctx: &CheckCtx) -> (Option<String>, bool) {
+    let full = format!("refs/heads/{}", ctx.branch);
+    let tip = git(
+        ctx,
+        &["rev-parse", "--verify", "-q", &format!("{full}^{{commit}}")],
+    )
+    .map(|s| s.trim().to_string())
+    .filter(|s| !ctx.branch.is_empty() && !s.is_empty());
+    let on_branch = git(ctx, &["symbolic-ref", "-q", "HEAD"]).is_some_and(|r| r.trim() == full);
+    let head = git(ctx, &["rev-parse", "--verify", "-q", "HEAD"]).map(|s| s.trim().to_string());
+    let off = !on_branch || tip.is_none() || head != tip;
+    (tip, off)
 }
 
 fn check_after(ctx: &CheckCtx) -> Option<i32> {
@@ -323,6 +346,7 @@ mod tests {
             job: 1,
             tag: 0,
             folder: dir.to_path_buf(),
+            branch: "main".into(),
             base_commit: base,
             remotes: Vec::new(),
             readings: Arc::default(),
@@ -338,5 +362,52 @@ mod tests {
         let concern = judged.concern.unwrap_or_default();
         assert!(concern.contains("secret/key.txt"), "{concern}");
         assert!(concern.contains("secret/other.txt"), "{concern}");
+    }
+
+    /// Red-team case 6: commit off-limits work on the Run's branch, then point HEAD elsewhere.
+    #[test]
+    fn the_check_judges_the_runs_branch_and_rejects_a_head_moved_off_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        git_in(dir, &["init", "-b", "main"]);
+        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::write(dir.join("secrets/key"), "key\n").unwrap();
+        std::fs::write(dir.join("file.txt"), "one\n").unwrap();
+        git_in(dir, &["add", "-A"]);
+        git_in(dir, &["commit", "-m", "base"]);
+        let base = git_in(dir, &["rev-parse", "HEAD"]);
+        git_in(dir, &["checkout", "-q", "-b", "idlemax/task-1"]);
+        std::fs::write(dir.join("secrets/key"), "stolen\n").unwrap();
+        git_in(dir, &["commit", "-qam", "off-limits edit"]);
+        let tip = git_in(dir, &["rev-parse", "HEAD"]);
+        git_in(dir, &["checkout", "-q", "--detach", &base]);
+        std::fs::write(dir.join("file.txt"), "one\nok\n").unwrap();
+        git_in(dir, &["commit", "-qam", "in-scope edit"]);
+        let ctx = CheckCtx {
+            commands: Arc::new(IsolatedGit(OsCommands::new())),
+            worker: WorkerSpec {
+                scope_paths: vec!["file.txt".into()],
+                off_limits: vec!["secrets/".into()],
+                ..Default::default()
+            },
+            job: 1,
+            tag: 0,
+            folder: dir.to_path_buf(),
+            branch: "idlemax/task-1".into(),
+            base_commit: base,
+            remotes: Vec::new(),
+            readings: Arc::default(),
+            cancel: Arc::default(),
+        };
+        let facts = gather(&ctx);
+        assert_eq!(facts.tip.as_deref(), Some(tip.as_str()));
+        assert!(facts.head_off_branch);
+        let paths: Vec<&str> = facts.diff.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["secrets/key"]);
+        let judged = verdict(&facts, &ctx.worker);
+        assert_eq!(judged.verdict, Verdict::Rejected);
+        let concern = judged.concern.unwrap_or_default();
+        assert!(concern.contains("HEAD is not"), "{concern}");
+        assert!(concern.contains("secrets/key"), "{concern}");
     }
 }

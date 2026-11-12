@@ -96,6 +96,8 @@ pub struct WorkerSpec {
     /// Set for every action except a first `launch`.
     pub branch: Option<String>,
     pub worktree: Option<String>,
+    /// The branch commit the launch's check judged; keep with merge merges exactly this.
+    pub tip: Option<String>,
     pub cli: WorkerCli,
     pub model: String,
     pub session: Option<String>,

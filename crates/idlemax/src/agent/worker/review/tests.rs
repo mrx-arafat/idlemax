@@ -78,8 +78,10 @@ fn repo(file: &str) -> Repo {
         "b",
     )
     .unwrap();
+    let tip = git(&info.folder, &["rev-parse", "HEAD"]);
     let spec = WorkerSpec {
         repo: repo.display().to_string(),
+        tip: Some(tip),
         worktree: Some(info.folder.display().to_string()),
         branch: Some(info.branch),
         ..Default::default()
@@ -166,4 +168,25 @@ fn a_merge_that_fails_after_it_started_is_aborted() {
     assert_eq!(git(&r.repo, &["rev-parse", "HEAD"]), head);
     assert_eq!(git(&r.repo, &["status", "--porcelain"]), "");
     assert!(r.folder.exists());
+}
+
+/// Red-team case 6: keep --merge merges the commit the check judged, never a branch moved since.
+#[test]
+fn merge_takes_the_checked_tip_and_refuses_a_branch_moved_since_or_no_tip() {
+    let r = repo("new.txt");
+    commit(&r.folder, "later.txt", "after the check\n");
+    let head = git(&r.repo, &["rev-parse", "HEAD"]);
+    let err = act(&r, WorkerAction::KeepMerge).unwrap_err();
+    assert!(err.contains("moved since its check"), "{err}");
+    assert_eq!(git(&r.repo, &["rev-parse", "HEAD"]), head);
+
+    let mut r = repo("new.txt");
+    r.spec.tip = None;
+    let err = act(&r, WorkerAction::KeepMerge).unwrap_err();
+    assert!(err.contains("no checked commit"), "{err}");
+
+    let r = repo("new.txt");
+    let tip = r.spec.tip.clone().unwrap();
+    act(&r, WorkerAction::KeepMerge).unwrap();
+    assert_eq!(git(&r.repo, &["rev-parse", "HEAD"]), tip);
 }

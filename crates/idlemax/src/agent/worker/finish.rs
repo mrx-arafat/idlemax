@@ -62,6 +62,7 @@ impl Workers {
             job: t.job.id,
             tag: t.tag,
             folder,
+            branch: t.progress.branch.clone().unwrap_or_default(),
             base_commit: base,
             remotes: t.progress.remotes.clone(),
             readings: Arc::clone(&self.readings),
