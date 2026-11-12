@@ -57,6 +57,14 @@ pub enum CallerError {
          can do this, from their own terminal, the dashboard or the TUI"
     )]
     Launched(u32),
+    /// The CLI or `idlemax mcp` found the marker in its own environment; its own pid would
+    /// send a reader looking for the wrong process, so the text names none.
+    #[error(
+        "this call comes from a job or worker that idlemax started (its environment has \
+         IDLEMAX_JOB_ID); only the owner can do this, from their own terminal, the dashboard \
+         or the TUI"
+    )]
+    LaunchedHere,
     #[error(
         "idlemax could not find the program that sent this call, so it is not treated as the \
          owner; stop and pause still work"

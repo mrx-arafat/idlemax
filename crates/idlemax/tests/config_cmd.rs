@@ -15,6 +15,8 @@ fn idlemax(home: &std::path::Path, args: &[&str]) -> Reply {
     let out = Command::new(BIN)
         .args(args)
         .env_clear()
+        // `env_clear` already drops it; named so the lock's marker is never inherited.
+        .env_remove("IDLEMAX_JOB_ID")
         .env("HOME", home)
         .env("IDLEMAX_HOME", home.join("state"))
         .output()

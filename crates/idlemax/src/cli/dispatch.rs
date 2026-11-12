@@ -32,7 +32,7 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
     // Before the token is loaded and before any call: a launched job or worker gets the
     // lock's own text, not a token or network error.
     if access_of(&cmd) == Access::Owner && std::env::var_os(LAUNCHED_ENV).is_some() {
-        let why = CallerError::Launched(std::process::id()).to_string();
+        let why = CallerError::LaunchedHere.to_string();
         return Err(CliError::runtime(why, OWNER_ONLY_HELP).into());
     }
     // Doctor and the hooks report a broken state dir or config instead of failing on it.

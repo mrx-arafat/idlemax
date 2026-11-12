@@ -127,6 +127,8 @@ async fn connection(
         .http1()
         .header_read_timeout(limits.header_read)
         .timer(TokioTimer::new());
+    // `Layer::layer` wraps the built router once per connection; `Router::layer` would
+    // rebuild every route for each one, which is why `tower-layer` is a direct dependency.
     let app = tower_layer::Layer::layer(&Extension(conn), app);
     let connection = builder.serve_connection(TokioIo::new(stream), TowerToHyperService::new(app));
     tokio::pin!(connection);

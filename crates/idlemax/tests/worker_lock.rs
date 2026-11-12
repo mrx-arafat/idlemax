@@ -272,10 +272,13 @@ fn the_cli_refuses_owner_commands_from_a_marked_environment_before_any_call() {
         (&["--coord", &closed, "resume"][..], None),
         (&["--coord", &closed, "resume"][..], Some("")),
         (&["config", "set", "agent.notify", "true"][..], None),
+        (&["--coord", &closed, "plan", "--refresh"][..], None),
     ] {
         let out = run(args, token);
         assert_eq!(out.status.code(), Some(1), "{args:?}: {}", text(&out));
         assert!(text(&out).contains(LAUNCHED), "{args:?}: {}", text(&out));
+        // The CLI's own pid is not the marked process; it names none.
+        assert!(!text(&out).contains("(pid"), "{}", text(&out));
         assert!(text(&out).contains("ask the owner"), "{}", text(&out));
     }
     let after = std::fs::read_to_string(state.join("config.toml")).unwrap();

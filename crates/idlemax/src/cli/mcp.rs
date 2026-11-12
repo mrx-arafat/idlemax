@@ -52,7 +52,7 @@ pub async fn run(coord: Option<String>) -> Result<()> {
 async fn call(coord: Option<String>, tool: Tool) -> Result<String, String> {
     if matches!(tool, Tool::Start | Tool::ProjectOn(_)) && std::env::var_os(LAUNCHED_ENV).is_some()
     {
-        let why = CallerError::Launched(std::process::id()).to_string();
+        let why = CallerError::LaunchedHere.to_string();
         return Err(format!("{why}\nnext: {OWNER_ONLY_HELP}"));
     }
     let c = client(coord)?;
