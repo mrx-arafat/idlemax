@@ -239,7 +239,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [ ] Task 4: Refuse owner-only calls from a launched process
 - [x] Task 5: Change limits through the API
 - [x] Task 6: Store, list and approve rule proposals
-- [ ] Task 7: Decide and store the three kinds of notice
+- [x] Task 7: Decide and store the three kinds of notice
 - [ ] Task 8: Deliver a notice to the desktop and the inbox
 - [ ] Task 9: Add the dispatcher controls and views to the dashboard
 - [ ] Task 10: Add the Dispatch tab to the TUI
@@ -597,13 +597,13 @@ Everything else produces no notice.
 
 **Definition of Done:**
 
-- [ ] A worker start, a provider move, a hold, a shed, a pick, a stopped worker job and a rejected run give no item, and `is_plain_job` is false for a spec with a `worker` section, for the advisor's pass and for a job named `dispatch-check:app`.
-- [ ] Three runs that finished at minute 0, 4 and 9 give no draft at minute 9 and one draft with three lines at minute 10; a run at minute 12 is not in it and gets its own draft at minute 22.
-- [ ] A run and a plain job that finished two minutes apart give one draft titled `idlemax: 2 tasks finished` with one line each.
-- [ ] Thirty new "needs you" lines in one sweep give one draft with ten lines and `and 20 more: idlemax status`.
-- [ ] `daily_summary` returns nothing at 08:59 local, the summary at 09:00, and nothing for an empty day.
-- [ ] Two sweeps over the same finished run store one notice; an emergency that clears and returns after 30 minutes stores one `needs_you` notice, and one that returns after 61 minutes stores a second.
-- [ ] Verify: `cargo test -p idlemax-core notify::notice && cargo test -p idlemax --bin idlemax coord::notices && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A worker start, a provider move, a hold, a shed, a pick, a stopped worker job and a rejected run give no item, and `is_plain_job` is false for a spec with a `worker` section, for the advisor's pass and for a job named `dispatch-check:app`.
+- [x] Three runs that finished at minute 0, 4 and 9 give no draft at minute 9 and one draft with three lines at minute 10; a run at minute 12 is not in it and gets its own draft at minute 22.
+- [x] A run and a plain job that finished two minutes apart give one draft titled `idlemax: 2 tasks finished` with one line each.
+- [x] Thirty new "needs you" lines in one sweep give one draft with ten lines and `and 20 more: idlemax status`.
+- [x] `daily_summary` returns nothing at 08:59 local, the summary at 09:00, and nothing for an empty day.
+- [x] Two sweeps over the same finished run store one notice; an emergency that clears and returns after 30 minutes stores one `needs_you` notice, and one that returns after 61 minutes stores a second.
+- [x] Verify: `cargo test -p idlemax-core notify::notice && cargo test -p idlemax --bin idlemax coord::notices && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 8: Deliver a notice to the desktop and the inbox
 

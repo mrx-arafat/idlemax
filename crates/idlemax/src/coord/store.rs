@@ -11,6 +11,7 @@ mod events;
 mod inputs;
 mod jobs;
 mod launches;
+mod notices;
 mod projects;
 mod proposals;
 mod quota;
@@ -140,6 +141,7 @@ pub struct PruneReport {
     pub runs: usize,
     pub quota_days: usize,
     pub proposals: usize,
+    pub notices: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
@@ -291,7 +293,16 @@ impl Store {
                       ORDER BY id DESC LIMIT 500))",
                 [history_cutoff],
             )?,
+            notices: tx.execute(
+                "DELETE FROM notices WHERE at_ms < ?1
+                   OR id NOT IN (SELECT id FROM notices ORDER BY id DESC LIMIT 1000)",
+                [history_cutoff],
+            )?,
         };
+        tx.execute(
+            "DELETE FROM notice_items WHERE at_ms < ?1",
+            [history_cutoff],
+        )?;
         tx.execute(
             "DELETE FROM controls
              WHERE scope_type = 'job'

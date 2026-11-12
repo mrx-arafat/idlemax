@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::{conversion_err, json_col, json_text, sql_limit, Store, StoreError, StoreResult};
 
-const JOB_COLUMNS: &str = "id, spec, status, device, attempts, created_ms, started_ms, \
+pub(super) const JOB_COLUMNS: &str = "id, spec, status, device, attempts, created_ms, started_ms, \
     finished_ms, lease_expires_ms, not_before_ms, exit_code, last_error, output_path";
 
 const ACTIVE: &str = "('leased', 'running', 'paused')";
@@ -231,7 +231,7 @@ fn status_col(r: &Row<'_>, idx: usize) -> rusqlite::Result<JobStatus> {
         .map_err(|e: String| conversion_err(idx, e))
 }
 
-fn job_from_row(r: &Row<'_>) -> rusqlite::Result<Job> {
+pub(super) fn job_from_row(r: &Row<'_>) -> rusqlite::Result<Job> {
     Ok(Job {
         id: r.get(0)?,
         spec: json_col(r, 1)?,

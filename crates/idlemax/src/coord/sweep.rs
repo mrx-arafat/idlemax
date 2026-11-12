@@ -154,6 +154,11 @@ fn sweep_once(
     if let Err(e) = schedule::fire_due(store, cfg, now) {
         tracing::warn!(error = %e, "schedule sweep failed");
     }
+    // Nor must a notice problem.
+    let offset = chrono::Local::now().offset().local_minus_utc();
+    if let Err(e) = super::notices::sweep(store, cfg, live, now, offset) {
+        tracing::warn!(error = %e, "notice sweep failed");
+    }
     if prune {
         // Before the prune: the account days need the week of snapshots the prune drops.
         super::api::close_quota_days(store, cfg, now)?;

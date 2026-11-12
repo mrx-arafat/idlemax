@@ -2,6 +2,8 @@
 
 use crate::types::JobStatus;
 
+pub mod notice;
+
 /// Job finish notification payload for display.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {

@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -335,4 +335,24 @@ CREATE TABLE rule_proposals (
   status TEXT NOT NULL CHECK (status IN ('open', 'approved', 'rejected')),
   decided_ms INTEGER
 ) STRICT;
+"#;
+
+/// Notices of dispatcher Spec 4 (D17, A22): a finished task, a thing that needs the owner and
+/// the daily summary, each with the keys it covers so nothing is told twice.
+const V12: &str = r#"
+CREATE TABLE notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at_ms INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('task_finished', 'needs_you', 'daily_summary')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL
+) STRICT;
+CREATE INDEX notices_by_time ON notices(at_ms);
+CREATE TABLE notice_items (
+  key TEXT PRIMARY KEY,
+  notice INTEGER NOT NULL,
+  at_ms INTEGER NOT NULL,
+  last_seen_ms INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+CREATE INDEX notice_items_by_time ON notice_items(at_ms);
 "#;

@@ -10,7 +10,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use super::jobs::{check_live_cap, get_job, unfinished_with_key, Added};
 use super::{enum_col, enum_text, json_col, json_text, sql_limit, Store, StoreError, StoreResult};
 
-const COLUMNS: &str = "id, device, project, task, task_title, source, branch, worktree, \
+pub(super) const COLUMNS: &str =
+    "id, device, project, task, task_title, source, branch, worktree, \
     provider, account, model, session, state, verdict, concern, reason, summary, facts, \
     quota_before, quota_after, job, launches, start_tries, start_ms, end_ms, updated_ms";
 
@@ -251,7 +252,7 @@ pub(super) fn update_run(conn: &Connection, run: &Run, expect: RunState) -> Stor
     Ok(changed == 1)
 }
 
-fn run_from_row(r: &Row<'_>) -> rusqlite::Result<Run> {
+pub(super) fn run_from_row(r: &Row<'_>) -> rusqlite::Result<Run> {
     Ok(Run {
         id: r.get(0)?,
         device: r.get(1)?,
