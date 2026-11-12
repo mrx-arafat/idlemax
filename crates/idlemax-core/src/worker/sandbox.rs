@@ -97,15 +97,13 @@ pub fn doctor_check(
     }
 }
 
-/// The model API hosts a worker of `cli` reaches when `workers.sandbox_hosts` names none.
+/// The model API hosts a worker of `cli` reaches when `workers.sandbox_hosts` names none. The
+/// Codex list is from its documentation and not yet seen in a real run (WORKER-PROOF).
 pub fn default_hosts(cli: WorkerCli) -> Vec<String> {
     let hosts: &[&str] = match cli {
-        WorkerCli::Claude => &[
-            "api.anthropic.com",
-            "console.anthropic.com",
-            "claude.ai",
-            "statsig.anthropic.com",
-        ],
+        // code.claude.com/docs/en/network-config: the API (with feature flags and telemetry),
+        // claude.ai sign-in, and platform.claude.com, where the OAuth token is refreshed.
+        WorkerCli::Claude => &["api.anthropic.com", "platform.claude.com", "claude.ai"],
         WorkerCli::Codex => &["api.openai.com", "chatgpt.com", "auth.openai.com"],
         WorkerCli::Opencode | WorkerCli::Agy => &[],
     };
@@ -171,6 +169,17 @@ mod tests {
             idle.level,
             Level::Ok,
             "no worker CLI: nothing can be refused"
+        );
+    }
+
+    #[test]
+    fn claude_reaches_the_hosts_its_docs_name_for_the_api_and_the_token_refresh() {
+        // code.claude.com/docs/en/network-config (read 2026-11-13): the API with flags and
+        // telemetry, claude.ai sign-in, and platform.claude.com for the OAuth refresh.
+        let hosts = default_hosts(WorkerCli::Claude);
+        assert_eq!(
+            hosts,
+            ["api.anthropic.com", "platform.claude.com", "claude.ai"]
         );
     }
 

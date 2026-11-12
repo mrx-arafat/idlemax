@@ -239,7 +239,7 @@ Linux needs PSI (`psi=1` on the kernel command line where it is off); without it
 | `workers.settle_secs` | 60 | seconds between two worker launches on one device; the launch step also runs this often, between every 1 and every 15 seconds |
 | `workers.host` | `auto` | `herdr` (a pane), `headless` (a child of the agent, output in the job log) or `auto` (Herdr when it answers, else headless); `herdr` is refused on a `production` device |
 | `workers.sandbox` | `auto` | the OS sandbox around each worker (bubblewrap on Linux): `auto` uses it when `idlemax doctor` says it works and runs with the soft fences only otherwise, `required` refuses to start a worker without it, `off` never uses it; a `production` device always requires it and refuses `off`; read by the agent on that device |
-| `workers.sandbox_hosts` | `{}` | per CLI, the hosts a sandboxed worker may reach on port 443, such as `claude = ["api.anthropic.com"]`; a CLI not listed gets idlemax's defaults for it |
+| `workers.sandbox_hosts` | `{}` | per CLI, the hosts a sandboxed worker may reach on port 443, such as `claude = ["api.anthropic.com"]`; a CLI not listed gets idlemax's defaults for it (Claude: `api.anthropic.com`, `platform.claude.com` for the token refresh, `claude.ai`; Codex: `api.openai.com`, `chatgpt.com`, `auth.openai.com`); inside the sandbox there is no DNS, every connection goes through the proxy by name |
 | `workers.max_runtime_secs` | 3600 | awake seconds one worker launch may run before it is stopped |
 | `workers.blocked_secs` | 120 | seconds a worker may wait for input before it is stopped |
 | `workers.review_diff_lines` | 300 | a diff with more added plus removed lines gets an independent review |
