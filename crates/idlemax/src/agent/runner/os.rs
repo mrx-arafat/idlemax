@@ -192,8 +192,6 @@ impl ProcTable {
     /// The variables of process `pid` as `name=value` pairs; None when the process is gone or
     /// its environment cannot be read (macOS hides it for some binaries), which the worker
     /// check treats as a failure.
-    // The worker manager is wired into the agent loop by dispatcher Spec 2 Task 7.
-    #[allow(dead_code)]
     pub fn environ(&mut self, pid: u32) -> Option<Vec<(String, String)>> {
         let pid = Pid::from_u32(pid);
         let kind = ProcessRefreshKind::nothing()
@@ -213,12 +211,26 @@ impl ProcTable {
     }
 
     /// Resident memory of `pids` together, from the last refresh.
-    #[allow(dead_code)]
     pub fn rss_of(&self, pids: &[u32]) -> u64 {
         pids.iter()
             .filter_map(|&pid| self.sys.process(Pid::from_u32(pid)))
             .map(|p| p.memory())
             .sum()
+    }
+
+    /// The `n` processes with the most resident memory outside `exclude`, by name, from the
+    /// last refresh; what a shed tells the owner instead of closing their apps (D14).
+    pub fn top_memory(&self, n: usize, exclude: &[u32]) -> Vec<(String, u64)> {
+        let mut all: Vec<(String, u64)> = self
+            .sys
+            .processes()
+            .iter()
+            .filter(|(pid, _)| !exclude.contains(&pid.as_u32()))
+            .map(|(_, p)| (p.name().to_string_lossy().into_owned(), p.memory()))
+            .collect();
+        all.sort_by_key(|(_, rss)| std::cmp::Reverse(*rss));
+        all.truncate(n);
+        all
     }
 
     /// Processes of each live job, keyed by root pid, from the last refresh.

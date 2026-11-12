@@ -4,15 +4,17 @@
 use std::collections::HashMap;
 
 use idlemax_core::dispatch::room::lines_verdict;
+use idlemax_core::dispatch::room::LineState;
 use idlemax_core::protocol::AgentCommand;
 use idlemax_core::reconcile::{AgentAction, TickInput};
-use idlemax_core::types::{ControlAction, Job};
+use idlemax_core::types::{ControlAction, Job, JobId};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use super::{blocking, Agent};
 use crate::agent::api::LocalControl;
 use crate::agent::runner::{expand_cwd, Runner};
+use crate::agent::worker::Msg;
 use crate::state::now_ms;
 
 impl Agent {
@@ -44,6 +46,17 @@ impl Agent {
         local: &[ControlAction],
         assign: &[Job],
     ) -> bool {
+        let worker_mem: Vec<(JobId, u64)> = self
+            .running
+            .iter()
+            .filter(|r| self.state.is_worker(r.id))
+            .map(|r| (r.id, r.rss_bytes.unwrap_or(0)))
+            .collect();
+        let pressed = matches!(self.room.state, LineState::Shed | LineState::Emergency);
+        let others = match (&self.workers, pressed && !worker_mem.is_empty()) {
+            (Some(link), true) => link.others(),
+            _ => String::new(),
+        };
         let input = TickInput {
             guard: &self.decision,
             kill_switch: self.reading.kill_switch,
@@ -53,8 +66,14 @@ impl Agent {
             assign,
             shutting_down: self.stopping,
             lines: &lines_verdict(Some(&self.room), self.room.at_ms),
+            room: &self.room,
+            worker_mem: &worker_mem,
+            others: &others,
         };
-        let actions = self.state.plan(&input);
+        let planned = self.state.plan(&input);
+        let (for_workers, actions): (Vec<_>, Vec<_>) =
+            planned.into_iter().partition(|a| self.is_worker_action(a));
+        self.send_to_workers(for_workers);
         if actions.is_empty() {
             return true;
         }
@@ -166,11 +185,54 @@ impl Agent {
             Ok((out, running, job_dirs)) => {
                 self.running = running;
                 self.job_dirs = job_dirs;
+                self.merge_worker_running();
                 Some(out)
             }
             Err(e) => {
                 error!("runner worker failed: {e}");
                 None
+            }
+        }
+    }
+}
+
+impl Agent {
+    /// A start of a worker lease, or a pause, resume or kill of a tracked worker.
+    fn is_worker_action(&self, action: &AgentAction) -> bool {
+        match action {
+            AgentAction::Start(job) => job.spec.worker.is_some(),
+            AgentAction::Return { .. } => false,
+            other => self.state.is_worker(other.job_id()),
+        }
+    }
+
+    /// Hands worker actions to the manager without waiting for it.
+    fn send_to_workers(&mut self, actions: Vec<AgentAction>) {
+        let now = now_ms();
+        for action in actions {
+            let msg = match &action {
+                AgentAction::Start(job) => Some(Msg::Start(job.clone())),
+                AgentAction::Pause(id) => Some(Msg::Pause(*id)),
+                AgentAction::Resume(id) => Some(Msg::Resume(*id)),
+                AgentAction::Kill { id, order } => Some(Msg::Kill {
+                    id: *id,
+                    order: order.clone(),
+                }),
+                AgentAction::Return { .. } => None,
+            };
+            let outcome = match (&self.workers, msg) {
+                (Some(link), Some(msg)) => {
+                    link.send(msg);
+                    Ok(())
+                }
+                (None, Some(_)) => Err(
+                    "this agent cannot read its process table, so it runs no worker".to_string(),
+                ),
+                (_, None) => Ok(()),
+            };
+            log_action(&action, &outcome);
+            if let Some(u) = self.state.applied(&action, outcome, &self.device.id, now) {
+                self.outbox.push(u);
             }
         }
     }

@@ -153,7 +153,7 @@ target/debug/idlemax init
 - [x] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
 - [x] Task 5: Build the runner seam, the Herdr host and the fenced launch
 - [x] Task 6: Run one worker job on the agent from lease to exit
-- [ ] Task 7: Start, hold, shed and stop workers in the agent tick
+- [x] Task 7: Start, hold, shed and stop workers in the agent tick
 - [ ] Task 8: Check a finished task and give it a verdict
 - [ ] Task 9: Launch from the Plan in auto mode, one worker at a time
 - [ ] Task 10: Add idlemax stop and idlemax start
@@ -533,15 +533,15 @@ The existing pause, resume, kill, stop-all and `PAUSE` paths reach workers throu
 
 **Definition of Done:**
 
-- [ ] In `reconcile` tests a `launch` job starts while the guard says `pause` for user activity and the line is `run`, is returned while the line is `hold`, and is paused by the kill switch; a plain lease in the same tick follows the guard as before.
-- [ ] A `discard` job starts while the line is `hold` and the kill switch is on, and an `emergency` in the same tick orders no kill for it.
-- [ ] With three workers and a line of `shed`, one tick orders exactly one kill, for the newest; a tie on start time picks the lowest priority, and a tie on both picks the biggest memory user.
-- [ ] No second kill is ordered while the first worker is still exiting or before a newer sample arrives; after a shed, a sample that reads `hold` orders one more kill and a sample that reads `run` orders none.
-- [ ] A line of `emergency` orders a retryable kill for all three workers in one tick and none for a plain job running beside them, and each reason holds the text of `others`.
-- [ ] A line of `hold` with no shed before it orders no kill.
-- [ ] A loop test with a `FakeHost` whose calls block shows a local pause applied to a plain job while the manager's tick is still in flight.
-- [ ] `docs/API.md` and the README "Safety model" section describe the worker start rule, the shed order and what an emergency does.
-- [ ] Verify: `cargo test -p idlemax-core reconcile && cargo test -p idlemax --bin idlemax event_loop::workers && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] In `reconcile` tests a `launch` job starts while the guard says `pause` for user activity and the line is `run`, is returned while the line is `hold`, and is paused by the kill switch; a plain lease in the same tick follows the guard as before.
+- [x] A `discard` job starts while the line is `hold` and the kill switch is on, and an `emergency` in the same tick orders no kill for it.
+- [x] With three workers and a line of `shed`, one tick orders exactly one kill, for the newest; a tie on start time picks the lowest priority, and a tie on both picks the biggest memory user.
+- [x] No second kill is ordered while the first worker is still exiting or before a newer sample arrives; after a shed, a sample that reads `hold` orders one more kill and a sample that reads `run` orders none.
+- [x] A line of `emergency` orders a retryable kill for all three workers in one tick and none for a plain job running beside them, and each reason holds the text of `others`.
+- [x] A line of `hold` with no shed before it orders no kill.
+- [x] A loop test with a `FakeHost` whose calls block shows a local pause applied to a plain job while the manager's tick is still in flight.
+- [x] `docs/API.md` and the README "Safety model" section describe the worker start rule, the shed order and what an emergency does.
+- [x] Verify: `cargo test -p idlemax-core reconcile && cargo test -p idlemax --bin idlemax event_loop::workers && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 8: Check a finished task and give it a verdict
 

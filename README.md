@@ -686,6 +686,14 @@ Each job sets `on_user_active`: `pause` (default), `continue` (only machine-heal
 The dispatcher's own jobs (its orchestrator pass and a project's setup and check commands) follow the worker lines instead of the idle-user and memory-pressure rules, so they can run while you work.
 The kill switch, every pause and `stop-all` still stop them, and no job you add can ask for that admission.
 
+AI workers follow the same worker lines, never the guard: a worker starts only while the line state is `run`, and the guard never pauses or kills one, so it keeps working while you type.
+The kill switch, a local pause and `stop-all` still hold and stop workers like any job.
+At `shed` idlemax stops one worker at a time, the most recently started first, then the lowest-priority project, then the biggest memory user, and keeps going until the device reads `run` again; a stopped worker goes back in the queue and continues by itself when there is room.
+At `emergency` every worker stops at once, with its state saved.
+Either way the reason names the biggest memory users outside idlemax; idlemax never closes your apps.
+While a worker runs the agent samples and heartbeats every 5 s.
+Your own `idlemax review keep` and `discard` are never held by a line, a pause or the kill switch.
+
 **How heavy is it?**
 Measured over 10 minutes on one Apple Silicon Mac, idle, with no jobs: the coordinator and the agent each used about 0% CPU and 16 to 18 MB of memory (mean RSS; peaks of about 20 and 22 MB).
 Each 30 s sample runs about 3.5 short macOS system probes (`ioreg`, `pmset` and `sysctl`), about 74 ms in total.

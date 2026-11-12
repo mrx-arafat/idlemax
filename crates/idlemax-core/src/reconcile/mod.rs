@@ -14,17 +14,21 @@ mod controls;
 mod journal;
 mod outbox;
 mod starts;
+mod workers;
 
 pub use journal::{encode_ack, encode_update, replay, Replayed};
 pub use outbox::Outbox;
 
 use self::starts::{hard_blocker, verdict_reason};
+use self::workers::{is_launch, is_owner_action};
 
+use crate::dispatch::room::RoomDecision;
 use crate::protocol::{AgentCommand, JobUpdate};
 use crate::types::{
     ActivePolicy, Admission, ControlAction, DeviceId, GuardAction, GuardDecision, Job, JobId,
     JobStatus, UnixMs,
 };
+use crate::worker::WorkerAction;
 
 /// Why a job is held paused. It runs only while no hold is set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,6 +54,10 @@ pub struct TrackedJob {
     pub mem_mb: u64,
     pub on_user_active: ActivePolicy,
     pub admission: Admission,
+    /// The action of a worker job; None for a plain job.
+    pub worker: Option<WorkerAction>,
+    /// The spec's priority: for a worker, its project's (A24).
+    pub priority: i32,
     pub started_ms: UnixMs,
     /// SIGSTOPped right now.
     pub paused: bool,
@@ -133,6 +141,12 @@ pub struct TickInput<'a> {
     /// The worker lines in the guard's words (`lines_verdict`): dispatcher jobs follow
     /// these instead of the guard (A16).
     pub lines: &'a GuardDecision,
+    /// The worker room of the newest sample: worker jobs start, shed and stop by its state.
+    pub room: &'a RoomDecision,
+    /// Memory of each tracked worker, in bytes, for the shed order.
+    pub worker_mem: &'a [(JobId, u64)],
+    /// The biggest memory users outside idlemax, named in a shed or emergency kill (D14).
+    pub others: &'a str,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -141,6 +155,10 @@ pub struct AgentState {
     local_paused: bool,
     sampled_jobs: BTreeSet<JobId>,
     sample_at_ms: Option<UnixMs>,
+    /// A shed is under way: it goes on until the device reads `run` (D14, A6).
+    shedding: bool,
+    /// The room sample that ordered the last shed kill.
+    shed_sample: Option<UnixMs>,
 }
 
 impl AgentState {
@@ -151,6 +169,21 @@ impl AgentState {
 
     pub fn jobs(&self) -> impl Iterator<Item = &TrackedJob> {
         self.jobs.values()
+    }
+
+    /// True for a tracked job that a worker manager runs, not the runner.
+    pub fn is_worker(&self, id: JobId) -> bool {
+        self.jobs.get(&id).is_some_and(|j| j.worker.is_some())
+    }
+
+    /// True while any worker job is tracked.
+    pub fn has_workers(&self) -> bool {
+        self.jobs.values().any(|j| j.worker.is_some())
+    }
+
+    /// Tracks a job a previous agent started that is still running (a recovered worker).
+    pub fn adopt(&mut self, job: &Job, now_ms: UnixMs) {
+        self.jobs.insert(job.id, tracked(job, now_ms));
     }
 
     /// Looks up the spec name of a tracked job.
@@ -174,10 +207,22 @@ impl AgentState {
         let stop_all = self.apply_commands(input.commands, &mut kills);
         if input.shutting_down {
             self.kill_all(&KillOrder::retryable(SHUTDOWN_REASON), &mut kills);
+            // The owner's keep and discard are never stopped by a shutdown (A10).
+            kills.retain(|id, _| !self.jobs.get(id).is_some_and(is_owner_action));
         }
+        self.worker_kills(input, &mut kills);
         let local = input.kill_switch || self.local_paused;
         for job in self.jobs.values_mut() {
             job.holds.local = local;
+            if is_owner_action(job) {
+                job.holds = Holds::default();
+                continue;
+            }
+            if is_launch(job) {
+                // A worker is never paused or killed by the guard; the lines stop it.
+                job.holds.guard = false;
+                continue;
+            }
             let (action, why) = match job.admission {
                 Admission::Guard => (job_verdict(input.guard, job.on_user_active), input.guard),
                 Admission::Lines => (input.lines.action, input.lines),
@@ -315,6 +360,8 @@ fn tracked(job: &Job, now_ms: UnixMs) -> TrackedJob {
         mem_mb: job.spec.mem_mb,
         on_user_active: job.spec.on_user_active,
         admission: job.spec.admission,
+        worker: job.spec.worker.as_ref().map(|w| w.action),
+        priority: job.spec.priority,
         started_ms: now_ms,
         paused: false,
         holds: Holds::default(),
@@ -324,3 +371,5 @@ fn tracked(job: &Job, now_ms: UnixMs) -> TrackedJob {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod worker_tests;

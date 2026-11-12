@@ -423,6 +423,17 @@ A device older than this field needs no change: the coordinator reads the verdic
 - `cancel` needs `job` scope (400 otherwise).
   A queued or active job becomes `cancelled` (active ones get `kill_job`); a finished job is 409.
 
+Worker jobs (with a `worker` section) on the agent:
+
+- A `launch` or `resume` starts unless the agent is shutting down or offline, the kill switch or a local pause is on, a coordinator `stop_all` arrived, or the device's line state is not `run`; it uses none of the guard's slots, RAM budget or user-presence verdict.
+- The guard never pauses or kills a running worker; every local and command pause, the kill switch, `stop_all`, `kill_job` and a shutdown still reach it.
+- At `shed` the agent orders one retryable kill, for the most recently started worker (then the lowest priority, then the biggest memory user), and the next only after that worker exited and a newer sample still does not read `run`.
+  The shed goes on until a sample reads `run`; a `hold` with no shed before it stops nothing.
+- At `emergency` every worker gets a retryable kill in the same tick.
+  Each such kill names the line, the room's reason and the three biggest memory users outside idlemax, and its Run becomes `shed`.
+- A `keep`, `keep_merge` or `discard` starts unless the agent is shutting down, whatever the line state, the kill switch or a pause says, gets no hold, and is never killed by a line or by a shutdown.
+- While any worker is tracked the agent samples and heartbeats every 5 s.
+
 ## Advice
 
 Each agent posts `AdvisorInputs` to `/v1/agent/advisor-inputs` every `agent.advisor_inputs_secs` (default 900 s, 0 sends nothing): `{device, github, sessions}`.

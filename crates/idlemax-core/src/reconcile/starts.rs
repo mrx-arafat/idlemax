@@ -3,11 +3,13 @@
 
 use std::collections::BTreeSet;
 
+use super::workers::worker_blocker;
 use super::{AgentAction, AgentState, TickInput, TrackedJob, SHUTDOWN_REASON};
 use crate::types::{is_dispatcher_job, Admission, GuardAction, GuardDecision};
 
 impl AgentState {
-    /// Starts leases while slots and RAM remain; returns the rest. A dispatcher lease skips
+    /// Starts leases while slots and RAM remain; returns the rest. A worker lease follows the
+    /// line state alone (`worker_blocker`), checked first. A dispatcher lease skips
     /// the guard and its budget: it starts when no hard blocker is set, the lines allow a
     /// start and no other dispatcher job runs here (A16).
     pub(super) fn plan_starts(
@@ -25,7 +27,9 @@ impl AgentState {
             if self.jobs.contains_key(&job.id) || !seen.insert(job.id) {
                 continue;
             }
-            let reason = if is_dispatcher_job(&job.spec) {
+            let reason = if let Some(w) = &job.spec.worker {
+                worker_blocker(input, &hard, w.action)
+            } else if is_dispatcher_job(&job.spec) {
                 let reason = lines_blocker(input.lines, &hard, lines_busy);
                 lines_busy |= reason.is_none();
                 reason

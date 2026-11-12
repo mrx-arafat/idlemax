@@ -12,6 +12,8 @@ mod steps;
 #[cfg(test)]
 mod tests;
 mod watch;
+// Its safe remove and branch delete serve `idlemax review` (dispatcher Spec 2 Task 11).
+#[cfg_attr(not(test), allow(dead_code))]
 pub mod worktree;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -189,6 +191,22 @@ impl Workers {
                 }
             })
             .collect()
+    }
+
+    /// True while a worker is tracked, so the agent samples and beats faster.
+    pub fn is_tracking(&self) -> bool {
+        !self.tracked.is_empty()
+    }
+
+    /// The tracked jobs, for an agent that takes back recovered workers.
+    pub fn jobs(&self) -> Vec<Job> {
+        self.tracked.values().map(|t| t.job.clone()).collect()
+    }
+
+    /// Every saved member pid of every worker, left out of the biggest memory users.
+    pub fn member_pids(&self) -> Vec<u32> {
+        let members = self.tracked.values().flat_map(|t| t.members.iter());
+        members.map(|(pid, _)| *pid).collect()
     }
 
     fn start(&mut self, job: Job, now_ms: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {

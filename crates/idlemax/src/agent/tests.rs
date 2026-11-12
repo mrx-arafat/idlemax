@@ -98,6 +98,7 @@ async fn device_info_refreshes_on_ticker() {
             &paths,
             idlemax_core::config::Config::default(),
         )),
+        workers: None,
     };
 
     let agent = Agent::new(wiring);

@@ -17,6 +17,9 @@ mod reload;
 #[cfg(test)]
 mod reload_tests;
 mod sample;
+mod workers;
+
+pub use workers::WorkerLink;
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -52,6 +55,8 @@ const UPDATES_PER_TRIP: usize = 50;
 /// SIGKILL escalation and within launchd's default 20 s exit timeout.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(16);
 const SHUTDOWN_FLUSH: Duration = Duration::from_secs(3);
+/// Sample and heartbeat period while a worker runs.
+const WORKER_EVERY: Duration = Duration::from_secs(5);
 
 /// Everything the loop needs, built by `agent::run`.
 pub struct Wiring {
@@ -80,6 +85,9 @@ pub struct Wiring {
     pub worker_room: WorkerRoom,
     /// The newest `config.toml`, for the `[dispatcher]` keys (A2).
     pub live: Arc<LiveConfig>,
+    /// The worker manager and the updates of the workers it could not take back; None
+    /// where no process table can be read, so no worker can start.
+    pub workers: Option<(WorkerLink, Vec<idlemax_core::protocol::JobUpdate>)>,
 }
 
 pub struct Agent {
@@ -124,6 +132,7 @@ pub struct Agent {
     queued_work: bool,
     assertion: super::keep_awake::Assertion,
     keep_awake_status: String,
+    workers: Option<WorkerLink>,
 }
 
 impl Agent {
@@ -174,9 +183,10 @@ impl Agent {
             queued_work: false,
             assertion: super::keep_awake::Assertion::default(),
             keep_awake_status: "off (disabled)".into(),
+            workers: None,
         }
+        .with_workers(w.workers)
     }
-
     /// Runs until `shutdown` resolves, then stops every job. Never returns early.
     pub async fn run(
         mut self,
@@ -203,7 +213,18 @@ impl Agent {
         let mut dispatch: Option<JoinHandle<Option<DispatchReply>>> = None;
         let mut dispatch_due = false;
         self.on_sample().await;
+        let mut fast = false;
         loop {
+            // While a worker runs the agent samples and beats every 5 s (A6, D11).
+            if self.state.has_workers() != fast {
+                fast = !fast;
+                let (s, b) = match fast {
+                    true => (WORKER_EVERY, WORKER_EVERY),
+                    false => (self.sample_every, self.heartbeat_every),
+                };
+                sample = ticker(s, false);
+                beat = ticker(b, false);
+            }
             // The runner reaps exits and checks memory caps; faster while a job nears its cap.
             let want = job_run::poll_every(self.running.iter().map(|j| (j.rss_bytes, j.mem_mb)));
             if want != reap_every {
@@ -234,6 +255,7 @@ impl Agent {
                 }
                 _ = dispatch_tick.tick(), if dispatch_on => dispatch_due = true,
                 _ = refresh_device.tick() => self.on_refresh_device_info().await,
+                Some(update) = workers::next_update(&mut self.workers) => self.on_worker_update(update),
             }
             if self.refill_due {
                 self.on_sample().await;
@@ -293,6 +315,7 @@ impl Agent {
         while self.state.jobs().next().is_some() && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(500)).await;
             self.reap().await;
+            self.drain_worker_updates();
         }
         self.reap().await;
         let left = self.state.jobs().count();

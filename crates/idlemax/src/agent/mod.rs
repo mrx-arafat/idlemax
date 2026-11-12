@@ -19,13 +19,11 @@ pub mod supervise;
 #[cfg(test)]
 mod tests;
 mod uplink;
-// The agent loop starts the manager in dispatcher Spec 2 Task 7; until then only tests use it.
-#[allow(dead_code)]
 pub mod worker;
 
 use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use idlemax_core::dispatch::room::{RoomPolicy, WorkerRoom};
@@ -37,7 +35,7 @@ use idlemax_core::{Config, ConfigError, Paths, VERSION};
 use crate::state::{self, now_ms, StateError};
 
 use self::client::{ClientError, CoordClient};
-use self::event_loop::{Agent, Wiring};
+use self::event_loop::{Agent, Wiring, WorkerLink};
 use self::metrics::{MetricsError, Sampler};
 use self::outbox::{DurableOutbox, OUTBOX_CAP};
 use self::probes::Probes;
@@ -86,6 +84,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
     let worker_room = WorkerRoom::new(RoomPolicy::new(&config.dispatcher, guard.policy()));
     let live = Arc::new(LiveConfig::new(&paths, config.clone()));
     let runner = open_runner(&paths, &device, &config).await?;
+    let workers = open_workers(&paths, &device, &config).await?;
     let outbox = DurableOutbox::open(&paths.agent_state_dir(), OUTBOX_CAP, now_ms());
     let shutdown = shutdown_signal()?;
     let initial = LocalStatus {
@@ -128,6 +127,7 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         config: config.clone(),
         worker_room,
         live,
+        workers,
     });
     agent.run(shutdown, ports.control, ports.reload).await;
     tracing::info!("agent stopped");
@@ -162,6 +162,33 @@ async fn open_runner(
 ) -> Result<Runner, AgentError> {
     let (paths, id, agent_cfg) = (paths.clone(), device.id.clone(), config.agent.clone());
     Ok(tokio::task::spawn_blocking(move || Runner::new(paths, id, agent_cfg)).await?)
+}
+
+/// Memory cap of a worker's throttled setup and check commands.
+// SHORTCUT: one fixed 4 GiB cap; make it a `[workers]` setting when a project's setup needs
+// more or a device has less.
+const WORKER_COMMAND_MEM_MIB: u64 = 4096;
+
+/// The worker manager, after it took back what a previous agent left. None when the process
+/// table cannot be read: then no worker can be watched or stopped, so none starts.
+async fn open_workers(
+    paths: &Paths,
+    device: &DeviceInfo,
+    config: &Config,
+) -> Result<Option<(WorkerLink, Vec<idlemax_core::protocol::JobUpdate>)>, AgentError> {
+    let (paths, id) = (paths.clone(), device.id.clone());
+    let allowlist = config.agent.command_allowlist.clone();
+    let open = move || {
+        let procs: Arc<Mutex<dyn worker::procs::Procs>> =
+            Arc::new(Mutex::new(worker::procs::OsProcs::new()?));
+        let commands: Arc<dyn worker::cmd::Commands> = Arc::new(
+            worker::cmd::OsCommands::with_options(runner::detect_wrapper(), WORKER_COMMAND_MEM_MIB),
+        );
+        let host = Arc::new(worker::herdr::HerdrHost::new(Arc::clone(&commands)));
+        let workers = worker::Workers::new(host, commands, Arc::clone(&procs), paths, id);
+        Some(WorkerLink::spawn(workers, procs, allowlist))
+    };
+    Ok(tokio::task::spawn_blocking(open).await?)
 }
 
 #[cfg(unix)]

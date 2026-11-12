@@ -71,8 +71,19 @@ fn input<'a>(guard: &'a GuardDecision) -> TickInput<'a> {
         assign: &[],
         shutting_down: false,
         lines: &NO_ROOM,
+        room: &NO_WORKER_ROOM,
+        worker_mem: &[],
+        others: "",
     }
 }
+
+/// No room for workers: worker jobs hold.
+static NO_WORKER_ROOM: crate::dispatch::room::RoomDecision = crate::dispatch::room::RoomDecision {
+    state: crate::dispatch::room::LineState::Hold,
+    reason: String::new(),
+    open_slots: 0,
+    at_ms: 0,
+};
 
 /// The lines of an agent that reports no worker room: dispatcher jobs hold.
 static NO_ROOM: GuardDecision = GuardDecision {

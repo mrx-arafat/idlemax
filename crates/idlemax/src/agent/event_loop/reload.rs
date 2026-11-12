@@ -37,6 +37,9 @@ impl Agent {
         let allowlist = report.applies("agent.command_allowlist");
         if allowlist {
             let list = new.agent.command_allowlist.clone();
+            if let Some(link) = &self.workers {
+                link.set_allowlist(list.clone());
+            }
             self.with_runner(move |runner| runner.set_allowlist(list))
                 .await;
             self.tell_probes(&new).await;

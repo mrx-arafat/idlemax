@@ -182,6 +182,7 @@ async fn run_loop(hung_cwd: bool, isolation: bool) {
             &paths,
             idlemax_core::config::Config::default(),
         )),
+        workers: None,
     });
     if isolation && !hung_cwd {
         agent.online = true;

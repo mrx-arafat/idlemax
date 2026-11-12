@@ -54,6 +54,7 @@ fn agent_at(paths: &Paths) -> Agent {
             paths,
             idlemax_core::config::Config::default(),
         )),
+        workers: None,
     })
 }
 

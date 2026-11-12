@@ -20,6 +20,8 @@ pub trait Procs: Send {
     /// Resident memory of `pids` together.
     fn rss(&mut self, pids: &[u32]) -> u64;
     fn signal(&mut self, pids: &[u32], sig: Sig);
+    /// The `n` biggest memory users outside `exclude`, as one line ("Safari 2.1 GiB, ...").
+    fn top_memory(&mut self, n: usize, exclude: &[u32]) -> String;
 }
 
 pub struct OsProcs {
@@ -82,6 +84,17 @@ impl Procs for OsProcs {
     fn signal(&mut self, pids: &[u32], sig: Sig) {
         os::signal_pids(pids, sig);
     }
+
+    fn top_memory(&mut self, n: usize, exclude: &[u32]) -> String {
+        self.table.refresh();
+        let top = self.table.top_memory(n, exclude);
+        let gib = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
+        let named: Vec<String> = top
+            .iter()
+            .map(|(name, rss)| format!("{name} {:.1} GiB", gib(*rss)))
+            .collect();
+        named.join(", ")
+    }
 }
 
 /// A scripted process table: `live` is what is running, `environs` what each pid holds.
@@ -123,6 +136,10 @@ impl Procs for FakeProcs {
 
     fn rss(&mut self, pids: &[u32]) -> u64 {
         pids.len() as u64 * 1024
+    }
+
+    fn top_memory(&mut self, _n: usize, _exclude: &[u32]) -> String {
+        "Safari 2.1 GiB".into()
     }
 
     fn signal(&mut self, pids: &[u32], sig: Sig) {
