@@ -2,6 +2,7 @@
 //! `mode`, `plan`).
 
 use idlemax_core::dispatch::project::ProjectView;
+use idlemax_core::dispatch::{Mode, ModeReply};
 
 use super::toon::Node;
 use crate::cli::print::table;
@@ -142,5 +143,21 @@ pub fn words(argv: &[String]) -> String {
         "-".into()
     } else {
         argv.join(" ")
+    }
+}
+
+pub fn mode_result(result: &str, reply: &ModeReply) -> Node {
+    Node::obj([
+        ("result", Node::str(result)),
+        ("mode", Node::str(reply.mode.as_str())),
+        ("before", Node::str(reply.before.as_str())),
+        ("changed", Node::Bool(reply.changed)),
+    ])
+}
+
+pub fn mode_hints(mode: Mode) -> Vec<String> {
+    match mode {
+        Mode::Off => vec![run("idlemax mode propose", "let the dispatcher plan again")],
+        Mode::Propose => vec![run("idlemax plan", "see what it would launch and why")],
     }
 }

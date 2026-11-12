@@ -7,6 +7,7 @@ mod cli;
 mod coord;
 mod doctor;
 mod error_text;
+mod live_config;
 mod state;
 mod tui;
 

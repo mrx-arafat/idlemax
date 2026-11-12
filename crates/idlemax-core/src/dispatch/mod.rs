@@ -34,6 +34,20 @@ impl std::fmt::Display for Mode {
     }
 }
 
+/// `POST /v1/dispatcher/mode`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModeRequest {
+    pub mode: Mode,
+}
+
+/// The reply: the mode now, the mode before, and whether the file changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModeReply {
+    pub mode: Mode,
+    pub before: Mode,
+    pub changed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DispatchError {
     #[error("{0}")]

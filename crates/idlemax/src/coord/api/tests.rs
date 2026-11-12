@@ -169,6 +169,10 @@ impl Api {
         }
     }
 
+    pub(super) fn home(&self) -> &std::path::Path {
+        self._home.path()
+    }
+
     pub(super) async fn post(&self, path: &str, body: &impl serde::Serialize) -> reqwest::Response {
         let url = format!("{}{path}", self.base);
         self.http

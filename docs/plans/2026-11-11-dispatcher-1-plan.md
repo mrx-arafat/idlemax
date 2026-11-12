@@ -207,7 +207,7 @@ target/debug/idlemax init
 
 - [x] Task 1: Add the dispatcher settings and the worker room rule
 - [x] Task 2: Keep projects in the store and switch them with `idlemax project`
-- [ ] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
+- [x] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
 - [ ] Task 4: Read memory used and swap-in on macOS and report the room
 - [ ] Task 5: Send what each device knows about its repositories
 - [ ] Task 6: Admit the dispatcher's own jobs by the lines
@@ -500,13 +500,13 @@ Nothing is written into the owner's repositories.
 
 **Definition of Done:**
 
-- [ ] `LiveConfig::current` returns the start copy until the file changes, the new `[dispatcher]` values after a rewrite, and the last good copy after the file is replaced by text that does not parse; the test moves the mtime forward with `File::set_modified`, so it does not depend on the clock's resolution.
-- [ ] `POST /v1/dispatcher/mode` with `{"mode":"off"}` in a temp home writes `mode = "off"` under `[dispatcher]`, keeps every other line and comment of the file, leaves a backup, answers `{"mode":"off","before":"propose","changed":true}` and appends one Control event; the same call again answers `changed: false` and writes nothing.
-- [ ] The body `{"mode":"auto"}` is 400 and the file is unchanged.
-- [ ] The route answers the same while a global pause is set.
-- [ ] In a throwaway home, `idlemax mode off` prints the new mode, a second call prints `already off (no-op)`, and `idlemax mode propose --json` shows `changed: true`.
-- [ ] `cargo run -p idlemax -- skill --check` passes.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax live_config`, `cargo test -p idlemax --bin idlemax coord::api::mode`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `LiveConfig::current` returns the start copy until the file changes, the new `[dispatcher]` values after a rewrite, and the last good copy after the file is replaced by text that does not parse; the test moves the mtime forward with `File::set_modified`, so it does not depend on the clock's resolution.
+- [x] `POST /v1/dispatcher/mode` with `{"mode":"off"}` in a temp home writes `mode = "off"` under `[dispatcher]`, keeps every other line and comment of the file, leaves a backup, answers `{"mode":"off","before":"propose","changed":true}` and appends one Control event; the same call again answers `changed: false` and writes nothing.
+- [x] The body `{"mode":"auto"}` is 400 and the file is unchanged.
+- [x] The route answers the same while a global pause is set.
+- [x] In a throwaway home, `idlemax mode off` prints the new mode, a second call prints `already off (no-op)`, and `idlemax mode propose --json` shows `changed: true`.
+- [x] `cargo run -p idlemax -- skill --check` passes.
+- [x] Verify: `cargo test -p idlemax --bin idlemax live_config`, `cargo test -p idlemax --bin idlemax coord::api::mode`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 4: Read memory used and swap-in on macOS and report the room
 

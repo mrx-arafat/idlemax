@@ -46,6 +46,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | DELETE | /v1/schedules/{id} | | `ScheduleView` as it was before removal |
 | POST | /v1/schedules/{id}/pause | | `ScheduleView` |
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
+| POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose"}` | `{"mode", "before", "changed"}` |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
 | POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
 | POST | /v1/projects/{id}/on | | `ProjectView` |
@@ -443,6 +444,16 @@ Semantics:
 - Pause, resume and delete answer 404 for an unknown id.
 - Operator responses never include `spec.stdin`.
 - A client older than this release cannot decode the `schedule_fired` event kind from a newer coordinator, so upgrade the CLI and TUI together with the coordinator.
+
+## Dispatcher mode
+
+`POST /v1/dispatcher/mode` writes `dispatcher.mode` into the coordinator's `config.toml` with the same editor `idlemax config set` uses: every other line and comment stays, and the old file is kept as `config.toml.idlemax.bak`.
+`off` plans nothing; `propose` shows what the dispatcher would launch and launches nothing.
+Any other value is 400 and the file is left as it was.
+The reply is `{"mode": "off", "before": "propose", "changed": true}`; `changed` false means the file already said so and nothing was written.
+A change appends one `control` event, such as `dispatcher mode propose -> off`.
+Both daemons read the `[dispatcher]` section again when the file's mtime changes, so the switch holds with no restart.
+The route is an owner action: no pause, kill switch, guard or line state holds it.
 
 ## Projects
 

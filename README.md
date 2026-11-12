@@ -857,6 +857,13 @@ idlemax project set app check -- cargo test -p core   # the focused check, as ar
 ```
 
 `set` also takes `setup -- <argv>`, `priority <n>`, `off-limits <paths>` and `core-paths <paths>`; no value clears a setting.
+
+The dispatcher has two modes, switched with `idlemax mode`:
+
+```sh
+idlemax mode off        # plan nothing
+idlemax mode propose    # show what it would launch, and launch nothing (the default)
+```
 `--device <id>` picks a device when the same name exists on more than one.
 
 ## Controls
@@ -993,6 +1000,7 @@ idlemax config unset guard.require_ac_power       # back to the default
 
 `set` checks the value the way startup does and refuses one that would stop the agent from starting, keeps your comments, saves the previous file as `config.toml.idlemax.bak`, and asks the running agent to reload.
 Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake` and every `[dispatcher]` key apply at once.
+Every `[dispatcher]` key applies without a restart on both the agent and the coordinator.
 The reply says when a setting is read only at start, and which process to restart.
 `set` replaces a list, so name every program the device may run.
 `[[quota.accounts]]` is a list of tables and stays a hand edit.

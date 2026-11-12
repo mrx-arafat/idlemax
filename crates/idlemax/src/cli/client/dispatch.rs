@@ -1,6 +1,7 @@
 //! Adapter: the dispatcher routes of the coordinator API (projects, mode, plan).
 
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectView};
+use idlemax_core::dispatch::{Mode, ModeReply, ModeRequest};
 
 use super::{ApiClient, Result};
 
@@ -29,6 +30,13 @@ impl ApiClient {
         settings: &ProjectSettings,
     ) -> Result<ProjectView> {
         self.post(&format!("/v1/projects/{id}/settings"), Some(settings))
+            .await
+    }
+}
+
+impl ApiClient {
+    pub async fn set_mode(&self, mode: Mode) -> Result<ModeReply> {
+        self.post("/v1/dispatcher/mode", Some(&ModeRequest { mode }))
             .await
     }
 }

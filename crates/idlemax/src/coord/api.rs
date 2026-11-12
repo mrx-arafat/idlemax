@@ -5,6 +5,7 @@ mod advice;
 mod agents;
 pub mod http;
 mod jobs;
+mod mode;
 mod projects;
 mod report;
 mod schedules;
@@ -24,12 +25,14 @@ use tokio::task::JoinError;
 use self::http::{ApiFailure, BearerToken, HostGuard};
 use super::store::{Store, StoreError};
 use super::web;
+use crate::live_config::LiveConfig;
 
 /// Shared by every handler and by the coordinator's background sweeps.
 #[derive(Clone)]
 pub struct AppState {
     refresh_lock: Arc<tokio::sync::Mutex<()>>,
     store: Arc<Mutex<Store>>,
+    live: Arc<LiveConfig>,
     config: Arc<Config>,
     paths: Arc<Paths>,
 }
@@ -40,6 +43,7 @@ impl AppState {
         Self {
             refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             store: Arc::new(Mutex::new(store)),
+            live: Arc::new(LiveConfig::new(&paths, config.clone())),
             config: Arc::new(config),
             paths: Arc::new(paths),
         }
@@ -47,6 +51,12 @@ impl AppState {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// The dispatcher settings as the file says now (A2). Blocking: call it inside a
+    /// `with_store` closure.
+    pub fn live(&self) -> &Arc<LiveConfig> {
+        &self.live
     }
 
     pub fn paths(&self) -> &Paths {
@@ -101,6 +111,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/schedules/{id}", delete(schedules::remove))
         .route("/v1/schedules/{id}/pause", post(schedules::pause))
         .route("/v1/schedules/{id}/resume", post(schedules::resume))
+        .route("/v1/dispatcher/mode", post(mode::set))
         .route("/v1/projects", get(projects::list).post(projects::add))
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))
