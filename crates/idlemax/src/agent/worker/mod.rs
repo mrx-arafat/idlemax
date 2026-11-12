@@ -11,12 +11,11 @@ pub mod herdr;
 pub mod host;
 pub mod procs;
 mod record;
+mod review;
 mod steps;
 #[cfg(test)]
 mod tests;
 mod watch;
-// Its safe remove and branch delete serve `idlemax review` (dispatcher Spec 2 Task 11).
-#[cfg_attr(not(test), allow(dead_code))]
 pub mod worktree;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use idlemax_core::job_run::{allows_program, RunClock};
-use idlemax_core::protocol::{JobUpdate, RunningJob};
+use idlemax_core::protocol::JobUpdate;
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
 use idlemax_core::worker::report::{CheckFacts, WorkerPhase, WorkerReport};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
@@ -64,6 +63,10 @@ enum Phase {
         end: End,
         /// The pane could not be closed, so the pids are killed at once.
         forced: bool,
+    },
+    /// The owner's keep, merge or discard runs on its own thread (D16).
+    Review {
+        rx: Receiver<Result<String, String>>,
     },
     /// The pane is closed and its processes are gone; the facts of the turn are gathered.
     Checking {
@@ -154,63 +157,15 @@ impl Workers {
         }
     }
 
-    /// Each tracked worker, as the heartbeat reports it.
-    pub fn running(&self) -> Vec<RunningJob> {
-        let mut procs = self.procs.lock().ok();
-        self.tracked
-            .values()
-            .map(|t| {
-                let pids: Vec<u32> = t.members.iter().map(|(pid, _)| *pid).collect();
-                RunningJob {
-                    id: t.job.id,
-                    name: t.job.spec.name.clone(),
-                    status: if t.paused {
-                        JobStatus::Paused
-                    } else {
-                        JobStatus::Running
-                    },
-                    pid: t.progress.shell_pid,
-                    started_ms: t.clock.started_ms(),
-                    mem_mb: t.job.spec.mem_mb,
-                    rss_bytes: procs.as_mut().map(|p| p.rss(&pids)),
-                    cpu_pct: None,
-                    cost: t.job.spec.cost,
-                    ai_account: t.job.spec.ai_account.clone(),
-                }
-            })
-            .collect()
-    }
-
-    /// True while a worker is tracked, so the agent samples and beats faster.
-    pub fn is_tracking(&self) -> bool {
-        !self.tracked.is_empty()
-    }
-
-    /// The tracked jobs and whether each is paused, for an agent that takes back recovered
-    /// workers.
-    pub fn jobs(&self) -> Vec<(Job, bool)> {
-        let with_start = |t: &Tracked| Job {
-            started_ms: Some(t.clock.started_ms()),
-            ..t.job.clone()
-        };
-        self.tracked
-            .values()
-            .map(|t| (with_start(t), t.paused))
-            .collect()
-    }
-
-    /// Every saved member pid of every worker, left out of the biggest memory users.
-    pub fn member_pids(&self) -> Vec<u32> {
-        let members = self.tracked.values().flat_map(|t| t.members.iter());
-        members.map(|(pid, _)| *pid).collect()
-    }
-
     fn start(&mut self, job: Job, now_ms: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         let Some(worker) = job.spec.worker.clone() else {
             return vec![self.refusal(&job, "not a worker job", now_ms)];
         };
         if let Some(why) = self.refused(&worker) {
             return vec![self.refusal(&job, &why, now_ms)];
+        }
+        if !worker.action.is_launch() {
+            return self.start_review(job, worker, now_ms, awake_ms);
         }
         let session = match (worker.action, worker.cli) {
             (WorkerAction::Resume, _) => worker.session.clone(),
@@ -266,6 +221,14 @@ impl Workers {
     /// Why a worker job may not start here: a program outside `agent.command_allowlist`
     /// (the runner's check, which worker jobs skip), or a worker of its Run still tracked.
     fn refused(&self, w: &WorkerSpec) -> Option<String> {
+        let tracked = self.tracked.values().any(|t| t.worker.run == w.run);
+        if tracked {
+            return Some(format!("a worker of run {} is still running here", w.run));
+        }
+        // The owner's review runs only git; it starts no agent and no project command.
+        if !w.action.is_launch() {
+            return None;
+        }
         let mut programs = vec![w.cli.as_str().to_string()];
         programs.extend(w.reviewer.as_ref().map(|r| r.cli.as_str().to_string()));
         programs.extend(w.setup.first().cloned());
@@ -276,10 +239,7 @@ impl Workers {
         {
             return Some(format!("command {p:?} is not in agent.command_allowlist"));
         }
-        self.tracked
-            .values()
-            .any(|t| t.worker.run == w.run)
-            .then(|| format!("a worker of run {} is still running here", w.run))
+        None
     }
 
     fn refusal(&self, job: &Job, why: &str, now_ms: UnixMs) -> JobUpdate {
@@ -361,6 +321,8 @@ impl Workers {
             Phase::Watching { .. } | Phase::Held => self.begin_stop(id, end, now_ms),
             Phase::Stopping { end: first, .. } => first.merge(end),
             Phase::Checking { .. } => self.kill_check(id, end),
+            // The owner's own action: no line, pause or shutdown stops it (A10).
+            Phase::Review { .. } => {}
         }
     }
 

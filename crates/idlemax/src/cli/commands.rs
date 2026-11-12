@@ -6,8 +6,8 @@ use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
 use super::{
-    config_cmd, hooks, init_cmd, job, mode, plan, project, report, schedule, service, setup, skill,
-    statusline, workers,
+    config_cmd, hooks, init_cmd, job, mode, plan, project, report, review, schedule, service,
+    setup, skill, statusline, workers,
 };
 
 #[derive(Subcommand, Debug)]
@@ -49,6 +49,8 @@ pub(super) enum Cmd {
     Stop(workers::StopArgs),
     /// Let the workers `idlemax stop` stopped continue their sessions
     Start,
+    /// See the finished tasks per project, and keep or discard each one
+    Review(review::ReviewArgs),
     /// Pause jobs everywhere, or on one device, account or job
     Pause(Target),
     /// Resume paused jobs

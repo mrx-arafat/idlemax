@@ -157,7 +157,7 @@ target/debug/idlemax init
 - [x] Task 8: Check a finished task and give it a verdict
 - [x] Task 9: Launch from the Plan in auto mode, one worker at a time
 - [x] Task 10: Add idlemax stop and idlemax start
-- [ ] Task 11: Add idlemax review with keep, merge and discard
+- [x] Task 11: Add idlemax review with keep, merge and discard
 - [ ] Task 12: Needs the owner's OK: prove each CLI and the fences on the Mac, then switch on auto
 
 > Source of truth for completion: `spec-implement` toggles `[ ]` to `[x]` here.
@@ -750,14 +750,14 @@ The device's agent does the work on disk, so the same commands hold for any devi
 
 **Definition of Done:**
 
-- [ ] In a temp repository, keep removes the folder and leaves the branch, and discard removes both; discard on a worktree with an uncommitted file deletes nothing and reports git's refusal.
-- [ ] Merge refuses a dirty owner checkout and a conflicting branch with the reason, leaving `git status` and `HEAD` unchanged, and merges a clean non-conflicting branch into the current branch.
-- [ ] A merge whose `git merge` call fails after it started leaves `git status` empty and `HEAD` unchanged.
-- [ ] The keep route answers 409 for a run that is `running` and 404 for an unknown id, and a succeeded keep job leaves the run `kept` with its verdict still stored.
-- [ ] A leased `discard` job is in the heartbeat reply of a device under a global pause, and a leased `launch` job is not.
-- [ ] `idlemax review --json` against an empty coordinator prints an empty list, and `idlemax review discard 5` without `--yes` and without a terminal exits 2 with a message that names `--yes`.
-- [ ] The README documents the three commands, and `skills/idlemax/SKILL.md` lists `idlemax review`.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax agent::worker::review && cargo test -p idlemax --bin idlemax api::runs && cargo test -p idlemax --bin idlemax worker_tests && cargo test -p idlemax --test workers && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] In a temp repository, keep removes the folder and leaves the branch, and discard removes both; discard on a worktree with an uncommitted file deletes nothing and reports git's refusal.
+- [x] Merge refuses a dirty owner checkout and a conflicting branch with the reason, leaving `git status` and `HEAD` unchanged, and merges a clean non-conflicting branch into the current branch.
+- [x] A merge whose `git merge` call fails after it started leaves `git status` empty and `HEAD` unchanged.
+- [x] The keep route answers 409 for a run that is `running` and 404 for an unknown id, and a succeeded keep job leaves the run `kept` with its verdict still stored.
+- [x] A leased `discard` job is in the heartbeat reply of a device under a global pause, and a leased `launch` job is not.
+- [x] `idlemax review --json` against an empty coordinator prints an empty list, and `idlemax review discard 5` without `--yes` and without a terminal exits 2 with a message that names `--yes`.
+- [x] The README documents the three commands, and `skills/idlemax/SKILL.md` lists `idlemax review`.
+- [x] Verify: `cargo test -p idlemax --bin idlemax agent::worker::review && cargo test -p idlemax --bin idlemax api::runs && cargo test -p idlemax --bin idlemax worker_tests && cargo test -p idlemax --test workers && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 12: Needs the owner's OK: prove each CLI and the fences on the Mac, then switch on auto
 

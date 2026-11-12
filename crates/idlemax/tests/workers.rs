@@ -1,5 +1,5 @@
-//! End to end: the owner's `idlemax stop` and `idlemax start` against a coordinator in a temp
-//! IDLEMAX_HOME on a spare port. No agent runs, and no worker exists.
+//! End to end: the owner's `idlemax stop`, `idlemax start` and `idlemax review` against a
+//! coordinator in a temp IDLEMAX_HOME on a spare port. No agent runs, and no worker exists.
 #![cfg(unix)]
 
 use std::fs::File;
@@ -99,4 +99,17 @@ async fn stop_and_start_with_no_worker_succeed_and_report_none() {
     let started = cli(&home, &state, &["start"]);
     assert_eq!(started["workers"].as_array().unwrap().len(), 0);
     assert_eq!(started["paused"].as_array().unwrap().len(), 0);
+
+    let review = cli(&home, &state, &["review"]);
+    assert_eq!(review, serde_json::json!([]));
+    let mut cmd = Command::new(BIN);
+    isolated(&mut cmd, &home, &state);
+    let out = cmd.args(["review", "discard", "5"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(text.contains("--yes"), "{text}");
 }

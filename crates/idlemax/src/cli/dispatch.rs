@@ -9,7 +9,7 @@ use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd};
 use super::init_cmd::run_init;
 use super::{
     config_cmd, handlers, home, hooks, inbox, job, logs, mode, out, plan, print, project, report,
-    rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli, CliError,
+    review, rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli, CliError,
     ClientError, ExitWith, Out, Peer,
 };
 use crate::state::{self, now_ms};
@@ -67,6 +67,13 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
             let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
             let client = ApiClient::new(&url, token(&paths)?)?;
             job::add(&client, &paths, *args, out).await
+        }
+        Cmd::Review(args) => {
+            let url = coord.unwrap_or_else(|| config.coordinator.url.clone());
+            let client = ApiClient::new(&url, token(&paths)?)?;
+            review::run(args, &client, &paths, out)
+                .await
+                .map_err(|e| hint(e, Peer::Coordinator))
         }
         Cmd::Logs { id, tail, follow } => {
             let log_path = paths.job_log_file(id);
@@ -164,6 +171,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         Cmd::Advise { cmd } => handlers::advise(c, cmd.unwrap_or(AdviseCmd::List), out, now).await,
         Cmd::Tui => Ok(crate::tui::run(c.clone(), zone).await?),
         Cmd::Job(JobCmd::Add(_))
+        | Cmd::Review(_)
         | Cmd::Agent
         | Cmd::Coord
         | Cmd::Init(_)

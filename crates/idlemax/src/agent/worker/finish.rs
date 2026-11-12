@@ -110,6 +110,30 @@ impl Workers {
         }
     }
 
+    /// The result of the owner's keep, merge or discard, once its thread has it.
+    pub(super) fn reviewed(&mut self, id: JobId, now_ms: UnixMs) -> Option<JobUpdate> {
+        let t = self.tracked.get(&id)?;
+        let Phase::Review { rx } = &t.phase else {
+            return None;
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return None,
+            Err(TryRecvError::Disconnected) => Err("the review ended without a result".into()),
+        };
+        let end = match result {
+            Ok(_) => End {
+                status: JobStatus::Succeeded,
+                error: None,
+                retryable: false,
+                owner_stop: false,
+                end_text: None,
+            },
+            Err(why) => End::failed(why),
+        };
+        Some(self.finish(id, end, None, now_ms))
+    }
+
     fn finish(
         &mut self,
         id: JobId,

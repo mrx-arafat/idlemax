@@ -219,3 +219,92 @@ fn the_owners_stop_survives_a_reopen_and_a_stop_all_run_waits_for_a_start() {
         1
     );
 }
+
+#[tokio::test]
+async fn keep_answers_404_and_409_and_a_succeeded_keep_leaves_the_run_kept() {
+    use idlemax_core::protocol::JobUpdate;
+    use idlemax_core::types::{Job, JobStatus};
+    use idlemax_core::worker::run::Verdict;
+    let mut store = Store::open_in_memory().unwrap();
+    let live = live_workers(&mut store);
+    let mut done = run("app", RunState::Clean);
+    done.verdict = Some(Verdict::Clean);
+    done.worktree = Some("/w/app/t".into());
+    done.branch = Some("idlemax/t".into());
+    let done = store.insert_run(&done, &RunLaunch::default()).unwrap();
+    let api = Api::start_with_store(store, Config::default()).await;
+    let keep = |id: i64| format!("/v1/runs/{id}/keep");
+    let merge = serde_json::json!({"merge": false});
+
+    let res = api.post(&keep(999), &merge).await;
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("idlemax review"));
+    assert_eq!(
+        api.post(&keep(live[0].0.id), &merge).await.status(),
+        StatusCode::CONFLICT
+    );
+
+    let res = api.post(&keep(done.id), &merge).await;
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let job: Job = res.json().await.unwrap();
+    assert_eq!(job.status, JobStatus::Leased);
+    assert_eq!(
+        api.post(&keep(done.id), &merge).await.status(),
+        StatusCode::CONFLICT
+    );
+    let update = JobUpdate {
+        seq: 1,
+        id: job.id,
+        device: "mac".into(),
+        attempt: job.attempts,
+        status: JobStatus::Succeeded,
+        at_ms: 5,
+        ..Default::default()
+    };
+    assert!(api
+        .post("/v1/agent/job-update", &update)
+        .await
+        .status()
+        .is_success());
+    let after: Run = api
+        .get_as(&format!("/v1/runs/{}", done.id), "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        (after.state, after.verdict),
+        (RunState::Kept, Some(Verdict::Clean))
+    );
+}
+
+#[tokio::test]
+async fn a_leased_discard_reaches_a_paused_device_and_a_launch_does_not() {
+    use idlemax_core::protocol::ControlRequest;
+    use idlemax_core::types::ControlAction;
+    let mut store = Store::open_in_memory().unwrap();
+    let live = live_workers(&mut store);
+    let shed = store
+        .insert_run(&run("app", RunState::Shed), &RunLaunch::default())
+        .unwrap();
+    let api = Api::start_with_store(store, Config::default()).await;
+    let pause = ControlRequest {
+        action: ControlAction::Pause,
+        scope: ControlScope::Global,
+        reason: None,
+    };
+    assert_eq!(
+        api.post("/v1/control", &pause).await.status(),
+        StatusCode::OK
+    );
+    let res = api
+        .post(&format!("/v1/runs/{}/discard", shed.id), &())
+        .await;
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let discard: idlemax_core::types::Job = res.json().await.unwrap();
+    let reply = api.heartbeat(Vec::new()).await;
+    let sent: Vec<i64> = reply.assign.iter().map(|j| j.id).collect();
+    assert!(sent.contains(&discard.id), "{sent:?}");
+    assert!(!sent.contains(&live[0].1), "{sent:?}");
+}

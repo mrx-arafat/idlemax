@@ -3,7 +3,10 @@
 use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectView};
 use idlemax_core::dispatch::{Mode, ModeReply, ModeRequest};
+use idlemax_core::types::Job;
 use idlemax_core::worker::control::{StartReply, StopReply, StopRequest};
+use idlemax_core::worker::run::Run;
+use idlemax_core::worker::RunId;
 
 use super::{ApiClient, Result};
 
@@ -50,6 +53,24 @@ impl ApiClient {
 
     pub async fn start_workers(&self) -> Result<StartReply> {
         self.post("/v1/workers/start", None::<&()>).await
+    }
+
+    pub async fn runs(&self) -> Result<Vec<Run>> {
+        self.get("/v1/runs?limit=1000").await
+    }
+
+    pub async fn run(&self, id: RunId) -> Result<Run> {
+        self.get(&format!("/v1/runs/{id}")).await
+    }
+
+    pub async fn keep_run(&self, id: RunId, merge: bool) -> Result<Job> {
+        let body = serde_json::json!({ "merge": merge });
+        self.post(&format!("/v1/runs/{id}/keep"), Some(&body)).await
+    }
+
+    pub async fn discard_run(&self, id: RunId) -> Result<Job> {
+        self.post(&format!("/v1/runs/{id}/discard"), None::<&()>)
+            .await
     }
 }
 

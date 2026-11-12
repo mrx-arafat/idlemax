@@ -149,9 +149,6 @@ fn runs_are_listed_by_state_and_project_newest_first() {
         [a.id]
     );
     assert_eq!(ids(s.list_runs(None, None, 1).unwrap()), [c.id]);
-    assert_eq!(ids(s.runs_of_project("a").unwrap()), [a.id, c.id]);
-    assert_eq!(s.runs_of_account("max", T0).unwrap().len(), 3);
-    assert!(s.runs_of_account("max", T0 + 1).unwrap().is_empty());
 }
 
 #[test]

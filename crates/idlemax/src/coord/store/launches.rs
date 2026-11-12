@@ -82,6 +82,37 @@ impl Store {
         Ok(Some((next, job)))
     }
 
+    /// The owner's keep or discard of a Run: its job leased to the Run's device and the Run
+    /// pointed at it, while the Run is still in its state. None, writing nothing, when it moved.
+    pub fn start_review(
+        &mut self,
+        run: &Run,
+        spec: &JobSpec,
+        expires_ms: UnixMs,
+        now: UnixMs,
+    ) -> StoreResult<Option<Job>> {
+        let live_jobs = self.caps.live_jobs;
+        let tx = self.conn.transaction()?;
+        let job = new_job(insert_leased(
+            &tx,
+            live_jobs,
+            spec,
+            &run.device,
+            expires_ms,
+            now,
+        )?)?;
+        let next = Run {
+            job: Some(job.id),
+            updated_ms: now,
+            ..run.clone()
+        };
+        if !update_run(&tx, &next, run.state)? {
+            return Ok(None);
+        }
+        tx.commit()?;
+        Ok(Some(job))
+    }
+
     /// Moves each Run that is still in its expected state, and ends its live job `killed`
     /// with `why`, in one transaction. The agents hear `kill_job` on their next heartbeat.
     /// Returns the Runs that moved.

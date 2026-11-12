@@ -4,19 +4,26 @@
 
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::Json;
-use idlemax_core::types::{ControlScope, EventKind};
+use idlemax_core::scheduler::lease_deadline;
+use idlemax_core::types::{ActivePolicy, ControlScope, CostClass, EventKind, Job, JobSpec};
 use idlemax_core::worker::control::{
     plan_start, plan_stop, StartReply, StopError, StopReply, StopRequest,
 };
 use idlemax_core::worker::run::{Run, RunState};
 use idlemax_core::worker::RunId;
+use idlemax_core::worker::{WorkerAction, WorkerSpec};
 use serde::Deserialize;
 
 use super::http::{ApiFailure, JsonBody};
 use super::{page_limit, AppState};
 use crate::coord::dispatch::stop_workers;
 use crate::state::now_ms;
+
+/// A review runs only git: a little memory and a few minutes at most.
+const REVIEW_MEM_MB: u64 = 128;
+const REVIEW_RUNTIME_SECS: u64 = 600;
 
 #[derive(Debug, Deserialize)]
 pub struct RunsQuery {
@@ -114,6 +121,141 @@ pub async fn start(State(app): State<AppState>) -> Result<Json<StartReply>, ApiF
         })
         .await?;
     Ok(Json(reply))
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct KeepRequest {
+    merge: bool,
+}
+
+/// `POST /v1/runs/{id}/keep` with `{"merge": bool}`: a keep or keep-and-merge job leased to
+/// the Run's device. 404 for an unknown Run, 409 for one with a live job or not finished.
+pub async fn keep(
+    state: State<AppState>,
+    path: Result<Path<RunId>, PathRejection>,
+    JsonBody(req): JsonBody<KeepRequest>,
+) -> Result<(StatusCode, Json<Job>), ApiFailure> {
+    let action = if req.merge {
+        WorkerAction::KeepMerge
+    } else {
+        WorkerAction::Keep
+    };
+    review(state, path, action).await
+}
+
+/// `POST /v1/runs/{id}/discard`: a discard job leased to the Run's device.
+pub async fn discard(
+    state: State<AppState>,
+    path: Result<Path<RunId>, PathRejection>,
+) -> Result<(StatusCode, Json<Job>), ApiFailure> {
+    review(state, path, WorkerAction::Discard).await
+}
+
+async fn review(
+    State(app): State<AppState>,
+    path: Result<Path<RunId>, PathRejection>,
+    action: WorkerAction,
+) -> Result<(StatusCode, Json<Job>), ApiFailure> {
+    let Path(id) = path?;
+    let now = now_ms();
+    let job = app
+        .with_store(move |store, cfg| {
+            let run = store.get_run(id)?.ok_or_else(|| {
+                ApiFailure::NotFound(format!("run {id} not found; idlemax review lists the runs"))
+            })?;
+            reviewable(store, &run, action)?;
+            let launch = store.run_launch(id)?.unwrap_or_default();
+            let spec = review_spec(&run, launch.worker, action);
+            let expires = lease_deadline(cfg.coordinator.lease_secs, now);
+            let job = store
+                .start_review(&run, &spec, expires, now)?
+                .ok_or_else(|| ApiFailure::Conflict(format!("run {id} changed; try again")))?;
+            let msg = format!("{} of run {id} sent to {}", action_word(action), run.device);
+            store.append_event(
+                EventKind::Control,
+                Some(&run.device),
+                Some(job.id),
+                &msg,
+                now,
+            )?;
+            Ok::<_, ApiFailure>(job)
+        })
+        .await?;
+    Ok((StatusCode::CREATED, Json(super::jobs::operator_job(job))))
+}
+
+/// 409 unless the Run may take this action now (D16).
+fn reviewable(
+    store: &crate::coord::store::Store,
+    run: &Run,
+    action: WorkerAction,
+) -> Result<(), ApiFailure> {
+    let live = match run.job {
+        Some(job) => store.get_job(job)?.is_some_and(|j| !j.status.is_terminal()),
+        None => false,
+    };
+    if live {
+        return Err(ApiFailure::Conflict(format!(
+            "run {} has a live job; wait for it, or stop it with idlemax stop",
+            run.id
+        )));
+    }
+    let allowed = match action {
+        WorkerAction::Discard => matches!(
+            run.state,
+            RunState::Clean
+                | RunState::NeedsYou
+                | RunState::Rejected
+                | RunState::Stopped
+                | RunState::Shed
+        ),
+        _ => matches!(
+            run.state,
+            RunState::Clean | RunState::NeedsYou | RunState::Rejected
+        ),
+    };
+    match allowed {
+        true => Ok(()),
+        false => Err(ApiFailure::Conflict(format!(
+            "run {} is {}; it cannot be {} now",
+            run.id,
+            run.state,
+            action_word(action)
+        ))),
+    }
+}
+
+fn review_spec(run: &Run, saved: WorkerSpec, action: WorkerAction) -> JobSpec {
+    let worker = WorkerSpec {
+        run: run.id,
+        action,
+        branch: run.branch.clone(),
+        worktree: run.worktree.clone(),
+        ..saved
+    };
+    JobSpec {
+        name: format!("review-{}", run.id),
+        key: Some(format!("run-{}", run.id)),
+        command: vec!["idlemax-worker".into(), "git".into()],
+        devices: vec![run.device.clone()],
+        cost: CostClass::Ai,
+        ai_account: Some(run.account.clone()),
+        mem_mb: REVIEW_MEM_MB,
+        max_runtime_secs: REVIEW_RUNTIME_SECS,
+        on_user_active: ActivePolicy::Continue,
+        max_attempts: 1,
+        worker: Some(worker),
+        ..Default::default()
+    }
+}
+
+fn action_word(action: WorkerAction) -> &'static str {
+    match action {
+        WorkerAction::Discard => "discarded",
+        WorkerAction::KeepMerge => "kept and merged",
+        _ => "kept",
+    }
 }
 
 fn bad(e: StopError) -> ApiFailure {

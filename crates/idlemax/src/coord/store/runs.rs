@@ -41,9 +41,9 @@ impl Store {
     }
 }
 
-// The dispatcher's launch step, its job updates and the owner's review use these (dispatcher
-// Spec 2 Tasks 3, 9, 10 and 11).
-#[cfg_attr(not(test), allow(dead_code))]
+// Tests build Runs and leased jobs directly; the launch step writes them together through
+// `launch_run` and `relaunch_run`.
+#[cfg(test)]
 impl Store {
     /// Stores a new Run with what its relaunches need and returns it with its id.
     pub fn insert_run(&mut self, run: &Run, launch: &RunLaunch) -> StoreResult<Run> {
@@ -56,38 +56,6 @@ impl Store {
     /// a late agent update never overwrites the owner's stop.
     pub fn update_run(&mut self, run: &Run, expect: RunState) -> StoreResult<bool> {
         update_run(&self.conn, run, expect)
-    }
-
-    /// Job and Run changes in one transaction, so a Run never misses its job's end.
-    pub fn update_jobs_and_runs(
-        &mut self,
-        jobs: &[Job],
-        runs: &[(Run, RunState)],
-    ) -> StoreResult<()> {
-        let tx = self.conn.transaction()?;
-        write_jobs_and_runs(&tx, jobs, runs)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// Runs of `account` started at or after `since_ms`, oldest first.
-    pub fn runs_of_account(&self, account: &str, since_ms: UnixMs) -> StoreResult<Vec<Run>> {
-        self.runs_where(
-            "account = ?1 AND start_ms >= ?2",
-            params![account, since_ms],
-        )
-    }
-
-    /// Every Run of `project`, oldest first.
-    pub fn runs_of_project(&self, project: &str) -> StoreResult<Vec<Run>> {
-        self.runs_where("project = ?1", params![project])
-    }
-
-    fn runs_where(&self, filter: &str, args: impl rusqlite::Params) -> StoreResult<Vec<Run>> {
-        let sql = format!("SELECT {COLUMNS} FROM runs WHERE {filter} ORDER BY start_ms, id");
-        let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(args, run_from_row)?;
-        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Inserts a worker job already leased to `device` with one attempt, so the scheduler's
@@ -104,6 +72,20 @@ impl Store {
         let added = insert_leased(&tx, live_jobs, spec, device, expires_ms, now)?;
         tx.commit()?;
         Ok(added)
+    }
+}
+
+impl Store {
+    /// Job and Run changes in one transaction, so a Run never misses its job's end.
+    pub fn update_jobs_and_runs(
+        &mut self,
+        jobs: &[Job],
+        runs: &[(Run, RunState)],
+    ) -> StoreResult<()> {
+        let tx = self.conn.transaction()?;
+        write_jobs_and_runs(&tx, jobs, runs)?;
+        tx.commit()?;
+        Ok(())
     }
 }
 

@@ -239,6 +239,32 @@ mod after_job {
         older.job = Some(3);
         assert_eq!(moved(older, u), None);
     }
+
+    #[test]
+    fn a_succeeded_keep_or_discard_ends_the_run_and_a_failed_one_leaves_it() {
+        let mut clean = run(RunState::Clean);
+        clean.verdict = Some(Verdict::Clean);
+        for (action, want) in [
+            (WorkerAction::Keep, RunState::Kept),
+            (WorkerAction::KeepMerge, RunState::Kept),
+            (WorkerAction::Discard, RunState::Discarded),
+        ] {
+            let next = after_job(&clean, &job(action), &update(JobStatus::Succeeded), 70).unwrap();
+            assert_eq!((next.state, next.verdict), (want, Some(Verdict::Clean)));
+            assert_eq!(
+                after_job(&clean, &job(action), &update(JobStatus::Failed), 70),
+                None
+            );
+        }
+        let shed = run(RunState::Shed);
+        let gone = after_job(
+            &shed,
+            &job(WorkerAction::Discard),
+            &update(JobStatus::Succeeded),
+            70,
+        );
+        assert_eq!(gone.unwrap().state, RunState::Discarded);
+    }
 }
 
 #[test]

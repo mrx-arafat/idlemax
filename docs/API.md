@@ -57,6 +57,8 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/projects/{id}/settings | `ProjectSettings` | `ProjectView` |
 | GET | /v1/runs?state=&project=&limit= | | `[Run]`, newest first |
 | GET | /v1/runs/{id} | | `Run` |
+| POST | /v1/runs/{id}/keep | `{"merge": bool}` | `Job`, 201 |
+| POST | /v1/runs/{id}/discard | | `Job`, 201 |
 | POST | /v1/workers/stop | `{"scope", "reason"}` | `{"workers", "stop_in_force"}` |
 | POST | /v1/workers/start | | `{"workers", "paused"}` |
 
@@ -642,6 +644,12 @@ Types live in `crates/idlemax-core/src/worker/run.rs`.
 - `GET /v1/runs/{id}` answers 404 with `run <id> not found` for an unknown id.
 - The brief and the worker section of the first launch are stored with the Run for its relaunches, and no route returns them.
 - A kept or discarded Run is pruned 90 days after it ended.
+
+The owner's review (D16): `POST /v1/runs/{id}/keep` with `{"merge": bool}` and `POST /v1/runs/{id}/discard` create one worker job with the action `keep`, `keep_merge` or `discard`, leased to the Run's device with `key` `run-<id>`.
+They answer 404 for an unknown Run (the error names `idlemax review`) and 409 for a Run with a live job, one already `kept` or `discarded`, or one in another state: keep takes `clean`, `needs_you` and `rejected`, discard also `stopped` and `shed`.
+These jobs are owner actions: a heartbeat reply carries a leased one even when the device, the account or everything is paused, and the agent starts it whatever the line state, the kill switch or a pause says.
+On the device, `keep` removes the worktree folder with git's safe removal and leaves the branch; `keep_merge` first checks that the owner's checkout is clean and on a branch, tests the merge with `git merge-tree --write-tree` (git 2.38 or newer), runs `git merge --no-edit` with a 120 s limit, and on a failure after it started runs `git merge --abort`; `discard` removes the folder and then the branch.
+A refusal ends the job `failed` with why and what to do, and leaves the Run and the tree as they were; a succeeded keep makes the Run `kept` and a succeeded discard `discarded`, with the verdict kept.
 
 A worker job is an AI job (`cost = "ai"`) that stands outside the one-AI-lease rule and the one-start-per-5-hours rule in both directions: several worker jobs may hold one account, a worker job never blocks a plain AI job, and a plain one never blocks a worker job.
 

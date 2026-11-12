@@ -66,6 +66,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "let the stopped workers continue their sessions",
     ),
     (
+        "idlemax review",
+        "see each finished task with its verdict, then keep it (--merge to merge) or discard it",
+    ),
+    (
         "idlemax pause",
         "hold jobs everywhere, or on one `--device`, `--account` or `--job`",
     ),

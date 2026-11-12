@@ -176,8 +176,11 @@ pub struct RunLaunch {
 /// allow (a Run the owner stopped stays stopped).
 pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Run> {
     let worker = job.spec.worker.as_ref()?;
-    if !worker.action.is_launch() || run.job != Some(job.id) {
+    if run.job != Some(job.id) {
         return None;
+    }
+    if !worker.action.is_launch() {
+        return after_review(run, worker.action, update, now_ms);
     }
     let report = update.worker.as_deref();
     let mut next = run.clone();
@@ -219,6 +222,32 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
 /// The first `max` characters: a device sends `end_text`, so the coordinator bounds it.
 fn clip(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
+}
+
+/// The owner's keep or discard: a succeeded one ends the Run `kept` or `discarded` with its
+/// verdict kept; a failed or killed one leaves state and verdict as they were (D16).
+fn after_review(
+    run: &Run,
+    action: super::WorkerAction,
+    update: &JobUpdate,
+    now_ms: UnixMs,
+) -> Option<Run> {
+    if update.status != JobStatus::Succeeded {
+        return None;
+    }
+    let target = match action {
+        super::WorkerAction::Discard => RunState::Discarded,
+        _ => RunState::Kept,
+    };
+    if !run.state.may_become(target) {
+        return None;
+    }
+    Some(Run {
+        state: target,
+        updated_ms: now_ms,
+        end_ms: run.end_ms.or(Some(now_ms)),
+        ..run.clone()
+    })
 }
 
 /// A finished launch: the verdict its check facts give (D8), the facts and the summary kept.

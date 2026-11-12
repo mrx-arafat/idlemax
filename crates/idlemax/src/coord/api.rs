@@ -132,6 +132,8 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/projects/{id}/settings", post(projects::settings))
         .route("/v1/runs", get(runs::list))
         .route("/v1/runs/{id}", get(runs::get_one))
+        .route("/v1/runs/{id}/keep", post(runs::keep))
+        .route("/v1/runs/{id}/discard", post(runs::discard))
         .route("/v1/workers/stop", post(runs::stop))
         .route("/v1/workers/start", post(runs::start))
         .route_layer(middleware::from_fn_with_state(

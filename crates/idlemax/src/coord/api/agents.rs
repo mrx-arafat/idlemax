@@ -187,15 +187,15 @@ fn assign_jobs(
     )
     .is_empty();
     let mut leased = Vec::new();
-    if !ctx.paused {
-        for job in &jobs {
-            if job.status == JobStatus::Leased
-                && job.device.as_deref() == Some(device)
-                && !is_held(paused, job)
-                && !hb.running.iter().any(|r| r.id == job.id)
-            {
-                leased.push(job.clone());
-            }
+    for job in &jobs {
+        // The owner's keep, merge and discard are never held by a pause (A10).
+        let held = (ctx.paused || is_held(paused, job)) && !is_owner_action(job);
+        if job.status == JobStatus::Leased
+            && job.device.as_deref() == Some(device)
+            && !held
+            && !hb.running.iter().any(|r| r.id == job.id)
+        {
+            leased.push(job.clone());
         }
     }
     for id in pick(&ctx, &jobs) {
@@ -220,6 +220,14 @@ fn lease_lines(
         Some(id) => lease_one(store, cfg, &hb.device.id, id, now),
         None => Ok(None),
     }
+}
+
+/// A leased keep, merge or discard job of the owner's review.
+fn is_owner_action(job: &Job) -> bool {
+    job.spec
+        .worker
+        .as_ref()
+        .is_some_and(|w| !w.action.is_launch())
 }
 
 /// Leases one picked job and logs it; None when it is no longer queued or its account got

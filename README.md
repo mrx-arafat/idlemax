@@ -962,6 +962,9 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax stop-all [same flags]` | kill the scope's running jobs and hold new ones until you resume; a worker it stops keeps its state and continues only after `idlemax start` |
 | `idlemax stop [--reason TEXT]` | stop every AI worker within seconds with its state saved; nothing launches, also after a reboot, until `idlemax start` |
 | `idlemax start` | let the workers `stop` stopped continue their sessions, one at a time, after memory and quota are checked again; it names any pause still in force |
+| `idlemax review` | every finished task per project with its verdict and concern, a one-line summary, the diff size and the branch, and how many workers are stopped or wait to restart |
+| `idlemax review keep <run> [--merge]` | keep the task's branch and remove its worktree folder; `--merge` first merges the branch into your current branch, only when your checkout is clean and there is no conflict |
+| `idlemax review discard <run> [--yes]` | delete the task's branch and worktree after one confirmation (`--yes` with no terminal); git refuses while work is left in the folder, and nothing is deleted |
 | `idlemax quota` | windows, reserve, headroom, and why each account is or is not spendable |
 | `idlemax mode off\|propose\|auto` | what the dispatcher does with its plan, see [Auto mode](#auto-mode) |
 | `idlemax events [--limit N]` | recent events (default limit 50) |

@@ -6,14 +6,14 @@ use std::path::Path;
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
-use idlemax_core::protocol::JobUpdate;
-use idlemax_core::types::{JobId, JobStatus, UnixMs};
+use idlemax_core::protocol::{JobUpdate, RunningJob};
+use idlemax_core::types::{Job, JobId, JobStatus, UnixMs};
 use idlemax_core::worker::report::WorkerPhase;
 
 use super::cmd::Cmd;
 use super::host::AgentStatus;
 use super::steps::Outcome;
-use super::{brief_line, End, Phase, Workers};
+use super::{brief_line, End, Phase, Tracked, Workers};
 use crate::agent::runner::os::Sig;
 use tracing::warn;
 
@@ -23,6 +23,57 @@ const ENDED_TICKS: u8 = 2;
 const HOST_DOWN_MS: UnixMs = 60_000;
 
 impl Workers {
+    /// Each tracked worker, as the heartbeat reports it.
+    pub fn running(&self) -> Vec<RunningJob> {
+        let mut procs = self.procs.lock().ok();
+        self.tracked
+            .values()
+            .map(|t| {
+                let pids: Vec<u32> = t.members.iter().map(|(pid, _)| *pid).collect();
+                RunningJob {
+                    id: t.job.id,
+                    name: t.job.spec.name.clone(),
+                    status: if t.paused {
+                        JobStatus::Paused
+                    } else {
+                        JobStatus::Running
+                    },
+                    pid: t.progress.shell_pid,
+                    started_ms: t.clock.started_ms(),
+                    mem_mb: t.job.spec.mem_mb,
+                    rss_bytes: procs.as_mut().map(|p| p.rss(&pids)),
+                    cpu_pct: None,
+                    cost: t.job.spec.cost,
+                    ai_account: t.job.spec.ai_account.clone(),
+                }
+            })
+            .collect()
+    }
+
+    /// True while a worker is tracked, so the agent samples and beats faster.
+    pub fn is_tracking(&self) -> bool {
+        !self.tracked.is_empty()
+    }
+
+    /// The tracked jobs and whether each is paused, for an agent that takes back recovered
+    /// workers.
+    pub fn jobs(&self) -> Vec<(Job, bool)> {
+        let with_start = |t: &Tracked| Job {
+            started_ms: Some(t.clock.started_ms()),
+            ..t.job.clone()
+        };
+        self.tracked
+            .values()
+            .map(|t| (with_start(t), t.paused))
+            .collect()
+    }
+
+    /// Every saved member pid of every worker, left out of the biggest memory users.
+    pub fn member_pids(&self) -> Vec<u32> {
+        let members = self.tracked.values().flat_map(|t| t.members.iter());
+        members.map(|(pid, _)| *pid).collect()
+    }
+
     /// Advances every worker one step; the updates to send.
     pub fn tick(&mut self, now_ms: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         let ids: Vec<JobId> = self.tracked.keys().copied().collect();
@@ -53,6 +104,7 @@ impl Workers {
             Phase::Watching { .. } => self.watch(id, now_ms, awake_ms),
             Phase::Stopping { .. } => self.stopping(id, now_ms),
             Phase::Checking { .. } => self.checking(id, now_ms),
+            Phase::Review { .. } => self.reviewed(id, now_ms),
         }
     }
 
