@@ -111,6 +111,7 @@ fn view(plan: &Plan, runs: &[RunLine], budgets: &[Budget], days: &[AccountDay]) 
         proposals_open: 0,
         limits_device: None,
         limits: &[],
+        account_problems: &[],
     };
     dispatcher_view(&input, NOW)
 }
@@ -253,9 +254,55 @@ fn only_the_other_devices_show_their_reported_limits() {
         proposals_open: 0,
         limits_device: Some("mac"),
         limits: &limits,
+        account_problems: &[],
     };
     let v = dispatcher_view(&input, NOW);
     assert_eq!(v.limits_device.as_deref(), Some("mac"));
     let of = |id: &str| v.devices.iter().find(|d| d.id == id).unwrap().limits.len();
     assert_eq!((of("mac"), of("box")), (0, 1));
+}
+
+#[test]
+fn an_account_closed_by_its_logins_needs_the_owner() {
+    use crate::quota::identity::{AccountProblem, ProblemKind};
+    let problem = |kind, accounts: &[&str]| AccountProblem {
+        kind,
+        accounts: accounts.iter().map(|a| a.to_string()).collect(),
+        devices: vec!["mac".into(), "box".into()],
+        message: "account claude-a has different Claude logins across devices".into(),
+        fix: "give one login its own [[quota.accounts]] entry".into(),
+    };
+    let problems = [
+        problem(ProblemKind::SplitName, &["claude-a"]),
+        // Only the second name of one login is closed.
+        problem(ProblemKind::OneLoginTwoNames, &["first", "second"]),
+        problem(ProblemKind::OwnerMayUse, &["claude-b"]),
+    ];
+    let projects = projects();
+    let plan = plan(LineState::Run, Vec::new());
+    let input = ViewInput {
+        plan: &plan,
+        runs: &[],
+        projects: &projects,
+        budgets: &[],
+        days: &[],
+        review_cap: 3,
+        proposals_open: 0,
+        limits_device: None,
+        limits: &[],
+        account_problems: &problems,
+    };
+    let v = dispatcher_view(&input, NOW);
+    let keys: Vec<&str> = v.needs_you.iter().map(|n| n.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "account:claude-a:split_name",
+            "account:second:one_login_two_names"
+        ]
+    );
+    assert_eq!(v.needs_you[0].kind, NeedKind::Account);
+    assert!(v.needs_you[0]
+        .reason
+        .ends_with("give one login its own [[quota.accounts]] entry"));
 }

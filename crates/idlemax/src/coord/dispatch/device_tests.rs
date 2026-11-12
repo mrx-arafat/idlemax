@@ -72,3 +72,50 @@ fn an_off_device_sheds_its_workers_and_relaunches_them_one_at_a_time_once_on() {
         "a new task started before the shed ones"
     );
 }
+
+#[test]
+fn a_shed_run_is_not_relaunched_on_a_device_whose_login_closed_its_account() {
+    use idlemax_core::protocol::Heartbeat;
+    use idlemax_core::quota::login::Login;
+    use idlemax_core::types::ControlScope;
+    let (mut store, cfg, live) = world();
+    let mut refusals = Refusals::default();
+    let mut now = crate::coord::api::plan::tests::T0 + 10_000;
+    beat(&mut store, now, 20.0, LineState::Run, &[]);
+    sweep(&mut store, &cfg, &live, &mut refusals, now);
+    let first = started(&mut store, FASTER);
+    super::stop_workers(
+        &mut store,
+        &ControlScope::Account("max".into()),
+        "test",
+        now,
+    )
+    .unwrap();
+
+    // The same Mac, now logged out of Claude.
+    now += 61_000;
+    beat(&mut store, now, 20.0, LineState::Run, &[]);
+    let mut hb: Heartbeat = store
+        .device("mac", now, i64::MAX)
+        .unwrap()
+        .map(|d| Heartbeat {
+            device: d.info,
+            room: d.room,
+            ..Heartbeat::default()
+        })
+        .unwrap();
+    hb.device.claude_login = Some(Login::Out);
+    store.record_heartbeat(&hb, now).unwrap();
+    sweep(&mut store, &cfg, &live, &mut refusals, now);
+    let run = store.get_run(first.id).unwrap().unwrap();
+    assert_eq!(run.state, RunState::Shed);
+    let events = store.events(0).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|e| e.message.contains(&format!("run {}", first.id))
+                && e.message.contains("not logged in")),
+        "{:?}",
+        events.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}

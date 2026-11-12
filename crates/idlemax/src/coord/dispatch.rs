@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use idlemax_core::dispatch::plan::{DevicePlan, Pick, PickedBy};
 use idlemax_core::dispatch::task::Task;
 use idlemax_core::dispatch::Mode;
+use idlemax_core::quota::identity::usable_on;
 use idlemax_core::quota::spend::stops_workers;
 use idlemax_core::scheduler::lease_deadline;
 use idlemax_core::types::{ControlScope, EventKind, Job, UnixMs};
@@ -125,7 +126,11 @@ fn launch_on(
     shed.sort_by_key(|r| (r.start_ms, r.id));
     for run in shed {
         let account = facts.account(g, &run.account, facts.gates.relaunch(&run.account));
-        match facts.may_launch(step, device, run.provider, account.as_ref(), run.job) {
+        // An account its logins close on this device (Spec 5 Task 6) gets no relaunch there.
+        let why = usable_on(&g.problems, &device.device, &run.account)
+            .err()
+            .or_else(|| facts.may_launch(step, device, run.provider, account.as_ref(), run.job));
+        match why {
             None => return relaunch(store, step, run),
             Some(why) => refusals.note(store, format!("run {}", run.id), &why, step.now)?,
         }

@@ -11,6 +11,7 @@ use super::room::LineState;
 use super::Mode;
 use crate::config::Setting;
 use crate::quota::budget::{Budget, BudgetUnit};
+use crate::quota::identity::AccountProblem;
 use crate::quota::owner_use::AccountDay;
 use crate::quota::Provider;
 use crate::types::{DeviceId, UnixMs};
@@ -167,6 +168,8 @@ pub struct ViewInput<'a> {
     pub limits_device: Option<&'a str>,
     /// The limits each device reported in its last heartbeat.
     pub limits: &'a [(DeviceId, Vec<Setting>)],
+    /// What closes an account, from the logins the devices report (Spec 5 Task 6).
+    pub account_problems: &'a [AccountProblem],
 }
 
 pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView {
@@ -217,7 +220,13 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
         ready_unjudged,
         workers: run_lines(input.runs, is_worker, |r| r.start_ms),
         review: run_lines(input.runs, is_review, |r| r.updated_ms),
-        needs_you: needs_you(plan, input.budgets, &devices, input.projects),
+        needs_you: needs_you(
+            plan,
+            input.budgets,
+            input.account_problems,
+            &devices,
+            input.projects,
+        ),
         budgets: budget_lines(input.budgets, input.days),
         devices,
         proposals_open: input.proposals_open,

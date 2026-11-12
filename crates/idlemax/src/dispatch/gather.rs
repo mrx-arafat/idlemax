@@ -13,16 +13,19 @@ use idlemax_core::dispatch::room::LineState;
 use idlemax_core::dispatch::task::{discover, Task, TaskInput};
 use idlemax_core::dispatch::Mode;
 use idlemax_core::protocol::DeviceView;
+use idlemax_core::quota::identity::AccountProblem;
 use idlemax_core::quota::pass::any_room;
-use idlemax_core::quota::{
-    account_problems, device_logins, tier_models, usable_on, Provider, QuotaView,
-};
+use idlemax_core::quota::{tier_models, Provider, QuotaView};
 use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
 use idlemax_core::Config;
 
 use super::quota_side::QuotaSide;
-use crate::coord::api::{offline_after_ms, quota_views};
+use crate::coord::api::quota_views;
 use crate::coord::store::{PassRow, Store, StoreError};
+
+mod accounts;
+
+use accounts::{open_accounts, OpenAccounts};
 
 /// The Plan and every task `discover` returned.
 #[derive(Debug, Clone)]
@@ -32,11 +35,14 @@ pub struct Gathered {
     /// The quota views the plan was built from, so the dispatcher view need not read them
     /// again under the same lock.
     pub views: Vec<QuotaView>,
+    /// What closes an account somewhere: the view lists it and a relaunch asks it.
+    pub problems: Vec<AccountProblem>,
 }
 
 /// Everything the plan and the pass read, from one store lock.
 pub struct Inputs {
     pub now: UnixMs,
+    pub problems: Vec<AccountProblem>,
     pub mode: Mode,
     pub devices: Vec<DeviceView>,
     pub paused: Vec<ControlScope>,
@@ -64,7 +70,11 @@ pub fn read_inputs(
     live: &Config,
     now: UnixMs,
 ) -> Result<Inputs, StoreError> {
-    let (devices, closed) = open_accounts(store, cfg, now)?;
+    let OpenAccounts {
+        devices,
+        notes: closed,
+        problems,
+    } = open_accounts(store, cfg, now)?;
     let paused = store.paused_scopes()?;
     let projects = project_views(store, None, now)?;
     let repos = store.dispatch_inputs()?;
@@ -93,6 +103,7 @@ pub fn read_inputs(
     let pass_active = pass_active(store)?;
     Ok(Inputs {
         now,
+        problems,
         mode: live.dispatcher.mode,
         devices,
         paused,
@@ -123,38 +134,6 @@ fn scoped(newest: Option<&PassRow>) -> Vec<(String, Vec<String>)> {
 fn pass_active(store: &Store) -> Result<bool, StoreError> {
     Ok(store.active_jobs()?.iter().any(|j| is_pass(&j.spec))
         || store.queued_jobs()?.iter().any(|j| is_pass(&j.spec)))
-}
-
-/// The device rows with every account that `usable_on` refuses (an account that is not
-/// logged in, whose login is unknown or split, or one login under two names) taken out of
-/// that device's `ai_accounts`, so `build` and `pass_due` never pick it there, and one line
-/// per pair with the message and the fix.
-fn open_accounts(
-    store: &Store,
-    cfg: &Config,
-    now: UnixMs,
-) -> Result<(Vec<DeviceView>, Vec<String>), StoreError> {
-    let mut devices = store.devices(now, offline_after_ms(cfg))?;
-    let problems = account_problems(
-        &cfg.quota,
-        &device_logins(&devices),
-        &store.latest_quota()?,
-        now,
-    );
-    let mut notes = Vec::new();
-    for dv in &mut devices {
-        let id = dv.info.id.clone();
-        dv.info
-            .ai_accounts
-            .retain(|account| match usable_on(&problems, &id, account) {
-                Ok(()) => true,
-                Err(why) => {
-                    notes.push(format!("{id}: {account} is closed: {why}"));
-                    false
-                }
-            });
-    }
-    Ok((devices, notes))
 }
 
 impl Inputs {
@@ -222,6 +201,7 @@ pub fn gather_plan(
         plan,
         tasks: inputs.tasks,
         views: inputs.views,
+        problems: inputs.problems,
     })
 }
 

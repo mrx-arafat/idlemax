@@ -89,6 +89,7 @@ pub fn gather_view(
         proposals_open: store.open_proposals()?,
         limits_device: Some(&own),
         limits: &limits,
+        account_problems: &gathered.problems,
     };
     Ok(dispatcher_view(&input, now))
 }

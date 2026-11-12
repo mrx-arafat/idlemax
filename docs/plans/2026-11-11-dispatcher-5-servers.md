@@ -611,8 +611,8 @@ Tell Spec 3's Budget when an account is used only by servers, so the owner's res
 - [x] `server_only` is true for a `claude` account listed by two `workbox` devices while a `laptop` reports another login id, false once the `laptop` lists it, false when the `laptop` reports the same id without listing it, false with one `OwnerMayUse` warning when the `laptop` has `claude` and reports nothing, and false for an account nobody lists.
 - [x] `server_only` is true for a `codex` account listed only by `workbox` devices whatever a `laptop` reports.
 - [x] For an account listed only by `workbox` devices, the Budget from `budgets` equals the one `budget` gives with an override of 5.0, and for an account a `laptop` lists it equals the one with no override.
-- [ ] With `claude-a` closed on one of two devices, the Plan gives that device no pick on `claude-a`, holds a note with the fix, and `launch_due` does not relaunch a `shed` run of that pair.
-- [ ] `GET /v1/status` carries `account_problems`, `idlemax quota` prints each with its fix, `dispatcher_view` lists a `SplitName` under `needs_you`, and the README and `docs/API.md` describe the rules and the new setting.
+- [x] With `claude-a` closed on one of two devices, the Plan gives that device no pick on `claude-a`, holds a note with the fix, and `launch_due` does not relaunch a `shed` run of that pair.
+- [x] `GET /v1/status` carries `account_problems`, `idlemax quota` prints each with its fix, `dispatcher_view` lists a `SplitName` under `needs_you`, and the README and `docs/API.md` describe the rules and the new setting.
 - [ ] Verify: `cargo test -p idlemax-core quota::identity && cargo test -p idlemax-core quota::config && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax coord::api::budget && cargo test -p idlemax --bin idlemax coord::dispatch && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 7: Run the base checks again when the day's budget is spent

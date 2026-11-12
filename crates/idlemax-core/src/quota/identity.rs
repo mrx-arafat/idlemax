@@ -51,6 +51,32 @@ pub enum ProblemKind {
     OwnerMayUse,
 }
 
+impl ProblemKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProblemKind::NotLoggedIn => "not_logged_in",
+            ProblemKind::LoginUnknown => "login_unknown",
+            ProblemKind::SplitName => "split_name",
+            ProblemKind::OneLoginTwoNames => "one_login_two_names",
+            ProblemKind::SameReading => "same_reading",
+            ProblemKind::OwnerMayUse => "owner_may_use",
+        }
+    }
+}
+
+impl AccountProblem {
+    /// The account names this problem closes somewhere; empty for one that only warns.
+    pub fn closed_names(&self) -> &[String] {
+        match self.kind {
+            ProblemKind::NotLoggedIn | ProblemKind::LoginUnknown | ProblemKind::SplitName => {
+                &self.accounts
+            }
+            ProblemKind::OneLoginTwoNames => self.accounts.get(1..).unwrap_or_default(),
+            ProblemKind::SameReading | ProblemKind::OwnerMayUse => &[],
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountProblem {
     pub kind: ProblemKind,

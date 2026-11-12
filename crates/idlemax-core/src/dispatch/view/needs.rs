@@ -8,12 +8,14 @@ use crate::dispatch::plan::Plan;
 use crate::dispatch::project::ProjectView;
 use crate::dispatch::room::LineState;
 use crate::quota::budget::{Budget, BudgetBasis};
+use crate::quota::identity::AccountProblem;
 
 /// What needs the owner, in this order: tasks the orchestrator sent to them, accounts out of
-/// quota past today, then devices (see `device_needs`).
+/// quota past today, accounts their logins close, then devices (see `device_needs`).
 pub(super) fn needs_you(
     plan: &Plan,
     budgets: &[Budget],
+    problems: &[AccountProblem],
     devices: &[DeviceLine],
     projects: &[ProjectView],
 ) -> Vec<NeedsYouLine> {
@@ -33,8 +35,17 @@ pub(super) fn needs_you(
             subject: b.account.clone(),
             reason: plain(&b.why),
         });
+    let closed = problems.iter().flat_map(|p| {
+        p.closed_names().iter().map(move |name| NeedsYouLine {
+            key: format!("account:{name}:{}", p.kind.as_str()),
+            kind: NeedKind::Account,
+            subject: name.clone(),
+            reason: plain(&format!("{}: {}", p.message, p.fix)),
+        })
+    });
     tasks
         .chain(accounts)
+        .chain(closed)
         .chain(device_needs(devices, projects))
         .collect()
 }
