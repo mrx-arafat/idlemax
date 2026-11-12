@@ -33,8 +33,24 @@ pub struct ProjectSettings {
     pub no_default_off_limits: bool,
 }
 
-/// CI, release and secret paths no worker touches unless the owner says otherwise.
-pub const DEFAULT_OFF_LIMITS: [&str; 4] = [".github/", ".gitlab-ci.yml", "*.env", "secrets/"];
+/// Paths no worker touches unless the owner says otherwise: CI and release config, secret
+/// files, and agent or tool config that runs code for the owner later (hooks, MCP servers).
+pub const DEFAULT_OFF_LIMITS: [&str; 14] = [
+    ".github/",
+    ".gitlab-ci.yml",
+    "*.env",
+    "secrets/",
+    ".claude/",
+    ".mcp.json",
+    ".husky/",
+    ".githooks/",
+    ".git/hooks/",
+    ".envrc",
+    ".circleci/",
+    ".env.*",
+    "*.pem",
+    "*.key",
+];
 
 impl ProjectSettings {
     /// The owner's off-limits paths, then the defaults the owner did not switch off or list.
@@ -268,9 +284,36 @@ mod tests {
                 "migrations/",
                 ".github/",
                 ".gitlab-ci.yml",
-                "*.env"
+                "*.env",
+                ".claude/",
+                ".mcp.json",
+                ".husky/",
+                ".githooks/",
+                ".git/hooks/",
+                ".envrc",
+                ".circleci/",
+                ".env.*",
+                "*.pem",
+                "*.key"
             ]
         );
+        // Agent and tool config that runs code for the owner later, and secret files.
+        let changed: Vec<String> = [
+            ".claude/settings.json",
+            ".mcp.json",
+            ".husky/pre-commit",
+            ".git/hooks/post-merge",
+            "app/.envrc",
+            ".env.local",
+            "deploy/server.pem",
+            "certs/tls.key",
+            "src/main.rs",
+        ]
+        .iter()
+        .map(|p| p.to_string())
+        .collect();
+        let found = crate::worker::checks::scope_findings(&changed, &[], &s.all_off_limits());
+        assert_eq!(found.off_limits, changed[..8]);
         let off = ProjectSettings {
             no_default_off_limits: true,
             ..s

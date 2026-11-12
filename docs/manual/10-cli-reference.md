@@ -318,7 +318,7 @@ The projects the dispatcher may work in; every one is off until you switch it on
 | `project add <PATH> [--name <NAME>] [--device <DEVICE>]` | add the git checkout at PATH as a project (it starts off); name defaults to the folder name, device to the only device the coordinator knows |
 | `project on <NAME> [--device <DEVICE>]` | let the dispatcher plan work in a project |
 | `project off <NAME> [--device <DEVICE>]` | take a project out of the dispatcher's pool |
-| `project set <NAME> <SETTING> [VALUES]... [-- <ARGV>...] [--device <DEVICE>]` | change one setting: `base`, `priority`, `off-limits`, `default-off-limits` (`on` or `off`: the built-in `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/`), `core-paths`, or `setup` and `check` (after `--`); lists take several words or commas; no value clears the setting |
+| `project set <NAME> <SETTING> [VALUES]... [-- <ARGV>...] [--device <DEVICE>]` | change one setting: `base`, `priority`, `off-limits`, `default-off-limits` (`on` or `off`: the built-in CI, secret and agent-config paths), `core-paths`, or `setup` and `check` (after `--`); lists take several words or commas; no value clears the setting |
 
 ```sh
 idlemax project set app check -- cargo test -p core

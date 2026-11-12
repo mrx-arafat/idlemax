@@ -832,7 +832,7 @@ Types live in `crates/idlemax-core/src/dispatch/project.rs`.
   A known `(device, path)` answers 200 with the existing row; a taken name gets `-2`, `-3` and so on.
   A device holds at most 200 projects (409 beyond).
 - `ProjectSettings` replaces all seven settings at once.
-  A worker's off-limits paths are `off_limits` plus the defaults `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/`, unless `no_default_off_limits` is true; the pass sees the same list, and no path under one ever joins a scope.
+  A worker's off-limits paths are `off_limits` plus the defaults `.github/`, `.gitlab-ci.yml`, `.circleci/`, `secrets/`, `*.env`, `.env.*`, `.envrc`, `*.pem`, `*.key`, `.claude/`, `.mcp.json`, `.husky/`, `.githooks/` and `.git/hooks/`, unless `no_default_off_limits` is true; the pass sees the same list, and no path under one ever joins a scope.
   The commands are argv, never a shell line.
   400 for a base branch that is empty, starts with `-` or holds whitespace, an empty first command word, or an off-limits or core path that is absolute or holds `..`.
 - An unknown id is 404.

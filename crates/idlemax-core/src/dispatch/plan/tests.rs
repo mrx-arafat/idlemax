@@ -1,6 +1,6 @@
 use super::*;
 use crate::dispatch::inputs::RepoReport;
-use crate::dispatch::project::{Project, ProjectSettings};
+use crate::dispatch::project::{Project, ProjectSettings, DEFAULT_OFF_LIMITS};
 use crate::dispatch::roadmap::RoadmapItem;
 use crate::dispatch::task::TaskSource;
 use crate::types::DeviceInfo;
@@ -43,6 +43,13 @@ fn project(id: i64, name: &str, owner_active: bool) -> ProjectView {
         owner_active,
         ..Default::default()
     }
+}
+
+/// The fixture's own off-limits path, the defaults it does not list, then `more`.
+fn off_limits(more: &[&str]) -> Vec<String> {
+    let defaults = DEFAULT_OFF_LIMITS.iter().filter(|d| **d != "secrets/");
+    let all = ["secrets"].iter().chain(defaults).chain(more);
+    all.map(|s| s.to_string()).collect()
 }
 
 fn task(id: &str, project: i64) -> Task {
@@ -180,10 +187,7 @@ fn a_pass_fills_the_slots_in_its_order() {
     );
     assert_eq!(p.reason, "b is small");
     assert_eq!(p.scope_paths, ["src/lib.rs"]);
-    assert_eq!(
-        p.avoid_paths,
-        ["secrets", ".github/", ".gitlab-ci.yml", "*.env"]
-    );
+    assert_eq!(p.avoid_paths, off_limits(&[]));
     assert!(plan.not_judged.is_empty());
     assert!(plan.devices[0].empty.is_none());
 }
@@ -416,13 +420,7 @@ fn the_owners_active_project_is_used_only_when_nothing_else_is_ready() {
     let plan = only.build();
     assert_eq!(
         plan.devices[0].picks[0].avoid_paths,
-        [
-            "secrets",
-            ".github/",
-            ".gitlab-ci.yml",
-            "*.env",
-            "src/main.rs"
-        ]
+        off_limits(&["src/main.rs"])
     );
 
     let mut clipped = only;
