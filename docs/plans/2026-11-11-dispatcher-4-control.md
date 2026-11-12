@@ -693,11 +693,11 @@ It is verified by TS-001 to TS-006.
 **Definition of Done:**
 
 - [ ] TS-001 to TS-006 pass in a browser against the throwaway home, and the page has no console error.
-- [ ] The cards read correctly at a phone width and in the light and the dark theme.
-- [ ] Text typed into a limit input is still there, with the focus, after the next poll.
-- [ ] Against a coordinator that answers 404 to `GET /v1/dispatcher`, the page shows today's cards and no empty dispatcher card.
-- [ ] The dashboard test still finds one script tag and no HTML sink, and the script parses.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] The cards read correctly at a phone width and in the light and the dark theme.
+- [x] Text typed into a limit input is still there, with the focus, after the next poll.
+- [x] Against a coordinator that answers 404 to `GET /v1/dispatcher`, the page shows today's cards and no empty dispatcher card.
+- [x] The dashboard test still finds one script tag and no HTML sink, and the script parses.
+- [x] Verify: `cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 10: Add the Dispatch tab to the TUI
 

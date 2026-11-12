@@ -111,9 +111,11 @@ async function api(method, path, body) {
   if (text) { try { data = JSON.parse(text); } catch (_) { data = null; } }
   const msg = (data && typeof data.error === "string" && data.error) || `HTTP ${res.status}`;
   if (res.status === 401) throw new AuthError(msg);
-  if (!res.ok) throw new Error(msg);
+  if (!res.ok) { const err = new Error(msg); err.status = res.status; throw err; }
   return data;
 }
+// A route an older coordinator does not have answers 404: null then hides what it feeds.
+const optional = (p) => p.catch((e) => { if (e && e.status === 404) return null; throw e; });
 const control = (scope, action, reason) => api("POST", "/v1/control", { scope, action, reason: reason || "dashboard" });
 const scopes = {
   global: () => ({ type: "global" }),
@@ -123,7 +125,8 @@ const scopes = {
 };
 
 // State and polling.
-const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, report: null, reportAt: 0, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false };
+// dispatcher, limits and proposals are undefined while loading and null when the route is absent.
+const state = { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, report: null, reportAt: 0, errors: {}, lastOk: 0, allFailed: false, busy: false, timer: 0, showClosed: false, dispatcher: undefined, limits: undefined, proposals: undefined };
 // Full explanations are fetched only for the rows a user opened, and re-fetched once per poll.
 const whyOpen = new Set();
 const whyDetail = new Map();
@@ -142,6 +145,11 @@ async function refresh() {
     ["events", api("GET", "/v1/events?limit=60")],
     ["why", api("GET", "/v1/why")],
   ];
+  // A route that answered 404 is not asked again until the page reloads, so an older
+  // coordinator leaves no stream of failed requests in the console.
+  for (const [key, path] of [["dispatcher", "/v1/dispatcher"], ["limits", "/v1/limits"], ["proposals", "/v1/proposals"]]) {
+    if (state[key] !== null) calls.push([key, optional(api("GET", path))]);
+  }
   if (Date.now() - state.reportAt >= REPORT_MS) calls.push(["report", reportCalls()]);
   const openIds = [...whyOpen];
   const detailCalls = openIds.map((id) => api("GET", whyPath(id)));
@@ -242,7 +250,7 @@ function section(key, deps, boxId, fn) {
   if (sig[key] === next) return;
   sig[key] = next;
   const box = $(boxId);
-  const focusables = () => [...box.querySelectorAll("button, select, summary")];
+  const focusables = () => [...box.querySelectorAll("button, select, summary, input")];
   const focused = focusables().indexOf(document.activeElement);
   // Keyed <details> (the "why" rows) are restored from whyOpen by the code that builds them.
   const open = [...box.querySelectorAll("details:not([data-key])")].map((d) => d.open);
@@ -265,6 +273,7 @@ function render() {
   section("advice", [state.advice, e.advice, state.showClosed], "advice", renderAdvice);
   section("quota", [state.quota, s && s.paused_accounts, e.quota], "quota", renderQuota);
   section("events", [state.events, e.events], "events", renderEvents);
+  renderDispatcherCards();
   renderWhy();
 }
 
@@ -762,11 +771,246 @@ function renderEvents() {
   )));
 }
 
+// Dispatcher (GET /v1/dispatcher): the mode switch, the workers, what would launch next, and
+// the cards beside them. Every card is hidden when the coordinator has no dispatcher view.
+const LINE_TONE = { run: "ok", hold: "", shed: "warn", emergency: "bad" };
+const MODES = ["off", "propose", "auto"];
+const DISP_CARDS = ["card-dispatcher", "card-needs", "card-review", "card-budget", "card-projects", "card-limits"];
+// Unsaved limit text by key, and the last reply of each limit, kept across rebuilds.
+const limitDraft = new Map();
+const limitReply = new Map();
+
+function renderDispatcherCards() {
+  const v = state.dispatcher;
+  // Hidden while loading and when the coordinator has no dispatcher view; an error shows.
+  const absent = v === null || (v === undefined && !state.errors.dispatcher);
+  DISP_CARDS.forEach((id) => { $(id).hidden = absent; });
+  $("card-rules").hidden = absent || state.proposals === null;
+  if (absent) return;
+  const e = state.errors;
+  section("dispatcher", [v, e.dispatcher], "dispatcher", renderDispatcher);
+  section("needs", [v && v.needs_you, e.dispatcher], "needs", renderNeeds);
+  section("review", [v && v.review, e.dispatcher], "review", renderReview);
+  section("budget", [v && v.budgets, e.dispatcher], "budget", renderBudget);
+  section("projects", [v && v.projects, v && v.devices, e.dispatcher], "projects", renderProjects);
+  section("limits", [state.limits, v && v.devices, e.limits, [...limitReply]], "limits", renderLimits);
+  section("rules", [state.proposals, e.proposals], "rules", renderRules);
+}
+
+// Loading, an error, or the view itself.
+function dispReady(box) {
+  if (state.errors.dispatcher) { box.replaceChildren(h("div", { class: "err" }, state.errors.dispatcher)); return null; }
+  if (!state.dispatcher) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return null; }
+  return state.dispatcher;
+}
+
+async function setMode(btn, mode) {
+  if (mode === "auto" && !await confirmBox("Switch to auto?", "idlemax then launches workers by itself, inside the fence you set: projects on, the limits and each account's budget.", "Switch to auto")) return;
+  act(btn, `Dispatcher mode: ${mode}`, () => api("POST", "/v1/dispatcher/mode", { mode }));
+}
+
+async function stopWorkers(btn) {
+  if (await confirmBox("Stop every worker now?", "Each worker's turn is cut and its state saved. They continue only after Start.", "Stop workers", true)) {
+    act(btn, "Workers stopped", () => api("POST", "/v1/workers/stop", { scope: scopes.global() }));
+  }
+}
+
+async function startWorkers(btn) {
+  if (await confirmBox("Start the workers again?", "The stopped workers continue where they were, once memory and quota allow.", "Start")) {
+    act(btn, "Workers started", () => api("POST", "/v1/workers/start"));
+  }
+}
+
+function modeSwitch(mode) {
+  return h("div", { class: "seg", role: "radiogroup", "aria-label": "Dispatcher mode" }, MODES.map((m) => h("button", {
+    class: `btn sm${m === mode ? " primary" : ""}`, type: "button", role: "radio", "aria-checked": String(m === mode),
+    onclick: (e) => { if (m !== mode) setMode(e.currentTarget, m); },
+  }, label(m))));
+}
+
+function workerTable(rows, withWhy) {
+  return h("div", { class: "scroll" }, h("table", { class: "disp-table" },
+    h("thead", null, h("tr", null, h("th", null, "State"), h("th", null, "Task"), h("th", null, "Model"), h("th", { class: "r" }, "Started"))),
+    h("tbody", null, rows.map((w) => h("tr", null,
+      h("td", null, badge(w.label, w.state === "stopped" ? "warn" : w.state === "needs_you" ? "warn" : "info")),
+      h("td", null, h("div", { class: "job-name" }, `${w.project}: ${w.task}`), h("div", { class: "t2" }, w.summary),
+        w.branch ? h("div", { class: "t2 mono" }, w.branch) : null,
+        withWhy && w.why ? h("details", { class: "why" }, h("summary", null, "why"), h("div", { class: "why-body" }, w.why)) : null),
+      h("td", { class: "nw" }, h("div", null, label(w.provider)), h("div", { class: "t2" }, w.model)),
+      h("td", { class: "r nw" }, rel(w.start_ms)))))));
+}
+
+function renderDispatcher() {
+  const box = $("dispatcher");
+  const v = dispReady(box);
+  if (!v) return;
+  const stopped = v.workers.some((w) => w.state === "stopped");
+  const devices = v.devices.map((d) => h("div", { class: "row" },
+    badge(d.state, LINE_TONE[d.state]), h("strong", null, d.id),
+    h("span", { class: "t" }, d.held ? `held: ${d.held}` : `${d.open_slots} open slot${d.open_slots === 1 ? "" : "s"}: ${d.reason}`)));
+  const planned = v.planned.map((p) => h("div", { class: "row" },
+    h("span", { class: "t" }, `${p.project}: ${p.title}`),
+    h("span", { class: "faint" }, `${label(p.provider)} ${p.account} ${p.model} on ${p.device}`),
+    p.reason ? h("details", { class: "why" }, h("summary", null, "why"), h("div", { class: "why-body" }, p.reason)) : null));
+  const unjudged = v.ready_unjudged.map((t) => h("div", { class: "row" },
+    badge("not judged by the orchestrator", ""), h("span", { class: "t" }, `${t.project}: ${t.title}`)));
+  box.replaceChildren(...[
+    h("div", { class: "disp-top" }, modeSwitch(v.mode),
+      h("button", { class: "btn sm danger", type: "button", onclick: (e) => stopWorkers(e.currentTarget) }, "Stop workers"),
+      stopped ? h("button", { class: "btn sm primary", type: "button", onclick: (e) => startWorkers(e.currentTarget) }, "Start") : null),
+    devices.length ? h("div", { class: "disp-list" }, devices) : null,
+    h("div", { class: "why-h" }, "Workers"),
+    v.workers.length ? workerTable(v.workers, true) : h("div", { class: "empty" }, "No worker is running."),
+    h("div", { class: "why-h" }, "Would launch next"),
+    planned.length ? h("div", { class: "disp-list" }, planned) : h("div", { class: "muted" }, "Nothing would launch now."),
+    unjudged.length ? h("div", { class: "disp-list" }, unjudged) : null,
+    h("div", { class: "faint", style: "margin-top:8px;font-size:12.5px" }, v.picked_by),
+  ].filter(Boolean)); // replaceChildren would write null as the text "null"
+}
+
+const NEED_TONE = { task: "warn", account: "bad", device: "bad" };
+function renderNeeds() {
+  const box = $("needs");
+  const v = dispReady(box);
+  if (!v) return;
+  if (!v.needs_you.length) { box.replaceChildren(h("div", { class: "empty" }, "Nothing needs you.")); return; }
+  box.replaceChildren(h("div", { class: "disp-list" }, v.needs_you.map((n) => h("div", { class: "row" },
+    badge(label(n.kind), NEED_TONE[n.kind]), h("strong", null, n.subject), h("span", { class: "t" }, n.reason)))));
+}
+
+function renderReview() {
+  const box = $("review");
+  const v = dispReady(box);
+  if (!v) return;
+  const note = h("div", { class: "faint", style: "margin-top:8px;font-size:12.5px" }, "Keep or discard with idlemax review keep <run> or idlemax review discard <run>.");
+  box.replaceChildren(v.review.length ? workerTable(v.review, false) : h("div", { class: "empty" }, "Nothing waits for review."), note);
+}
+
+// One bar: what was spent of what may be spent, with the reason as its title.
+function budgetBar(day, big) {
+  const of = day.spendable_pct;
+  const spent = day.spent_pct || 0;
+  const pct = of > 0 ? Math.max(0, Math.min(100, (spent / of) * 100)) : spent > 0 ? 100 : 0;
+  const bar = h("span", { class: pct >= 100 ? "warn" : "" });
+  bar.style.width = `${pct}%`;
+  const text = `spent ${fmtPct(spent, 1)}${of != null ? ` of ${fmtPct(of, 1)}` : ""}`;
+  return h("div", { class: big ? "win" : "win day", title: day.why || null },
+    h("div", { class: "win-h" }, h("span", { class: "num" }, text),
+      big ? (day.day_end_ms ? rel(day.day_end_ms, "day ends ", "muted num") : null) : h("span", { class: "faint num" }, clock(day.day_start_ms))),
+    h("div", { class: "meter", role: "img", "aria-label": text }, bar));
+}
+
+function renderBudget() {
+  const box = $("budget");
+  const v = dispReady(box);
+  if (!v) return;
+  if (!v.budgets.length) { box.replaceChildren(h("div", { class: "empty" }, "No AI account is configured.")); return; }
+  box.replaceChildren(...v.budgets.map((b) => {
+    const [today, ...earlier] = b.days;
+    return h("div", { class: "acct" },
+      h("div", { class: "acct-h" }, h("span", { class: "name" }, b.account), h("span", { class: "muted", style: "font-size:12px" }, label(b.unit === "daily_cap_runs" ? "daily cap" : b.provider))),
+      today ? budgetBar(today, true) : null,
+      today && today.why ? h("div", { class: "t2" }, today.why) : null,
+      earlier.length ? h("div", { class: "days" }, earlier.map((d) => budgetBar(d, false))) : null);
+  }));
+}
+
+async function switchProject(btn, p) {
+  const on = !p.enabled;
+  if (on && !await confirmBox(`Switch ${p.name} on?`, "The dispatcher may then plan and launch workers on its leftover tasks.", "Switch on")) return;
+  act(btn, `${p.name} switched ${on ? "on" : "off"}`, () => api("POST", `/v1/projects/${encodeURIComponent(p.id)}/${on ? "on" : "off"}`));
+}
+
+async function switchDevice(btn, d) {
+  const on = !d.enabled;
+  if (on && !await confirmBox(`Switch ${d.id} on?`, "Workers may then run on this device.", "Switch on")) return;
+  act(btn, `${d.id} switched ${on ? "on" : "off"}`, () => api("POST", `/v1/devices/${encodeURIComponent(d.id)}/${on ? "on" : "off"}`));
+}
+
+function toggle(on, name, onclick) {
+  return h("button", { class: `btn sm${on ? " primary" : ""}`, type: "button", role: "switch", "aria-checked": String(on), "aria-label": `${name} ${on ? "on" : "off"}`, onclick }, on ? "on" : "off");
+}
+
+function renderProjects() {
+  const box = $("projects");
+  const v = dispReady(box);
+  if (!v) return;
+  const devices = v.devices.length > 1 ? v.devices.filter((d) => d.enabled != null) : [];
+  const rows = [
+    ...devices.map((d) => h("div", { class: "row" }, toggle(d.enabled, d.id, (e) => switchDevice(e.currentTarget, d)), h("strong", null, d.id), h("span", { class: "faint" }, "device"))),
+    ...v.projects.map((p) => h("div", { class: "row" }, toggle(p.enabled, p.name, (e) => switchProject(e.currentTarget, p)),
+      h("strong", null, p.name), h("span", { class: "faint" }, p.device),
+      h("span", { class: "faint num", style: "margin-left:auto" }, `${p.waiting}/${p.review_cap} waiting for review`))),
+  ];
+  box.replaceChildren(rows.length ? h("div", { class: "disp-list" }, rows) : h("div", { class: "empty" }, "No project yet. Add one with idlemax project add <path>."));
+}
+
+function replyText(r) {
+  const rep = r.report || {};
+  if ((rep.restart_coordinator || []).length) return "restart the coordinator";
+  if ((rep.restart_agent || []).length) return "restart the agent";
+  return r.changed ? "applied now" : "no change";
+}
+
+async function saveLimit(btn, key, value) {
+  const out = await act(btn, `${key} saved`, () => api("POST", "/v1/limits", { key, value }));
+  limitDraft.delete(key);
+  if (out) limitReply.set(key, replyText(out));
+  else delete sig.limits; // a refused value: show the stored one again on the next poll
+}
+
+function limitRow(s) {
+  const id = `limit-${s.key.replace(/[^a-z0-9]/gi, "-")}`;
+  const input = h("input", { id, class: "num", type: "text", inputmode: "decimal", value: limitDraft.has(s.key) ? limitDraft.get(s.key) : String(s.value ?? "") });
+  input.addEventListener("input", () => limitDraft.set(s.key, input.value));
+  return h("div", { class: "limit" },
+    h("label", { for: id, class: "mono" }, s.key),
+    h("div", { class: "limit-c" }, input,
+      h("span", { class: "faint num" }, `default ${s.default}`),
+      h("button", { class: "btn sm", type: "button", onclick: (e) => saveLimit(e.currentTarget, s.key, input.value.trim()) }, "Save"),
+      h("button", { class: "btn sm ghost", type: "button", onclick: (e) => saveLimit(e.currentTarget, s.key, null) }, "default")),
+    limitReply.has(s.key) ? h("div", { class: "t2" }, limitReply.get(s.key)) : null);
+}
+
+function renderLimits() {
+  const box = $("limits");
+  if (state.errors.limits) { box.replaceChildren(h("div", { class: "err" }, state.errors.limits)); return; }
+  if (state.limits === undefined) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  const own = state.limits ? state.limits.map(limitRow) : [h("div", { class: "muted" }, "This coordinator cannot change limits.")];
+  const others = ((state.dispatcher && state.dispatcher.devices) || []).filter((d) => (d.limits || []).length).map((d) =>
+    h("div", { class: "acct" }, h("div", { class: "acct-h" }, h("span", { class: "name" }, d.id), badge("read-only", "")),
+      h("div", { class: "disp-list" }, d.limits.map((s) => h("div", { class: "row" }, h("span", { class: "mono" }, s.key), h("span", { class: "num", style: "margin-left:auto" }, String(s.value))))),
+      h("div", { class: "t2" }, "Change these on that device with idlemax config set.")));
+  box.replaceChildren(...own, ...others);
+}
+
+async function decideRule(btn, p, verb) {
+  if (verb === "approve" && !await confirmBox("Add this line to rules.md?", p.line, "Approve")) return;
+  act(btn, verb === "approve" ? "The line was added to rules.md" : "Proposal rejected", () => api("POST", `/v1/proposals/${encodeURIComponent(p.id)}/${verb}`));
+}
+
+function renderRules() {
+  const box = $("rules");
+  if (state.errors.proposals) { box.replaceChildren(h("div", { class: "err" }, state.errors.proposals)); return; }
+  if (!state.proposals) { box.replaceChildren(h("div", { class: "empty" }, "Loading")); return; }
+  const open = state.proposals.filter((p) => p.status === "open");
+  if (!open.length) { box.replaceChildren(h("div", { class: "empty" }, "No open rule proposal.")); return; }
+  box.replaceChildren(...open.map((p) => h("article", { class: "adv" },
+    h("div", { class: "adv-h" }, h("span", { class: "title mono" }, p.line)),
+    h("p", null, p.reason),
+    h("div", { class: "meta" }, h("span", null, `from run ${p.run}`), when(p.at_ms)),
+    h("div", { class: "adv-a" },
+      h("button", { class: "btn sm primary", type: "button", onclick: (e) => decideRule(e.currentTarget, p, "approve") }, "Approve"),
+      h("button", { class: "btn sm", type: "button", onclick: (e) => decideRule(e.currentTarget, p, "reject") }, "Reject")))));
+}
+
 // Login flow.
 function logout(msg) {
   tokenStore.set("");
   clearInterval(state.timer);
-  Object.assign(state, { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, errors: {}, lastOk: 0 });
+  Object.assign(state, { status: null, jobs: null, schedules: null, quota: null, advice: null, events: null, why: null, errors: {}, lastOk: 0, dispatcher: undefined, limits: undefined, proposals: undefined });
+  limitDraft.clear();
+  limitReply.clear();
   whyOpen.clear();
   whyDetail.clear();
   Object.keys(sig).forEach((k) => delete sig[k]);
