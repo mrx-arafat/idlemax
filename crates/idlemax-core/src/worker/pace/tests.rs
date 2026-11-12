@@ -154,6 +154,7 @@ fn may_launch_needs_every_condition() {
         facts: RunFacts {
             check: None,
             end_text: None,
+            sandbox: None,
         },
         job: None,
         launches: 1,
@@ -265,6 +266,7 @@ fn week_spend_counts_overlapping_runs_once() {
             ..Default::default()
         }),
         end_text: None,
+        sandbox: None,
     };
     let more = [weekly(44.0, 5_000), weekly(46.0, 6_000)];
     let all: Vec<QuotaSnapshot> = readings.iter().chain(&more).cloned().collect();

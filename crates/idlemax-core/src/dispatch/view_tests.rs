@@ -346,3 +346,34 @@ fn a_run_that_changed_the_git_config_or_hooks_needs_the_owner_until_reviewed() {
     assert_eq!(v.needs_you[0].subject, "app: task 5");
     assert!(v.needs_you[0].reason.contains("git config or hooks"));
 }
+
+#[test]
+fn a_device_whose_workers_run_without_the_sandbox_needs_the_owner_once() {
+    use crate::worker::sandbox::SandboxFact;
+    let bare = SandboxFact::Bare {
+        why: "bwrap is not installed".into(),
+    };
+    let mut runs = [
+        run(1, RunState::Running, 1),
+        run(2, RunState::Running, 2),
+        run(3, RunState::Running, 3),
+        run(4, RunState::Clean, 4),
+    ];
+    runs[0].run.facts.sandbox = Some(bare.clone());
+    runs[1].run.facts.sandbox = Some(bare.clone());
+    runs[2].run.facts.sandbox = Some(SandboxFact::Off);
+    runs[3].run.facts.sandbox = Some(bare);
+    let v = view(&plan(LineState::Run, Vec::new()), &runs, &[], &[]);
+    let lines: Vec<_> = v
+        .needs_you
+        .iter()
+        .filter(|n| n.key.ends_with(":bare"))
+        .collect();
+    assert_eq!(lines.len(), 1, "{:?}", v.needs_you);
+    assert_eq!(lines[0].key, "device:mac:bare");
+    assert!(
+        lines[0].reason.contains("bwrap is not installed"),
+        "{}",
+        lines[0].reason
+    );
+}

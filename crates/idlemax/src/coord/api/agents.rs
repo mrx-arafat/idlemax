@@ -212,6 +212,19 @@ pub(super) fn on_job_update_with(
         Some(_) => run_after(store, &job, update, now)?,
         None => None,
     };
+    // A worker that runs without the sandbox is said once per Run, in the events (finding 8).
+    if let Some((after, _)) = &run {
+        let had = store.get_run(after.id)?.and_then(|r| r.facts.sandbox);
+        let why = idlemax_core::dispatch::view::unsandboxed(after.facts.sandbox.as_ref());
+        if let Some(why) = why.filter(|_| had != after.facts.sandbox) {
+            events.push(NewEvent {
+                kind: EventKind::Control,
+                device: Some(update.device.clone()),
+                job: Some(job.id),
+                message: format!("run {} runs without the sandbox: {why}", after.id),
+            });
+        }
+    }
     let writes = UpdateWrites {
         limit_hit,
         job: next.as_ref(),

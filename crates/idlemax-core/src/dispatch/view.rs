@@ -113,6 +113,9 @@ pub struct WorkerLine {
     pub model: String,
     pub branch: Option<String>,
     pub start_ms: UnixMs,
+    /// Set when the worker runs without the OS sandbox: why (A13, finding 8).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsandboxed: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -292,9 +295,20 @@ fn run_lines(
                 model: plain(&r.model),
                 branch: r.branch.as_deref().map(plain),
                 start_ms: r.start_ms,
+                unsandboxed: unsandboxed(r.facts.sandbox.as_ref()),
             }
         })
         .collect()
+}
+
+/// Why a worker runs without the sandbox, None when it runs inside or the device sent nothing.
+pub fn unsandboxed(fact: Option<&crate::worker::sandbox::SandboxFact>) -> Option<String> {
+    use crate::worker::sandbox::SandboxFact;
+    match fact? {
+        SandboxFact::Wrapped => None,
+        SandboxFact::Bare { why } => Some(plain(why)),
+        SandboxFact::Off => Some("the sandbox is off (workers.sandbox)".into()),
+    }
 }
 
 fn project_lines(input: &ViewInput<'_>) -> Vec<ProjectLine> {

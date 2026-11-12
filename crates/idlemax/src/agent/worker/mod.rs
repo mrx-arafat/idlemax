@@ -37,6 +37,7 @@ use idlemax_core::job_run::{allows_program, RunClock};
 use idlemax_core::protocol::JobUpdate;
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
 use idlemax_core::worker::report::{CheckFacts, WorkerPhase, WorkerReport};
+use idlemax_core::worker::sandbox::SandboxFact;
 use idlemax_core::worker::WorkerSpec;
 use idlemax_core::Paths;
 
@@ -104,6 +105,8 @@ struct Tracked {
     /// The digests of idlemax's own files when this launch began (`owner_writes`); empty for
     /// a worker recovered after a restart or a review, which then checks nothing.
     guarded: Vec<(String, String)>,
+    /// Whether this attempt runs inside the OS sandbox; every update says it (finding 8).
+    sandbox: Option<SandboxFact>,
 }
 
 pub struct Workers {
@@ -195,10 +198,17 @@ impl Workers {
             Ok(chosen) => chosen,
             Err(why) => return vec![self.refusal(&job, &why, now_ms)],
         };
-        let (sandbox, bare) = match self.choose_sandbox(worker.cli, kind) {
+        let (sandbox, fact) = match self.choose_sandbox(worker.cli, kind) {
             Ok(chosen) => chosen,
             Err(why) => return vec![self.refusal(&job, &why, now_ms)],
         };
+        if let Some(SandboxFact::Bare { why }) = &fact {
+            tracing::warn!(
+                job = job.id,
+                run = worker.run,
+                "worker runs without the sandbox: {why}"
+            );
+        }
         let tracked = self.launch(
             job,
             worker,
@@ -207,9 +217,10 @@ impl Workers {
             now_ms,
             awake_ms,
         );
+        let mut tracked = tracked;
+        tracked.sandbox = fact;
         let mut update = self.update(&tracked, JobStatus::Running, WorkerPhase::Preparing, now_ms);
-        let notes: Vec<String> = note.into_iter().chain(bare).collect();
-        update.error = (!notes.is_empty()).then(|| notes.join("; "));
+        update.error = note;
         self.tracked.insert(tracked.job.id, tracked);
         vec![update]
     }
@@ -335,6 +346,7 @@ impl Workers {
                 session: t.progress.session.clone(),
                 branch: t.progress.branch.clone(),
                 worktree: t.progress.folder.as_ref().map(|f| f.display().to_string()),
+                sandbox: t.sandbox.clone(),
                 ..Default::default()
             })),
             ..Default::default()

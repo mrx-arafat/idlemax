@@ -29,6 +29,20 @@ pub enum Probe {
     Unusable(String),
 }
 
+/// How a worker ran, as the agent reports it and the Run keeps it (review finding 8): the
+/// owner sees a worker that ran without the sandbox in the Run, the review and the dashboard.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SandboxFact {
+    Wrapped,
+    /// With the soft fences only, because the sandbox could not be used.
+    Bare {
+        why: String,
+    },
+    /// The owner switched the sandbox off (`workers.sandbox = off`).
+    Off,
+}
+
 /// How one launch runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxUse {

@@ -35,6 +35,9 @@ pub struct WorkerReport {
     /// `MAX_END_TEXT_CHARS`; the only worker output that leaves the device (A9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_text: Option<String>,
+    /// Whether the worker runs inside the OS sandbox (A13).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<crate::worker::sandbox::SandboxFact>,
 }
 
 /// Lines added and removed in one changed file.

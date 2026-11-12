@@ -11,6 +11,7 @@ use crate::quota::budget::{Budget, BudgetBasis};
 use crate::quota::identity::AccountProblem;
 use crate::worker::checks::{tampered_concern, GIT_CHANGED};
 use crate::worker::run::RunState;
+use crate::worker::sandbox::SandboxFact;
 
 /// What needs the owner, in this order: tasks the orchestrator sent to them, rejected runs
 /// that changed the git config or hooks or idlemax's own files, accounts out of quota past
@@ -43,6 +44,36 @@ pub(super) fn needs_you(
                 r.id
             ),
         });
+    // A device whose workers run without the sandbox, once per device (review finding 8).
+    let mut bare_devices: Vec<&str> = Vec::new();
+    let bare = runs
+        .iter()
+        .map(|l| &l.run)
+        .filter(|r| {
+            matches!(
+                r.state,
+                RunState::Starting | RunState::Running | RunState::Checking
+            )
+        })
+        .filter_map(|r| match &r.facts.sandbox {
+            Some(SandboxFact::Bare { why }) => Some((r.device.as_str(), why)),
+            _ => None,
+        })
+        .filter(|(device, _)| {
+            let new = !bare_devices.contains(device);
+            bare_devices.push(device);
+            new
+        })
+        .map(|(device, why)| NeedsYouLine {
+            key: format!("device:{device}:bare"),
+            kind: NeedKind::Device,
+            subject: plain(device),
+            reason: plain(&format!(
+                "workers run without the sandbox ({why}); install bubblewrap, or set \
+                 workers.sandbox to off to accept it"
+            )),
+        })
+        .collect::<Vec<_>>();
     // A Run that changed idlemax's own files is rejected, and the owner must look at once.
     let tampered = runs.iter().filter_map(|l| {
         let files = &l.run.facts.check.as_ref()?.tampered;
@@ -74,6 +105,7 @@ pub(super) fn needs_you(
     tasks
         .chain(changed_git)
         .chain(tampered)
+        .chain(bare)
         .chain(accounts)
         .chain(closed)
         .chain(device_needs(devices, projects))

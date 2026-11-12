@@ -842,6 +842,7 @@ function workerTable(rows, withWhy) {
       h("td", { class: "c-state" }, badge(w.label, w.state === "stopped" ? "warn" : w.state === "needs_you" ? "warn" : "info")),
       h("td", { class: "c-task" }, h("div", { class: "job-name" }, `${w.project}: ${w.task}`), h("div", { class: "t2" }, w.summary),
         w.branch ? h("div", { class: "t2 mono" }, w.branch) : null,
+        w.unsandboxed ? h("div", { class: "t2" }, badge("no sandbox", "warn"), " ", w.unsandboxed) : null,
         withWhy && w.why ? h("details", { class: "why" }, h("summary", null, "why"), h("div", { class: "why-body" }, w.why)) : null),
       h("td", { class: "c-model nw" }, h("div", null, label(w.provider)), h("div", { class: "t2" }, w.model)),
       h("td", { class: "c-start r nw" }, rel(w.start_ms)))))));

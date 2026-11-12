@@ -110,6 +110,23 @@ mod after_job {
     }
 
     #[test]
+    fn the_sandbox_a_launch_ran_in_is_kept_on_the_run() {
+        use crate::worker::sandbox::SandboxFact;
+        let bare = SandboxFact::Bare {
+            why: "bwrap is not installed".into(),
+        };
+        let mut u = with_phase(update(JobStatus::Running), WorkerPhase::Preparing);
+        if let Some(w) = u.worker.as_mut() {
+            w.sandbox = Some(bare.clone());
+        }
+        let next = moved(run(RunState::Starting), u).unwrap();
+        assert_eq!(next.facts.sandbox, Some(bare.clone()));
+        // A later update that does not say keeps it.
+        let later = with_phase(update(JobStatus::Running), WorkerPhase::Running);
+        assert_eq!(moved(next, later).unwrap().facts.sandbox, Some(bare));
+    }
+
+    #[test]
     fn the_running_phase_gives_running_and_stores_what_it_reports() {
         let mut starting = run(RunState::Starting);
         starting.start_tries = 2;

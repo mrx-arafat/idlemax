@@ -11,7 +11,9 @@ use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::job_run::RunClock;
 use idlemax_core::types::{DeviceProfile, Job, UnixMs};
 use idlemax_core::worker::launch::pick_host;
-use idlemax_core::worker::sandbox::{decide, default_hosts, Probe, SandboxSetting, SandboxUse};
+use idlemax_core::worker::sandbox::{
+    decide, default_hosts, Probe, SandboxFact, SandboxSetting, SandboxUse,
+};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
 use super::host::{HostKind, WorkerHost};
@@ -29,8 +31,8 @@ pub(super) type Chosen = (HostKind, Arc<dyn WorkerHost>, Option<String>);
 /// Finds the bwrap that may run workers, or says why none can (`sandbox::probe`).
 pub(super) type SandboxProbe = fn() -> Result<PathBuf, String>;
 
-/// The sandbox a launch gets, and the note of one that runs with the soft fences only.
-pub(super) type ChosenSandbox = (Option<SandboxPlan>, Option<String>);
+/// The sandbox a launch gets, and how it runs (the Run's fact; finding 8).
+pub(super) type ChosenSandbox = (Option<SandboxPlan>, Option<SandboxFact>);
 
 /// `workers.host`, the device profile, when Herdr last answered and how, and the sandbox
 /// settings (A13).
@@ -106,7 +108,7 @@ impl Workers {
         };
         match decide(self.policy.sandbox, self.policy.profile, &probe) {
             SandboxUse::Refuse(why) => Err(why),
-            SandboxUse::Bare(note) => Ok((None, Some(note))),
+            SandboxUse::Bare(why) => Ok((None, Some(SandboxFact::Bare { why }))),
             SandboxUse::Wrap => {
                 let hosts = self
                     .policy
@@ -123,7 +125,7 @@ impl Workers {
                     hosts,
                     headless: kind == HostKind::Headless,
                 };
-                Ok((Some(plan), None))
+                Ok((Some(plan), Some(SandboxFact::Wrapped)))
             }
         }
     }
@@ -213,6 +215,7 @@ impl Workers {
                 kill: None,
             },
             saved: None,
+            sandbox: None,
             guarded: crate::owner_writes::snapshot(self.paths.root()),
         }
     }

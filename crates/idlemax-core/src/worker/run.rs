@@ -121,6 +121,9 @@ pub struct RunFacts {
     /// The text that ended a turn in which no commit was added (A9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_text: Option<String>,
+    /// Whether the worker ran inside the OS sandbox (A13).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<super::sandbox::SandboxFact>,
 }
 
 /// One worker on one task (the Run of docs/DISPATCHER.md, D10 item 1).
@@ -193,6 +196,7 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
         next.worktree = r.worktree.clone().or(next.worktree);
         let end_text = r.end_text.as_ref().map(|t| clip(t, MAX_END_TEXT_CHARS));
         next.facts.end_text = end_text.or(next.facts.end_text);
+        next.facts.sandbox = r.sandbox.clone().or(next.facts.sandbox);
     }
     let error = || {
         update

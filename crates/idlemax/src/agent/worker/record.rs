@@ -167,6 +167,7 @@ impl Workers {
                 host_down_since: None,
             },
             saved: None,
+            sandbox: None,
             guarded: Vec::new(),
             job: r.job,
         };

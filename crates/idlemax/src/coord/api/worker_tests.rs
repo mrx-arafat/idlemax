@@ -235,3 +235,35 @@ fn an_old_ai_job_limit_keeps_its_own_event() {
         ["max: usage limit hit, no more AI jobs this window"]
     );
 }
+
+#[test]
+fn a_worker_without_the_sandbox_is_kept_on_its_run_and_said_once_in_the_events() {
+    use idlemax_core::worker::sandbox::SandboxFact;
+    let (mut store, run, job) = store_with_worker(RunState::Starting);
+    let bare = |seq| {
+        let mut u = running_update(&job, seq);
+        if let Some(w) = u.worker.as_mut() {
+            w.sandbox = Some(SandboxFact::Bare {
+                why: "bwrap is not installed".into(),
+            });
+        }
+        u
+    };
+    on_job_update(&mut store, &bare(1), T0).unwrap();
+    on_job_update(&mut store, &bare(2), T0 + 1).unwrap();
+    let after = store.get_run(run.id).unwrap().unwrap();
+    assert!(matches!(
+        after.facts.sandbox,
+        Some(SandboxFact::Bare { .. })
+    ));
+    let said: Vec<_> = store
+        .events(0)
+        .unwrap()
+        .into_iter()
+        .filter(|e| {
+            e.message
+                .contains("runs without the sandbox: bwrap is not installed")
+        })
+        .collect();
+    assert_eq!(said.len(), 1, "{said:?}");
+}

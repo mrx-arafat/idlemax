@@ -7,7 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::OnceLock;
 
 use idlemax_core::config::WorkerHostChoice;
-use idlemax_core::worker::sandbox::SandboxSetting;
+use idlemax_core::worker::sandbox::{SandboxFact, SandboxSetting};
 
 use super::*;
 
@@ -64,13 +64,18 @@ fn auto_without_bwrap_runs_with_the_soft_fences_and_says_so() {
         now,
         now,
     );
-    let note = first[0].error.clone().unwrap();
-    assert!(
-        note.contains("no sandbox, soft fences only: bwrap is not installed"),
-        "{note}"
-    );
+    // The coordinator drops `error` of a running update, so the note is a Run fact (finding 8).
+    assert_eq!(first[0].error, None);
+    let fact = first[0].worker.as_ref().unwrap().sandbox.clone();
+    let why = "no sandbox, soft fences only: bwrap is not installed";
+    assert_eq!(fact, Some(SandboxFact::Bare { why: why.into() }));
     let updates = drive(&mut rig, &mut now, terminal);
     assert!(briefed(&updates), "{updates:#?}");
+    let every = updates.iter().filter_map(|u| u.worker.as_ref());
+    assert!(
+        every.into_iter().all(|w| w.sandbox == fact),
+        "each update says it"
+    );
 }
 
 #[test]

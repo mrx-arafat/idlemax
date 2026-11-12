@@ -257,6 +257,7 @@ impl Workers {
             throttled: BTreeSet::new(),
             phase: Phase::Review { rx },
             saved: None,
+            sandbox: None,
             guarded: Vec::new(),
         };
         let update = self.update(&tracked, JobStatus::Running, WorkerPhase::Preparing, now_ms);
