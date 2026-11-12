@@ -22,6 +22,10 @@ pub trait Procs: Send {
     fn signal(&mut self, pids: &[u32], sig: Sig);
     /// The `n` biggest memory users outside `exclude`, as one line ("Safari 2.1 GiB, ...").
     fn top_memory(&mut self, n: usize, exclude: &[u32]) -> String;
+    /// True when `root` or a process under it runs in another mount namespace (A13).
+    fn sandboxed(&mut self, root: u32) -> bool {
+        super::sandbox::runs_sandboxed(root)
+    }
 }
 
 pub struct OsProcs {

@@ -2,7 +2,8 @@
 //! the device profile and Herdr's answer go through `pick_host`; a production device is
 //! always headless (A23), and a start that fell back from Herdr says so in its first update.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -10,9 +11,11 @@ use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::job_run::RunClock;
 use idlemax_core::types::{DeviceProfile, Job, UnixMs};
 use idlemax_core::worker::launch::pick_host;
+use idlemax_core::worker::sandbox::{decide, default_hosts, Probe, SandboxSetting, SandboxUse};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
 use super::host::{HostKind, WorkerHost};
+use super::sandbox::SandboxPlan;
 use super::steps::{self, LaunchCtx, Progress};
 use super::{new_tag, Phase, Tracked, Workers};
 
@@ -23,12 +26,33 @@ const HERDR_ANSWER_MS: i64 = 30_000;
 /// The host picked for one launch, and the note that explains a fall back from Herdr.
 pub(super) type Chosen = (HostKind, Arc<dyn WorkerHost>, Option<String>);
 
-/// `workers.host`, the device profile, and when Herdr last answered and how.
+/// Finds the bwrap that may run workers, or says why none can (`sandbox::probe`).
+pub(super) type SandboxProbe = fn() -> Result<PathBuf, String>;
+
+/// The sandbox a launch gets, and the note of one that runs with the soft fences only.
+pub(super) type ChosenSandbox = (Option<SandboxPlan>, Option<String>);
+
+/// `workers.host`, the device profile, when Herdr last answered and how, and the sandbox
+/// settings (A13).
 #[derive(Debug, Default)]
 pub(super) struct HostPolicy {
     setting: WorkerHostChoice,
     profile: Option<DeviceProfile>,
     herdr_answer: Option<(UnixMs, bool)>,
+    sandbox: SandboxSetting,
+    sandbox_hosts: BTreeMap<String, Vec<String>>,
+    /// None: the real probe (a test build never runs bwrap).
+    pub(super) probe: Option<SandboxProbe>,
+}
+
+#[cfg(not(test))]
+fn default_probe() -> Result<PathBuf, String> {
+    super::sandbox::probe()
+}
+
+#[cfg(test)]
+fn default_probe() -> Result<PathBuf, String> {
+    Err("the test build never runs bwrap".into())
 }
 
 /// The session a launch passes its CLI: the saved one for a resume, a new uuid for Claude.
@@ -53,6 +77,52 @@ impl Workers {
     pub fn set_host_policy(&mut self, setting: WorkerHostChoice, profile: Option<DeviceProfile>) {
         self.policy.setting = setting;
         self.policy.profile = profile;
+    }
+
+    /// `workers.sandbox` and `workers.sandbox_hosts`, which a reload may change (A13).
+    pub fn set_sandbox_policy(
+        &mut self,
+        setting: SandboxSetting,
+        hosts: BTreeMap<String, Vec<String>>,
+    ) {
+        self.policy.sandbox = setting;
+        self.policy.sandbox_hosts = hosts;
+    }
+
+    /// The sandbox of one launch (`decide`): wrapped, bare with a note, or refused. `off`
+    /// probes nothing and notes nothing.
+    pub(super) fn choose_sandbox(
+        &self,
+        cli: WorkerCli,
+        kind: HostKind,
+    ) -> Result<ChosenSandbox, String> {
+        if self.policy.sandbox == SandboxSetting::Off {
+            return Ok((None, None));
+        }
+        let found = self.policy.probe.unwrap_or(default_probe)();
+        let probe = match &found {
+            Ok(_) => Probe::Usable,
+            Err(why) => Probe::Unusable(why.clone()),
+        };
+        match decide(self.policy.sandbox, self.policy.profile, &probe) {
+            SandboxUse::Refuse(why) => Err(why),
+            SandboxUse::Bare(note) => Ok((None, Some(note))),
+            SandboxUse::Wrap => {
+                let hosts = self
+                    .policy
+                    .sandbox_hosts
+                    .get(cli.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| default_hosts(cli));
+                let plan = SandboxPlan {
+                    bwrap: found?,
+                    root: self.paths.root().to_path_buf(),
+                    hosts,
+                    headless: kind == HostKind::Headless,
+                };
+                Ok((Some(plan), None))
+            }
+        }
     }
 
     /// The host for one launch (`pick_host`), with the note that explains a fall back from
@@ -94,7 +164,7 @@ impl Workers {
         &self,
         job: Job,
         worker: WorkerSpec,
-        (kind, host): (HostKind, Arc<dyn WorkerHost>),
+        (kind, host, sandbox): (HostKind, Arc<dyn WorkerHost>, Option<SandboxPlan>),
         session: Option<String>,
         now_ms: UnixMs,
         awake_ms: i64,
@@ -117,6 +187,7 @@ impl Workers {
             now_ms,
             poll: self.poll,
             idle_wait: self.idle_wait,
+            sandbox,
         });
         Tracked {
             job,

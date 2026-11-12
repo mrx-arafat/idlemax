@@ -58,6 +58,7 @@ fn launch(rig: &Rig, mode: &str) -> Launch {
         attempt: 2,
         run: 3,
         worktrees_dir: rig._temp.path().to_path_buf(),
+        wrap: None,
     }
 }
 
@@ -263,4 +264,24 @@ fn a_stop_ends_a_double_forked_survivor_too_when_the_worker_has_its_own_scope() 
         );
     }
     assert!(!left, "the double-forked process outlived the stop");
+}
+
+#[test]
+fn a_sandboxed_start_runs_the_wrapper_with_the_cli_after_its_arguments() {
+    let rig = rig();
+    let mut l = launch(&rig, "-p");
+    l.wrap = Some(super::super::host::Wrap {
+        program: "/usr/bin/bwrap".into(),
+        args: vec!["--unshare-net".into(), "/run/idlemax/idlemax".into()],
+    });
+    let cmd = command(Path::new("/opt/claude"), &l, None);
+    assert_eq!(cmd.get_program(), "/usr/bin/bwrap");
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        args[..4],
+        ["--unshare-net", "/run/idlemax/idlemax", "/opt/claude", "-p"]
+    );
 }

@@ -51,6 +51,11 @@ impl Agent {
                 link.set_host_policy(new.workers.host, Some(profile));
             }
         }
+        if report.applies("workers.sandbox") || report.applies("workers.sandbox_hosts") {
+            if let Some(link) = &self.workers {
+                link.set_sandbox_policy(new.workers.sandbox, new.workers.sandbox_hosts.clone());
+            }
+        }
         if report.applies("agent.notify") {
             self.notify = new.agent.notify;
         }

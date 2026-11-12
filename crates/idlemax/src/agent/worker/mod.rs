@@ -14,6 +14,9 @@ pub mod headless;
 pub mod herdr;
 pub mod host;
 pub mod procs;
+mod sandbox;
+
+pub use sandbox::relay::run as sandbox_relay;
 mod record;
 mod review;
 pub mod scope;
@@ -191,9 +194,21 @@ impl Workers {
             Ok(chosen) => chosen,
             Err(why) => return vec![self.refusal(&job, &why, now_ms)],
         };
-        let tracked = self.launch(job, worker, (kind, host), session, now_ms, awake_ms);
+        let (sandbox, bare) = match self.choose_sandbox(worker.cli, kind) {
+            Ok(chosen) => chosen,
+            Err(why) => return vec![self.refusal(&job, &why, now_ms)],
+        };
+        let tracked = self.launch(
+            job,
+            worker,
+            (kind, host, sandbox),
+            session,
+            now_ms,
+            awake_ms,
+        );
         let mut update = self.update(&tracked, JobStatus::Running, WorkerPhase::Preparing, now_ms);
-        update.error = note;
+        let notes: Vec<String> = note.into_iter().chain(bare).collect();
+        update.error = (!notes.is_empty()).then(|| notes.join("; "));
         self.tracked.insert(tracked.job.id, tracked);
         vec![update]
     }

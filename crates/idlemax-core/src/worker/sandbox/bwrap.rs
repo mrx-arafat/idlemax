@@ -46,8 +46,9 @@ pub struct Fence {
     pub new_session: bool,
 }
 
-/// The arguments after `bwrap` that run `program` with `args` inside the fence.
-pub fn bwrap_args(f: &Fence, program: &str, args: &[String]) -> Vec<String> {
+/// The arguments after `bwrap`, up to the relay script's `$0`; the caller appends the CLI's
+/// absolute path and its arguments, which the script `exec`s.
+pub fn bwrap_args(f: &Fence) -> Vec<String> {
     let mut a = Argv::default();
     a.push(&[
         "--ro-bind",
@@ -109,8 +110,7 @@ pub fn bwrap_args(f: &Fence, program: &str, args: &[String]) -> Vec<String> {
         "-c",
         &relay_script(f.relay_port),
     ]);
-    a.push(&[IDLEMAX_BIN, program]);
-    a.0.extend(args.iter().cloned());
+    a.push(&[IDLEMAX_BIN]);
     a.0
 }
 
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn the_argv_hides_the_secrets_before_it_binds_the_worktree_back() {
-        let argv = bwrap_args(&fence(), "/usr/bin/claude", &["-p".into()]);
+        let argv = bwrap_args(&fence());
         let line = argv.join(" ");
         let expected = "--ro-bind / / --dev /dev --proc /proc --tmpfs /run \
             --tmpfs /h/.ssh --tmpfs /s --ro-bind /dev/null /h/.git-credentials \
@@ -186,9 +186,8 @@ mod tests {
             --unsetenv SSH_AUTH_SOCK --unsetenv DBUS_SESSION_BUS_ADDRESS --unsetenv XDG_RUNTIME_DIR \
             --chdir /s/worktrees/app/t1 -- /bin/sh -c";
         assert!(line.starts_with(expected), "{line}");
-        let tail = &argv[argv.len() - 4..];
+        let tail = &argv[argv.len() - 2..];
         assert_eq!(tail[1], IDLEMAX_BIN, "$0 of the script is the relay binary");
-        assert_eq!(tail[2..], ["/usr/bin/claude", "-p"]);
         let script = &tail[0];
         assert!(script.contains("sandbox-relay --socket /run/idlemax/proxy.sock --port 3128"));
         assert!(script.ends_with("exec \"$@\""), "{script}");
@@ -201,7 +200,7 @@ mod tests {
             claude: None,
             ..fence()
         };
-        let argv = bwrap_args(&f, "/usr/bin/codex", &[]);
+        let argv = bwrap_args(&f);
         assert!(!argv.iter().any(|a| a == "--new-session"));
         assert!(!argv.iter().any(|a| a == "CLAUDE_CONFIG_DIR"));
         assert!(!argv

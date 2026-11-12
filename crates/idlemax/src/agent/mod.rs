@@ -187,6 +187,7 @@ async fn open_workers(
     let (paths, id) = (paths.clone(), device.id.clone());
     let allowlist = config.agent.command_allowlist.clone();
     let (setting, profile) = host_policy(config);
+    let sandbox = (config.workers.sandbox, config.workers.sandbox_hosts.clone());
     let open = move || {
         let procs: Arc<Mutex<dyn worker::procs::Procs>> =
             Arc::new(Mutex::new(worker::procs::OsProcs::new()?));
@@ -202,6 +203,7 @@ async fn open_workers(
             workers = workers.with_headless(headless);
         }
         workers.set_host_policy(setting, Some(profile));
+        workers.set_sandbox_policy(sandbox.0, sandbox.1);
         Some(WorkerLink::spawn(workers, procs, allowlist))
     };
     Ok(tokio::task::spawn_blocking(open).await?)

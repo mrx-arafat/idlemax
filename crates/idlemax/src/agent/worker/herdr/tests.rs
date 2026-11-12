@@ -29,6 +29,7 @@ fn launch() -> Launch {
         attempt: 1,
         run: 3,
         worktrees_dir: "/w".into(),
+        wrap: None,
     }
 }
 

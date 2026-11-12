@@ -43,6 +43,15 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
         Cmd::Skill(args) => return skill::run(args, out),
         // Before the state dir: the handshake must work on a device that is not set up.
         Cmd::Mcp => return mcp::run(coord).await,
+        // Inside a worker sandbox, where no state dir is visible.
+        Cmd::SandboxRelay {
+            socket,
+            port,
+            ready,
+        } => {
+            return crate::agent::worker::sandbox_relay(&socket, port, &ready)
+                .map_err(|e| anyhow::anyhow!("sandbox relay: {e}"))
+        }
         other => other,
     };
     let paths = state::paths_from_env()?;
@@ -154,6 +163,7 @@ fn access_of(cmd: &Cmd) -> Access {
         | Cmd::Tui
         // Its tools carry their own check.
         | Cmd::Mcp
+        | Cmd::SandboxRelay { .. }
         | Cmd::Doctor
         | Cmd::Hooks(_)
         | Cmd::Skill(_) => Access::Read,
@@ -253,6 +263,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         | Cmd::Doctor
         | Cmd::Hooks(_)
         | Cmd::Skill(_)
+        | Cmd::SandboxRelay { .. }
         | Cmd::Mcp => {
             bail!("not a coordinator command")
         }

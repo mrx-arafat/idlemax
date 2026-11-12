@@ -120,8 +120,8 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 - [x] Task 1: Add the sandbox setting and the pure decision
 - [x] Task 2: Build the bwrap arguments and the sandbox's Claude home
-- [ ] Task 3: Serve the allow-list proxy and the in-sandbox relay
-- [ ] Task 4: Wrap the agent CLI in both hosts and check it took
+- [x] Task 3: Serve the allow-list proxy and the in-sandbox relay
+- [x] Task 4: Wrap the agent CLI in both hosts and check it took
 - [ ] Task 5: Report the sandbox in doctor
 - [ ] Task 6: Document the sandbox
 - [ ] Task 7: Needs a Mac: the Seatbelt profile
@@ -203,12 +203,12 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 **Definition of Done:**
 
-- [ ] Over a real Unix socket, `CONNECT` to an allowed host is spliced to a local test server (the test maps the allowed name to a loopback port through an injectable resolver), `CONNECT` to another host gets `403` and `GET` gets `405`.
-- [ ] The relay forwards a byte stream both ways between a TCP client and the socket.
+- [x] Over a real Unix socket, `CONNECT` to an allowed host is spliced to a local test server (the test maps the allowed name to a loopback port through an injectable resolver), `CONNECT` to another host gets `403` and `GET` gets `405`.
+- [x] The relay forwards a byte stream both ways between a TCP client and the socket.
 
 **Verify:**
 
-- [ ] `cargo test -p idlemax --bin idlemax sandbox`
+- [x] `cargo test -p idlemax --bin idlemax sandbox`
 
 ### Task 4: Wrap the agent CLI in both hosts and check it took
 
@@ -228,14 +228,14 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 **Definition of Done:**
 
-- [ ] With a fake probe, `required` and no bwrap fails the launch with the reason, and `auto` launches bare with the note in the first update.
-- [ ] A headless launch with `Wrap` spawns the wrapper program with the CLI after it (stub wrapper that records its argv).
-- [ ] A Herdr launch with `Wrap` puts the shim directory first in the pane's `PATH` pair, and the shim `exec`s the wrapper.
-- [ ] A `Wrap` launch whose worker runs in the agent's own mount namespace fails closed.
+- [x] With a fake probe, `required` and no bwrap fails the launch with the reason, and `auto` launches bare with the note in the first update.
+- [x] A headless launch with `Wrap` spawns the wrapper program with the CLI after it (stub wrapper that records its argv).
+- [x] A Herdr launch with `Wrap` puts the shim directory first in the pane's `PATH` pair, and the shim `exec`s the wrapper.
+- [x] A `Wrap` launch whose worker runs in the agent's own mount namespace fails closed.
 
 **Verify:**
 
-- [ ] `cargo test -p idlemax --bin idlemax agent::worker`
+- [x] `cargo test -p idlemax --bin idlemax agent::worker`
 
 ### Task 5: Report the sandbox in doctor
 

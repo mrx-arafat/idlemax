@@ -167,13 +167,21 @@ fn write_footer(log: &Path, status: &str, code: i32) {
 }
 
 /// The job's minimal environment (`job_run::inherits`), then the pane's pairs, never the token;
-/// in a scope of its own when there is one.
+/// in a scope of its own when there is one. A sandboxed launch runs the wrapper with the CLI's
+/// path after its arguments (A13), inside the same scope.
 fn command(program: &Path, launch: &Launch, scope: Option<&WorkerScope>) -> Command {
     use std::os::unix::process::CommandExt;
+    let first = launch
+        .wrap
+        .as_ref()
+        .map_or(program, |w| w.program.as_path());
     let mut cmd = match scope {
-        Some(s) => s.command(launch.job, launch.attempt, program),
-        None => Command::new(program),
+        Some(s) => s.command(launch.job, launch.attempt, first),
+        None => Command::new(first),
     };
+    if let Some(wrap) = &launch.wrap {
+        cmd.args(&wrap.args).arg(program);
+    }
     cmd.args(&launch.args)
         .current_dir(&launch.folder)
         .env_clear();

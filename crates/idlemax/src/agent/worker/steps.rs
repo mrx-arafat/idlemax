@@ -19,6 +19,7 @@ use super::cmd::{Cmd, Commands};
 use super::gitdir::{self, GitSnapshot};
 use super::host::{Handle, WorkerHost};
 use super::procs::Procs;
+use super::sandbox::{self, GitDirs, SandboxPlan, Wrapped};
 use super::worktree::{self, NewWorktree};
 
 mod pane;
@@ -48,6 +49,8 @@ pub struct LaunchCtx {
     pub poll: Duration,
     /// How long the agent may take to reach `idle` (60 s).
     pub idle_wait: Duration,
+    /// The OS sandbox the CLI runs in (A13); None runs it with the soft fences only.
+    pub sandbox: Option<SandboxPlan>,
 }
 
 /// What the launch got done, also when it stopped early.
@@ -121,9 +124,13 @@ fn launch(ctx: &LaunchCtx, p: &mut Progress) -> Result<(), Stop> {
             .to_string(),
     );
     let args = args_for(ctx, &folder)?;
+    let sandbox = match &ctx.sandbox {
+        Some(plan) => Some(sandbox_for(ctx, plan, &folder)?),
+        None => None,
+    };
     let remotes = p.remotes.clone();
     hold_while_paused(ctx)?;
-    let handle = pane::start_checked(ctx, p, &folder, &remotes, &args)?;
+    let handle = pane::start_checked(ctx, p, &folder, &remotes, (&args, sandbox.as_ref()))?;
     cancelled(ctx)?;
     if ctx.paused.load(Ordering::SeqCst) {
         return Err(Stop::Held);
@@ -314,6 +321,19 @@ fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
         _ => Vec::new(),
     };
     agent_args(w.cli, &w.model, session, &common, &servers).map_err(|e| Stop::Failed(e.to_string()))
+}
+
+/// The sandbox of this launch: its git dirs, then the fence, the proxy and the wrap (A13).
+fn sandbox_for(ctx: &LaunchCtx, plan: &SandboxPlan, folder: &Path) -> Result<Wrapped, Stop> {
+    let dir = |flag: &str| {
+        git(ctx, folder, &["rev-parse", "--path-format=absolute", flag])
+            .map(|out| PathBuf::from(out.trim()))
+    };
+    let dirs = GitDirs {
+        common: dir("--git-common-dir")?,
+        admin: dir("--git-dir")?,
+    };
+    sandbox::wrap(plan, (ctx.job.id, ctx.tag), ctx.worker.cli, folder, &dirs).map_err(Stop::Failed)
 }
 
 fn cancelled(ctx: &LaunchCtx) -> Result<(), Stop> {

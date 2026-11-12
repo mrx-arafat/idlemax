@@ -172,6 +172,7 @@ impl Workers {
             report.end_text = end.end_text;
             report.facts = facts;
         }
+        super::sandbox::release(self.tracked[&id].tag);
         self.tracked.remove(&id);
         self.forget_record(id);
         update

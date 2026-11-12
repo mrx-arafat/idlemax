@@ -10,6 +10,7 @@ use idlemax_core::worker::launch::{env_problems, pane_env};
 use idlemax_core::worker::{name, WorkerAction};
 
 use super::super::host::{AgentStatus, Handle, HostState, Launch};
+use super::super::sandbox::Wrapped;
 use super::{brief_path, LaunchCtx, Progress, Stop};
 
 /// Starts the agent and checks its real environment; a pane whose environment holds a
@@ -19,21 +20,24 @@ pub(super) fn start_checked(
     p: &mut Progress,
     folder: &Path,
     remotes: &[String],
-    args: &[String],
+    (args, sandbox): (&[String], Option<&Wrapped>),
 ) -> Result<Handle, Stop> {
     let mut blank = Vec::new();
     for attempt in 0..2 {
+        let mut env = pane_env(ctx.job.id, ctx.tag, remotes, &blank);
+        env.extend(sandbox.iter().flat_map(|w| w.env.iter().cloned()));
         let launch = Launch {
             name: ctx.job.spec.name.clone(),
             tab: name::tab_label(&ctx.worker.project),
             folder: folder.to_path_buf(),
-            env: pane_env(ctx.job.id, ctx.tag, remotes, &blank),
+            env,
             cli: ctx.worker.cli,
             args: args.to_vec(),
             job: ctx.job.id,
             attempt: ctx.job.attempts,
             run: u64::try_from(ctx.worker.run).unwrap_or(0),
             worktrees_dir: ctx.worktrees_dir.clone(),
+            wrap: sandbox.and_then(|w| w.wrap.clone()),
         };
         let handle = ctx
             .host
@@ -43,6 +47,16 @@ pub(super) fn start_checked(
         let state = wait_idle(ctx, &handle)?;
         p.shell_pid = state.shell_pid;
         p.session = state.session.clone().or(p.session.take());
+        // Fails closed: a pane whose shell skipped the shim runs the CLI bare (A13).
+        let root = state.shell_pid.or(state.foreground.first().copied());
+        let took = root.is_some_and(|pid| ctx.procs.lock().is_ok_and(|mut t| t.sandboxed(pid)));
+        if sandbox.is_some() && !took {
+            return Err(close(
+                ctx,
+                p,
+                "the sandbox did not take: the worker's CLI runs outside bwrap".into(),
+            ));
+        }
         let pid = state.foreground.first().copied().or(state.shell_pid);
         let vars = pid.and_then(|pid| ctx.procs.lock().ok()?.environ(pid));
         let problems = match vars {

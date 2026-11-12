@@ -5,6 +5,7 @@
 mod checks;
 mod edges;
 mod headless;
+mod sandbox;
 mod stops;
 
 use std::collections::HashMap;
@@ -148,6 +149,11 @@ fn rig() -> Rig {
         "mac".into(),
     );
     workers.set_allowlist(vec!["claude".into(), "make".into()]);
+    // These tests are not about the sandbox; `tests/sandbox.rs` switches it on.
+    workers.set_sandbox_policy(
+        idlemax_core::worker::sandbox::SandboxSetting::Off,
+        Default::default(),
+    );
     workers.poll = Duration::from_millis(2);
     workers.background = None;
     Rig {

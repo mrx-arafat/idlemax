@@ -103,6 +103,16 @@ pub(super) enum Cmd {
     Tui,
     /// MCP server on stdio for agent CLIs: status, start, stop, project on/off, finished work
     Mcp,
+    /// Internal: the network relay inside a worker sandbox
+    #[command(name = "sandbox-relay", hide = true)]
+    SandboxRelay {
+        #[arg(long)]
+        socket: std::path::PathBuf,
+        #[arg(long)]
+        port: u16,
+        #[arg(long)]
+        ready: std::path::PathBuf,
+    },
     /// Check this device's setup; prints one line per check and the fix for anything wrong
     Doctor,
     /// Talk to this device's agent directly; works while the coordinator is down

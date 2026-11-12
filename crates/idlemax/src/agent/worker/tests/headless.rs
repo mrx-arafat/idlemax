@@ -17,7 +17,7 @@ use super::*;
 use crate::agent::runner::os::Sig;
 
 /// A rig whose manager starts workers on the headless host; `stub` is the body of `claude`.
-fn headless_rig(stub: &str) -> Rig {
+pub(super) fn headless_rig(stub: &str) -> Rig {
     let mut rig = rig();
     let bin = rig._temp.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -66,6 +66,10 @@ fn manager(rig: &Rig, bin: &Path) -> Workers {
     )
     .with_headless(Arc::new(host));
     workers.set_host_policy(WorkerHostChoice::Headless, None);
+    workers.set_sandbox_policy(
+        idlemax_core::worker::sandbox::SandboxSetting::Off,
+        Default::default(),
+    );
     workers.set_allowlist(vec!["claude".into(), "make".into()]);
     workers.poll = Duration::from_millis(2);
     workers.background = None;

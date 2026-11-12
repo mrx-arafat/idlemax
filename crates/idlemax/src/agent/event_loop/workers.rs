@@ -3,6 +3,7 @@
 //! delays sampling, the guard or a local control; the manager ticks every 2 s while it
 //! tracks a worker and sends its job updates back. Adapter layer.
 
+use std::collections::BTreeMap;
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -10,6 +11,7 @@ use std::time::{Duration, Instant};
 use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::protocol::{JobUpdate, RunningJob};
 use idlemax_core::types::{DeviceProfile, Job, QuotaSnapshot};
+use idlemax_core::worker::sandbox::SandboxSetting;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -32,6 +34,8 @@ enum LinkMsg {
     Readings(Vec<QuotaSnapshot>),
     /// `workers.host` and the device profile, for the next worker start.
     HostPolicy(WorkerHostChoice, Option<DeviceProfile>),
+    /// `workers.sandbox` and `workers.sandbox_hosts`, for the next worker start (A13).
+    SandboxPolicy(SandboxSetting, BTreeMap<String, Vec<String>>),
 }
 
 /// What the manager last published for the loop to read.
@@ -86,6 +90,9 @@ impl WorkerLink {
                     Ok(LinkMsg::HostPolicy(setting, profile)) => {
                         workers.set_host_policy(setting, profile);
                     }
+                    Ok(LinkMsg::SandboxPolicy(setting, hosts)) => {
+                        workers.set_sandbox_policy(setting, hosts);
+                    }
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
@@ -133,6 +140,15 @@ impl WorkerLink {
     /// A reloaded `workers.host` applies from the next worker start (A2).
     pub fn set_host_policy(&self, setting: WorkerHostChoice, profile: Option<DeviceProfile>) {
         let _ = self.tx.send(LinkMsg::HostPolicy(setting, profile));
+    }
+
+    /// A reloaded `workers.sandbox` or `workers.sandbox_hosts` applies from the next start.
+    pub fn set_sandbox_policy(
+        &self,
+        setting: SandboxSetting,
+        hosts: BTreeMap<String, Vec<String>>,
+    ) {
+        let _ = self.tx.send(LinkMsg::SandboxPolicy(setting, hosts));
     }
 
     /// The workers as the heartbeat reports them.

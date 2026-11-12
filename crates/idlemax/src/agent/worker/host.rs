@@ -30,6 +30,16 @@ pub struct Launch {
     /// the trust dialog is answered only for this Run's worktree under that dir.
     pub run: u64,
     pub worktrees_dir: PathBuf,
+    /// The headless host runs the CLI inside this sandbox (A13); the Herdr host gets its
+    /// sandbox through a shim on the pane's `PATH` instead, so it leaves this None.
+    pub wrap: Option<Wrap>,
+}
+
+/// A sandbox wrapper: `program` with `args`, then the CLI's absolute path and its arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Wrap {
+    pub program: PathBuf,
+    pub args: Vec<String>,
 }
 
 /// Which host started a worker; saved with it, so a stop, a kill and a recovery go to that host.
@@ -246,6 +256,7 @@ mod tests {
             tab: "im: App".into(),
             folder: "/w".into(),
             env: Vec::new(),
+            wrap: None,
             cli: WorkerCli::Claude,
             args: Vec::new(),
             job: 1,
