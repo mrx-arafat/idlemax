@@ -342,3 +342,5 @@ fn nothing_is_launched_while_the_owners_stop_is_stored() {
     sweep(&mut store, &cfg, &live, &mut Refusals::default(), now);
     assert_eq!(runs(&store).len(), 1);
 }
+
+mod gate;

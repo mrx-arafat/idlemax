@@ -1,30 +1,29 @@
 //! Adapter: the `auto` step (D3). On each sweep it stops the workers of an account that may no
 //! longer be used, then per device relaunches the oldest Run back in the queue, or else
 //! turns the next orchestrator pick into a Run and a worker job leased to that device: one
-//! launch per device at a time, inside the room, the account rule and the review cap.
+//! launch per device at a time, inside the room, the worker gate of each Budget and the review cap.
 //! Decisions are the pure `worker::pace` and `worker::control`; this reads and writes.
 
 use std::collections::HashMap;
 
-use idlemax_core::control::paused_accounts;
 use idlemax_core::dispatch::accounts::{AccountUse, MEASURING_WEEK_CAP_PCT};
 use idlemax_core::dispatch::plan::{DevicePlan, Pick, PickedBy};
 use idlemax_core::dispatch::task::Task;
 use idlemax_core::dispatch::Mode;
-use idlemax_core::quota::Provider;
 use idlemax_core::scheduler::lease_deadline;
 use idlemax_core::types::{ControlScope, EventKind, Job, UnixMs};
 use idlemax_core::worker::brief::brief;
 use idlemax_core::worker::control::plan_stop;
-use idlemax_core::worker::pace::{may_launch, task_open, under_cap, LaunchGate, TaskOpen};
+use idlemax_core::worker::pace::{task_open, under_cap, TaskOpen};
 use idlemax_core::worker::run::{Run, RunLaunch, RunState};
 use idlemax_core::worker::{Baseline, RunId, WorkerAction, WorkerSpec};
 use idlemax_core::Config;
 
-use crate::coord::api::offline_after_ms;
+use crate::coord::api::Gates;
 use crate::coord::store::{Store, StoreError};
 use crate::dispatch::{gather_plan, project_views, spend, Gathered};
-use job::{cli_of, job_spec, reviewer, secs_ms, worker_spec};
+use facts::DeviceFacts;
+use job::{cli_of, job_spec, reviewer, worker_spec};
 
 /// The last refusal recorded per Run or pick, so a slot refused on every sweep for the same
 /// reason leaves one event, not 5,760 a day.
@@ -138,40 +137,16 @@ fn launch_on(
     device: &DevicePlan,
     refusals: &mut Refusals,
 ) -> Result<(), StoreError> {
-    let runs = store.list_runs(None, None, 0)?;
-    let device_runs: Vec<Run> = runs
-        .iter()
-        .filter(|r| r.device == device.device)
-        .cloned()
-        .collect();
-    let views = store.devices(step.now, offline_after_ms(step.cfg))?;
-    let reported: Vec<i64> = views
-        .iter()
-        .find(|d| d.info.id == device.device)
-        .map(|d| d.running.iter().map(|r| r.id).collect())
-        .unwrap_or_default();
-    let paused = paused_accounts(&store.paused_scopes()?);
-    let last_launch_ms = store.last_worker_launch(&device.device)?;
-    let workers = &step.live.workers;
-    let gate = |provider: Provider, account: &str| LaunchGate {
-        now_ms: step.now,
-        held: device.held.as_deref(),
-        account_paused: paused.iter().any(|p| p == account),
-        room: &device.room,
-        device_runs: &device_runs,
-        last_launch_ms,
-        settle_ms: secs_ms(workers.settle_secs),
-        reported: &reported,
-        cli_allowed: cli_of(provider).is_some_and(|c| workers.clis.iter().any(|w| w == c.as_str())),
-        account: g.plan.accounts.iter().find(|a| a.account == account),
-    };
-    let mut shed: Vec<&Run> = device_runs
+    let facts = DeviceFacts::read(store, step, &device.device)?;
+    let mut shed: Vec<&Run> = facts
+        .device_runs
         .iter()
         .filter(|r| r.state == RunState::Shed)
         .collect();
     shed.sort_by_key(|r| (r.start_ms, r.id));
     for run in shed {
-        match may_launch(&gate(run.provider, &run.account), run.job) {
+        let account = facts.account(g, &run.account, facts.gates.relaunch(&run.account));
+        match facts.may_launch(step, device, run.provider, account.as_ref(), run.job) {
             None => return relaunch(store, step, run),
             Some(why) => refusals.note(store, format!("run {}", run.id), &why, step.now)?,
         }
@@ -182,16 +157,23 @@ fn launch_on(
         let Some(task) = g.tasks.iter().find(|t| t.id == pick.task) else {
             continue;
         };
-        let why = match task_open(&runs, &task.id) {
+        let why = match task_open(&facts.runs, &task.id) {
             TaskOpen::Busy => continue,
             TaskOpen::Closed => {
                 Some("its last two runs were rejected or discarded: it needs you".into())
             }
-            TaskOpen::Open => under_cap(&runs, &pick.project, workers.review_cap)
-                .or_else(|| may_launch(&gate(pick.provider, &pick.account), None)),
+            TaskOpen::Open => under_cap(&facts.runs, &pick.project, step.live.workers.review_cap)
+                .or_else(|| {
+                    let verdict =
+                        facts
+                            .gates
+                            .start(&pick.account, &pick.model, task.source.as_str());
+                    let account = facts.account(g, &pick.account, verdict);
+                    facts.may_launch(step, device, pick.provider, account.as_ref(), None)
+                }),
         };
         match why {
-            None => return launch_pick(store, step, g, device, pick, task),
+            None => return launch_pick(store, step, g, device, pick, task, &facts.gates),
             Some(why) => refusals.note(store, key, &why, step.now)?,
         }
     }
@@ -205,6 +187,7 @@ fn launch_pick(
     device: &DevicePlan,
     pick: &Pick,
     task: &Task,
+    gates: &Gates,
 ) -> Result<(), StoreError> {
     let Some(view) = project_views(store, None, step.now)?
         .into_iter()
@@ -230,7 +213,7 @@ fn launch_pick(
         task,
         cli,
         baseline,
-        reviewer(step, g, pick),
+        reviewer(step, g, pick, gates),
     );
     let text = brief(&worker, step.rules);
     let launch = RunLaunch {
@@ -342,6 +325,7 @@ fn launched(store: &mut Store, run: &Run, job: &Job, now: UnixMs) -> Result<(), 
     Ok(())
 }
 
+mod facts;
 mod job;
 #[cfg(test)]
 mod tests;

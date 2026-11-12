@@ -13,7 +13,7 @@ use crate::coord::store::{NewEvent, Store, StoreError};
 
 pub(crate) mod gather;
 
-pub use gather::{budgets, budgets_with_table};
+pub use gather::{budgets, budgets_with_table, Gates};
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -590,8 +590,8 @@ Today's rules for AI jobs would almost never let a worker start, so this task al
 - [x] An account whose first Run started 3 days ago and whose `week_spend` is 6 has basis `measuring` and `spendable_pct` of at most `spent_pct` plus 4; with the first Run 8 days ago the cap is gone.
 - [x] For an account on a daily cap, `runs_today` counts a Run with a session id that started today, and counts neither a Run that started before the UTC day began nor a Run with no session id.
 - [x] `worker_gate` refuses a start whose estimate is above `left_pct` with both numbers and allows one that fits.
-- [ ] `launch_due` starts no worker on an account whose gate refuses and still launches the next pick on another account; a `shed` run on a refused account is passed over and a later pick launches.
-- [ ] A reviewer account whose Budget has basis `five_hour_stop` is not chosen.
+- [x] `launch_due` starts no worker on an account whose gate refuses and still launches the next pick on another account; a `shed` run on a refused account is passed over and a later pick launches.
+- [x] A reviewer account whose Budget has basis `five_hour_stop` is not chosen.
 - [x] After `record_open_days`, `budget_days` shows today's row with `spendable_pct`, `basis` and `why`.
 - [x] The rule table in `README.md` has the same ten rows as the module doc of `spend.rs`.
 - [ ] Verify: `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo test -p idlemax --bin idlemax sweep`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`

@@ -9,6 +9,10 @@ use idlemax_core::types::{ActivePolicy, CostClass, JobSpec, UnixMs};
 use idlemax_core::worker::{name, Baseline, Reviewer, WorkerAction, WorkerCli, WorkerSpec};
 
 use super::LaunchStep;
+use crate::coord::api::Gates;
+
+/// The task type a review is estimated as.
+const REVIEW: &str = "review";
 use crate::dispatch::Gathered;
 
 pub(super) fn worker_spec(
@@ -53,9 +57,14 @@ pub(super) fn worker_spec(
     }
 }
 
-/// The first usable account of another provider whose CLI may review, with its standard
-/// tier model.
-pub(super) fn reviewer(step: &LaunchStep<'_>, g: &Gathered, pick: &Pick) -> Option<Reviewer> {
+/// The first account of another provider whose CLI may review and whose worker gate allows a
+/// review of its standard tier model (Spec 3 Task 6).
+pub(super) fn reviewer(
+    step: &LaunchStep<'_>,
+    g: &Gathered,
+    pick: &Pick,
+    gates: &Gates,
+) -> Option<Reviewer> {
     g.plan
         .accounts
         .iter()
@@ -69,6 +78,10 @@ pub(super) fn reviewer(step: &LaunchStep<'_>, g: &Gathered, pick: &Pick) -> Opti
                 .any(|r| r == cli.as_str())
                 .then_some(())?;
             let model = model_for(a.provider, Tier::Standard, &step.live.quota)?.to_string();
+            gates
+                .start(&a.account, &model, REVIEW)
+                .allowed
+                .then_some(())?;
             Some(Reviewer {
                 cli,
                 model,

@@ -220,10 +220,61 @@ fn measuring_left(
     Ok(Some((MEASURING_WEEK_CAP_PCT - spent).max(0.0)))
 }
 
+/// The Budgets of one moment and the cost table behind them: what every worker start of a
+/// launch step asks (Spec 3 Task 6), read once instead of once per candidate.
+pub struct Gates {
+    budgets: Vec<Budget>,
+    table: CostTable,
+    quota: QuotaConfig,
+}
+
+impl Gates {
+    pub fn read(
+        store: &Store,
+        cfg: &Config,
+        live: &Config,
+        views: &[QuotaView],
+        now: UnixMs,
+    ) -> Result<Self, StoreError> {
+        let (budgets, table) = budgets_with_table(store, cfg, live, views, now)?;
+        Ok(Self {
+            budgets,
+            table,
+            quota: live.quota.clone(),
+        })
+    }
+
+    /// May one new Run of this account, model and task type start now.
+    pub fn start(&self, account: &str, model: &str, task_type: &str) -> Gate {
+        let found = self.budgets.iter().find(|b| b.account == account);
+        gate(found, self.estimate(found, account, model, task_type))
+    }
+
+    /// May a Run back in the queue continue: its estimate already counts in the Budget's
+    /// `committed_pct` (it has no end time), so it needs a usable Budget and no new room.
+    pub fn relaunch(&self, account: &str) -> Gate {
+        gate(self.budgets.iter().find(|b| b.account == account), 0.0)
+    }
+
+    /// 100 divided by the cap for an account on a daily cap, else `expected` (Task 3).
+    fn estimate(&self, found: Option<&Budget>, account: &str, model: &str, task_type: &str) -> f64 {
+        if let Some(cap) = found.and_then(|b| b.cap_runs) {
+            return 100.0 / f64::from(cap.max(1));
+        }
+        let sample = RunSample {
+            provider: found.map(|b| b.provider).unwrap_or_default(),
+            account: account.to_string(),
+            model: model.to_string(),
+            task_type: task_type.to_string(),
+            ..RunSample::default()
+        };
+        estimate(&self.table, &sample, &self.quota)
+    }
+}
+
 /// May one worker Run of this account, model and task type start now.
 #[allow(clippy::too_many_arguments)]
-// Spec 2's `launch_due` asks it before every worker start (Spec 3 Task 6).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub fn worker_gate(
     store: &Store,
     cfg: &Config,
@@ -234,21 +285,5 @@ pub fn worker_gate(
     task_type: &str,
     now: UnixMs,
 ) -> Result<Gate, StoreError> {
-    let (list, table) = budgets_with_table(store, cfg, live, views, now)?;
-    let found = list.iter().find(|b| b.account == account);
-    let est = match found.and_then(|b| b.cap_runs) {
-        Some(cap) => 100.0 / f64::from(cap.max(1)),
-        None => {
-            let provider = found.map(|b| b.provider).unwrap_or_default();
-            let sample = RunSample {
-                provider,
-                account: account.to_string(),
-                model: model.to_string(),
-                task_type: task_type.to_string(),
-                ..RunSample::default()
-            };
-            estimate(&table, &sample, &live.quota)
-        }
-    };
-    Ok(gate(found, est))
+    Ok(Gates::read(store, cfg, live, views, now)?.start(account, model, task_type))
 }
