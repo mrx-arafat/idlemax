@@ -54,10 +54,12 @@ fn change(paths: &Paths, req: LimitRequest) -> Result<LimitReply, ApiFailure> {
     let edit = set_limit(&text, &req.key, req.value.as_deref(), Os::current())
         .map_err(|e: LimitError| ApiFailure::BadRequest(e.to_string()))?;
     let report = if edit.changed {
-        files::save(&file, before_text.as_deref(), &edit.text)?;
+        // The report first: a failure here leaves the file as it was.
         let parsed = |t: &str| Config::parse(t).map_err(|e| ApiFailure::Internal(e.to_string()));
-        plan_reload(&parsed(&text)?, &parsed(&edit.text)?)
-            .map_err(|e| ApiFailure::Internal(e.to_string()))?
+        let report = plan_reload(&parsed(&text)?, &parsed(&edit.text)?)
+            .map_err(|e| ApiFailure::Internal(e.to_string()))?;
+        files::save(&file, before_text.as_deref(), &edit.text)?;
+        report
     } else {
         ReloadReport::default()
     };
@@ -76,6 +78,8 @@ mod tests {
     use serde_json::json;
 
     use super::super::tests::Api;
+    use idlemax_core::config::OWNER_LIMITS;
+
     use super::*;
 
     #[tokio::test]
@@ -104,6 +108,20 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         assert!(!std::fs::read_to_string(&file).unwrap().contains(key));
 
+        let listed: Vec<Setting> = api
+            .get_as("/v1/limits", "localhost")
+            .await
+            .json()
+            .await
+            .unwrap();
+        let keys: Vec<&str> = listed.iter().map(|s| s.key.as_str()).collect();
+        assert_eq!(keys, OWNER_LIMITS);
+        assert!(listed.iter().all(|s| !s.from_file));
+
+        // A body without `value` is not a reset: `null` is.
+        let res = api.post("/v1/limits", &json!({"key": key})).await;
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
         let before = std::fs::read_to_string(&file).unwrap();
         for key in ["agent.command_allowlist", "dispatcher.mode"] {
             let res = api
@@ -112,5 +130,14 @@ mod tests {
             assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{key}");
         }
         assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn an_invalid_config_file_lists_no_limits_and_says_how_to_fix_it() {
+        let api = Api::start().await;
+        std::fs::write(api.home().join("config.toml"), "[dispatcher\n").unwrap();
+        let res = api.get_as("/v1/limits", "localhost").await;
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(res.text().await.unwrap().contains("idlemax doctor"));
     }
 }

@@ -36,11 +36,12 @@ pub enum LimitError {
     Edit(#[from] EditError),
 }
 
-/// `POST /v1/limits`: `value` null puts the limit back to its default.
+/// `POST /v1/limits`: `value` null puts the limit back to its default. The field must be
+/// there, so a body that forgot it is refused instead of read as a reset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LimitRequest {
     pub key: String,
-    #[serde(default)]
+    #[serde(deserialize_with = "Option::deserialize")]
     pub value: Option<String>,
 }
 

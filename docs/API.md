@@ -740,9 +740,9 @@ The route is an owner action: no pause, kill switch, guard or line state holds i
 The limits are the dispatcher's lines (D14), `dispatcher.hold_mem_used_pct`, `dispatcher.shed_mem_used_pct`, `dispatcher.emergency_mem_used_pct`, `dispatcher.hold_disk_free_mib`, `dispatcher.shed_disk_free_mib`, `dispatcher.emergency_disk_free_mib`, `dispatcher.swap_in_low_pages_per_sec` and `dispatcher.swap_in_high_pages_per_sec`, plus the review cap `workers.review_cap` and the owner's quota share `quota.owner_reserve_pct` (`OWNER_LIMITS` in `crates/idlemax-core/src/config/limits.rs`).
 Only these keys can be changed here, so the token alone never changes `agent.command_allowlist` or a `coordinator.*` key from a browser; every other key is 400 and the file is left as it was.
 `GET /v1/limits` returns a `Setting` per limit: `{"key", "value", "default", "from_file"}`.
-`POST /v1/limits` sets one with the editor `idlemax config set` uses, so a value that would stop a start is 400 with the reason, and the old file is kept as `config.toml.idlemax.bak`; `"value": null` removes the key so its default applies again.
+`POST /v1/limits` sets one with the editor `idlemax config set` uses (`value` is required: a body without it is 422), so a value that would stop a start is 400 with the reason, and the old file is kept as `config.toml.idlemax.bak`; `"value": null` removes the key so its default applies again.
 The reply is `{"key": "dispatcher.hold_mem_used_pct", "before": 90.0, "after": 85.0, "changed": true, "report": {"applied": ["dispatcher.hold_mem_used_pct"], "restart_agent": [], "restart_coordinator": []}}`: a key under `applied` holds now, one under the other two lists needs that process restarted.
-The route calls no daemon; both read the file again when its mtime changes (A2).
+The route calls no daemon; both read the file again when its mtime changes.
 It changes the coordinator's own file: a device's limits are changed on that device.
 Changing a limit is owner-only (see "Auth and errors"), and no pause, guard or line state holds it.
 
