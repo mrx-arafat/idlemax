@@ -261,6 +261,7 @@ Linux needs PSI (`psi=1` on the kernel command line where it is off); without it
 | `coord.db` | the coordinator database, mode 0600: jobs, devices, quota ledger, advice, schedules, projects and runs |
 | `PAUSE` | the kill switch file (only while you want it) |
 | `rules.md` | the orchestrator's judgment rules; written once, yours to edit |
+| `.owner-writes` | digests of the `config.toml`, `rules.md` and `token` contents your own commands wrote, so a worker's change to them is caught |
 | `checks/<project id>` | the dispatcher's detached checkout of a project's base commit |
 | `worktrees/` | the workers' git worktrees |
 | `jobs/*.toml` | job templates the advisor may suggest |
