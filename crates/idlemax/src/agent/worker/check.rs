@@ -52,8 +52,9 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
         .and_then(|out| out.trim().parse().ok())
         .unwrap_or(0);
     let (modified, untracked) =
-        porcelain(&git(ctx, &["status", "--porcelain"]).unwrap_or_default());
-    let diff = numstat(&git(ctx, &["diff", "--numstat", &range]).unwrap_or_default());
+        porcelain(&git(ctx, &["status", "--porcelain", "-z", "--no-renames"]).unwrap_or_default());
+    let numstat_args = ["diff", "--numstat", "-z", "--no-renames", &range];
+    let diff = numstat(&git(ctx, &numstat_args).unwrap_or_default());
     let summary = (commits > 0)
         .then(|| git(ctx, &["log", "-1", "--format=%s"]))
         .flatten()
@@ -169,35 +170,58 @@ fn readings_of(ctx: &CheckCtx, account: &str) -> Vec<QuotaSnapshot> {
         .collect()
 }
 
-/// Modified tracked paths and new untracked paths from `git status --porcelain`.
+/// Modified tracked paths and new untracked paths from `git status --porcelain -z`. Paths
+/// come unquoted; a rename, if one still shows, counts as both its new and its old path.
 fn porcelain(text: &str) -> (Vec<String>, Vec<String>) {
     let (mut modified, mut untracked) = (Vec::new(), Vec::new());
-    for line in text.lines().filter(|l| l.len() > 3) {
-        let (status, path) = line.split_at(3);
-        let path = path.rsplit(" -> ").next().unwrap_or(path).to_string();
+    let mut records = text.split('\0');
+    while let Some(record) = records.next() {
+        if record.len() <= 3 {
+            continue;
+        }
+        let (status, path) = record.split_at(3);
         match status.trim() {
-            "??" => untracked.push(path),
-            _ => modified.push(path),
+            "??" => untracked.push(path.to_string()),
+            s => {
+                modified.push(path.to_string());
+                let source = match s.contains('R') || s.contains('C') {
+                    true => records.next(),
+                    false => None,
+                };
+                if let (true, Some(old)) = (s.contains('R'), source) {
+                    modified.push(old.to_string());
+                }
+            }
         }
     }
     (modified, untracked)
 }
 
-/// `git diff --numstat` lines; a binary file (`-`) counts no lines.
+/// `git diff --numstat -z` records; a binary file (`-`) counts no lines. A rename, if one
+/// still shows (an empty path, then the old and the new), counts as both paths.
 fn numstat(text: &str) -> DiffStat {
-    let files = text.lines().filter_map(|line| {
-        let mut parts = line.splitn(3, '\t');
-        let added = parts.next()?.parse().unwrap_or(0);
-        let removed = parts.next()?.parse().unwrap_or(0);
-        Some(FileDiff {
-            path: parts.next()?.to_string(),
-            added,
-            removed,
-        })
-    });
-    DiffStat {
-        files: files.collect(),
+    let mut files = Vec::new();
+    let mut records = text.split('\0');
+    while let Some(record) = records.next() {
+        let mut parts = record.splitn(3, '\t');
+        let (Some(added), Some(removed), Some(path)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let (added, removed) = (added.parse().unwrap_or(0), removed.parse().unwrap_or(0));
+        let paths = match path.is_empty() {
+            true => records.by_ref().take(2).map(str::to_string).collect(),
+            false => vec![path.to_string()],
+        };
+        for path in paths {
+            files.push(FileDiff {
+                path,
+                added,
+                removed,
+            });
+        }
     }
+    DiffStat { files }
 }
 
 fn git(ctx: &CheckCtx, args: &[&str]) -> Option<String> {
@@ -229,14 +253,90 @@ fn side_file(folder: &Path, name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::worker::cmd::{CmdError, OsCommands, Output};
+    use idlemax_core::worker::checks::verdict;
+    use idlemax_core::worker::run::Verdict;
 
     #[test]
     fn porcelain_and_numstat_are_read() {
-        let (modified, untracked) = porcelain(" M src/a.rs\nR  old.rs -> new.rs\n?? notes.txt\n");
-        assert_eq!(modified, ["src/a.rs", "new.rs"]);
+        let (modified, untracked) = porcelain(" M src/a.rs\0R  new.rs\0old.rs\0?? notes.txt\0");
+        assert_eq!(modified, ["src/a.rs", "new.rs", "old.rs"]);
         assert_eq!(untracked, ["notes.txt"]);
-        let diff = numstat("3\t1\tsrc/a.rs\n-\t-\tlogo.png\n");
+        let diff = numstat("3\t1\tsrc/a.rs\0-\t-\tlogo.png\0");
         assert_eq!(diff.lines(), 4);
         assert_eq!(diff.files[1].path, "logo.png");
+    }
+
+    struct IsolatedGit(OsCommands);
+
+    impl Commands for IsolatedGit {
+        fn run(&self, cmd: &Cmd) -> Result<Output, CmdError> {
+            let mut cmd = cmd.clone();
+            cmd.env
+                .push(("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()));
+            cmd.env.push(("GIT_CONFIG_NOSYSTEM".into(), "1".into()));
+            self.0.run(&cmd)
+        }
+    }
+
+    fn git_in(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=T", "-c", "user.email=t@test.local"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .envs([
+                ("GIT_CONFIG_GLOBAL", "/dev/null"),
+                ("GIT_CONFIG_NOSYSTEM", "1"),
+            ])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn a_rename_out_of_an_off_limits_folder_is_rejected_and_a_non_ascii_path_is_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        git_in(dir, &["init", "-b", "main"]);
+        std::fs::create_dir_all(dir.join("secret")).unwrap();
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        for f in ["secret/key.txt", "secret/other.txt"] {
+            std::fs::write(dir.join(f), format!("{f} stays the same\n")).unwrap();
+        }
+        git_in(dir, &["add", "-A"]);
+        git_in(dir, &["commit", "-m", "base"]);
+        let base = git_in(dir, &["rev-parse", "HEAD"]);
+        git_in(dir, &["mv", "secret/key.txt", "src/key.txt"]);
+        std::fs::write(dir.join("src/café.txt"), "new\n").unwrap();
+        git_in(dir, &["add", "src/café.txt"]);
+        git_in(dir, &["commit", "-m", "move the key"]);
+        git_in(dir, &["mv", "secret/other.txt", "src/other.txt"]);
+        let ctx = CheckCtx {
+            commands: Arc::new(IsolatedGit(OsCommands::new())),
+            worker: WorkerSpec {
+                scope_paths: vec!["src/".into()],
+                off_limits: vec!["secret/".into()],
+                ..Default::default()
+            },
+            job: 1,
+            tag: 0,
+            folder: dir.to_path_buf(),
+            base_commit: base,
+            remotes: Vec::new(),
+            readings: Arc::default(),
+            cancel: Arc::default(),
+        };
+        let facts = gather(&ctx);
+        let paths: Vec<&str> = facts.diff.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"src/café.txt"), "{paths:?}");
+        assert!(paths.contains(&"secret/key.txt"), "{paths:?}");
+        assert!(facts.modified.contains(&"secret/other.txt".to_string()));
+        let judged = verdict(&facts, &ctx.worker);
+        assert_eq!(judged.verdict, Verdict::Rejected);
+        let concern = judged.concern.unwrap_or_default();
+        assert!(concern.contains("secret/key.txt"), "{concern}");
+        assert!(concern.contains("secret/other.txt"), "{concern}");
     }
 }
