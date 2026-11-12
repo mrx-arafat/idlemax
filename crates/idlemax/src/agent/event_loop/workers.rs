@@ -43,7 +43,8 @@ pub struct WorkerLink {
     snapshot: Arc<Mutex<Snapshot>>,
     procs: Arc<Mutex<dyn Procs>>,
     /// The recovered workers the agent's tick state must take back.
-    pub(super) adopted: Vec<Job>,
+    /// With whether each is paused.
+    pub(super) adopted: Vec<(Job, bool)>,
 }
 
 impl WorkerLink {
@@ -138,8 +139,8 @@ impl Agent {
     pub(super) fn with_workers(mut self, workers: Option<(WorkerLink, Vec<JobUpdate>)>) -> Self {
         if let Some((link, lost)) = workers {
             let now = now_ms();
-            for job in &link.adopted {
-                self.state.adopt(job, now);
+            for (job, paused) in &link.adopted {
+                self.state.adopt(job, *paused, now);
             }
             for update in lost {
                 self.outbox.push(update);

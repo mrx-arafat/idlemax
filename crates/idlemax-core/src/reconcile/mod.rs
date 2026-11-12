@@ -181,9 +181,12 @@ impl AgentState {
         self.jobs.values().any(|j| j.worker.is_some())
     }
 
-    /// Tracks a job a previous agent started that is still running (a recovered worker).
-    pub fn adopt(&mut self, job: &Job, now_ms: UnixMs) {
-        self.jobs.insert(job.id, tracked(job, now_ms));
+    /// Tracks a job a previous agent started that is still running (a recovered worker); a
+    /// paused one is resumed by the next tick unless a hold still applies.
+    pub fn adopt(&mut self, job: &Job, paused: bool, now_ms: UnixMs) {
+        let mut job = tracked(job, now_ms);
+        job.paused = paused;
+        self.jobs.insert(job.id, job);
     }
 
     /// Looks up the spec name of a tracked job.

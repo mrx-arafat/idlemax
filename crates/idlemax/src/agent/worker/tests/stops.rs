@@ -24,10 +24,9 @@ fn kill(rig: &mut Rig, now: i64) {
 fn a_kill_keeps_the_worktree_and_ends_only_when_no_process_is_left() {
     for (stubborn, close_fails) in [(false, false), (true, false), (false, true)] {
         let mut rig = rig();
-        rig.host
-            .push_state(AgentStatus::Idle, None, &[SHELL, AGENT]);
-        rig.host
-            .push_state(AgentStatus::Working, None, &[SHELL, AGENT]);
+        for status in [AgentStatus::Idle, AgentStatus::Idle, AgentStatus::Working] {
+            rig.host.push_state(status, None, &[SHELL, AGENT]);
+        }
         if stubborn || close_fails {
             rig.procs.lock().unwrap().stubborn.insert(AGENT);
         }
@@ -127,6 +126,7 @@ fn end_text_is_sent_only_for_a_turn_without_a_commit() {
     for commit in [false, true] {
         let mut rig = rig();
         for status in [
+            AgentStatus::Idle,
             AgentStatus::Idle,
             AgentStatus::Working,
             AgentStatus::Working,

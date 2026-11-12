@@ -13,13 +13,16 @@ use idlemax_core::worker::report::WorkerPhase;
 use super::cmd::Cmd;
 use super::host::AgentStatus;
 use super::steps::Outcome;
-use super::{End, Phase, Workers};
+use super::{brief_line, End, Phase, Workers};
 use crate::agent::runner::os::Sig;
+use tracing::warn;
 
 /// What is left of a worker this long after its pane was closed is killed by pid.
 const STOP_GRACE_MS: UnixMs = 5_000;
 /// Ticks in a row that must read the turn as over.
 const ENDED_TICKS: u8 = 2;
+/// How long the host may fail to answer before a watched worker fails.
+const HOST_DOWN_MS: UnixMs = 60_000;
 
 impl Workers {
     /// Advances every worker one step; the updates to send.
@@ -48,6 +51,7 @@ impl Workers {
                 let kill = kill.clone();
                 self.launched(id, outcome, kill, now_ms)
             }
+            Phase::Held => self.held(id, now_ms),
             Phase::Watching { .. } => self.watch(id, now_ms, awake_ms),
             Phase::Stopping { .. } => self.stopping(id, now_ms),
         }
@@ -61,8 +65,9 @@ impl Workers {
         now_ms: UnixMs,
     ) -> Option<JobUpdate> {
         let t = self.tracked.get_mut(&id)?;
+        let held = matches!(outcome, Outcome::Held(_));
         let (progress, end) = match outcome {
-            Outcome::Briefed(p) => (p, kill),
+            Outcome::Briefed(p) | Outcome::Held(p) => (p, kill),
             Outcome::Failed { error, progress } => {
                 (progress, Some(kill.unwrap_or(End::failed(error))))
             }
@@ -77,16 +82,62 @@ impl Workers {
                 self.begin_stop(id, end, now_ms);
                 None
             }
-            None => {
-                t.phase = Phase::Watching {
-                    saw_working: false,
-                    ended: 0,
-                    blocked_since: None,
-                };
-                let t = &self.tracked[&id];
-                Some(self.update(t, JobStatus::Running, WorkerPhase::Running, now_ms))
+            None if held => {
+                t.phase = Phase::Held;
+                self.save_members(id);
+                if self.tracked.get(&id).is_some_and(|t| t.paused) {
+                    let pids = self.pids_of(id);
+                    if let Ok(mut procs) = self.procs.lock() {
+                        procs.signal(&pids, Sig::Stop);
+                    }
+                }
+                None
             }
+            None => Some(self.briefed(id, now_ms)),
         }
+    }
+
+    fn briefed(&mut self, id: JobId, now_ms: UnixMs) -> JobUpdate {
+        if let Some(t) = self.tracked.get_mut(&id) {
+            t.phase = Phase::Watching {
+                saw_working: false,
+                ended: 0,
+                blocked_since: None,
+                host_down_since: None,
+            };
+        }
+        let t = &self.tracked[&id];
+        self.update(t, JobStatus::Running, WorkerPhase::Running, now_ms)
+    }
+
+    /// A worker whose brief waited for a pause: once the pause is lifted and the agent reads
+    /// `idle`, it gets its brief and is watched like any other.
+    fn held(&mut self, id: JobId, now_ms: UnixMs) -> Option<JobUpdate> {
+        let t = self.tracked.get(&id)?;
+        if t.paused {
+            return None;
+        }
+        let handle = t.progress.handle.clone()?;
+        let folder = t.progress.folder.clone()?;
+        let line = brief_line(t.worker.action, &folder);
+        match self.host.state(&handle).ok()?.status {
+            AgentStatus::Idle => {}
+            AgentStatus::Gone => {
+                self.begin_stop(
+                    id,
+                    End::failed("the agent exited before it finished"),
+                    now_ms,
+                );
+                return None;
+            }
+            _ => return None,
+        }
+        if let Err(e) = self.host.send(&handle, &line) {
+            let end = End::failed(format!("the brief could not be sent: {e}"));
+            self.begin_stop(id, end, now_ms);
+            return None;
+        }
+        Some(self.briefed(id, now_ms))
     }
 
     fn watch(&mut self, id: JobId, now_ms: UnixMs, awake_ms: i64) -> Option<JobUpdate> {
@@ -103,7 +154,10 @@ impl Workers {
             return None;
         }
         let handle = t.progress.handle.clone()?;
-        let state = self.host.state(&handle).ok()?;
+        let state = match self.host.state(&handle) {
+            Ok(state) => state,
+            Err(e) => return self.host_down(id, &e.to_string(), now_ms),
+        };
         let blocked_ms = i64::try_from(t.worker.blocked_secs.saturating_mul(1000)).ok()?;
         let t = self.tracked.get_mut(&id)?;
         if state.session.is_some() {
@@ -113,10 +167,12 @@ impl Workers {
             saw_working,
             ended,
             blocked_since,
+            host_down_since,
         } = &mut t.phase
         else {
             return None;
         };
+        *host_down_since = None;
         *saw_working |= state.status == AgentStatus::Working;
         *blocked_since = match state.status {
             AgentStatus::Blocked => Some(blocked_since.unwrap_or(now_ms)),
@@ -142,7 +198,35 @@ impl Workers {
         None
     }
 
-    /// A finished turn; the host's `end_text` when the turn added no commit (A9).
+    /// The host did not answer: logged once, and after `HOST_DOWN_MS` the job fails like a
+    /// vanished pane, since no end of the turn can be seen.
+    fn host_down(&mut self, id: JobId, why: &str, now_ms: UnixMs) -> Option<JobUpdate> {
+        let t = self.tracked.get_mut(&id)?;
+        let Phase::Watching {
+            host_down_since, ..
+        } = &mut t.phase
+        else {
+            return None;
+        };
+        let since = match host_down_since {
+            Some(since) => *since,
+            None => {
+                warn!(job = id, error = why, "the worker's host does not answer");
+                *host_down_since = Some(now_ms);
+                now_ms
+            }
+        };
+        if now_ms - since > HOST_DOWN_MS {
+            let end = End::failed(format!(
+                "herdr did not answer for {} s: {why}",
+                HOST_DOWN_MS / 1000
+            ));
+            self.begin_stop(id, end, now_ms);
+        }
+        None
+    }
+
+    /// A finished turn; the host's `end_text` when this launch added no commit (A9).
     fn turn_end(&self, id: JobId) -> End {
         let mut end = End {
             status: JobStatus::Succeeded,
@@ -154,7 +238,7 @@ impl Workers {
         let Some(t) = self.tracked.get(&id) else {
             return end;
         };
-        let committed = match (&t.progress.folder, &t.progress.base_commit) {
+        let committed = match (&t.progress.folder, &t.progress.start_head) {
             (Some(folder), Some(base)) => self.commits_since(folder, base) > 0,
             _ => false,
         };

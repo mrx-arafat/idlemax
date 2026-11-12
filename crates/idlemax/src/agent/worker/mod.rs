@@ -4,6 +4,7 @@
 //! Pause, resume and kill reach it as messages, the same decisions the runner gets.
 
 pub mod cmd;
+mod end;
 pub mod herdr;
 pub mod host;
 pub mod procs;
@@ -24,7 +25,6 @@ use std::time::Duration;
 
 use idlemax_core::job_run::{allows_program, RunClock};
 use idlemax_core::protocol::{JobUpdate, RunningJob};
-use idlemax_core::reconcile::KillOrder;
 use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::worker::report::{WorkerPhase, WorkerReport};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
@@ -32,63 +32,30 @@ use idlemax_core::Paths;
 
 use crate::agent::runner::os::Sig;
 use cmd::Commands;
+use end::End;
+pub use end::Msg;
 use host::WorkerHost;
 use procs::{Member, Procs};
-use steps::{LaunchCtx, Outcome, Progress};
-
-/// What the agent loop tells the manager.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Msg {
-    Start(Box<Job>),
-    Pause(JobId),
-    Resume(JobId),
-    Kill { id: JobId, order: KillOrder },
-}
-
-/// How a worker job ends, applied once its processes are gone.
-#[derive(Debug, Clone, PartialEq)]
-struct End {
-    status: JobStatus,
-    error: Option<String>,
-    retryable: bool,
-    owner_stop: bool,
-    end_text: Option<String>,
-}
-
-impl End {
-    fn failed(error: impl Into<String>) -> Self {
-        Self {
-            status: JobStatus::Failed,
-            error: Some(error.into()),
-            retryable: false,
-            owner_stop: false,
-            end_text: None,
-        }
-    }
-
-    fn killed(order: &KillOrder) -> Self {
-        Self {
-            status: JobStatus::Killed,
-            error: Some(order.reason.clone()),
-            retryable: order.retryable,
-            owner_stop: order.owner_stop,
-            end_text: None,
-        }
-    }
-}
+use steps::{brief_line, LaunchCtx, Outcome, Progress};
 
 enum Phase {
     Launching {
         rx: Receiver<Outcome>,
         cancel: Arc<AtomicBool>,
+        /// The owner's pause, which the launch thread obeys between its phases.
+        paused: Arc<AtomicBool>,
         /// The kill that arrived while the launch was still running.
         kill: Option<End>,
     },
+    /// The agent runs, frozen, and gets its brief once the pause is lifted.
+    Held,
     Watching {
         saw_working: bool,
         /// Ticks in a row that read the turn as over.
         ended: u8,
         blocked_since: Option<UnixMs>,
+        /// Since when the host has not answered.
+        host_down_since: Option<UnixMs>,
     },
     Stopping {
         since_ms: UnixMs,
@@ -123,6 +90,8 @@ pub struct Workers {
     background: Option<String>,
     /// How often a launch reads the agent's status while it waits for `idle`.
     poll: Duration,
+    /// How long an agent may take to reach `idle`.
+    idle_wait: Duration,
     tracked: BTreeMap<JobId, Tracked>,
 }
 
@@ -144,6 +113,7 @@ impl Workers {
             allowlist: Vec::new(),
             background,
             poll: Duration::from_secs(1),
+            idle_wait: Duration::from_secs(60),
             tracked: BTreeMap::new(),
         }
     }
@@ -198,9 +168,13 @@ impl Workers {
         !self.tracked.is_empty()
     }
 
-    /// The tracked jobs, for an agent that takes back recovered workers.
-    pub fn jobs(&self) -> Vec<Job> {
-        self.tracked.values().map(|t| t.job.clone()).collect()
+    /// The tracked jobs and whether each is paused, for an agent that takes back recovered
+    /// workers.
+    pub fn jobs(&self) -> Vec<(Job, bool)> {
+        self.tracked
+            .values()
+            .map(|t| (t.job.clone(), t.paused))
+            .collect()
     }
 
     /// Every saved member pid of every worker, left out of the biggest memory users.
@@ -226,6 +200,7 @@ impl Workers {
         };
         let tag = new_tag(job.id, now_ms);
         let cancel = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
         let rx = steps::spawn(LaunchCtx {
             host: Arc::clone(&self.host),
             commands: Arc::clone(&self.commands),
@@ -236,8 +211,10 @@ impl Workers {
             tag,
             session: session.clone(),
             cancel: Arc::clone(&cancel),
+            paused: Arc::clone(&paused),
             now_ms,
             poll: self.poll,
+            idle_wait: self.idle_wait,
         });
         let tracked = Tracked {
             job,
@@ -254,6 +231,7 @@ impl Workers {
             phase: Phase::Launching {
                 rx,
                 cancel,
+                paused,
                 kill: None,
             },
             saved: None,
@@ -302,6 +280,9 @@ impl Workers {
             return Vec::new();
         }
         t.paused = pause;
+        if let Phase::Launching { paused, .. } = &t.phase {
+            paused.store(pause, Ordering::SeqCst);
+        }
         let pids = self.pids_of(id);
         let (sig, status) = match pause {
             true => (Sig::Stop, JobStatus::Paused),
@@ -344,15 +325,18 @@ impl Workers {
         match &mut t.phase {
             Phase::Launching { cancel, kill, .. } => {
                 cancel.store(true, Ordering::SeqCst);
-                kill.get_or_insert(end);
+                match kill {
+                    Some(first) => first.merge(end),
+                    None => *kill = Some(end),
+                }
                 // A running setup or check ends now; the launch thread then returns.
                 if let Ok(mut procs) = self.procs.lock() {
                     procs.signal(&pids, Sig::Cont);
                     procs.signal(&pids, Sig::Kill);
                 }
             }
-            Phase::Watching { .. } => self.begin_stop(id, end, now_ms),
-            Phase::Stopping { .. } => {}
+            Phase::Watching { .. } | Phase::Held => self.begin_stop(id, end, now_ms),
+            Phase::Stopping { end: first, .. } => first.merge(end),
         }
     }
 

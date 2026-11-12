@@ -2,6 +2,7 @@
 //! project commands; real git runs only inside the temp dir, and no test starts `herdr`,
 //! `claude` or `codex`.
 
+mod edges;
 mod stops;
 
 use std::collections::HashMap;
@@ -214,7 +215,12 @@ fn last(updates: &[JobUpdate]) -> &JobUpdate {
 #[test]
 fn a_launch_is_briefed_after_the_env_check_and_succeeds_when_the_turn_ends() {
     let mut rig = rig();
-    for status in [AgentStatus::Idle, AgentStatus::Working, AgentStatus::Done] {
+    for status in [
+        AgentStatus::Idle,
+        AgentStatus::Idle,
+        AgentStatus::Working,
+        AgentStatus::Done,
+    ] {
         rig.host.push_state(status, None, &[SHELL, AGENT]);
     }
     let mut now = 1_000;
@@ -266,7 +272,9 @@ fn a_credential_in_the_env_restarts_the_pane_once_and_blocks_the_brief_if_it_sta
             }
             hook();
         }));
+        // The first start's check, the second start's check, then the brief.
         for status in [
+            AgentStatus::Idle,
             AgentStatus::Idle,
             AgentStatus::Idle,
             AgentStatus::Working,

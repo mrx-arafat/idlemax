@@ -99,6 +99,8 @@ pub struct FakeHost {
     pub stop_errors: std::sync::Mutex<std::collections::VecDeque<HostError>>,
     /// What `matches` answers; true when unset.
     pub owned: std::sync::Mutex<Option<bool>>,
+    /// While set, `state` fails as a host that does not answer.
+    pub state_error: std::sync::Mutex<bool>,
 }
 
 #[cfg(test)]
@@ -129,6 +131,12 @@ impl WorkerHost for FakeHost {
     }
 
     fn state(&self, _handle: &Handle) -> Result<HostState, HostError> {
+        if *self.state_error.lock().unwrap() {
+            return Err(HostError::Failed {
+                call: "herdr agent list".into(),
+                why: "no server".into(),
+            });
+        }
         let mut states = self.states.lock().unwrap();
         let state = if states.len() > 1 {
             states.pop_front()

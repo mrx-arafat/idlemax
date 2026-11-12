@@ -7,21 +7,22 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use idlemax_core::types::{Job, UnixMs};
-use idlemax_core::worker::brief::{resume_line, start_line};
-use idlemax_core::worker::launch::{agent_args, env_problems, mcp_server_names, pane_env, Session};
-use idlemax_core::worker::{name, WorkerAction, WorkerCli, WorkerSpec};
+use idlemax_core::worker::launch::{agent_args, mcp_server_names, pane_env, Session};
+use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
 use super::cmd::{Cmd, Commands};
-use super::host::{AgentStatus, Handle, HostState, Launch, WorkerHost};
+use super::host::{Handle, WorkerHost};
 use super::procs::Procs;
 use super::worktree::{self, NewWorktree};
 
+mod pane;
+
+pub use pane::brief_line;
+
 const GIT_LIMIT: Duration = Duration::from_secs(10);
-/// How long a fresh agent may take to reach `idle` before its environment is checked.
-const IDLE_WAIT: Duration = Duration::from_secs(60);
 
 /// Everything one launch needs; moved onto its thread.
 pub struct LaunchCtx {
@@ -35,9 +36,13 @@ pub struct LaunchCtx {
     /// The session to start (a new Claude id) or to continue.
     pub session: Option<String>,
     pub cancel: Arc<AtomicBool>,
+    /// The owner paused the worker: the launch starts no agent and sends no brief meanwhile.
+    pub paused: Arc<AtomicBool>,
     pub now_ms: UnixMs,
     /// How often the agent's status is read while waiting for `idle`.
     pub poll: Duration,
+    /// How long the agent may take to reach `idle` (60 s).
+    pub idle_wait: Duration,
 }
 
 /// What the launch got done, also when it stopped early.
@@ -51,6 +56,8 @@ pub struct Progress {
     pub shell_pid: Option<u32>,
     /// The repository's remotes, each given a dead push address.
     pub remotes: Vec<String>,
+    /// `HEAD` of the worktree when this launch began: a commit after it is this launch's.
+    pub start_head: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,11 +70,15 @@ pub enum Outcome {
         progress: Progress,
     },
     Cancelled(Progress),
+    /// The agent runs but a pause arrived before its brief: the manager freezes it and sends
+    /// the brief once the pause is lifted (A24).
+    Held(Progress),
 }
 
 enum Stop {
     Cancelled,
     Failed(String),
+    Held,
 }
 
 pub fn spawn(ctx: LaunchCtx) -> Receiver<Outcome> {
@@ -81,6 +92,7 @@ pub fn spawn(ctx: LaunchCtx) -> Receiver<Outcome> {
             Ok(()) => Outcome::Briefed(progress),
             Err(Stop::Cancelled) => Outcome::Cancelled(progress),
             Err(Stop::Failed(error)) => Outcome::Failed { error, progress },
+            Err(Stop::Held) => Outcome::Held(progress),
         };
         let _ = tx.send(outcome);
     });
@@ -96,18 +108,29 @@ fn launch(ctx: &LaunchCtx, p: &mut Progress) -> Result<(), Stop> {
         .map(str::to_string)
         .collect();
     let folder = prepare(ctx, p)?;
+    p.start_head = Some(
+        git(ctx, &folder, &["rev-parse", "HEAD"])?
+            .trim()
+            .to_string(),
+    );
     let args = args_for(ctx, &folder)?;
     let remotes = p.remotes.clone();
-    let handle = start_checked(ctx, p, &folder, &remotes, &args)?;
+    hold_while_paused(ctx)?;
+    let handle = pane::start_checked(ctx, p, &folder, &remotes, &args)?;
     cancelled(ctx)?;
-    let brief = brief_path(&folder).display().to_string();
-    let line = match ctx.worker.action {
-        WorkerAction::Resume => resume_line(&brief),
-        _ => start_line(&brief),
-    };
-    ctx.host
-        .send(&handle, &line)
-        .map_err(|e| Stop::Failed(format!("the brief could not be sent: {e}")))
+    if ctx.paused.load(Ordering::SeqCst) {
+        return Err(Stop::Held);
+    }
+    pane::send_brief(ctx, &handle, &folder)
+}
+
+/// Waits while the worker is paused, so no agent starts under a pause.
+fn hold_while_paused(ctx: &LaunchCtx) -> Result<(), Stop> {
+    while ctx.paused.load(Ordering::SeqCst) {
+        cancelled(ctx)?;
+        std::thread::sleep(ctx.poll);
+    }
+    Ok(())
 }
 
 /// The worktree, the setup and the baseline of a first launch, then the brief file.
@@ -117,6 +140,7 @@ fn prepare(ctx: &LaunchCtx, p: &mut Progress) -> Result<PathBuf, Stop> {
         worktree::marker_of(f)
             .is_some_and(|m| m.run == run_id(w) || w.action == WorkerAction::Resume)
     });
+    let reused = reuse.is_some();
     let folder = match reuse {
         Some(folder) => {
             let marker = worktree::marker_of(&folder);
@@ -131,7 +155,9 @@ fn prepare(ctx: &LaunchCtx, p: &mut Progress) -> Result<PathBuf, Stop> {
     };
     p.folder = Some(folder.clone());
     cancelled(ctx)?;
-    if w.action == WorkerAction::Launch {
+    // A reused folder holds the worker's edits: its setup ran and its baseline describes the
+    // base commit, so neither runs again over the edited code (D8).
+    if w.action == WorkerAction::Launch && !reused {
         setup_and_baseline(ctx, p, &folder)?;
     }
     write_brief(ctx, &folder)?;
@@ -250,92 +276,6 @@ fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
         _ => Session::New(session),
     };
     agent_args(w.cli, &w.model, session, &common, &servers).map_err(|e| Stop::Failed(e.to_string()))
-}
-
-/// Starts the agent and checks its real environment; a pane whose environment holds a
-/// credential is made once more with those names blanked, and never briefed if they stay.
-fn start_checked(
-    ctx: &LaunchCtx,
-    p: &mut Progress,
-    folder: &Path,
-    remotes: &[String],
-    args: &[String],
-) -> Result<Handle, Stop> {
-    let mut blank = Vec::new();
-    for attempt in 0..2 {
-        let launch = Launch {
-            name: ctx.job.spec.name.clone(),
-            tab: name::tab_label(&ctx.worker.project),
-            folder: folder.to_path_buf(),
-            env: pane_env(ctx.job.id, ctx.tag, remotes, &blank),
-            cli: ctx.worker.cli,
-            args: args.to_vec(),
-        };
-        let handle = ctx
-            .host
-            .start(&launch)
-            .map_err(|e| Stop::Failed(format!("the worker could not be started: {e}")))?;
-        p.handle = Some(handle.clone());
-        let state = wait_idle(ctx, &handle)?;
-        p.shell_pid = state.shell_pid;
-        p.session = state.session.clone().or(p.session.take());
-        let pid = state.foreground.first().copied().or(state.shell_pid);
-        let vars = pid.and_then(|pid| ctx.procs.lock().ok()?.environ(pid));
-        let problems = match vars {
-            Some(vars) => env_problems(&vars),
-            None => {
-                return Err(close(
-                    ctx,
-                    p,
-                    "the worker's environment could not be read".into(),
-                ))
-            }
-        };
-        if problems.is_empty() {
-            return Ok(handle);
-        }
-        let _ = ctx.host.stop(&handle);
-        p.handle = None;
-        if attempt == 1 {
-            return Err(Stop::Failed(format!(
-                "the worker's environment still holds {}; guard each export of it in your shell \
-                 start-up file with [ -z \"$IDLEMAX_JOB_ID\" ]",
-                problems.join(", ")
-            )));
-        }
-        blank = problems;
-    }
-    Err(Stop::Failed("the worker could not be started".into()))
-}
-
-fn wait_idle(ctx: &LaunchCtx, handle: &Handle) -> Result<HostState, Stop> {
-    let since = Instant::now();
-    loop {
-        if ctx.cancel.load(Ordering::SeqCst) {
-            return Err(Stop::Cancelled);
-        }
-        let state = ctx.host.state(handle).ok();
-        match state.as_ref().map(|s| s.status) {
-            Some(AgentStatus::Idle) => return state.ok_or(Stop::Cancelled),
-            Some(AgentStatus::Gone) => {
-                return Err(Stop::Failed("the agent exited before it finished".into()))
-            }
-            _ if since.elapsed() >= IDLE_WAIT => {
-                return Err(Stop::Failed(
-                    "the worker did not reach idle within 60 s".into(),
-                ))
-            }
-            _ => std::thread::sleep(ctx.poll),
-        }
-    }
-}
-
-/// Closes the pane of a launch that failed and gives the failure.
-fn close(ctx: &LaunchCtx, p: &mut Progress, error: String) -> Stop {
-    if let Some(handle) = p.handle.take() {
-        let _ = ctx.host.stop(&handle);
-    }
-    Stop::Failed(error)
 }
 
 fn cancelled(ctx: &LaunchCtx) -> Result<(), Stop> {

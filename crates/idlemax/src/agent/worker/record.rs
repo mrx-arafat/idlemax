@@ -27,6 +27,11 @@ struct Record {
     branch: Option<String>,
     folder: Option<PathBuf>,
     base_commit: Option<String>,
+    #[serde(default)]
+    start_head: Option<String>,
+    /// Frozen by a pause when it was saved; it comes back paused.
+    #[serde(default)]
+    paused: bool,
     pane: Option<String>,
     workspace: Option<String>,
     label: Option<String>,
@@ -120,7 +125,7 @@ impl Workers {
             tag: r.tag,
             // The awake time before the restart is not known, so the runtime cap restarts.
             clock: RunClock::start(r.started_ms, awake_ms),
-            paused: false,
+            paused: r.paused,
             progress: Progress {
                 folder: r.folder.clone(),
                 branch: r.branch.clone(),
@@ -129,6 +134,7 @@ impl Workers {
                 session: r.session.clone(),
                 shell_pid: r.shell.map(|(pid, _)| pid),
                 remotes: Vec::new(),
+                start_head: r.start_head.clone(),
             },
             members: r.members.clone(),
             throttled: r
@@ -141,10 +147,15 @@ impl Workers {
                 saw_working: true,
                 ended: 0,
                 blocked_since: None,
+                host_down_since: None,
             },
             saved: None,
             job: r.job,
         };
+        let mut tracked = tracked;
+        if tracked.paused {
+            tracked.clock.pause(awake_ms);
+        }
         self.tracked.insert(tracked.job.id, tracked);
     }
 
@@ -178,11 +189,13 @@ fn record_of(t: &Tracked) -> Record {
         job,
         tag: t.tag,
         started_ms: t.clock.started_ms(),
-        briefed: !matches!(t.phase, Phase::Launching { .. }),
+        briefed: !matches!(t.phase, Phase::Launching { .. } | Phase::Held),
         session: t.progress.session.clone(),
         branch: t.progress.branch.clone(),
         folder: t.progress.folder.clone(),
         base_commit: t.progress.base_commit.clone(),
+        start_head: t.progress.start_head.clone(),
+        paused: t.paused,
         pane: handle.map(|h| h.pane.clone()),
         workspace: handle.map(|h| h.workspace.clone()),
         label: handle.map(|h| h.label.clone()),
