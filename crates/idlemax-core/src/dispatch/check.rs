@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::fnv64;
 use super::inputs::RepoReport;
 use super::project::Project;
 use crate::types::{ActivePolicy, Admission, CostClass, Job, JobId, JobSpec, JobStatus, UnixMs};
@@ -135,13 +136,19 @@ pub fn check_job(p: &Project, phase: Phase, base_commit: &str, cwd: &str) -> Job
         Phase::Setup => p.settings.setup_command.clone(),
         Phase::Check => p.settings.check_command.clone(),
     };
+    // The command and folder are in the key: after the owner changes a setting, an unfinished
+    // job with the old argv is never taken for the new one.
+    let mut parts: Vec<&str> = command.iter().map(String::as_str).collect();
+    parts.push(cwd);
+    let key = format!(
+        "dispatch-check:{}:{base_commit}:{}:{}",
+        p.id,
+        phase.as_str(),
+        fnv64(&parts)
+    );
     JobSpec {
         name: format!("dispatch-{}:{}", phase.as_str(), p.name),
-        key: Some(format!(
-            "dispatch-check:{}:{base_commit}:{}",
-            p.id,
-            phase.as_str()
-        )),
+        key: Some(key),
         command,
         cwd: Some(cwd.to_string()),
         devices: vec![p.device.clone()],

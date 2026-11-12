@@ -180,5 +180,28 @@ mod tests {
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert_eq!(queued[0].spec.name, "dispatch-check:lib");
         assert_eq!(queued[0].spec.cwd.as_deref(), Some("/state/checks/2"));
+
+        // The owner changes the check while the first job is still queued: the route drops
+        // the record, and the next step queues a job with the new command.
+        let changed = ProjectSettings {
+            check_command: vec!["make".into(), "check".into()],
+            ..settings
+        };
+        store.set_project_settings(lib.id, &changed).unwrap();
+        store.delete_base_check(lib.id).unwrap();
+        crate::dispatch::step(&mut store, &cfg, T0 + 120_000).unwrap();
+        let argv: Vec<Vec<String>> = store
+            .queued_jobs()
+            .unwrap()
+            .into_iter()
+            .map(|j| j.spec.command)
+            .collect();
+        assert!(
+            argv.contains(&vec!["make".to_string(), "check".to_string()]),
+            "{argv:?}"
+        );
+        let rec = store.base_checks().unwrap().pop().unwrap();
+        let job = store.get_job(rec.job.unwrap()).unwrap().unwrap();
+        assert_eq!(job.spec.command, ["make", "check"]);
     }
 }
