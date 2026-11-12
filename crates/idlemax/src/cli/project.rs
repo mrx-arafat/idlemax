@@ -171,27 +171,7 @@ fn apply(
     values: Vec<String>,
     argv: Vec<String>,
 ) -> Result<String> {
-    let usage = |what: &str| -> anyhow::Error {
-        CliError::usage(what.to_string(), "idlemax project set --help").into()
-    };
-    let command_setting = matches!(setting, SettingName::Setup | SettingName::Check);
-    if command_setting && !values.is_empty() {
-        return Err(usage(
-            "give the command after `--`, as in `check -- cargo test`",
-        ));
-    }
-    if !command_setting && !argv.is_empty() {
-        return Err(usage("only setup and check take a command after `--`"));
-    }
-    let list = |values: Vec<String>| -> Vec<String> {
-        values
-            .iter()
-            .flat_map(|v| v.split(','))
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(String::from)
-            .collect()
-    };
+    check_arguments(setting, &values, &argv)?;
     let shown = match setting {
         SettingName::Base => {
             if values.len() > 1 {
@@ -201,20 +181,19 @@ fn apply(
             format!("base = {}", s.base_branch.as_deref().unwrap_or("-"))
         }
         SettingName::Priority => {
-            let [value] = values.as_slice() else {
-                return Err(usage("priority takes one whole number"));
+            let parsed = match values.as_slice() {
+                [value] => value.parse().ok(),
+                _ => None,
             };
-            s.priority = value
-                .parse()
-                .map_err(|_| usage("priority takes one whole number"))?;
+            s.priority = parsed.ok_or_else(|| usage("priority takes one whole number"))?;
             format!("priority = {}", s.priority)
         }
         SettingName::OffLimits => {
-            s.off_limits = list(values);
+            s.off_limits = list(&values);
             format!("off-limits = {}", views::words(&s.off_limits))
         }
         SettingName::CorePaths => {
-            s.core_paths = list(values);
+            s.core_paths = list(&values);
             format!("core-paths = {}", views::words(&s.core_paths))
         }
         SettingName::Setup => {
@@ -227,6 +206,35 @@ fn apply(
         }
     };
     Ok(shown)
+}
+
+/// Setup and check take a command after `--`; every other setting takes plain values.
+fn check_arguments(setting: SettingName, values: &[String], argv: &[String]) -> Result<()> {
+    let command_setting = matches!(setting, SettingName::Setup | SettingName::Check);
+    if command_setting && !values.is_empty() {
+        return Err(usage(
+            "give the command after `--`, as in `check -- cargo test`",
+        ));
+    }
+    if !command_setting && !argv.is_empty() {
+        return Err(usage("only setup and check take a command after `--`"));
+    }
+    Ok(())
+}
+
+fn usage(what: &str) -> anyhow::Error {
+    CliError::usage(what.to_string(), "idlemax project set --help").into()
+}
+
+/// Several words or commas as one list of paths.
+fn list(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .flat_map(|v| v.split(','))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(String::from)
+        .collect()
 }
 
 /// The main working tree of the repository that holds `path`, on this machine.

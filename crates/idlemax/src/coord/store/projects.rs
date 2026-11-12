@@ -66,22 +66,11 @@ impl Store {
             return Err(StoreError::LimitReached {
                 what: "projects on one device",
                 limit: MAX_PROJECTS_PER_DEVICE,
-                hint: "a project that is off and was not seen for 30 days is forgotten",
+                hint: "projects Herdr found that stay off and unseen for 30 days are forgotten; \
+                       no command removes a project yet, so add only checkouts you want planned",
             });
         }
-        let base = new.name();
-        let mut name = base.clone();
-        for n in 2.. {
-            let taken: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM projects WHERE device = ?1 AND name = ?2)",
-                params![device, name],
-                |r| r.get(0),
-            )?;
-            if !taken {
-                break;
-            }
-            name = format!("{base}-{n}");
-        }
+        let name = free_name(&tx, device, &new.name())?;
         tx.execute(
             "INSERT INTO projects (device, name, path, source, created_ms)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -158,6 +147,23 @@ impl Store {
         }
         Ok(())
     }
+}
+
+/// `base`, or `base-2`, `base-3` and so on: the first name the device does not hold yet.
+fn free_name(tx: &rusqlite::Transaction<'_>, device: &str, base: &str) -> StoreResult<String> {
+    let mut name = base.to_string();
+    for n in 2.. {
+        let taken: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM projects WHERE device = ?1 AND name = ?2)",
+            params![device, name],
+            |r| r.get(0),
+        )?;
+        if !taken {
+            break;
+        }
+        name = format!("{base}-{n}");
+    }
+    Ok(name)
 }
 
 fn gone(id: i64) -> StoreError {
