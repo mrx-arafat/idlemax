@@ -34,7 +34,7 @@ Each write is in one class; a route not listed is token-only, as before.
 | token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
 
 For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.
-When the caller or any parent has `IDLEMAX_JOB_ID` in its environment and an `IDLEMAX_HOME` that is this server's state dir, or none, the call is `403` with:
+When the caller or any parent has `IDLEMAX_JOB_ID` in its environment and an `IDLEMAX_HOME` that is this server's state dir, or none, or on Linux runs in a worker's systemd scope (`idlemax-w-…`), the call is `403` with:
 `this call comes from a job or worker that idlemax started (pid N); only the owner can do this, from their own terminal, the dashboard or the TUI`.
 A marker with another `IDLEMAX_HOME` belongs to another idlemax and does not count.
 When the calling process cannot be found within 2 seconds, the call is `403` with:
@@ -47,7 +47,7 @@ What the lock does not stop:
 
 - A write to `config.toml` in the state dir: every `[dispatcher]`, `[workers]` and quota key, the mode included, applies at once, because each daemon re-reads those keys when the file's mtime changes; every other key applies at the next reload or start.
 - A write to `rules.md`, the store or the token file, or deleting the `PAUSE` file: it is the same OS user.
-- Detaching: one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1.
+- Detaching, where a worker has no systemd scope (macOS, or Linux without a systemd manager): one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1. On Linux with a systemd manager a worker runs in a scope (`idlemax-w-…`) and every process in one counts as launched whatever its environment, so detaching does not get past the check; a process the worker gets the owner's own session to start still does.
 - A call to a coordinator on another machine: a caller that is not on the coordinator's host is judged by the token alone.
 - Acting through the owner's own session: a shell start-up file, a git hook or a service file that the owner's session runs later, or a script that drives the owner's browser.
 - Replacing the `idlemax` binary.

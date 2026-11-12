@@ -1,8 +1,9 @@
 //! Domain: decide who is calling, the owner or a process this idlemax launched, and find
 //! the calling process in OS output (`lsof`, `/proc/net/tcp`). Pure: no I/O, no clock.
 //!
-//! A launched job or worker carries `LAUNCHED_ENV` in its environment; the adapter walks the
-//! caller's process chain, reads each environment and asks `classify`. A local caller whose
+//! A launched job or worker carries `LAUNCHED_ENV` in its environment, and on Linux a worker
+//! runs in a systemd scope of its own; the adapter walks the caller's process chain, reads
+//! each environment and cgroup and asks `classify`. A local caller whose
 //! process cannot be found is `Unseen` and fails closed for owner-only calls.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -86,6 +87,20 @@ pub fn mark_of(env: &[(String, String)], homes: &[PathBuf]) -> Mark {
         }
         _ => Mark::ThisHome,
     }
+}
+
+/// The name every worker's systemd scope starts with (red team cases 2 and 10).
+pub const WORKER_SCOPE_PREFIX: &str = "idlemax-w-";
+
+/// Whether `/proc/<pid>/cgroup` text puts the process in a worker's scope. A process can drop
+/// the marker from its environment and leave its parents with `setsid`, but it cannot leave
+/// its cgroup, so such a process counts as launched (as this home: a scope names no home).
+pub fn in_worker_scope(cgroup: &str) -> bool {
+    cgroup.lines().any(|line| {
+        line.rsplit(['/', ':'])
+            .next()
+            .is_some_and(|unit| unit.starts_with(WORKER_SCOPE_PREFIX) && unit.ends_with(".scope"))
+    })
 }
 
 /// Who is calling. `chain` is `None` when the caller's process was not found.
@@ -178,6 +193,18 @@ fn proc_addr(text: &str) -> Option<SocketAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_process_in_a_worker_scope_is_launched_whatever_its_environment() {
+        // Red team case 2: `setsid` and `env -u` leave the ancestry and the marker, not the scope.
+        let worker =
+            "0::/user.slice/user-1001.slice/user@1001.service/app.slice/idlemax-w-7-1-55-0.scope\n";
+        assert!(in_worker_scope(worker));
+        assert!(!in_worker_scope(
+            "0::/user.slice/user-1001.slice/session-3.scope\n"
+        ));
+        assert!(!in_worker_scope("0::/app.slice/idlemax-w-notes.service\n"));
+    }
 
     fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs

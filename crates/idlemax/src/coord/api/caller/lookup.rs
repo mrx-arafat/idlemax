@@ -1,10 +1,11 @@
 //! Adapter: finds the process behind a TCP connection on this host (Linux `/proc`, macOS
-//! `lsof`) and reads the environment of it and its ancestors with `sysinfo`.
+//! `lsof`) and reads the environment of it and its ancestors with `sysinfo`, and on Linux
+//! the cgroup of each, so a worker that left its parents is still known by its scope.
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
-use idlemax_core::control::caller::{mark_of, same_host, Link};
+use idlemax_core::control::caller::{in_worker_scope, mark_of, same_host, Link, Mark};
 use sysinfo::{Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use super::Seen;
@@ -112,9 +113,15 @@ fn chain(pid: u32, homes: &[PathBuf]) -> Option<Vec<Link>> {
             .filter_map(|e| e.to_str()?.split_once('='))
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
+        let scoped = std::fs::read_to_string(format!("/proc/{}/cgroup", pid.as_u32()))
+            .is_ok_and(|text| in_worker_scope(&text));
+        let mark = match scoped {
+            true => Mark::ThisHome,
+            false => mark_of(&env, homes),
+        };
         links.push(Link {
             pid: pid.as_u32(),
-            mark: mark_of(&env, homes),
+            mark,
         });
         next = process.parent().filter(|p| *p != pid);
         if links.len() > MAX_PARENTS {
@@ -122,4 +129,33 @@ fn chain(pid: u32, homes: &[PathBuf]) -> Option<Vec<Link>> {
         }
     }
     (!links.is_empty()).then_some(links)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use idlemax_core::control::caller::Mark;
+
+    use super::chain;
+    use crate::agent::worker::scope::WorkerScope;
+
+    #[test]
+    fn a_process_in_a_worker_scope_is_marked_without_any_marker_in_its_environment() {
+        // Red team case 2: `env -u IDLEMAX_JOB_ID setsid -f idlemax mode auto` from a worker.
+        let Some(scope) = WorkerScope::detect() else {
+            eprintln!("no systemd manager here: the scope case is not tested");
+            return;
+        };
+        let sleep = crate::agent::runner::wrapper::which("sleep").unwrap();
+        let mut child = scope.command(7, 1, &sleep).arg("30").spawn().unwrap();
+        let pid = child.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut marked = false;
+        while !marked && std::time::Instant::now() < deadline {
+            marked = chain(pid, &[]).is_some_and(|c| c[0].mark == Mark::ThisHome);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(marked, "a scoped process was taken for the owner");
+    }
 }

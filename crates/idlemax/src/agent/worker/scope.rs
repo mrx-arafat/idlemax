@@ -16,7 +16,7 @@ use nix::unistd::Pid;
 /// How long a stopped scope's processes get to end on SIGTERM before SIGKILL.
 const GRACE: Duration = Duration::from_secs(10);
 /// The name every worker scope starts with; the caller check knows a worker by it.
-pub const UNIT_PREFIX: &str = "idlemax-w-";
+pub const UNIT_PREFIX: &str = idlemax_core::control::caller::WORKER_SCOPE_PREFIX;
 /// What `systemd-run --user` needs to reach the manager, and the worker never gets, so it
 /// cannot open a fresh unit outside its scope.
 const BUS_VARS: [&str; 2] = ["XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
