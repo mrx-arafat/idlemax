@@ -358,6 +358,20 @@ fn a_new_top_level_file_with_an_extension_is_a_new_file() {
 }
 
 #[test]
+fn a_pick_with_no_scope_path_is_never_used() {
+    // The pass named none, or validate dropped them all (only "*"): no unbounded run.
+    for files in [vec!["src/a.rs".to_string()], Vec::new()] {
+        let mut w = World::new().with_pass(&["a"]);
+        w.repos[0].repo.files = files;
+        w.pass.as_mut().unwrap().picks[0].scope_paths = Vec::new();
+        let d = &w.build().devices[0];
+        assert!(d.picks.is_empty(), "{:?}", d.picks);
+        let why = &d.empty.as_ref().unwrap().reason;
+        assert!(why.contains("it names no scope path"), "{why}");
+    }
+}
+
+#[test]
 fn auto_mode_picks_like_propose() {
     let mut world = World::new().with_pass(&["b", "a"]);
     world.mode = Mode::Auto;

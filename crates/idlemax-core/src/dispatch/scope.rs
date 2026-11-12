@@ -87,9 +87,10 @@ pub struct Files<'a> {
 
 /// The named paths that match a tracked file or are a new file in a folder the project has,
 /// plus the files `task_text` names whose folder exists and, when the task `asks_tests`, the
-/// project's test folder, none under `off_limits`. Named paths that do not exist are dropped; with none left, Err. An
-/// empty file list means it is unknown, and the named paths stay; on a cut list a missing
-/// path is unknown, and it stays when it is a safe relative path.
+/// project's test folder, none under `off_limits`. Named paths that do not exist are
+/// dropped; with none named or none left, Err. An empty file list means it is unknown, and
+/// the named paths stay; on a cut list a missing path is unknown, and it stays when it is a
+/// safe relative path.
 pub fn narrow_scope(
     named: &[String],
     listed: &Files<'_>,
@@ -98,6 +99,10 @@ pub fn narrow_scope(
     off_limits: &[String],
 ) -> Result<Scope, String> {
     let files = listed.files;
+    // No scope is no fence: a pick that names none (or kept only "*") is never run.
+    if named.is_empty() {
+        return Err("it names no scope path".into());
+    }
     if files.is_empty() {
         return Ok(Scope {
             kept: named.to_vec(),
