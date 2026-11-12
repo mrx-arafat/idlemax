@@ -118,11 +118,11 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 - [x] Task 3: Build the cost table from Run records
 - [x] Task 4: Learn the owner's own use per account day
 - [x] Task 5: Compute the surplus, the daily Budget and the worker rules
-- [ ] Task 6: Gather the Budget on the coordinator and gate every worker start
+- [x] Task 6: Gather the Budget on the coordinator and gate every worker start
 - [x] Task 7: Leave idlemax's own worker sessions out of the owner's use
 - [x] Task 8: Offer accounts and check picks in pure code
-- [ ] Task 9: Stop an account's workers at the 5-hour line and after a rate limit
-- [ ] Task 10: Hold Spec 1's plan and orchestrator pass to the Budget and the tier
+- [x] Task 9: Stop an account's workers at the 5-hour line and after a rate limit
+- [x] Task 10: Hold Spec 1's plan and orchestrator pass to the Budget and the tier
 - [x] Task 11: Show the Budget in `idlemax quota` and `GET /v1/quota`
 - [ ] Task 12: Needs the owner's OK: run the measuring week and tune the numbers
 
@@ -594,7 +594,7 @@ Today's rules for AI jobs would almost never let a worker start, so this task al
 - [x] A reviewer account whose Budget has basis `five_hour_stop` is not chosen.
 - [x] After `record_open_days`, `budget_days` shows today's row with `spendable_pct`, `basis` and `why`.
 - [x] The rule table in `README.md` has the same ten rows as the module doc of `spend.rs`.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo test -p idlemax --bin idlemax sweep`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo test -p idlemax --bin idlemax sweep`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 7: Leave idlemax's own worker sessions out of the owner's use
 
@@ -754,7 +754,7 @@ Nothing is retried in a loop.
 - [x] A running Run on an account whose Budget turns `five_hour_stop` is stopped and becomes `shed`, and is relaunched once the 5-hour window reads under the line; a running Run on an account whose Budget turns `spent` keeps running.
 - [x] With a `shed` run on a resting account, one pick for another task and a second usable account, `launch_due` starts the pick on the second account and leaves the `shed` run where it is.
 - [x] `grep -rn "account_uses" crates/idlemax/src/coord/dispatch.rs` prints nothing, and the existing test of `quota/rules/tests.rs` passes with no assertion changed.
-- [ ] Verify: `cargo test -p idlemax-core quota::rules`, `cargo test -p idlemax-core job_run`, `cargo test -p idlemax-core worker::run`, `cargo test -p idlemax --bin idlemax worker_tests`, `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax-core quota::rules`, `cargo test -p idlemax-core job_run`, `cargo test -p idlemax-core worker::run`, `cargo test -p idlemax --bin idlemax worker_tests`, `cargo test -p idlemax --bin idlemax coord::api::budget`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 10: Hold Spec 1's plan and orchestrator pass to the Budget and the tier
 
@@ -815,7 +815,7 @@ The orchestrator is offered only accounts with a usable Budget, is told each tas
 - [x] `task_open` is true for a task whose only Run is `rejected`, false for a task with a `clean` Run, and false for a task with two `rejected` Runs.
 - [x] A coordinator test builds a plan with one pick and its account at the 5-hour stop line: there is no pick in the plan, and the empty slot's reason carries the Budget's `why`.
 - [x] A coordinator test with a task that has two `rejected` Runs shows it, after one `step`, under `needs_you` with `failed its checks twice`, and not among the offered tasks.
-- [ ] Verify: `cargo test -p idlemax-core dispatch`, `cargo test -p idlemax-core worker::pace`, `cargo test -p idlemax-core config`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo test -p idlemax --test plan`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax-core dispatch`, `cargo test -p idlemax-core worker::pace`, `cargo test -p idlemax-core config`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo test -p idlemax --test plan`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 11: Show the Budget in `idlemax quota` and `GET /v1/quota`
 
