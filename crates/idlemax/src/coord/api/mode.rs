@@ -5,10 +5,12 @@
 use axum::extract::State;
 use axum::Json;
 use idlemax_core::config::set_setting;
+use idlemax_core::control::caller::Access;
 use idlemax_core::dispatch::{Mode, ModeReply, ModeRequest};
 use idlemax_core::types::{EventKind, Os};
 use idlemax_core::Paths;
 
+use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::AppState;
 use crate::cli::files;
@@ -16,10 +18,19 @@ use crate::coord::store::Store;
 use crate::live_config::LiveConfig;
 use crate::state::now_ms;
 
+/// Toward `off` any holder of the token may switch; toward any other mode, even one this
+/// build does not know, only the owner.
 pub async fn set(
     State(app): State<AppState>,
+    who: Who,
     JsonBody(body): JsonBody<serde_json::Value>,
 ) -> Result<Json<ModeReply>, ApiFailure> {
+    let access = if body.get("mode").and_then(|m| m.as_str()) == Some(Mode::Off.as_str()) {
+        Access::Stop
+    } else {
+        Access::Owner
+    };
+    who.ensure(access).await?;
     let req: ModeRequest = serde_json::from_value(body)
         .map_err(|e| ApiFailure::BadRequest(format!("mode must be \"off\" or \"propose\": {e}")))?;
     let paths = app.paths().clone();

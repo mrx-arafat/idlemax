@@ -6,6 +6,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use idlemax_core::capacity::{self, device_capacities, CapacityInput};
+use idlemax_core::control::caller::control_access;
 use idlemax_core::control::{
     admit_job, global_paused, paused_accounts, plan_control, unknown_scope,
 };
@@ -19,6 +20,7 @@ use idlemax_core::{Config, VERSION};
 use serde::Deserialize;
 
 use super::agents::log_transition;
+use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::why::Snapshot;
 use super::{page_limit, AppState};
@@ -125,11 +127,13 @@ pub(super) fn operator_job(mut job: Job) -> Job {
     job
 }
 
-/// `POST /v1/control`: the cluster status after the change.
+/// `POST /v1/control`: the cluster status after the change. A resume is owner-only.
 pub async fn control(
     State(app): State<AppState>,
+    who: Who,
     JsonBody(req): JsonBody<ControlRequest>,
 ) -> Result<Json<ClusterStatus>, ApiFailure> {
+    who.ensure(control_access(req.action)).await?;
     let now = now_ms();
     let status = app
         .with_store(move |store, cfg| {

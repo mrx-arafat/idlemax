@@ -8,6 +8,9 @@ use crate::cli::ClientError;
 pub const RUNTIME: u8 = 1;
 pub const USAGE: u8 = 2;
 
+/// What to do about an owner-only command refused to a launched process.
+pub const OWNER_ONLY_HELP: &str = "ask the owner to run it from their own terminal";
+
 /// What went wrong and the command that fixes it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{what}")]
@@ -107,8 +110,11 @@ pub fn unreachable(peer: Peer, url: &str) -> CliError {
 fn from_client(e: &ClientError) -> CliError {
     match e {
         ClientError::Api {
-            status: 401 | 403, ..
-        } => CliError::runtime(
+            status: 403,
+            message,
+            ..
+        } => CliError::runtime(message.clone(), OWNER_ONLY_HELP),
+        ClientError::Api { status: 401, .. } => CliError::runtime(
             "the server rejected this device's API token",
             "copy the coordinator's token to $IDLEMAX_HOME/token, or set IDLEMAX_TOKEN",
         ),

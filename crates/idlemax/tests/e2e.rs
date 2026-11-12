@@ -94,6 +94,7 @@ fn spawn(name: &'static str, home: &Path, state: &Path) -> Proc {
         .env("HOME", home)
         .env("IDLEMAX_HOME", state)
         .env_remove("IDLEMAX_TOKEN")
+        .env_remove("IDLEMAX_JOB_ID")
         .env("RUST_LOG", "info")
         .stdin(Stdio::null())
         .stdout(out.try_clone().unwrap())
@@ -146,6 +147,7 @@ fn idlemax(home: &Path, state: &Path, args: &[&str], stdin: Option<&str>) -> std
         .env("HOME", home)
         .env("IDLEMAX_HOME", state)
         .env_remove("IDLEMAX_TOKEN")
+        .env_remove("IDLEMAX_JOB_ID")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -386,6 +388,7 @@ async fn coord_and_agent_run_a_tiny_job() {
         .env("HOME", &home)
         .env("IDLEMAX_HOME", &state)
         .env_remove("IDLEMAX_TOKEN")
+        .env_remove("IDLEMAX_JOB_ID")
         .output()
         .unwrap();
     assert!(

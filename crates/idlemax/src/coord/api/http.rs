@@ -27,6 +27,9 @@ pub enum ApiFailure {
     /// The `Host` header names a host this server does not answer to.
     #[error("{0}")]
     Misdirected(String),
+    /// The caller may not make this call (an owner-only call from a launched process).
+    #[error("{0}")]
+    Forbidden(String),
     #[error("{0}")]
     Conflict(String),
     /// An extractor rejection keeps its own status (400, 413, 415, 422).
@@ -47,6 +50,7 @@ impl ApiFailure {
             ApiFailure::NotFound(_) => StatusCode::NOT_FOUND,
             ApiFailure::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             ApiFailure::Misdirected(_) => StatusCode::MISDIRECTED_REQUEST,
+            ApiFailure::Forbidden(_) => StatusCode::FORBIDDEN,
             ApiFailure::Conflict(_) => StatusCode::CONFLICT,
             ApiFailure::Rejected { status, .. } => *status,
             ApiFailure::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,

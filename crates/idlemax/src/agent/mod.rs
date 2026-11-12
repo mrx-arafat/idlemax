@@ -94,8 +94,9 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         ..LocalStatus::default()
     };
     let (handle, ports) = api::local_channel(initial);
+    let root = paths.root().to_path_buf();
     tokio::spawn(async move {
-        if let Err(e) = api::serve(listener, handle, token).await {
+        if let Err(e) = api::serve(listener, handle, token, &root).await {
             tracing::error!("local api stopped: {e}");
         }
     });

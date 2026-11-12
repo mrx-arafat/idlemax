@@ -18,7 +18,8 @@ use serde_json::json;
 use tokio::net::TcpListener;
 
 use super::agents::on_job_update;
-use super::{router, AppState};
+use super::caller::{CallerCheck, Lookup};
+use super::{router, router_with, AppState};
 use crate::coord::store::Store;
 use crate::state::now_ms;
 
@@ -161,11 +162,28 @@ impl Api {
 
     /// A coordinator over a store the test filled first.
     pub(super) async fn start_with_store(store: Store, config: Config) -> Self {
+        Self::open(store, config, None).await
+    }
+
+    /// With `lookup`, owner-only calls are judged by it instead of by the OS.
+    pub(super) async fn start_checked(config: Config, lookup: Option<Lookup>) -> Self {
+        Self::open(Store::open_in_memory().unwrap(), config, lookup).await
+    }
+
+    async fn open(store: Store, config: Config, lookup: Option<Lookup>) -> Self {
         let home = tempfile::tempdir().unwrap();
         let app = AppState::new(store, config, Paths::new(home.path()));
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, router(app, TOKEN)).await });
+        let app = match lookup {
+            Some(l) => router_with(app, TOKEN, CallerCheck::with_lookup(home.path(), l)),
+            None => router(app, TOKEN),
+        };
+        tokio::spawn(crate::coord::server::serve(
+            listener,
+            app,
+            std::future::pending(),
+        ));
         Self {
             base,
             http: reqwest::Client::new(),

@@ -51,6 +51,16 @@ enum ConfigCmd {
     },
 }
 
+impl ConfigArgs {
+    /// True for `set` and `unset`: they change what idlemax does, so only the owner runs them.
+    pub(super) fn changes_settings(&self) -> bool {
+        matches!(
+            self.cmd,
+            Some(ConfigCmd::Set { .. } | ConfigCmd::Unset { .. })
+        )
+    }
+}
+
 pub(super) async fn run(paths: &Paths, args: ConfigArgs, out: &Out) -> Result<()> {
     match args.cmd.unwrap_or(ConfigCmd::List { all: false }) {
         ConfigCmd::List { all } => list(paths, all, out),

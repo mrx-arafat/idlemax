@@ -4,6 +4,7 @@
 mod advice;
 mod agents;
 mod budget;
+pub mod caller;
 pub mod http;
 mod jobs;
 mod mode;
@@ -21,12 +22,13 @@ mod worker_tests;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::routing::{delete, get, post};
-use axum::{middleware, Router};
+use axum::{middleware, Extension, Router};
 use idlemax_core::control::ControlError;
 use idlemax_core::host::AllowedHosts;
 use idlemax_core::{Config, Paths};
 use tokio::task::JoinError;
 
+use self::caller::CallerCheck;
 use self::http::{ApiFailure, BearerToken, HostGuard};
 use super::store::{Store, StoreError};
 use super::web;
@@ -101,6 +103,12 @@ impl From<JoinError> for ApiFailure {
 }
 
 pub fn router(state: AppState, token: &str) -> Router {
+    let check = CallerCheck::for_home(state.paths().root());
+    router_with(state, token, check)
+}
+
+/// The router with the given caller check; tests pass one with a fixed lookup.
+pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
     let v1 = Router::new()
         .route("/v1/agent/heartbeat", post(agents::heartbeat))
         .route("/v1/agent/job-update", post(agents::job_update))
@@ -150,6 +158,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .fallback(http::no_route)
         .method_not_allowed_fallback(http::wrong_method)
         .with_state(state)
+        .layer(Extension(check))
         .layer(middleware::from_fn_with_state(guard, http::require_host))
 }
 

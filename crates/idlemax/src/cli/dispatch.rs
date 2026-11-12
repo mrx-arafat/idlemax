@@ -2,11 +2,14 @@
 //! client for the coordinator and go to `handlers`.
 
 use anyhow::{bail, Result};
+use idlemax_core::control::caller::{Access, CallerError, LAUNCHED_ENV};
 use idlemax_core::types::ControlAction;
 use idlemax_core::Paths;
 
-use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd};
+use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd, LocalCmd};
 use super::init_cmd::run_init;
+use super::out::OWNER_ONLY_HELP;
+use super::project::ProjectCmd;
 use super::{
     config_cmd, handlers, home, hooks, inbox, job, logs, mode, out, plan, print, project, report,
     review, rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli, CliError,
@@ -26,6 +29,12 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
     let Some(cmd) = cmd else {
         return home::run(coord, out, home::Mode::Full).await;
     };
+    // Before the token is loaded and before any call: a launched job or worker gets the
+    // lock's own text, not a token or network error.
+    if access_of(&cmd) == Access::Owner && std::env::var_os(LAUNCHED_ENV).is_some() {
+        let why = CallerError::Launched(std::process::id()).to_string();
+        return Err(CliError::runtime(why, OWNER_ONLY_HELP).into());
+    }
     // Doctor and the hooks report a broken state dir or config instead of failing on it.
     let cmd = match cmd {
         Cmd::Doctor => return run_doctor(coord, out).await,
@@ -90,6 +99,55 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
             let client = ApiClient::new(&url, token(&paths)?)?;
             run_coord(cmd, &client, out, zone).await
         }
+    }
+}
+
+/// What a command needs from its caller (docs/API.md, the access table). One match with no
+/// wildcard arm, so a command added later must be classed. Token-only commands are `Read`.
+fn access_of(cmd: &Cmd) -> Access {
+    match cmd {
+        Cmd::Resume(_)
+        | Cmd::Start
+        | Cmd::Local(LocalCmd::Resume)
+        | Cmd::Project(ProjectCmd::On { .. } | ProjectCmd::Add { .. } | ProjectCmd::Set { .. }) => {
+            Access::Owner
+        }
+        Cmd::Config(args) if args.changes_settings() => Access::Owner,
+        Cmd::Review(args) if args.acts() => Access::Owner,
+        Cmd::Mode(args) if !args.switches_off() => Access::Owner,
+        Cmd::Mode(_)
+        | Cmd::Stop(_)
+        | Cmd::Pause(_)
+        | Cmd::StopAll(_)
+        | Cmd::Local(LocalCmd::Pause | LocalCmd::StopAll)
+        | Cmd::Project(ProjectCmd::Off { .. })
+        | Cmd::Job(JobCmd::Cancel { .. }) => Access::Stop,
+        Cmd::Config(_)
+        | Cmd::Local(LocalCmd::Status)
+        | Cmd::Project(ProjectCmd::List { .. })
+        | Cmd::Job(JobCmd::Add(_))
+        | Cmd::Agent
+        | Cmd::Coord
+        | Cmd::Init(_)
+        | Cmd::Status
+        | Cmd::Jobs { .. }
+        | Cmd::Schedule(_)
+        | Cmd::Why { .. }
+        | Cmd::Quota
+        | Cmd::Plan(_)
+        | Cmd::Review(_)
+        | Cmd::Report(_)
+        | Cmd::Events { .. }
+        | Cmd::Logs { .. }
+        | Cmd::Inbox { .. }
+        | Cmd::Advise { .. }
+        | Cmd::Setup(_)
+        | Cmd::Service(_)
+        | Cmd::Statusline(_)
+        | Cmd::Tui
+        | Cmd::Doctor
+        | Cmd::Hooks(_)
+        | Cmd::Skill(_) => Access::Read,
     }
 }
 

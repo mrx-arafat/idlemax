@@ -1,13 +1,15 @@
 //! Agent local API adapter on 127.0.0.1:7879: device status and Global pause, resume and
 //! stop-all. It talks only to the agent loop, so it keeps working while the coordinator is down.
 
+use std::path::Path;
 use std::time::Duration;
 
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{middleware, Json, Router};
+use axum::{middleware, Extension, Json, Router};
 use idlemax_core::config::ReloadReport;
+use idlemax_core::control::caller::{control_access, Access};
 use idlemax_core::control::local_paused_after;
 use idlemax_core::host::AllowedHosts;
 use idlemax_core::protocol::{ControlRequest, LocalStatus};
@@ -15,6 +17,7 @@ use idlemax_core::types::ControlAction;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::coord::api::caller::{CallerCheck, Who};
 use crate::coord::api::http::{self, ApiFailure, BearerToken, HostGuard, JsonBody};
 use crate::coord::server::{self, Limits};
 
@@ -72,7 +75,12 @@ pub fn local_channel(initial: LocalStatus) -> (LocalHandle, LocalPorts) {
     )
 }
 
-pub fn router(handle: LocalHandle, token: &str) -> Router {
+/// `root` is the agent's state dir: a caller launched for it may not resume or reload.
+pub fn router(handle: LocalHandle, token: &str, root: &Path) -> Router {
+    router_with(handle, token, CallerCheck::for_home(root))
+}
+
+fn router_with(handle: LocalHandle, token: &str, check: CallerCheck) -> Router {
     let v1 = Router::new()
         .route("/v1/local/status", get(status))
         .route("/v1/local/control", post(control))
@@ -91,6 +99,7 @@ pub fn router(handle: LocalHandle, token: &str) -> Router {
         .fallback(http::no_route)
         .method_not_allowed_fallback(http::wrong_method)
         .with_state(handle)
+        .layer(Extension(check))
         .layer(middleware::from_fn_with_state(guard, http::require_host))
 }
 
@@ -101,17 +110,19 @@ pub async fn serve(
     listener: TcpListener,
     handle: LocalHandle,
     token: String,
+    root: &Path,
 ) -> std::io::Result<()> {
-    serve_limited(listener, handle, token, Limits::default()).await
+    serve_limited(listener, handle, token, root, Limits::default()).await
 }
 
 async fn serve_limited(
     listener: TcpListener,
     handle: LocalHandle,
     token: String,
+    root: &Path,
     limits: Limits,
 ) -> std::io::Result<()> {
-    let app = router(handle, &token);
+    let app = router(handle, &token, root);
     server::serve_with(listener, app, std::future::pending(), limits).await
 }
 
@@ -119,11 +130,14 @@ async fn status(State(h): State<LocalHandle>) -> Json<LocalStatus> {
     Json(h.status.borrow().clone())
 }
 
-/// 200 once the agent has applied this control, 202 if it has not within 5 s.
+/// 200 once the agent has applied this control, 202 if it has not within 5 s. A resume is
+/// owner-only.
 async fn control(
     State(h): State<LocalHandle>,
+    who: Who,
     JsonBody(req): JsonBody<ControlRequest>,
 ) -> Result<(StatusCode, Json<LocalStatus>), ApiFailure> {
+    who.ensure(control_access(req.action)).await?;
     local_paused_after(&req).map_err(|e| ApiFailure::BadRequest(e.to_string()))?;
     let (applied, received) = oneshot::channel();
     h.control
@@ -140,8 +154,9 @@ async fn control(
 }
 
 /// 200 with what the agent applied from `config.toml`, 400 with the reason when the file is
-/// not usable (the agent keeps its current settings).
-async fn reload(State(h): State<LocalHandle>) -> Result<Json<ReloadReport>, ApiFailure> {
+/// not usable (the agent keeps its current settings). Owner-only: it applies settings.
+async fn reload(State(h): State<LocalHandle>, who: Who) -> Result<Json<ReloadReport>, ApiFailure> {
+    who.ensure(Access::Owner).await?;
     let (reply, received) = oneshot::channel();
     h.reload
         .send(ReloadRequest { reply })
@@ -164,6 +179,7 @@ fn loop_stopped() -> ApiFailure {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::time::Duration;
 
     use tokio::io::AsyncReadExt;
@@ -174,7 +190,7 @@ mod tests {
     #[tokio::test]
     async fn reload_answers_with_what_the_loop_applied_or_why_it_could_not() {
         let (handle, mut ports) = local_channel(LocalStatus::default());
-        let applied = tokio::spawn(reload(State(handle.clone())));
+        let applied = tokio::spawn(reload(State(handle.clone()), Who::remote()));
         let request = ports.reload.recv().await.unwrap();
         let report = ReloadReport {
             applied: vec!["guard.require_ac_power".into()],
@@ -184,7 +200,7 @@ mod tests {
         let Json(answer) = applied.await.unwrap().unwrap();
         assert_eq!(answer, report);
 
-        let refused = tokio::spawn(reload(State(handle)));
+        let refused = tokio::spawn(reload(State(handle), Who::remote()));
         let request = ports.reload.recv().await.unwrap();
         request.reply.send(Err("config.toml: bad".into())).unwrap();
         let failure = refused.await.unwrap().unwrap_err();
@@ -203,7 +219,7 @@ mod tests {
             action: ControlAction::StopAll,
             reason: None,
         };
-        let task = tokio::spawn(control(State(handle), JsonBody(req)));
+        let task = tokio::spawn(control(State(handle), Who::remote(), JsonBody(req)));
         let request = ports.control.recv().await.unwrap();
         tokio::task::yield_now().await;
         assert!(
@@ -223,7 +239,7 @@ mod tests {
         let (handle, _ports) = local_channel(LocalStatus::default());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(serve(listener, handle, "t".repeat(40)));
+        tokio::spawn(serve(listener, handle, "t".repeat(40), Path::new("/")));
         let get = |host: String| async move {
             reqwest::Client::new()
                 .get(format!("http://{addr}/healthz"))
@@ -246,7 +262,13 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let limits = Limits::new(Duration::from_millis(50), Duration::from_secs(5));
-        let server = tokio::spawn(serve_limited(listener, handle, "t".repeat(40), limits));
+        let server = tokio::spawn(serve_limited(
+            listener,
+            handle,
+            "t".repeat(40),
+            Path::new("/"),
+            limits,
+        ));
 
         let mut client = TcpStream::connect(addr).await.unwrap();
         let mut byte = [0_u8; 1];

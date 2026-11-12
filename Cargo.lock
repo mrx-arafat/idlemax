@@ -1104,6 +1104,7 @@ dependencies = [
  "tokio",
  "toml",
  "tower-http 0.7.1",
+ "tower-layer",
  "tracing",
  "tracing-subscriber",
  "unicode-width",

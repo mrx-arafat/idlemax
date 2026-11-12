@@ -3,10 +3,11 @@
 
 use std::future::Future;
 use std::io;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::http::StatusCode;
-use axum::Router;
+use axum::{Extension, Router};
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto;
 use hyper_util::service::TowerToHyperService;
@@ -24,6 +25,14 @@ const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 pub(crate) struct Limits {
     header_read: Duration,
     request: Duration,
+}
+
+/// The two ends of the TCP connection a request came on, in its extensions: the caller check
+/// finds the calling process by them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Conn {
+    pub peer: SocketAddr,
+    pub local: SocketAddr,
 }
 
 impl Limits {
@@ -73,8 +82,11 @@ where
         tokio::select! {
             _ = &mut shutdown => break,
             accepted = listener.accept() => match accepted {
-                Ok((stream, _)) => {
-                    connections.spawn(connection(stream, app.clone(), close_rx.clone(), limits));
+                Ok((stream, peer)) => {
+                    let Ok(local) = stream.local_addr() else { continue };
+                    let conn = Conn { peer, local };
+                    let app = app.clone();
+                    connections.spawn(connection(stream, conn, app, close_rx.clone(), limits));
                 }
                 // Out of descriptors, an aborted handshake: the peer must not be able to stop the
                 // server this way. Back off so a failing accept cannot spin, then try again.
@@ -105,6 +117,7 @@ where
 
 async fn connection(
     stream: TcpStream,
+    conn: Conn,
     app: Router,
     mut close: watch::Receiver<()>,
     limits: Limits,
@@ -114,6 +127,7 @@ async fn connection(
         .http1()
         .header_read_timeout(limits.header_read)
         .timer(TokioTimer::new());
+    let app = tower_layer::Layer::layer(&Extension(conn), app);
     let connection = builder.serve_connection(TokioIo::new(stream), TowerToHyperService::new(app));
     tokio::pin!(connection);
     tokio::select! {

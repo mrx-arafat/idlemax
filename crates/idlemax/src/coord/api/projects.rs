@@ -6,12 +6,14 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use idlemax_core::control::caller::Access;
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectSource, ProjectView};
 use idlemax_core::explain::allowlist_warning;
 use idlemax_core::types::{EventKind, JobSpec, UnixMs};
 use idlemax_core::Config;
 use serde::Deserialize;
 
+use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::{offline_after_ms, AppState};
 use crate::coord::store::Store;
@@ -38,8 +40,10 @@ pub async fn list(
 /// `POST /v1/projects`: 201 with a new project, which is off, or 200 with the known one.
 pub async fn add(
     State(app): State<AppState>,
+    who: Who,
     JsonBody(new): JsonBody<NewProject>,
 ) -> Result<(StatusCode, Json<ProjectView>), ApiFailure> {
+    who.ensure(Access::Owner).await?;
     let now = now_ms();
     let (view, created) = app
         .with_store(move |store, cfg| {
@@ -63,15 +67,17 @@ pub async fn add(
     Ok((status, Json(view)))
 }
 
-/// `POST /v1/projects/{id}/on`.
+/// `POST /v1/projects/{id}/on`: owner-only.
 pub async fn on(
     state: State<AppState>,
+    who: Who,
     path: Result<Path<i64>, PathRejection>,
 ) -> Result<Json<ProjectView>, ApiFailure> {
+    who.ensure(Access::Owner).await?;
     switch(state, path, true).await
 }
 
-/// `POST /v1/projects/{id}/off`.
+/// `POST /v1/projects/{id}/off`: `Stop` access, so any holder of the token.
 pub async fn off(
     state: State<AppState>,
     path: Result<Path<i64>, PathRejection>,
@@ -106,9 +112,11 @@ async fn switch(
 /// `POST /v1/projects/{id}/settings`: the whole settings, replaced.
 pub async fn settings(
     State(app): State<AppState>,
+    who: Who,
     path: Result<Path<i64>, PathRejection>,
     JsonBody(settings): JsonBody<ProjectSettings>,
 ) -> Result<Json<ProjectView>, ApiFailure> {
+    who.ensure(Access::Owner).await?;
     let Path(id) = path?;
     let now = now_ms();
     let view = app

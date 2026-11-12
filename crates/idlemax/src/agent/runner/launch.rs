@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use idlemax_core::job_run::{self, scope_unit, Wrapper};
+use idlemax_core::paths::HOME_ENV;
 use idlemax_core::types::{Job, JobId, UnixMs};
 use idlemax_core::{Paths, TOKEN_ENV};
 
@@ -47,8 +48,11 @@ pub fn launch(
     let mut cmd = Command::new(exe);
     cmd.args(exe_args).current_dir(cwd);
     inherit_minimal_env(&mut cmd);
+    // The home is pinned after the spec's env: the worker lock reads it to tell this home's
+    // jobs from another idlemax's, so a spec must not name another one.
     cmd.envs(&spec.env)
         .env_remove(TOKEN_ENV)
+        .env(HOME_ENV, paths.root())
         .env(JOB_ID_ENV, job.id.to_string())
         .env(JOB_TAG_ENV, tag.to_string())
         .stdin(

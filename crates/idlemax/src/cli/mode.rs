@@ -21,6 +21,13 @@ enum ModeArg {
     Auto,
 }
 
+impl ModeArgs {
+    /// True when the switch is toward `off`, which any holder of the token may make.
+    pub fn switches_off(&self) -> bool {
+        self.mode == ModeArg::Off
+    }
+}
+
 pub async fn run(args: ModeArgs, c: &ApiClient, out: &Out) -> Result<()> {
     let mode = match args.mode {
         ModeArg::Off => Mode::Off,

@@ -23,6 +23,13 @@ pub struct ReviewArgs {
     cmd: Option<ReviewCmd>,
 }
 
+impl ReviewArgs {
+    /// True for keep and discard, which change the owner's repository; the list only reads.
+    pub fn acts(&self) -> bool {
+        self.cmd.is_some()
+    }
+}
+
 #[derive(Subcommand, Debug)]
 enum ReviewCmd {
     /// Keep the task's branch and remove its worktree folder

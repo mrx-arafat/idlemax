@@ -775,6 +775,21 @@ System sleep does not consume this runtime budget on macOS or Linux.
 - Quota probes only read the CLIs' files.
 - Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
+**Who may switch idlemax on.**
+A job that idlemax started can stop and pause work, but it cannot resume it, reload the agent's settings, switch the dispatcher out of `off`, or add, switch on or change a project, even when it reads the token file.
+The CLI refuses those commands when its own environment has `IDLEMAX_JOB_ID`, and the coordinator and the agent answer 403 when the calling process, or any process above it, carries the marker of this idlemax home.
+Run them from your own terminal, the dashboard or the TUI.
+The lock stops accidents and a launched process that tries the documented switches; it is not a sandbox.
+
+What the lock does not stop:
+
+- A write to `config.toml` in the state dir: every `[dispatcher]`, `[workers]` and quota key, the mode included, applies at once, because each daemon re-reads those keys when the file's mtime changes; every other key applies at the next reload or start.
+- A write to `rules.md`, the store or the token file, or deleting the `PAUSE` file: it is the same OS user.
+- Detaching: one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1.
+- A call to a coordinator on another machine: a caller that is not on the coordinator's host is judged by the token alone.
+- Acting through the owner's own session: a shell start-up file, a git hook or a service file that the owner's session runs later, or a script that drives the owner's browser.
+- Replacing the `idlemax` binary.
+
 ## AI quota maximizer
 
 Each AI account lists its windows and the reserve kept for you:
@@ -1211,7 +1226,7 @@ CARGO_BUILD_JOBS = "2"
 ```
 
 AI jobs also set `ai_account` and `token_class` (`small`, `medium`, `large`).
-A job starts from a minimal environment, not the agent's: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `IDLEMAX_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, the `XDG_*` base dirs and `DBUS_SESSION_BUS_ADDRESS` carry over, then the spec's `env` and `IDLEMAX_JOB_ID`.
+A job starts from a minimal environment, not the agent's: only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `IDLEMAX_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, the `XDG_*` base dirs and `DBUS_SESSION_BUS_ADDRESS` carry over, then the spec's `env`, `IDLEMAX_JOB_ID`, and `IDLEMAX_HOME` set to the agent's state dir whatever the spec says.
 So API keys, tokens and the ssh-agent socket in the agent's environment never reach a job; put what a job needs in its `env`.
 Jobs never get the API token, and `env` keys starting with `LD_` or `DYLD_` are refused.
 Use `on_user_active = "kill"` for jobs that hold a lock you need (a cargo target dir, an index, a git clone), because a paused job keeps holding it.

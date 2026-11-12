@@ -348,6 +348,8 @@ fn pause_resume_and_kill(home: &Path, r: &mut Runner, id: i64) {
 
 /// A job gets the few variables a tool needs to find itself and its login, the spec's own
 /// `env` and its id: nothing else from the agent, which may hold API keys or an ssh-agent socket.
+/// `IDLEMAX_HOME` is the agent's state dir whatever the spec says, so the worker lock knows the
+/// job's home.
 #[test]
 fn a_job_gets_a_minimal_environment_plus_its_own() {
     // Edition 2021: set_var is safe, and the name is unique to this test.
@@ -356,11 +358,16 @@ fn a_job_gets_a_minimal_environment_plus_its_own() {
     let mut r = runner(home.path(), &["sh"]);
     let mut task = job(6, &["sh", "-c", "env | sort"], 64);
     task.spec.env.insert("FROM_SPEC".into(), "yes".into());
+    task.spec
+        .env
+        .insert("IDLEMAX_HOME".into(), "/tmp/elsewhere".into());
     r.start(&task).unwrap();
     wait_ended(&mut r, STARVED);
     std::env::remove_var("IDLEMAX_TEST_CANARY_SECRET");
 
     let log = std::fs::read_to_string(Paths::new(home.path()).job_log_file(6)).unwrap();
+    let pinned = format!("\nIDLEMAX_HOME={}\n", home.path().display());
+    assert!(log.contains(&pinned), "{pinned:?} missing from:\n{log}");
     // The log's own `=== ... ===` header and footer lines are not variables.
     let names: Vec<&str> = log
         .lines()

@@ -16,6 +16,35 @@ It must be an IP address, `localhost` or a `*.localhost` name, the host of `coor
 A request with no `Host` header is served.
 The agent local API accepts IP addresses and `localhost` names only.
 
+Some calls are owner-only: a process that idlemax launched may not make them, even with the token.
+Each write is in one class; a route not listed is token-only, as before.
+
+| Access | Calls |
+|---|---|
+| `Read` | every `GET` |
+| `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/dispatcher/mode` toward `off` |
+| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings` |
+| token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
+
+For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.
+When the caller or any parent has `IDLEMAX_JOB_ID` in its environment and an `IDLEMAX_HOME` that is this server's state dir, or none, the call is `403` with:
+`this call comes from a job or worker that idlemax started (pid N); only the owner can do this, from their own terminal, the dashboard or the TUI`.
+A marker with another `IDLEMAX_HOME` belongs to another idlemax and does not count.
+When the calling process cannot be found within 2 seconds, the call is `403` with:
+`idlemax could not find the program that sent this call, so it is not treated as the owner; stop and pause still work`.
+`Read` and `Stop` calls never run the lookup, and the check never looks at a pause, the guard or the line state.
+A caller on another host is judged by the token alone.
+The CLI refuses an owner-only command before any call when its own environment has `IDLEMAX_JOB_ID`.
+
+What the lock does not stop:
+
+- A write to `config.toml` in the state dir: every `[dispatcher]`, `[workers]` and quota key, the mode included, applies at once, because each daemon re-reads those keys when the file's mtime changes; every other key applies at the next reload or start.
+- A write to `rules.md`, the store or the token file, or deleting the `PAUSE` file: it is the same OS user.
+- Detaching: one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1.
+- A call to a coordinator on another machine: a caller that is not on the coordinator's host is judged by the token alone.
+- Acting through the owner's own session: a shell start-up file, a git hook or a service file that the owner's session runs later, or a script that drives the owner's browser.
+- Replacing the `idlemax` binary.
+
 ## Coordinator (default `127.0.0.1:7878`, tailnet IP in production)
 
 | Method | Path | Body | Returns |
@@ -427,6 +456,7 @@ A device older than this field needs no change: the coordinator reads the verdic
   The coordinator never sends `stop_all` or `resume_all`; those exist for the agent's local control.
 - `pause` adds the scope to the paused set: nothing new is leased in it, and its active jobs get `pause_job`.
 - `resume` removes exactly that scope; resuming `global` does not clear device, account or job pauses.
+  It is owner-only, so it can be refused with 403 (see "Auth and errors").
   `resume_job` goes to reported paused jobs that no coordinator pause still holds.
 - `stop_all` pauses the scope and marks its active jobs `killed` (`last_error = "stop_all: <reason>"`).
   A reported job whose stored status is terminal, or that is leased to another device, gets `kill_job`.
