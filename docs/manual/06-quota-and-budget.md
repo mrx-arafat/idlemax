@@ -55,7 +55,7 @@ Then tell each device which accounts it may spend, only where you logged in to t
 idlemax config set agent.ai_accounts claude-max,codex-pro
 ```
 
-Both changes are read only when the agent starts (`config set` says `saved; restart the agent to apply it`), so restart it:
+Both changes are read only when the agent starts (with the agent running, `config set` says `saved; restart the agent to apply it, it reads this only at start`), so restart it:
 
 ```sh
 launchctl kickstart -k gui/$(id -u)/com.idlemax.agent   # macOS

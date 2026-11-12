@@ -109,8 +109,12 @@ The setup and check commands are argv, never a shell line, and their program mus
 
 When the same project name exists on more than one device, add `--device <id>` to `project on`, `off`, `set` and `list`.
 
-**How paths match.** Off-limits paths, core paths and the scope paths the orchestrator names match the way `.gitignore` reads a pattern: a pattern without `/` (a trailing one aside) matches a name at any depth, one with `/` is anchored at the repository root, `*` and `?` stay within one name, and `**` spans folders.
-A path also covers everything in the folder it names.
+**How paths match.** A path covers the file it names, or everything in the folder it names.
+`*` and `?` stay within one name, and `**` spans folders.
+
+- **Off-limits and core paths** read the way `.gitignore` reads a pattern: one with `/` (a trailing one aside) is anchored at the repository root, and a plain name matches at any depth (`secrets` also covers `config/secrets`).
+- **Scope paths**, which the orchestrator names for a task, are stricter: one with `/` is anchored at the root, a plain name is a top-level file or folder (`tests` is not `vendor/lib/tests`), and a glob without `/` matches a file name at any depth (`*.py` covers `calc/__init__.py`).
+  A scope path that covers every file (`*`, `**`, `*/**` or empty) or holds more than 8 `*` is dropped from the pick.
 
 ### Switch it on
 
@@ -184,7 +188,8 @@ It is told to name scope paths only from the project's files.
 When a named path matches none of them, the scope becomes the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
 
 - It runs with no tools, no hooks and no MCP servers.
-- It runs only when its inputs changed (at most once an hour by itself) or on `idlemax plan --refresh`.
+- It runs when its inputs changed, at most once an hour by itself, or on `idlemax plan --refresh`.
+  New work does not wait for the hour: a ready task the newest pass was not offered makes a pass due at once.
 - It runs only on a Claude account whose Budget is usable, while some account has room for one more Run today.
 - A pick naming anything it was not offered is dropped.
 - A task it sends to "needs you" stays there until the task changes.
@@ -250,7 +255,7 @@ Every 15 seconds, per device, it first continues the oldest worker that was shed
 
 A task that already has a Run is not launched again until that Run is discarded, except that a single `rejected` Run leaves the task open for one more attempt (see [Model tiers](#model-tiers)).
 A task whose last two Runs were rejected or discarded is never launched again: it needs you.
-A Run you discarded before its worker ever started counts as no try and no spend.
+A Run you discarded whose worker never reached `running` counts as no try and no spend; one discarded mid-work still counts.
 Every launch is an event that names the project, task, provider, model and the reason it was picked.
 
 ### Model tiers

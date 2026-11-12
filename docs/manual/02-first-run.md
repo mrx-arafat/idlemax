@@ -161,7 +161,7 @@ What it waits for depends on the profile (see [Concepts](03-concepts.md#profiles
 
 - On a Mac (profile `laptop`), idlemax waits until you have been away from the keyboard for 10 minutes, and until the laptop is on AC power.
   The sample below assumes this profile.
-- On Linux the default profile is `production`: there is no idle or AC wait, and a job waits only for load, memory pressure (PSI) or disk.
+- On Linux the default profile is `production`: there is no idle or AC wait, and a job waits only for machine health: load, memory or I/O pressure, swap-in, heat or low disk.
 After 60 seconds `--wait` gives up with exit code 124, and the job keeps its place in the queue.
 Ask why:
 

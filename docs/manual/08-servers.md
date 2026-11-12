@@ -155,6 +155,7 @@ mv ~/.idlemax/token ~/.idlemax/token.bak
 ssh <server> sudo cat /var/lib/idlemax/token | idlemax setup --role agent --coord-url http://100.64.0.10:7878 --token-stdin
 rm ~/.idlemax/token.bak
 idlemax service uninstall coord     # the old local coordinator is no longer needed
+idlemax config unset coordinator.listen   # optional: that line from the old setup is now unused
 ```
 
 ## Step 4: a credential per server

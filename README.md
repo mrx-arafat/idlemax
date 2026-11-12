@@ -98,7 +98,7 @@ ran: 1.0s on laptop
 ...
 ```
 
-Still queued after a minute? That is the guard protecting you: on a Mac (profile `laptop`) it waits for 10 idle minutes on AC power, while Linux defaults to the `production` profile, which has no idle wait and holds only for load, memory pressure or disk.
+Still queued after a minute? That is the guard protecting you: on a Mac (profile `laptop`) it waits for 10 idle minutes on AC power, while Linux defaults to the `production` profile, which has no idle wait and holds only for machine health: load, memory or I/O pressure, swap-in, heat or low disk.
 `idlemax why 1` says exactly what holds it and how to change it.
 
 **4. Open the dashboard** at <http://127.0.0.1:7878/> and paste your token from `cat ~/.idlemax/token`.
