@@ -238,3 +238,18 @@ fn a_hold_without_a_shed_before_it_stops_nothing() {
     let mut state = three_workers([0, 0, 0], [10, 20, 30]);
     assert!(kills(&state.plan(&In::new(RUN, LineState::Hold, 40).input(&[]))).is_empty());
 }
+
+#[test]
+fn workers_taken_back_after_a_restart_keep_their_real_start_for_the_shed_order() {
+    let mut state = AgentState::default();
+    // The older worker has the higher id, so only the real start times can pick the newer.
+    let mut older = worker(2, WorkerAction::Launch, 0);
+    older.started_ms = Some(100);
+    let mut newer = worker(1, WorkerAction::Launch, 0);
+    newer.started_ms = Some(200);
+    // Taken back in the newer-first order, both at the same restart time.
+    state.adopt(&newer, false, 5_000);
+    state.adopt(&older, false, 5_000);
+    let shed = In::new(RUN, LineState::Shed, 6_000);
+    assert_eq!(kills(&state.plan(&shed.input(&[]))), [1]);
+}

@@ -182,9 +182,11 @@ impl AgentState {
     }
 
     /// Tracks a job a previous agent started that is still running (a recovered worker); a
-    /// paused one is resumed by the next tick unless a hold still applies.
+    /// paused one is resumed by the next tick unless a hold still applies. It keeps the job's
+    /// real start, so the newest-first shed order still holds after a restart; `now_ms` is
+    /// only for a job with no start recorded.
     pub fn adopt(&mut self, job: &Job, paused: bool, now_ms: UnixMs) {
-        let mut job = tracked(job, now_ms);
+        let mut job = tracked(job, job.started_ms.unwrap_or(now_ms));
         job.paused = paused;
         self.jobs.insert(job.id, job);
     }

@@ -76,43 +76,8 @@ pub fn verdict(facts: &CheckFacts, spec: &WorkerSpec) -> Judged {
     let mut changed: Vec<String> = facts.diff.files.iter().map(|f| f.path.clone()).collect();
     changed.extend(facts.modified.iter().cloned());
     let scope = scope_findings(&changed, &spec.scope_paths, &spec.off_limits);
-    let mut rejected = Vec::new();
-    let mut concerns = Vec::new();
-    if facts.commits == 0 {
-        rejected.push("no commit was made".to_string());
-    }
-    if !scope.off_limits.is_empty() {
-        rejected.push(format!(
-            "changed off-limits paths: {}",
-            scope.off_limits.join(", ")
-        ));
-    }
-    match (facts.baseline_before, facts.baseline_after) {
-        (Some(0), Some(after)) if after != 0 => rejected.push(format!(
-            "the check passed before the change and fails after it (exit {after})"
-        )),
-        (Some(0), None) => concerns.push("the check did not finish after the change".into()),
-        (Some(before), Some(after)) if before != 0 && after != 0 => {
-            concerns.push("the check failed before the change and still fails".into())
-        }
-        _ => {}
-    }
-    if scope.no_scope {
-        concerns.push("the task named no files in scope".into());
-    }
-    if !scope.outside.is_empty() {
-        concerns.push(format!(
-            "changed paths outside the scope: {}",
-            scope.outside.join(", ")
-        ));
-    }
-    if !facts.modified.is_empty() {
-        concerns.push(format!(
-            "tracked files left uncommitted: {}",
-            facts.modified.join(", ")
-        ));
-    }
-    concerns.extend(review_concern(facts, spec));
+    let rejected = rejections(facts, &scope);
+    let concerns = concerns(facts, spec, &scope);
     let untracked = (!facts.untracked.is_empty())
         .then(|| format!("new untracked files: {}", facts.untracked.join(", ")));
     let summary = facts.summary.clone().unwrap_or_else(|| "no commit".into());
@@ -135,6 +100,51 @@ pub fn verdict(facts: &CheckFacts, spec: &WorkerSpec) -> Judged {
         concern: Some(join(found)),
         summary,
     }
+}
+
+/// The findings that reject a task: no commit, an off-limits path, a check it broke.
+fn rejections(facts: &CheckFacts, scope: &ScopeFindings) -> Vec<String> {
+    let mut found = Vec::new();
+    if facts.commits == 0 {
+        found.push("no commit was made".to_string());
+    }
+    if !scope.off_limits.is_empty() {
+        let paths = scope.off_limits.join(", ");
+        found.push(format!("changed off-limits paths: {paths}"));
+    }
+    if let (Some(0), Some(after)) = (facts.baseline_before, facts.baseline_after) {
+        if after != 0 {
+            found.push(format!(
+                "the check passed before the change and fails after it (exit {after})"
+            ));
+        }
+    }
+    found
+}
+
+/// The findings the owner has to look at: the check, the scope, leftovers and the review.
+fn concerns(facts: &CheckFacts, spec: &WorkerSpec, scope: &ScopeFindings) -> Vec<String> {
+    let mut found = Vec::new();
+    match (facts.baseline_before, facts.baseline_after) {
+        (Some(0), None) => found.push("the check did not finish after the change".into()),
+        (Some(before), Some(after)) if before != 0 && after != 0 => {
+            found.push("the check failed before the change and still fails".into())
+        }
+        _ => {}
+    }
+    if scope.no_scope {
+        found.push("the task named no files in scope".into());
+    }
+    if !scope.outside.is_empty() {
+        let paths = scope.outside.join(", ");
+        found.push(format!("changed paths outside the scope: {paths}"));
+    }
+    if !facts.modified.is_empty() {
+        let paths = facts.modified.join(", ");
+        found.push(format!("tracked files left uncommitted: {paths}"));
+    }
+    found.extend(review_concern(facts, spec));
+    found
 }
 
 /// The reviewer's concern, or the lack of a review a high risk needed.

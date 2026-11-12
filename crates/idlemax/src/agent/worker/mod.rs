@@ -189,9 +189,13 @@ impl Workers {
     /// The tracked jobs and whether each is paused, for an agent that takes back recovered
     /// workers.
     pub fn jobs(&self) -> Vec<(Job, bool)> {
+        let with_start = |t: &Tracked| Job {
+            started_ms: Some(t.clock.started_ms()),
+            ..t.job.clone()
+        };
         self.tracked
             .values()
-            .map(|t| (t.job.clone(), t.paused))
+            .map(|t| (with_start(t), t.paused))
             .collect()
     }
 
