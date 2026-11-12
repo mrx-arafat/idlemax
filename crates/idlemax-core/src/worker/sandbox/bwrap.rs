@@ -38,6 +38,11 @@ pub struct Fence {
     pub tmp: String,
     pub hidden_dirs: Vec<String>,
     pub hidden_files: Vec<String>,
+    /// Bound read-only after the writable binds, inside them: what the worker must not change
+    /// in a folder it may otherwise write.
+    pub read_only: Vec<String>,
+    /// Variables set inside, such as the private `GIT_DIR` of the worker's commits.
+    pub env: Vec<(String, String)>,
     pub claude: Option<ClaudeHome>,
     pub proxy_socket: String,
     pub relay_port: u16,
@@ -76,6 +81,9 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
             a.bind(cred, &format!("{CLAUDE_DIR}/.credentials.json"));
         }
     }
+    for path in &f.read_only {
+        a.push(&["--ro-bind", path, path]);
+    }
     a.bind(&f.proxy_socket, PROXY_SOCKET);
     a.push(&["--ro-bind", &f.idlemax_bin, IDLEMAX_BIN]);
     a.push(&[
@@ -94,6 +102,9 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
     a.push(&["--setenv", "TMPDIR", "/tmp"]);
     if f.claude.is_some() {
         a.push(&["--setenv", "CLAUDE_CONFIG_DIR", CLAUDE_DIR]);
+    }
+    for (name, value) in &f.env {
+        a.push(&["--setenv", name, value]);
     }
     for name in UNSET {
         a.push(&["--unsetenv", name]);
@@ -148,6 +159,8 @@ mod tests {
             tmp: "/s/sandbox/tmp/7-1".into(),
             hidden_dirs: vec!["/h/.ssh".into(), "/s".into()],
             hidden_files: vec!["/h/.git-credentials".into()],
+            read_only: vec!["/s/sandbox/git/3/config".into()],
+            env: vec![("GIT_DIR".into(), "/s/sandbox/git/3".into())],
             claude: Some(ClaudeHome {
                 dir: "/s/sandbox/claude".into(),
                 credentials: Some("/h/.claude/.credentials.json".into()),
@@ -171,13 +184,14 @@ mod tests {
             --bind /s/sandbox/tmp/7-1 /tmp \
             --bind /s/sandbox/claude /run/idlemax/claude \
             --bind /h/.claude/.credentials.json /run/idlemax/claude/.credentials.json \
+            --ro-bind /s/sandbox/git/3/config /s/sandbox/git/3/config \
             --bind /s/sandbox/proxy-7-1.sock /run/idlemax/proxy.sock \
             --ro-bind /usr/local/bin/idlemax /run/idlemax/idlemax \
             --unshare-net --unshare-pid --unshare-ipc --unshare-uts --die-with-parent --new-session \
             --setenv HTTPS_PROXY http://127.0.0.1:3128 --setenv HTTP_PROXY http://127.0.0.1:3128 \
             --setenv https_proxy http://127.0.0.1:3128 --setenv http_proxy http://127.0.0.1:3128 \
             --setenv NO_PROXY  --setenv no_proxy  --setenv TMPDIR /tmp \
-            --setenv CLAUDE_CONFIG_DIR /run/idlemax/claude \
+            --setenv CLAUDE_CONFIG_DIR /run/idlemax/claude --setenv GIT_DIR /s/sandbox/git/3 \
             --unsetenv SSH_AUTH_SOCK --unsetenv DBUS_SESSION_BUS_ADDRESS --unsetenv XDG_RUNTIME_DIR \
             --chdir /s/worktrees/app/t1 -- /bin/sh -c";
         assert!(line.starts_with(expected), "{line}");
@@ -196,8 +210,7 @@ mod tests {
         };
         let argv = bwrap_args(&f);
         assert!(!argv.iter().any(|a| a == "CLAUDE_CONFIG_DIR"));
-        assert!(!argv
-            .iter()
-            .any(|a| a.ends_with("/hooks") || a.ends_with("/config")));
+        let mut writable = argv.windows(2).filter(|w| w[0] == "--bind").map(|w| &w[1]);
+        assert!(!writable.any(|a| a.ends_with("/hooks") || a.ends_with("/config")));
     }
 }

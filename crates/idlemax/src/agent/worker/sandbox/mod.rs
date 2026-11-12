@@ -3,6 +3,9 @@
 //! each sandboxed worker, the relay inside the sandbox, and the check that the CLI really runs
 //! in another mount namespace.
 
+#[cfg(test)]
+mod live_tests;
+pub mod private_git;
 pub mod proxy;
 pub mod relay;
 
@@ -51,6 +54,8 @@ pub struct SandboxPlan {
     /// The state dir: hidden, and where the sandbox's own files live.
     pub root: PathBuf,
     pub hosts: Vec<String>,
+    /// The idlemax binary the relay inside the sandbox runs.
+    pub idlemax_bin: PathBuf,
     /// The headless host, which appends the CLI itself; a pane gets the shim.
     pub headless: bool,
 }
@@ -59,6 +64,10 @@ pub struct SandboxPlan {
 pub struct GitDirs {
     pub common: PathBuf,
     pub admin: PathBuf,
+    /// The Run, its branch and the commit the branch starts at, for its private git dir.
+    pub run: i64,
+    pub branch: String,
+    pub start: String,
 }
 
 /// One launch's sandbox: the wrap for the headless host, or the env pairs that put the Herdr
@@ -114,7 +123,9 @@ pub fn wrap(
     let sandbox = plan.root.join("sandbox");
     let tmp = sandbox.join("tmp").join(format!("{job}-{tag}"));
     crate::state::create_private_dir(&tmp).map_err(|e| io("make its temp dir", e))?;
-    std::fs::create_dir_all(git.common.join("logs")).map_err(|e| io("make git logs", e))?;
+    let private = private_git::dir_of(&plan.root, git.run);
+    private_git::prepare(&private, &git.common, &git.admin, &git.branch, &git.start)
+        .map_err(|e| format!("the sandbox could not make its git dir: {e}"))?;
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let claude = match cli {
         WorkerCli::Claude => Some(claude_home(&sandbox, home.as_deref(), folder)?),
@@ -131,14 +142,22 @@ pub fn wrap(
     .map_err(|e| io("start its proxy", e))?;
     let fence = Fence {
         worktree: show(folder),
-        git_writable: git_writable(git),
+        git_writable: git_writable(git, &private),
+        read_only: private_git::read_only(&private)
+            .iter()
+            .map(|p| show(p))
+            .collect(),
+        env: vec![
+            ("GIT_DIR".into(), show(&private)),
+            ("GIT_WORK_TREE".into(), show(folder)),
+        ],
         tmp: show(&tmp),
         hidden_dirs: hidden(home.as_deref(), &HIDDEN_DIRS, Path::is_dir, &plan.root),
         hidden_files: hidden(home.as_deref(), &HIDDEN_FILES, Path::is_file, Path::new("")),
         claude,
         proxy_socket: show(&socket),
         relay_port: RELAY_PORT,
-        idlemax_bin: show(&std::env::current_exe().map_err(|e| io("find idlemax", e))?),
+        idlemax_bin: show(&plan.idlemax_bin),
     };
     let wrap = Wrap {
         program: plan.bwrap.clone(),
@@ -193,16 +212,16 @@ fn claude_home(sandbox: &Path, home: Option<&Path>, folder: &Path) -> Result<Cla
     })
 }
 
-/// The parts of the common dir a commit writes; `config` and `hooks` stay read-only.
-fn git_writable(git: &GitDirs) -> Vec<String> {
-    let parts = ["objects", "refs", "logs", "packed-refs"];
-    let mut out: Vec<String> = parts
+/// What the worker's git writes: its private git dir. Never the owner's refs, logs or
+/// `packed-refs` (review finding 1).
+fn git_writable(git: &GitDirs, private: &Path) -> Vec<String> {
+    let mut out: Vec<String> = [git.common.join("objects")]
         .iter()
-        .map(|p| git.common.join(p))
         .filter(|p| p.exists())
-        .map(|p| show(&p))
+        .map(|p| show(p))
         .collect();
     out.push(show(&git.admin));
+    out.push(show(private));
     out
 }
 

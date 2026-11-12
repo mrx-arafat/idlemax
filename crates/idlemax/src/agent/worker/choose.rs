@@ -114,8 +114,11 @@ impl Workers {
                     .get(cli.as_str())
                     .cloned()
                     .unwrap_or_else(|| default_hosts(cli));
+                let idlemax_bin = std::env::current_exe()
+                    .map_err(|e| format!("the sandbox cannot find idlemax itself: {e}"))?;
                 let plan = SandboxPlan {
                     bwrap: found?,
+                    idlemax_bin,
                     root: self.paths.root().to_path_buf(),
                     hosts,
                     headless: kind == HostKind::Headless,

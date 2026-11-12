@@ -58,6 +58,16 @@ pub fn spawn(ctx: CheckCtx) -> Receiver<CheckFacts> {
 }
 
 fn gather(ctx: &CheckCtx) -> CheckFacts {
+    // A sandboxed worker committed in its private git dir; only its branch comes over.
+    let imported = super::sandbox::private_git::import(
+        &ctx.state_dir,
+        ctx.worker.run,
+        &ctx.folder,
+        &ctx.branch,
+    );
+    if let Err(e) = imported {
+        tracing::warn!(job = ctx.job, error = %e, "the sandboxed worker's branch was not imported");
+    }
     let (tip, head_off_branch) = branch_tip(ctx);
     // A branch that is gone has nothing to judge: the empty range finds no commit.
     let target = tip.clone().unwrap_or_else(|| ctx.base_commit.clone());

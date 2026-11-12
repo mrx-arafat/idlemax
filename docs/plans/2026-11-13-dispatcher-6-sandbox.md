@@ -46,9 +46,11 @@ This plan answers A13 (Q22) as the orchestrator decided it under the owner's del
    At each launch idlemax writes its `.claude.json` from the owner's one with only the keys the CLI needs to run (`oauthAccount`, `userID`, `hasCompletedOnboarding`, onboarding and theme flags) and the worktree marked trusted, so no trust dialog appears in a sandboxed start.
    The owner's `mcpServers` and `projects` never enter it.
    The owner's credentials file `~/.claude/.credentials.json` is bound read-write at `$CLAUDE_CONFIG_DIR/.credentials.json`, so a token refresh inside the sandbox updates the owner's login instead of forking it (Open Question 1).
-6. **Writes to the shared `.git` are narrowed.**
-   Inside the sandbox the git common dir is read-only except `objects/`, `refs/`, `logs/`, `packed-refs` when it exists, and `worktrees/<name>/`.
-   `config` and `hooks/` are read-only, which closes red-team case 5 for a sandboxed worker.
+6. **The worker's git is private.**
+   Inside the sandbox `GIT_DIR` is a folder of idlemax's own (`$IDLEMAX_HOME/sandbox/git/<run>`) with its own refs, index and objects, and the owner's objects as a read-only alternate; its `config`, `hooks` and `objects/info` are bound read-only.
+   No ref, log or `packed-refs` of the owner's repository is writable (review finding 1).
+   When the turn ends, idlemax fetches only the Run's branch from it into the owner's repository (the fetch checks every object), so that branch is the only ref a worker can move.
+   `scripts/sandbox-live.sh` runs the live attack tests against a real bwrap in a throwaway container.
 7. **One process tree.**
    bwrap runs with `--unshare-pid --die-with-parent`, so when the stop kills bwrap every process of the worker dies with its PID namespace, a `setsid` daemon included (red-team case 10).
    Both hosts add `--new-session`, so a pane's CLI cannot push keystrokes into the pane's shell with `TIOCSTI` (review finding 9); the pane TUI then has no controlling terminal, and the proof checks that it still resizes and takes Ctrl-C.

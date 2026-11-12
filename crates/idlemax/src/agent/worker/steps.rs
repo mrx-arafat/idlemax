@@ -125,7 +125,7 @@ fn launch(ctx: &LaunchCtx, p: &mut Progress) -> Result<(), Stop> {
     );
     let args = args_for(ctx, &folder)?;
     let sandbox = match &ctx.sandbox {
-        Some(plan) => Some(sandbox_for(ctx, plan, &folder)?),
+        Some(plan) => Some(sandbox_for(ctx, p, plan, &folder)?),
         None => None,
     };
     let remotes = p.remotes.clone();
@@ -324,14 +324,26 @@ fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
 }
 
 /// The sandbox of this launch: its git dirs, then the fence, the proxy and the wrap (A13).
-fn sandbox_for(ctx: &LaunchCtx, plan: &SandboxPlan, folder: &Path) -> Result<Wrapped, Stop> {
+fn sandbox_for(
+    ctx: &LaunchCtx,
+    p: &Progress,
+    plan: &SandboxPlan,
+    folder: &Path,
+) -> Result<Wrapped, Stop> {
     let dir = |flag: &str| {
         git(ctx, folder, &["rev-parse", "--path-format=absolute", flag])
             .map(|out| PathBuf::from(out.trim()))
     };
+    let missing = |what: &str| Stop::Failed(format!("the sandbox needs the Run's {what}"));
     let dirs = GitDirs {
         common: dir("--git-common-dir")?,
         admin: dir("--git-dir")?,
+        run: ctx.worker.run,
+        branch: p.branch.clone().ok_or_else(|| missing("branch"))?,
+        start: p
+            .start_head
+            .clone()
+            .ok_or_else(|| missing("start commit"))?,
     };
     sandbox::wrap(plan, (ctx.job.id, ctx.tag), ctx.worker.cli, folder, &dirs).map_err(Stop::Failed)
 }
