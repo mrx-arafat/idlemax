@@ -250,7 +250,8 @@ The mode lives in `config.toml` as `dispatcher.mode`, and every daemon picks a c
 ### What auto does
 
 In `auto` idlemax launches each orchestrator pick by itself, with no approval per launch.
-Every 15 seconds, per device, it first continues the oldest worker that was shed, then starts the next pick, and only when:
+It runs one launch step every `workers.settle_secs`, at least every second and at most every 15 seconds (so every 15 s at the default of 60).
+In each step, per device, it first continues the oldest worker that was shed, then starts the next pick, and only when:
 
 - the device is online with no pause or kill switch, the account is not paused, and the line state is `run` with an open slot;
 - no worker on the device is still starting, and the last launch there is at least `workers.settle_secs` (60) seconds old, so memory settles;
