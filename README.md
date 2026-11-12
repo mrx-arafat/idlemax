@@ -866,6 +866,11 @@ idlemax mode propose    # show what it would launch, and launch nothing (the def
 ```
 `--device <id>` picks a device when the same name exists on more than one.
 
+Every minute each agent tells the coordinator which git repositories its Herdr panes are in, whether one of your agent sessions is working there, and, for projects you switched on, the base commit, the roadmap items and your changed files.
+A repository Herdr shows becomes a project that is off.
+These feeds carry full project paths, unlike the advisor's.
+Set `agent.dispatch_inputs_secs` to `0` to send nothing.
+
 ## Controls
 
 Every command reads `$IDLEMAX_HOME` (default `~/.idlemax`; set but empty is an error).
@@ -1024,6 +1029,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `agent.profile` | from the OS | `macos_laptop` or `linux_server` guard preset |
 | `agent.listen` | `127.0.0.1:7879` | local agent API |
 | `agent.sample_secs`, `agent.heartbeat_secs` | `30`, `30` | guard sample and heartbeat intervals |
+| `agent.dispatch_inputs_secs` | `60` | how often the agent sends the paths of its git repositories, owner activity, roadmap items and the owner's changed files of switched-on projects to the coordinator; `0` sends nothing |
 | `agent.advisor_inputs_secs` | `900` | how often the agent sends its `gh` summary and session metadata to the advisor; `0` sends nothing |
 | `agent.notify` | `false` | post a macOS notification with the job name and outcome when a job finishes; ignored on other systems |
 | `agent.keep_awake` | `off` | `ac` prevents idle system sleep on macOS while eligible queued or running work exists on AC power; applies live |

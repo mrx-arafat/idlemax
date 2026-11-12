@@ -5,6 +5,7 @@ mod advisor_feed;
 pub mod api;
 mod cgroup;
 pub mod client;
+mod dispatch_feed;
 mod event_loop;
 mod keep_awake;
 pub mod metrics;
@@ -116,6 +117,8 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         heartbeat_every: Duration::from_secs(config.agent.heartbeat_secs),
         advisor_inputs_every: (config.agent.advisor_inputs_secs > 0)
             .then(|| Duration::from_secs(config.agent.advisor_inputs_secs)),
+        dispatch_inputs_every: (config.agent.dispatch_inputs_secs > 0)
+            .then(|| Duration::from_secs(config.agent.dispatch_inputs_secs)),
         device_refresh_every: Duration::from_secs(3600),
         notify: config.agent.notify,
         paths: paths.clone(),

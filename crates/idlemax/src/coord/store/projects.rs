@@ -1,6 +1,7 @@
 //! Project rows (adapter): the repositories idlemax knows about, off until the owner switches
 //! one on, with the owner's settings as JSON. The domain checks names and settings.
 
+use idlemax_core::dispatch::inputs::RepoReport;
 use idlemax_core::dispatch::project::{
     NewProject, Project, ProjectSettings, ProjectSource, ProjectView,
 };
@@ -113,6 +114,49 @@ impl Store {
             params![id, json_text(settings)?],
         )?;
         self.get_project(id)
+    }
+}
+
+impl Store {
+    /// Records a device's feed: an unknown repository becomes a project that is off, with
+    /// its default branch as the base; a known one is marked seen, and owner-active when an
+    /// owner session works there. A repository over the device's limit is skipped, so the
+    /// limit never fails a feed.
+    pub fn upsert_discovered(
+        &mut self,
+        device: &str,
+        repos: &[RepoReport],
+        now: UnixMs,
+    ) -> StoreResult<()> {
+        for repo in repos {
+            let new = NewProject {
+                path: repo.path.clone(),
+                device: Some(device.to_string()),
+                name: Some(repo.name.clone()).filter(|n| !n.trim().is_empty()),
+            };
+            let (view, created) = match self.insert_project(&new, device, ProjectSource::Herdr, now)
+            {
+                Ok(found) => found,
+                Err(StoreError::LimitReached { .. } | StoreError::Invalid(_)) => continue,
+                Err(e) => return Err(e),
+            };
+            if created {
+                let settings = ProjectSettings {
+                    base_branch: repo.default_branch.clone(),
+                    ..ProjectSettings::default()
+                };
+                if settings.validate().is_ok() {
+                    self.set_project_settings(view.project.id, &settings)?;
+                }
+            }
+            self.conn.execute(
+                "UPDATE projects SET seen_ms = ?2,
+                   owner_active_ms = CASE WHEN ?3 THEN ?2 ELSE owner_active_ms END
+                 WHERE id = ?1",
+                params![view.project.id, now, repo.working],
+            )?;
+        }
+        Ok(())
     }
 }
 

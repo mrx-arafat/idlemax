@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::advice::SessionMeta;
 use crate::protocol::name_problem;
 use crate::types::{DeviceId, UnixMs};
 
@@ -202,6 +203,27 @@ pub fn name_check(name: &str) -> Result<(), String> {
         Some(p) => Err(p),
         None => Ok(()),
     }
+}
+
+/// "Recently" for owner activity (A25): the quota rule's interactive hold, 30 minutes.
+pub const OWNER_ACTIVE_WINDOW_MS: i64 = 30 * 60_000;
+
+/// The owner is active in a project when an owner agent session there was working within the
+/// window, or a session of the same device in a folder of the project's name was active (D5).
+pub fn owner_active(
+    view: &ProjectView,
+    sessions: &[(DeviceId, SessionMeta)],
+    now_ms: UnixMs,
+) -> bool {
+    let recent = |at: UnixMs| now_ms.saturating_sub(at) < OWNER_ACTIVE_WINDOW_MS;
+    let p = &view.project;
+    let folder = default_name(&p.path);
+    view.owner_active_ms.is_some_and(recent)
+        || sessions.iter().any(|(device, s)| {
+            device == &p.device
+                && s.project.as_deref() == Some(folder.as_str())
+                && recent(s.last_activity_ms)
+        })
 }
 
 #[cfg(test)]

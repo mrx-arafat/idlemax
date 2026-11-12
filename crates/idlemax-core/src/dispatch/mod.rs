@@ -5,7 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod inputs;
 pub mod project;
+pub mod roadmap;
 pub mod room;
 
 /// What the dispatcher does with its plan.

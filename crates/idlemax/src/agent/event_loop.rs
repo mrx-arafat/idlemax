@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use idlemax_core::config::Config;
+use idlemax_core::dispatch::inputs::DispatchReply;
 use idlemax_core::dispatch::room::{RoomDecision, WorkerRoom};
 use idlemax_core::guard::Guard;
 use idlemax_core::job_run;
@@ -67,6 +68,8 @@ pub struct Wiring {
     pub heartbeat_every: Duration,
     /// How often to send the advisor inputs; None sends nothing.
     pub advisor_inputs_every: Option<Duration>,
+    /// How often to send the dispatch inputs; None sends nothing.
+    pub dispatch_inputs_every: Option<Duration>,
     pub device_refresh_every: Duration,
     pub notify: bool,
     /// Where `config.toml` lives and the settings the agent started with, so a reload can
@@ -94,6 +97,9 @@ pub struct Agent {
     sample_every: Duration,
     heartbeat_every: Duration,
     advisor_inputs_every: Option<Duration>,
+    dispatch_inputs_every: Option<Duration>,
+    /// The switched-on projects of the last dispatch reply.
+    dispatch_projects: Vec<idlemax_core::dispatch::project::Project>,
     device_refresh_every: Duration,
     notify: bool,
     paths: Paths,
@@ -146,6 +152,8 @@ impl Agent {
             sample_every: w.sample_every,
             heartbeat_every: w.heartbeat_every,
             advisor_inputs_every: w.advisor_inputs_every,
+            dispatch_inputs_every: w.dispatch_inputs_every,
+            dispatch_projects: Vec::new(),
             device_refresh_every: w.device_refresh_every,
             notify: w.notify,
             paths: w.paths,
@@ -190,6 +198,10 @@ impl Agent {
         let mut feed_tick = ticker(self.advisor_inputs_every.unwrap_or_default(), true);
         let mut feed: Option<JoinHandle<()>> = None;
         let mut feed_due = false;
+        let dispatch_on = self.dispatch_inputs_every.is_some();
+        let mut dispatch_tick = ticker(self.dispatch_inputs_every.unwrap_or_default(), true);
+        let mut dispatch: Option<JoinHandle<Option<DispatchReply>>> = None;
+        let mut dispatch_due = false;
         self.on_sample().await;
         loop {
             // The runner reaps exits and checks memory caps; faster while a job nears its cap.
@@ -216,6 +228,11 @@ impl Agent {
                     log_feed_end(done);
                 }
                 _ = feed_tick.tick(), if feed_on => feed_due = true,
+                Some(done) = join(&mut dispatch) => {
+                    dispatch = None;
+                    self.on_dispatch_reply(done);
+                }
+                _ = dispatch_tick.tick(), if dispatch_on => dispatch_due = true,
                 _ = refresh_device.tick() => self.on_refresh_device_info().await,
             }
             if self.refill_due {
@@ -230,11 +247,18 @@ impl Agent {
                 feed_due = false;
                 feed = Some(self.spawn_feed());
             }
+            if dispatch_due && dispatch.is_none() && self.online {
+                dispatch_due = false;
+                dispatch = Some(self.spawn_dispatch_feed());
+            }
             self.update_keep_awake().await;
             self.publish();
         }
         if let Some(t) = trip {
             t.abort();
+        }
+        if let Some(d) = dispatch {
+            d.abort();
         }
         if let Some(f) = feed {
             f.abort();

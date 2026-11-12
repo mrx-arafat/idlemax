@@ -1,12 +1,14 @@
 //! The coordinator side: heartbeat trips and their replies, the online flag and the advisor
 //! feed task. Part of the agent event loop (adapter layer).
 
+use idlemax_core::dispatch::inputs::DispatchReply;
 use idlemax_core::protocol::{Heartbeat, HeartbeatReply};
 use tokio::task::{JoinError, JoinHandle};
 use tracing::{error, info, warn};
 
 use super::{Agent, UPDATES_PER_TRIP};
 use crate::agent::advisor_feed;
+use crate::agent::dispatch_feed::{self, FeedContext};
 use crate::agent::uplink::{self, Trip};
 use crate::state::now_ms;
 
@@ -71,6 +73,25 @@ impl Agent {
     pub(super) fn spawn_feed(&self) -> JoinHandle<()> {
         let (client, device) = (self.client.clone(), self.device.id.clone());
         tokio::spawn(advisor_feed::run(client, device))
+    }
+
+    /// Sends the dispatch inputs in its own task; Herdr and git reads never stall the loop.
+    pub(super) fn spawn_dispatch_feed(&self) -> JoinHandle<Option<DispatchReply>> {
+        let ctx = FeedContext {
+            device: self.device.id.clone(),
+            paths: self.paths.clone(),
+            projects: self.dispatch_projects.clone(),
+        };
+        tokio::spawn(dispatch_feed::run(self.client.clone(), ctx))
+    }
+
+    /// Keeps the reply's projects for the next run; a failed run keeps the last ones.
+    pub(super) fn on_dispatch_reply(&mut self, done: Result<Option<DispatchReply>, JoinError>) {
+        match done {
+            Ok(Some(reply)) => self.dispatch_projects = reply.projects,
+            Ok(None) => {}
+            Err(e) => warn!("dispatch feed task failed: {e}"),
+        }
     }
 
     fn heartbeat(&self) -> Heartbeat {

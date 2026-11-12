@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use idlemax_core::advice::AdvisorInputs;
+use idlemax_core::dispatch::inputs::{DispatchInputs, DispatchReply};
 use idlemax_core::protocol::{Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -95,6 +96,14 @@ impl CoordClient {
     pub async fn advisor_inputs(&self, inputs: &AdvisorInputs) -> Result<(), ClientError> {
         let _: serde_json::Value = self.post("/v1/agent/advisor-inputs", inputs).await?;
         Ok(())
+    }
+
+    /// Sends the dispatch inputs; the reply lists this device's switched-on projects.
+    pub async fn dispatch_inputs(
+        &self,
+        inputs: &DispatchInputs,
+    ) -> Result<DispatchReply, ClientError> {
+        self.post("/v1/agent/dispatch-inputs", inputs).await
     }
 
     async fn post<B, R>(&self, path: &str, body: &B) -> Result<R, ClientError>

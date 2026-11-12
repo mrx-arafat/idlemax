@@ -83,6 +83,7 @@ async fn device_info_refreshes_on_ticker() {
         sample_every: Duration::from_secs(60),
         heartbeat_every: Duration::from_secs(60),
         advisor_inputs_every: None,
+        dispatch_inputs_every: None,
         device_refresh_every: Duration::from_millis(50),
         notify: false,
         paths: paths.clone(),

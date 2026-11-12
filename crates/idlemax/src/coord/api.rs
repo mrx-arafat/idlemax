@@ -6,6 +6,7 @@ mod agents;
 pub mod http;
 mod jobs;
 mod mode;
+mod plan;
 mod projects;
 mod report;
 mod schedules;
@@ -93,6 +94,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/agent/heartbeat", post(agents::heartbeat))
         .route("/v1/agent/job-update", post(agents::job_update))
         .route("/v1/agent/advisor-inputs", post(agents::advisor_inputs))
+        .route("/v1/agent/dispatch-inputs", post(plan::dispatch_inputs))
         .route("/v1/status", get(jobs::status))
         .route("/v1/jobs", get(jobs::list).post(jobs::add))
         .route("/v1/jobs/{id}", get(jobs::get_one))

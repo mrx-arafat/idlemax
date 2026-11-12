@@ -1,0 +1,197 @@
+//! Adapter: git facts of one folder, read with `git --no-optional-locks` so no read takes a
+//! lock in the owner's repository. Every call has a 5 s timeout; a failed call leaves its
+//! field empty.
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use tokio::process::Command;
+
+const GIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The roadmap files tried, in order, on the base branch.
+const ROADMAP_FILES: [&str; 2] = ["ROADMAP.md", "docs/ROADMAP.md"];
+
+/// Runs `git --no-optional-locks -C <dir> <args>`; stdout on success.
+pub(crate) async fn git(dir: &Path, args: &[&str]) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("--no-optional-locks")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let out = tokio::time::timeout(GIT_TIMEOUT, cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The main working tree of the repository holding `dir`: the parent of its common git
+/// directory when that is named `.git`. None for anything else (a bare repository).
+pub async fn root(dir: &Path) -> Option<PathBuf> {
+    let common = git(
+        dir,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .await?;
+    let common = PathBuf::from(common.trim());
+    (common.file_name()? == ".git").then(|| common.parent().map(Path::to_path_buf))?
+}
+
+/// owner/name of the origin remote, when it is on GitHub.
+pub async fn slug(root: &Path) -> Option<String> {
+    let url = git(root, &["remote", "get-url", "origin"]).await?;
+    github_slug(url.trim())
+}
+
+/// `git@github.com:o/n.git` or `https://github.com/o/n` as `o/n`.
+pub fn github_slug(url: &str) -> Option<String> {
+    let rest = url
+        .strip_prefix("git@github.com:")
+        .or_else(|| url.strip_prefix("ssh://git@github.com/"))
+        .or_else(|| url.strip_prefix("https://github.com/"))?;
+    let rest = rest.trim_end_matches('/').trim_end_matches(".git");
+    let (owner, name) = rest.split_once('/')?;
+    (!owner.is_empty() && !name.is_empty() && !name.contains('/'))
+        .then(|| format!("{owner}/{name}"))
+}
+
+/// The local branch `origin/HEAD` names, kept only when it exists locally: fetching is out of
+/// scope, so a remote-tracking ref would be a stale base.
+pub async fn default_branch(root: &Path) -> Option<String> {
+    let full = git(
+        root,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .await?;
+    let name = full.trim().strip_prefix("origin/")?.to_string();
+    let local = format!("refs/heads/{name}");
+    git(root, &["show-ref", "--verify", "--quiet", &local]).await?;
+    Some(name)
+}
+
+/// The commit at the tip of the local base branch.
+pub async fn base_commit(root: &Path, base: &str) -> Option<String> {
+    let spec = format!("refs/heads/{base}^{{commit}}");
+    let out = git(root, &["rev-parse", "--verify", "--quiet", &spec]).await?;
+    Some(out.trim().to_string()).filter(|c| !c.is_empty())
+}
+
+/// The roadmap text on the base branch: `ROADMAP.md`, then `docs/ROADMAP.md`.
+pub async fn roadmap_text(root: &Path, base: &str) -> Option<String> {
+    for file in ROADMAP_FILES {
+        if let Some(text) = git(root, &["show", &format!("refs/heads/{base}:{file}")]).await {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// The paths changed in the working tree, from `git status --porcelain=v1 -z`.
+pub async fn touched(root: &Path) -> Vec<String> {
+    git(root, &["status", "--porcelain=v1", "-z"])
+        .await
+        .map(|out| parse_status(&out))
+        .unwrap_or_default()
+}
+
+/// Each entry is `XY path`; a rename or copy is followed by its old path, which is skipped.
+pub fn parse_status(out: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut entries = out.split('\0').filter(|e| !e.is_empty());
+    while let Some(entry) = entries.next() {
+        let (Some(code), Some(path)) = (entry.get(..2), entry.get(3..)) else {
+            continue;
+        };
+        paths.push(path.to_string());
+        if code.contains('R') || code.contains('C') {
+            entries.next();
+        }
+    }
+    paths
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    /// git with a fixed configuration, so the developer's settings cannot change a test.
+    pub(crate) fn git_cmd(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                "user.name=idlemax test",
+                "-c",
+                "user.email=test@idlemax.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.defaultBranch=main",
+            ])
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} in {}", dir.display());
+    }
+
+    /// A repository with one commit on `main`.
+    pub(crate) fn repo(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        git_cmd(dir, &["init", "-q"]);
+        std::fs::write(dir.join("README.md"), "hi\n").unwrap();
+        git_cmd(dir, &["add", "README.md"]);
+        git_cmd(dir, &["commit", "-q", "-m", "first"]);
+    }
+
+    #[test]
+    fn slugs_and_status_entries_parse() {
+        assert_eq!(
+            github_slug("git@github.com:o/n.git").as_deref(),
+            Some("o/n")
+        );
+        assert_eq!(
+            github_slug("https://github.com/o/n").as_deref(),
+            Some("o/n")
+        );
+        assert_eq!(github_slug("https://gitlab.com/o/n"), None);
+        let out = " M a.rs\0R  new.rs\0old.rs\0?? b/\0";
+        assert_eq!(parse_status(out), ["a.rs", "new.rs", "b/"]);
+    }
+
+    #[tokio::test]
+    async fn the_default_branch_is_the_local_branch_origin_head_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = dir.path().join("origin");
+        repo(&origin);
+        let clone = dir.path().join("clone");
+        git_cmd(
+            dir.path(),
+            &["clone", "-q", &origin.to_string_lossy(), "clone"],
+        );
+        std::fs::write(clone.join("x"), "x").unwrap();
+        git_cmd(&clone, &["add", "x"]);
+        git_cmd(&clone, &["commit", "-q", "-m", "ahead"]);
+        let root = root(&clone).await.unwrap();
+        assert_eq!(root.canonicalize().unwrap(), clone.canonicalize().unwrap());
+        assert_eq!(default_branch(&clone).await.as_deref(), Some("main"));
+        let head = git(&clone, &["rev-parse", "HEAD"]).await.unwrap();
+        assert_eq!(base_commit(&clone, "main").await, Some(head.trim().into()));
+
+        git_cmd(&clone, &["checkout", "-q", "-b", "other"]);
+        git_cmd(&clone, &["branch", "-q", "-D", "main"]);
+        assert_eq!(default_branch(&clone).await, None);
+    }
+}

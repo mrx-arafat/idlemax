@@ -167,6 +167,7 @@ async fn run_loop(hung_cwd: bool, isolation: bool) {
         sample_every: Duration::from_secs(60),
         heartbeat_every: Duration::from_secs(60),
         advisor_inputs_every: None,
+        dispatch_inputs_every: None,
         device_refresh_every: Duration::from_secs(3600),
         notify: false,
         paths: paths.clone(),

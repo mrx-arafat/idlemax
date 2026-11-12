@@ -5,6 +5,7 @@
 mod advice;
 mod controls;
 mod devices;
+mod dispatch;
 mod events;
 mod inputs;
 mod jobs;
@@ -130,6 +131,7 @@ pub struct PruneReport {
     pub jobs: usize,
     pub guard_spans: usize,
     pub pause_spans: usize,
+    pub projects: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
@@ -204,7 +206,8 @@ impl Store {
 
     /// Drops metrics and quota history older than `metrics_retention_ms` (the newest
     /// quota snapshot per account window always stays), plus events, closed advice and devices
-    /// silent for 30 days (and applied-update records, guard spans and closed pause spans of that age), and finished jobs older
+    /// silent for 30 days (and applied-update records, guard spans, closed pause spans and projects
+    /// Herdr found that are off and unseen for that long), and finished jobs older
     /// than 90 days, then returns freed pages to the OS.
     pub fn prune(&mut self, now: UnixMs, metrics_retention_ms: i64) -> StoreResult<PruneReport> {
         let metrics_cutoff = now.saturating_sub(metrics_retention_ms);
@@ -248,6 +251,11 @@ impl Store {
             )?,
             pause_spans: tx.execute(
                 "DELETE FROM pause_spans WHERE end_ms < ?1",
+                [history_cutoff],
+            )?,
+            projects: tx.execute(
+                "DELETE FROM projects
+                 WHERE enabled = 0 AND source = 'herdr' AND COALESCE(seen_ms, created_ms) < ?1",
                 [history_cutoff],
             )?,
         };

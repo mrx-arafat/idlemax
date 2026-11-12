@@ -53,7 +53,7 @@ fn write_config(state: &Path, coord_port: u16, agent_port: u16, guard: &str, all
     let text = format!(
         "[coordinator]\nlisten = \"127.0.0.1:{coord_port}\"\nurl = \"http://127.0.0.1:{coord_port}\"\n\n\
          [agent]\ndevice_id = \"{DEVICE}\"\nlisten = \"127.0.0.1:{agent_port}\"\n\
-         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ncommand_allowlist = {allow}\n\n\
+         sample_secs = 1\nheartbeat_secs = 1\nadvisor_inputs_secs = 0\ndispatch_inputs_secs = 0\ncommand_allowlist = {allow}\n\n\
          [advisor]\nenabled = false\n\n\
          [guard]\n{guard}"
     );

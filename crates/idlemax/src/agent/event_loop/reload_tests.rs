@@ -39,6 +39,7 @@ fn agent_at(paths: &Paths) -> Agent {
         sample_every: Duration::from_secs(60),
         heartbeat_every: Duration::from_secs(60),
         advisor_inputs_every: None,
+        dispatch_inputs_every: None,
         device_refresh_every: Duration::from_secs(3600),
         notify: false,
         paths: paths.clone(),

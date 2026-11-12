@@ -209,7 +209,7 @@ target/debug/idlemax init
 - [x] Task 2: Keep projects in the store and switch them with `idlemax project`
 - [x] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
 - [x] Task 4: Read memory used and swap-in on macOS and report the room
-- [ ] Task 5: Send what each device knows about its repositories
+- [x] Task 5: Send what each device knows about its repositories
 - [ ] Task 6: Admit the dispatcher's own jobs by the lines
 - [ ] Task 7: Find tasks from the four sources
 - [ ] Task 8: Build the plan and show it with `idlemax plan`
@@ -663,15 +663,15 @@ The coordinator turns the feed into candidate projects and into the owner-activi
 
 **Definition of Done:**
 
-- [ ] The Herdr parsers read a fixture with two panes and one `working` agent, ignore an unknown key, and return `None` for `{"error": "x"}`.
-- [ ] `parse_roadmap` on a text with three headings returns two items: one with a `Done when` line of two continued lines joined into one string, one whose heading ends with `(done)` with `done: true`; the heading without a done-when line is absent.
-- [ ] `DispatchInputs::check` refuses 65 repos, 201 touched paths and a title that holds an escape character.
-- [ ] With an injected Herdr view and two temp repositories made with `git init`, `collect` reports both, marks only the one with a working agent, skips a folder inside the state dir, and fills `roadmap` and `touched` only for the repository named in the last reply, also while no agent is working in it.
-- [ ] With `herdr` false and one project in the last reply, `collect` still reports that project with its base commit.
-- [ ] In a temp repository whose `origin/HEAD` names `main` and whose local `main` is one commit ahead of `origin/main`, `default_branch` is `main` and `base_commit` is the local commit; with no local branch of that name `default_branch` is `None`.
-- [ ] A repository with 250 changed files is reported with 200 `touched` paths and `touched_clipped` true.
-- [ ] The route test in `coord/api/plan.rs` posts the same feed twice and finds one project per repository, both off, the working one with `owner_active: true` in `GET /v1/projects`; `owner_active` is false 31 minutes later by the test clock; and with `dispatcher.mode = "off"` the reply's `projects` is empty even when a project is on.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::roadmap`, `cargo test -p idlemax-core dispatch::inputs`, `cargo test -p idlemax-core dispatch::project`, `cargo test -p idlemax --bin idlemax dispatch_feed`, `cargo test -p idlemax --bin idlemax herdr`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --test e2e`, `cargo test -p idlemax --test doctor`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] The Herdr parsers read a fixture with two panes and one `working` agent, ignore an unknown key, and return `None` for `{"error": "x"}`.
+- [x] `parse_roadmap` on a text with three headings returns two items: one with a `Done when` line of two continued lines joined into one string, one whose heading ends with `(done)` with `done: true`; the heading without a done-when line is absent.
+- [x] `DispatchInputs::check` refuses 65 repos, 201 touched paths and a title that holds an escape character.
+- [x] With an injected Herdr view and two temp repositories made with `git init`, `collect` reports both, marks only the one with a working agent, skips a folder inside the state dir, and fills `roadmap` and `touched` only for the repository named in the last reply, also while no agent is working in it.
+- [x] With `herdr` false and one project in the last reply, `collect` still reports that project with its base commit.
+- [x] In a temp repository whose `origin/HEAD` names `main` and whose local `main` is one commit ahead of `origin/main`, `default_branch` is `main` and `base_commit` is the local commit; with no local branch of that name `default_branch` is `None`.
+- [x] A repository with 250 changed files is reported with 200 `touched` paths and `touched_clipped` true.
+- [x] The route test in `coord/api/plan.rs` posts the same feed twice and finds one project per repository, both off, the working one with `owner_active: true` in `GET /v1/projects`; `owner_active` is false 31 minutes later by the test clock; and with `dispatcher.mode = "off"` the reply's `projects` is empty even when a project is on.
+- [x] Verify: `cargo test -p idlemax-core dispatch::roadmap`, `cargo test -p idlemax-core dispatch::inputs`, `cargo test -p idlemax-core dispatch::project`, `cargo test -p idlemax --bin idlemax dispatch_feed`, `cargo test -p idlemax --bin idlemax herdr`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --test e2e`, `cargo test -p idlemax --test doctor`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 6: Admit the dispatcher's own jobs by the lines
 

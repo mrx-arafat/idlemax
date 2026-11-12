@@ -6,7 +6,9 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectSource, ProjectView};
+use idlemax_core::dispatch::project::{
+    owner_active, NewProject, ProjectSettings, ProjectSource, ProjectView,
+};
 use idlemax_core::explain::allowlist_warning;
 use idlemax_core::types::{EventKind, JobSpec, UnixMs};
 use idlemax_core::Config;
@@ -136,13 +138,28 @@ fn after_settings(_store: &mut Store, _id: i64) -> Result<(), ApiFailure> {
     Ok(())
 }
 
-/// Every project view, with `owner_active` filled.
+/// Every project view, with `owner_active` filled from the feed and the session metadata.
 pub(super) fn project_views(
     store: &Store,
     device: Option<&str>,
-    _now: UnixMs,
+    now: UnixMs,
 ) -> Result<Vec<ProjectView>, ApiFailure> {
-    Ok(store.list_projects(device)?)
+    let sessions: Vec<_> = store
+        .advisor_inputs()?
+        .into_iter()
+        .flat_map(|s| {
+            let device = s.inputs.device;
+            s.inputs
+                .sessions
+                .into_iter()
+                .map(move |m| (device.clone(), m))
+        })
+        .collect();
+    let mut views = store.list_projects(device)?;
+    for v in &mut views {
+        v.owner_active = owner_active(v, &sessions, now);
+    }
+    Ok(views)
 }
 
 fn existing(store: &Store, id: i64, now: UnixMs) -> Result<ProjectView, ApiFailure> {

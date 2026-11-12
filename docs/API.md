@@ -26,6 +26,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/agent/heartbeat | `Heartbeat` | `HeartbeatReply` |
 | POST | /v1/agent/job-update | `JobUpdate` | `JobUpdateReply` |
 | POST | /v1/agent/advisor-inputs | `AdvisorInputs` | `{}` |
+| POST | /v1/agent/dispatch-inputs | `DispatchInputs` | `DispatchReply` |
 | GET | /v1/status | | `ClusterStatus` |
 | GET | /v1/jobs?status=&limit= | | `[Job]` |
 | GET | /v1/jobs/{id} | | `Job` |
@@ -490,4 +491,30 @@ Types live in `crates/idlemax-core/src/dispatch/project.rs`.
 - An unknown id is 404.
 - Each add, switch and settings change appends one `control` event.
 - These routes are owner actions: a pause, the kill switch, the guard or the line state never holds them.
+
+## Dispatch inputs
+
+Every `agent.dispatch_inputs_secs` (default 60, 0 sends nothing) an agent sends what it knows about the git repositories on its device.
+Unlike the advisor inputs, which carry only folder names, these carry full project paths.
+Types live in `crates/idlemax-core/src/dispatch/inputs.rs`.
+
+```json
+{"device": "mac", "herdr": true,
+ "repos": [{"path": "/Users/me/app", "name": "app", "slug": "me/app", "default_branch": "main",
+            "working": true, "base_commit": "4f2a...", "touched": ["src/lib.rs"], "touched_clipped": false,
+            "roadmap": [{"title": "3. Faster sync", "done_when": "sync takes under 1 s", "done": false, "owner": false}],
+            "checkout": null}]}
+```
+
+- The repositories are the folders of the owner's Herdr panes and agents, plus every switched-on project of the last reply, also when Herdr is missing (`herdr: false`).
+  A folder inside `$IDLEMAX_HOME` is never the owner's and is skipped.
+- `working` is true when a Herdr agent with status `working` runs in the repository.
+- `default_branch` is the local branch `origin/HEAD` names, kept only when it exists locally.
+- `base_commit`, `roadmap` and `touched` are filled only for the switched-on projects of the last reply; `roadmap` comes from `ROADMAP.md`, then `docs/ROADMAP.md`, on the base branch.
+- `DispatchInputs::check` refuses more than 64 repositories, 50 roadmap items or 200 touched paths per repository, over-long text and any control character with 400; the store refuses a payload over 256 KiB.
+- An unknown repository becomes a project that is off, with `source: "herdr"` and its default branch as the base; a known one is marked seen, and owner-active when `working`.
+  A device holds at most 200 projects; a repository beyond that is skipped, never refused.
+  A project from Herdr that is off and unseen for 30 days is pruned.
+- The reply `{"projects": [Project]}` lists the device's switched-on projects; it is empty while `dispatcher.mode` is `off` or the device is paused.
+- `ProjectView.owner_active` is true when an owner session worked in the project within the last 30 minutes, from this feed or from the advisor's session metadata.
 
