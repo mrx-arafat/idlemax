@@ -268,6 +268,7 @@ fn picked_by(inputs: &Inputs) -> String {
         offer: &offer,
         fingerprint: "",
         newest: None,
+        newest_offered: &[],
         pass_active: false,
         room: any_room(&inputs.quota.offers),
         room_off_clis: inputs.quota.room_off_clis,

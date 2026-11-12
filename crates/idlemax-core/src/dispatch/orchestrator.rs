@@ -86,6 +86,8 @@ pub struct DueInput<'a> {
     pub fingerprint: &'a str,
     /// (fingerprint, queued_ms) of the newest pass row.
     pub newest: Option<(&'a str, UnixMs)>,
+    /// The ids of the tasks the newest pass row was offered.
+    pub newest_offered: &'a [String],
     /// A pass job is queued, leased, running or paused.
     pub pass_active: bool,
     /// An offered account has room for one Run of its cheapest tier (`quota::pass::any_room`).
@@ -200,7 +202,13 @@ pub fn pass_due(input: &DueInput<'_>) -> Result<DuePass, String> {
         if print == input.fingerprint {
             return Err("nothing changed since the last pass".into());
         }
-        if input.now_ms - queued_ms < PASS_MIN_GAP_MS {
+        // A task the newest pass never saw is new work and waits for no hour (A20).
+        let new_task = input
+            .offer
+            .tasks
+            .iter()
+            .any(|t| !input.newest_offered.contains(&t.id));
+        if input.now_ms - queued_ms < PASS_MIN_GAP_MS && !new_task {
             return Err("the last pass ran less than an hour ago".into());
         }
     }

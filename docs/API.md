@@ -710,7 +710,7 @@ An off device rechecks nothing, and a `production` device runs no base check at 
 
 ### The orchestrator pass
 
-The coordinator's dispatcher step (every minute, and on `POST /v1/plan/refresh`) queues one `dispatch-orchestrator-pass` job when a pass is due: the mode is `propose`, a device takes picks and has a ready task, a usable Claude account is listed on such a device with `claude` installed, no pass job is active, and, unless the pass was asked for, its inputs changed since the newest pass and that pass was queued at least an hour ago.
+The coordinator's dispatcher step (every minute, and on `POST /v1/plan/refresh`) queues one `dispatch-orchestrator-pass` job when a pass is due: the mode is `propose`, a device takes picks and has a ready task, a usable Claude account is listed on such a device with `claude` installed, no pass job is active, and, unless the pass was asked for, its inputs changed since the newest pass and that pass was queued at least an hour ago, or a ready task is offered that the newest pass was not offered (new work waits for no hour).
 A ready task is one no Run holds: a task with a Run that is not `discarded` with nothing in it (no verdict, no facts) is never offered, since a Run in flight, waiting for review or kept follows its own path, and a task whose last two Runs were rejected or discarded is listed under `needs_you`.
 The inputs are the devices that take picks, every ready task and every task a stored judgment holds (by id and a digest of source, title and done check), the usable accounts, the models and the text of `rules.md`.
 A queued pass that stops being due for any other reason is cancelled with that reason.

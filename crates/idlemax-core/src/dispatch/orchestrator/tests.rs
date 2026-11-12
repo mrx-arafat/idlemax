@@ -150,6 +150,7 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         offer: &ok_offer,
         fingerprint: "new",
         newest: None,
+        newest_offered: &[],
         pass_active: false,
         room: true,
         room_off_clis: false,
@@ -193,11 +194,19 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         }),
         Err(PASS_ACTIVE.into())
     );
+    let seen = ["a".to_string()];
     let recent = DueInput {
         newest: Some(("old", NOW - 60_000)),
+        newest_offered: &seen,
         ..base
     };
     assert!(pass_due(&recent).is_err());
+    // A task the newest pass was not offered is new work: no waiting for the hour (A20).
+    assert!(pass_due(&DueInput {
+        newest_offered: &[],
+        ..recent
+    })
+    .is_ok());
     assert!(pass_due(&DueInput {
         asked: true,
         ..recent
@@ -315,6 +324,7 @@ fn no_pass_runs_when_no_account_has_room() {
         offer: &offer,
         fingerprint: "x",
         newest: None,
+        newest_offered: &[],
         pass_active: false,
         room: false,
         room_off_clis: false,

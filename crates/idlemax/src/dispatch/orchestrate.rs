@@ -83,6 +83,7 @@ fn due_now(
         offer,
         fingerprint: print,
         newest,
+        newest_offered: inputs.newest.as_ref().map_or(&[], |r| r.offered.as_slice()),
         pass_active: inputs.pass_active,
         room: any_room(&inputs.quota.offers),
         room_off_clis: inputs.quota.room_off_clis,
