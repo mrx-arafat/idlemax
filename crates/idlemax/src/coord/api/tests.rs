@@ -144,18 +144,18 @@ async fn queued_work_ignores_only_user_presence_and_preserves_scheduler_restrict
     assert!(!old.queued_work);
 }
 
-struct Api {
+pub(super) struct Api {
     base: String,
     http: reqwest::Client,
     _home: tempfile::TempDir,
 }
 
 impl Api {
-    async fn start() -> Self {
+    pub(super) async fn start() -> Self {
         Self::start_with(Config::default()).await
     }
 
-    async fn start_with(config: Config) -> Self {
+    pub(super) async fn start_with(config: Config) -> Self {
         let home = tempfile::tempdir().unwrap();
         let store = Store::open_in_memory().unwrap();
         let app = AppState::new(store, config, Paths::new(home.path()));
@@ -169,7 +169,7 @@ impl Api {
         }
     }
 
-    async fn post(&self, path: &str, body: &impl serde::Serialize) -> reqwest::Response {
+    pub(super) async fn post(&self, path: &str, body: &impl serde::Serialize) -> reqwest::Response {
         let url = format!("{}{path}", self.base);
         self.http
             .post(url)
@@ -181,7 +181,7 @@ impl Api {
     }
 
     /// A GET that carries the token and the given `Host` header.
-    async fn get_as(&self, path: &str, host: &str) -> reqwest::Response {
+    pub(super) async fn get_as(&self, path: &str, host: &str) -> reqwest::Response {
         self.http
             .get(format!("{}{path}", self.base))
             .header(reqwest::header::HOST, host)
@@ -191,7 +191,7 @@ impl Api {
             .unwrap()
     }
 
-    async fn heartbeat(&self, running: Vec<RunningJob>) -> HeartbeatReply {
+    pub(super) async fn heartbeat(&self, running: Vec<RunningJob>) -> HeartbeatReply {
         let res = self
             .post("/v1/agent/heartbeat", &mac_heartbeat(running))
             .await;
@@ -200,7 +200,7 @@ impl Api {
     }
 }
 
-fn mac_heartbeat(running: Vec<RunningJob>) -> Heartbeat {
+pub(super) fn mac_heartbeat(running: Vec<RunningJob>) -> Heartbeat {
     let run = GuardAction::Run {
         slots: 2,
         mem_mib: 1024,

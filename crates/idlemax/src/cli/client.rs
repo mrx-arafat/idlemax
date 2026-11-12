@@ -1,5 +1,6 @@
 //! Adapter: typed HTTP client for the coordinator API and the local agent API.
 
+mod dispatch;
 mod report;
 mod schedules;
 

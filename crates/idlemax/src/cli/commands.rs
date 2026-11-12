@@ -6,7 +6,7 @@ use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
 use super::{
-    config_cmd, hooks, init_cmd, job, report, schedule, service, setup, skill, statusline,
+    config_cmd, hooks, init_cmd, job, project, report, schedule, service, setup, skill, statusline,
 };
 
 #[derive(Subcommand, Debug)]
@@ -36,6 +36,9 @@ pub(super) enum Cmd {
     Schedule(schedule::ScheduleCmd),
     /// Explain why a job is not running, and what to change
     Why { id: JobId },
+    /// The projects the dispatcher may work in; every one is off until you switch it on
+    #[command(subcommand)]
+    Project(project::ProjectCmd),
     /// Pause jobs everywhere, or on one device, account or job
     Pause(Target),
     /// Resume paused jobs

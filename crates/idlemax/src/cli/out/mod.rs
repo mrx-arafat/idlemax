@@ -9,6 +9,7 @@
 //!
 //! Keep decisions out of here: callers pass finished values and finished hint strings.
 
+pub mod dispatch;
 mod failure;
 pub mod hints;
 pub mod lists;

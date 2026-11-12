@@ -46,6 +46,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     ("idlemax advise", "review the advisor's recommendations"),
     (
+        "idlemax project list",
+        "see the projects idlemax knows and switch one on or off",
+    ),
+    (
         "idlemax pause",
         "hold jobs everywhere, or on one `--device`, `--account` or `--job`",
     ),

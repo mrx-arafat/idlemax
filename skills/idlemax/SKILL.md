@@ -19,6 +19,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 - `idlemax config set <setting> <value>`: change a setting, such as the guard rules or the program allowlist, with no restart
 - `idlemax quota`: see AI account windows and the headroom to spend
 - `idlemax advise`: review the advisor's recommendations
+- `idlemax project list`: see the projects idlemax knows and switch one on or off
 - `idlemax pause`: hold jobs everywhere, or on one `--device`, `--account` or `--job`
 - `idlemax stop-all`: kill running jobs and hold new ones
 - `idlemax doctor`: check this device's setup and get the fix for anything wrong

@@ -17,6 +17,7 @@ mod logs;
 mod noop;
 mod out;
 pub mod print;
+mod project;
 pub mod report;
 pub mod rows;
 mod schedule;

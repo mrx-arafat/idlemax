@@ -46,6 +46,11 @@ The agent local API accepts IP addresses and `localhost` names only.
 | DELETE | /v1/schedules/{id} | | `ScheduleView` as it was before removal |
 | POST | /v1/schedules/{id}/pause | | `ScheduleView` |
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
+| GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
+| POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
+| POST | /v1/projects/{id}/on | | `ProjectView` |
+| POST | /v1/projects/{id}/off | | `ProjectView` |
+| POST | /v1/projects/{id}/settings | `ProjectSettings` | `ProjectView` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
 `POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`, and 409 when 10000 jobs are already unfinished.
@@ -438,3 +443,28 @@ Semantics:
 - Pause, resume and delete answer 404 for an unknown id.
 - Operator responses never include `spec.stdin`.
 - A client older than this release cannot decode the `schedule_fired` event kind from a newer coordinator, so upgrade the CLI and TUI together with the coordinator.
+
+## Projects
+
+A project is a git repository on a device that the dispatcher may work in.
+Every project is off until the owner switches it on, and idlemax writes nothing into the repository.
+Types live in `crates/idlemax-core/src/dispatch/project.rs`.
+
+```json
+{"id": 1, "name": "app", "device": "mac", "path": "/Users/me/app", "enabled": true,
+ "base_branch": "main", "setup_command": [], "check_command": ["cargo", "test", "-p", "core"],
+ "off_limits": [], "core_paths": ["crates/core"], "priority": 0,
+ "source": "owner", "owner_active": false, "seen_ms": null}
+```
+`ProjectView`: the project, its settings flattened into it, `source` (`herdr` or `owner`), `owner_active`, `seen_ms` and, after a settings change, `warning` when the device's `agent.command_allowlist` would refuse the setup or check command.
+
+- `NewProject` is `{"path": "/abs/path", "device": "mac", "name": "app"}`; `device` defaults to the only known device (400 naming the known ones otherwise) and `name` to the folder name.
+  A known `(device, path)` answers 200 with the existing row; a taken name gets `-2`, `-3` and so on.
+  A device holds at most 200 projects (409 beyond).
+- `ProjectSettings` replaces all six settings at once.
+  The commands are argv, never a shell line.
+  400 for a base branch that is empty, starts with `-` or holds whitespace, an empty first command word, or an off-limits or core path that is absolute or holds `..`.
+- An unknown id is 404.
+- Each add, switch and settings change appends one `control` event.
+- These routes are owner actions: a pause, the kill switch, the guard or the line state never holds them.
+

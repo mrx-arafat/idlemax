@@ -8,6 +8,7 @@ mod devices;
 mod events;
 mod inputs;
 mod jobs;
+mod projects;
 mod quota;
 mod report;
 mod schedules;

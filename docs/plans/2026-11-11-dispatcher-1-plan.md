@@ -206,7 +206,7 @@ target/debug/idlemax init
 ## Progress Tracking
 
 - [x] Task 1: Add the dispatcher settings and the worker room rule
-- [ ] Task 2: Keep projects in the store and switch them with `idlemax project`
+- [x] Task 2: Keep projects in the store and switch them with `idlemax project`
 - [ ] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
 - [ ] Task 4: Read memory used and swap-in on macOS and report the room
 - [ ] Task 5: Send what each device knows about its repositories
@@ -435,13 +435,13 @@ Nothing is written into the owner's repositories.
 
 **Definition of Done:**
 
-- [ ] A fresh store migrates to the new version, and a store at `V7` with one device row migrates with that row intact and `room` NULL.
-- [ ] `insert_project` twice with the same device and path returns the same row, off; a second path with the same folder name is stored as `<name>-2`.
-- [ ] `ProjectSettings::validate` refuses the base branch `-x`, the off-limits entries `/etc` and `a/../b` and the core path `../shared`, and accepts `main` with `["cargo", "test", "-p", "core"]`.
-- [ ] The route test in `coord/api/projects.rs` gets 404 from `POST /v1/projects/{id}/on` on an unknown id, `enabled: true` and one Control event on a known one, and the same answer while a global pause is set.
-- [ ] In a throwaway home, `idlemax project add <temp repo>` lists the project as off, `idlemax project on <name>` prints it as on, a second `on` prints `already on (no-op)`, and `idlemax project list --json` shows `enabled: true`.
-- [ ] `cargo run -p idlemax -- skill --check` passes.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::project`, `cargo test -p idlemax --bin idlemax projects`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A fresh store migrates to the new version, and a store at `V7` with one device row migrates with that row intact and `room` NULL.
+- [x] `insert_project` twice with the same device and path returns the same row, off; a second path with the same folder name is stored as `<name>-2`.
+- [x] `ProjectSettings::validate` refuses the base branch `-x`, the off-limits entries `/etc` and `a/../b` and the core path `../shared`, and accepts `main` with `["cargo", "test", "-p", "core"]`.
+- [x] The route test in `coord/api/projects.rs` gets 404 from `POST /v1/projects/{id}/on` on an unknown id, `enabled: true` and one Control event on a known one, and the same answer while a global pause is set.
+- [x] In a throwaway home, `idlemax project add <temp repo>` lists the project as off, `idlemax project on <name>` prints it as on, a second `on` prints `already on (no-op)`, and `idlemax project list --json` shows `enabled: true`.
+- [x] `cargo run -p idlemax -- skill --check` passes.
+- [x] Verify: `cargo test -p idlemax-core dispatch::project`, `cargo test -p idlemax --bin idlemax projects`, `cargo test -p idlemax --test skill`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
 

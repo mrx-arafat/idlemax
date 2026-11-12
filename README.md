@@ -839,6 +839,26 @@ You accept or dismiss each one, and nothing runs on the advisor's word alone, ex
   To add one, write a spec to `$IDLEMAX_HOME/jobs/<name>.toml` on the coordinator, allowlist its `argv[0]` on the devices that should run it, and queue it with `idlemax job add` or let the advisor suggest it.
   The advisor queues a template without asking only if its name is in `advisor.auto_accept`.
 
+## The dispatcher (plan only)
+
+The dispatcher will put AI coding workers on the leftover tasks of your own projects.
+This build only plans: it never launches a worker.
+
+A project is a git repository on a device.
+Every project is off until you switch it on, and idlemax writes nothing into your repositories; its settings live in the coordinator's database.
+
+```sh
+idlemax project add ~/code/app                     # add a checkout (it starts off)
+idlemax project list                               # every project, on or off, per device
+idlemax project on app                             # let the dispatcher plan work there
+idlemax project off app                            # take it out of the pool
+idlemax project set app base main                  # the base branch tasks start from
+idlemax project set app check -- cargo test -p core   # the focused check, as argv
+```
+
+`set` also takes `setup -- <argv>`, `priority <n>`, `off-limits <paths>` and `core-paths <paths>`; no value clears a setting.
+`--device <id>` picks a device when the same name exists on more than one.
+
 ## Controls
 
 Every command reads `$IDLEMAX_HOME` (default `~/.idlemax`; set but empty is an error).

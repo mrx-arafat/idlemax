@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -192,4 +192,63 @@ CREATE INDEX pause_spans_age ON pause_spans(end_ms);
 -- Pauses already in force when this version first runs start now.
 INSERT INTO pause_spans (scope_type, scope_id, start_ms)
   SELECT scope_type, scope_id, CAST(strftime('%s', 'now') AS INTEGER) * 1000 FROM controls;
+"#;
+
+/// The dispatcher (plan only): each device's worker room, projects, the newest dispatch inputs
+/// per device, base checks, orchestrator passes and the tasks the orchestrator sent to
+/// "needs you". One migration for the whole of dispatcher Spec 1.
+const V8: &str = r#"
+-- The worker room each agent reported last, as JSON; NULL from an agent that predates it.
+ALTER TABLE devices ADD COLUMN room TEXT;
+-- Git repositories idlemax knows about. Off until the owner switches one on.
+CREATE TABLE projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device TEXT NOT NULL,
+  name TEXT NOT NULL,
+  path TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  settings TEXT NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL,
+  created_ms INTEGER NOT NULL,
+  seen_ms INTEGER,
+  owner_active_ms INTEGER,
+  UNIQUE (device, path),
+  UNIQUE (device, name)
+) STRICT;
+-- Newest dispatch inputs per device, as JSON.
+CREATE TABLE dispatch_inputs (
+  device TEXT PRIMARY KEY,
+  received_ms INTEGER NOT NULL,
+  payload TEXT NOT NULL
+) STRICT, WITHOUT ROWID;
+-- The current run of each project's focused check on its base branch.
+CREATE TABLE base_checks (
+  project INTEGER PRIMARY KEY,
+  base_commit TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  job INTEGER,
+  passed INTEGER,
+  detail TEXT,
+  finished_ms INTEGER
+) STRICT;
+-- Orchestrator passes: what each one was offered, saw and returned.
+CREATE TABLE orchestrator_passes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job INTEGER NOT NULL,
+  account TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  offered TEXT NOT NULL,
+  queued_ms INTEGER NOT NULL,
+  finished_ms INTEGER,
+  result TEXT,
+  error TEXT
+) STRICT;
+CREATE INDEX orchestrator_passes_newest ON orchestrator_passes(queued_ms);
+-- Tasks the orchestrator sent to "needs you"; a row lasts until its task changes (A20).
+CREATE TABLE task_judgments (
+  task TEXT PRIMARY KEY,
+  digest TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  judged_ms INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
 "#;

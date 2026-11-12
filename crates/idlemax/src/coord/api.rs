@@ -5,6 +5,7 @@ mod advice;
 mod agents;
 pub mod http;
 mod jobs;
+mod projects;
 mod report;
 mod schedules;
 #[cfg(test)]
@@ -100,6 +101,10 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/schedules/{id}", delete(schedules::remove))
         .route("/v1/schedules/{id}/pause", post(schedules::pause))
         .route("/v1/schedules/{id}/resume", post(schedules::resume))
+        .route("/v1/projects", get(projects::list).post(projects::add))
+        .route("/v1/projects/{id}/on", post(projects::on))
+        .route("/v1/projects/{id}/off", post(projects::off))
+        .route("/v1/projects/{id}/settings", post(projects::settings))
         .route_layer(middleware::from_fn_with_state(
             BearerToken::new(token),
             http::require_bearer,
