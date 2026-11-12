@@ -7,7 +7,7 @@ use std::sync::Arc;
 use idlemax_core::worker::WorkerCli;
 
 use super::*;
-use crate::agent::worker::cmd::{CmdError, FakeCommands, Output};
+use crate::agent::worker::cmd::{CmdError, Commands, FakeCommands, Output};
 
 fn ok(stdout: &str) -> Result<Output, CmdError> {
     Ok(Output {
@@ -185,7 +185,7 @@ fn state_reads_status_session_and_pids_and_end_text_keeps_the_tail() {
     fake.set_fallback(|cmd| match cmd.args.join(" ").as_str() {
         "pane list" => ok(PANES_AFTER),
         "agent list" => ok(
-            r#"{"result":{"agents":[{"pane_id":"p2","agent_status":"working",
+            r#"{"result":{"agents":[{"pane_id":"p1","agent_status":"working",
             "agent_session":{"value":"sess-1"},"kind":"claude"}]}}"#,
         ),
         l if l.starts_with("pane process-info") => ok(INFO),
@@ -197,9 +197,9 @@ fn state_reads_status_session_and_pids_and_end_text_keeps_the_tail() {
     });
     let host = HerdrHost::with_background(fake, None);
     let handle = Handle {
-        pane: "p2".into(),
+        pane: "p1".into(),
         workspace: "w1".into(),
-        label: "x".into(),
+        label: "im-app-old-1".into(),
     };
     let state = host.state(&handle).unwrap();
     assert_eq!(state.status, AgentStatus::Working);
@@ -215,4 +215,77 @@ fn state_reads_status_session_and_pids_and_end_text_keeps_the_tail() {
         ..handle
     };
     assert_eq!(host.state(&gone).unwrap().status, AgentStatus::Gone);
+}
+
+#[test]
+fn a_renamed_pane_is_never_prompted_or_read() {
+    let fake = Arc::new(FakeCommands::new());
+    fake.set_fallback(|cmd| match cmd.args.join(" ").as_str() {
+        "pane list" => ok(PANES_AFTER),
+        _ => ok(r#"{"result":{"text":"owner's screen"}}"#),
+    });
+    let host = HerdrHost::with_background(fake.clone(), None);
+    let renamed = Handle {
+        pane: "p1".into(),
+        workspace: "w1".into(),
+        label: "im-app-mine-9".into(),
+    };
+    assert!(matches!(
+        host.send(&renamed, "brief"),
+        Err(HostError::NotOurs { .. })
+    ));
+    assert_eq!(host.end_text(&renamed), None);
+    assert_eq!(host.state(&renamed).unwrap().status, AgentStatus::Gone);
+    assert!(!host.matches(&renamed).unwrap());
+    let calls = lines(&fake);
+    assert!(!calls
+        .iter()
+        .any(|c| c.contains("agent prompt") || c.contains("agent read")));
+}
+
+#[test]
+fn a_failed_agent_start_closes_the_new_pane() {
+    let fake = existing_tab();
+    let failing = Arc::new(FakeCommands::new());
+    let inner = Arc::clone(&fake);
+    failing.set_fallback(move |cmd| {
+        if cmd.args.first().map(String::as_str) == Some("agent") {
+            return Ok(Output {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "no such agent kind".into(),
+            });
+        }
+        inner.run(cmd)
+    });
+    let host = HerdrHost::with_background(failing, None);
+    let err = host.start(&launch()).unwrap_err();
+    assert!(matches!(err, HostError::Failed { .. }), "{err:?}");
+    assert!(lines(&fake).contains(&"herdr pane close p2".to_string()));
+}
+
+#[test]
+fn two_new_panes_fail_the_start_and_both_are_closed() {
+    let fake = Arc::new(FakeCommands::new());
+    let lists = Arc::new(AtomicUsize::new(0));
+    fake.set_fallback(move |cmd| {
+        let line = cmd.args.join(" ");
+        match line.as_str() {
+            "workspace list" => ok(WORKSPACES),
+            "tab list --workspace w1" => ok(TABS),
+            "pane list --workspace w1" if lists.fetch_add(1, Ordering::SeqCst) == 0 => {
+                ok(PANES_BEFORE)
+            }
+            "pane list --workspace w1" => ok(r#"{"result":{"panes":[
+                {"pane_id":"p1","label":"im-app-old-1","workspace_id":"w1","tab_id":"t1"},
+                {"pane_id":"p2","workspace_id":"w1"},{"pane_id":"p3","workspace_id":"w1"}]}}"#),
+            _ => ok(r#"{"result":{}}"#),
+        }
+    });
+    let host = HerdrHost::with_background(fake.clone(), None);
+    assert!(host.start(&launch()).is_err());
+    let calls = lines(&fake);
+    assert!(calls.contains(&"herdr pane close p2".to_string()));
+    assert!(calls.contains(&"herdr pane close p3".to_string()));
+    assert!(!calls.contains(&"herdr pane close p1".to_string()));
 }

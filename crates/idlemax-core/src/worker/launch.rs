@@ -19,6 +19,8 @@ pub enum LaunchError {
         cli: &'static str,
         missing: &'static str,
     },
+    #[error("codex mcp list could not be read ({0}); no worker starts with a server left on")]
+    McpList(String),
 }
 
 /// Which session the agent starts in.
@@ -77,16 +79,37 @@ pub fn agent_args(
     }
 }
 
-/// The server names of `codex mcp list`: the first column, without the header.
-pub fn mcp_server_names(list: &str) -> Vec<String> {
-    list.lines()
-        .filter_map(|line| line.split_whitespace().next())
-        .filter(|name| !name.eq_ignore_ascii_case("name"))
-        .filter(|name| {
-            name.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+/// What `codex mcp list` prints when no server is configured.
+pub const NO_MCP_SERVERS: &str = "No MCP servers configured yet.";
+
+/// The server names of `codex mcp list`: the first column under a `Name` header. Anything it
+/// cannot read for sure is an error, so the launch fails closed instead of leaving a server
+/// of the owner switched on in the worker (D10 item 9, D22).
+pub fn mcp_server_names(list: &str) -> Result<Vec<String>, LaunchError> {
+    let mut lines = list.lines().map(str::trim).filter(|l| !l.is_empty());
+    let unreadable = |why: String| LaunchError::McpList(why);
+    let Some(header) = lines.next() else {
+        return Err(unreadable("it printed nothing".into()));
+    };
+    if header == NO_MCP_SERVERS {
+        return Ok(Vec::new());
+    }
+    if header.split_whitespace().next() != Some("Name") {
+        return Err(unreadable(format!("no Name header in {header:?}")));
+    }
+    lines
+        .map(|line| {
+            let name = line.split_whitespace().next().unwrap_or_default();
+            let valid = name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+            match valid {
+                true => Ok(name.to_string()),
+                false => Err(unreadable(format!(
+                    "server name {name:?} cannot be switched off"
+                ))),
+            }
         })
-        .map(str::to_string)
         .collect()
 }
 
@@ -222,9 +245,25 @@ mod tests {
     }
 
     #[test]
-    fn codex_mcp_list_gives_the_first_column() {
+    fn codex_mcp_list_gives_the_first_column_or_fails_closed() {
         let list = "Name    Command  Args\ngithub  npx      -y gh\n\nnotes   node     n.js\n";
-        assert_eq!(mcp_server_names(list), strings(&["github", "notes"]));
+        assert_eq!(
+            mcp_server_names(list).unwrap(),
+            strings(&["github", "notes"])
+        );
+        assert!(mcp_server_names(&format!("{NO_MCP_SERVERS}\n"))
+            .unwrap()
+            .is_empty());
+        let named_name = "Name  Command\nname  npx\n";
+        assert_eq!(mcp_server_names(named_name).unwrap(), strings(&["name"]));
+        for bad in [
+            "Name  Command\nmy.server  npx\n",
+            "No MCP servers here, maybe\n",
+            "github  npx\n",
+            "",
+        ] {
+            assert!(mcp_server_names(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

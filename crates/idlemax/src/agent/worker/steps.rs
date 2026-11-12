@@ -240,7 +240,8 @@ fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
     let common = folder.join(common.trim()).display().to_string();
     let servers = match w.cli {
         // Fails closed: without the names no server can be switched off.
-        WorkerCli::Codex => mcp_server_names(&run_ok(ctx, "codex", &["mcp", "list"], None)?),
+        WorkerCli::Codex => mcp_server_names(&run_ok(ctx, "codex", &["mcp", "list"], None)?)
+            .map_err(|e| Stop::Failed(e.to_string()))?,
         _ => Vec::new(),
     };
     let session = ctx.session.as_deref().unwrap_or_default();

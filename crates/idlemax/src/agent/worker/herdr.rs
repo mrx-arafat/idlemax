@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use idlemax_core::worker::report::MAX_END_TEXT_CHARS;
+use tracing::warn;
 
 use super::cmd::{Cmd, Commands};
 use super::host::{AgentStatus, Handle, HostError, HostState, Launch, WorkerHost};
@@ -73,11 +74,31 @@ impl HerdrHost {
             .map(|w| w.id))
     }
 
-    /// Makes the worker's pane: in a new workspace, a new tab of the project, or split from
-    /// a pane of the project's tab. Returns the workspace and the new pane.
+    /// Makes the worker's pane; when that fails after something was made, the panes this
+    /// call saw appear are closed again, so no empty workspace or unnamed pane stays behind.
     fn new_pane(&self, launch: &Launch) -> Result<(String, String), HostError> {
+        let existing = self.workspace()?;
+        let before = match &existing {
+            Some(ws) => self.panes(Some(ws))?,
+            None => Vec::new(),
+        };
+        let made = self.make_pane(launch, existing, &before);
+        if made.is_err() {
+            self.close_new(&before);
+        }
+        made
+    }
+
+    /// In a new workspace, a new tab of the project, or split from a pane of the project's
+    /// tab. Returns the workspace and the new pane.
+    fn make_pane(
+        &self,
+        launch: &Launch,
+        existing: Option<String>,
+        before: &[Pane],
+    ) -> Result<(String, String), HostError> {
         let folder = launch.folder.display().to_string();
-        let Some(ws) = self.workspace()? else {
+        let Some(ws) = existing else {
             let mut args = strings(&["workspace", "create", "--label", WORKSPACE_LABEL]);
             args.extend(strings(&["--cwd", &folder]));
             self.call(&with_env(args, &launch.env))?;
@@ -90,7 +111,6 @@ impl HerdrHost {
             let pane = only_new(&[], &self.panes(Some(&ws))?)?;
             return Ok((ws, pane));
         };
-        let before = self.panes(Some(&ws))?;
         let tabs = self.parsed(&["tab", "list", "--workspace", &ws], "tabs", parse::tabs)?;
         let tab = tabs
             .iter()
@@ -112,8 +132,43 @@ impl HerdrHost {
             }
         };
         self.call(&with_env(args, &launch.env))?;
-        let pane = only_new(&before, &self.panes(Some(&ws))?)?;
+        let pane = only_new(before, &self.panes(Some(&ws))?)?;
         Ok((ws, pane))
+    }
+
+    /// Closes every pane of the worker workspace that `before` did not list.
+    fn close_new(&self, before: &[Pane]) {
+        let Ok(Some(ws)) = self.workspace() else {
+            return;
+        };
+        let Ok(after) = self.panes(Some(&ws)) else {
+            return;
+        };
+        for pane in after
+            .iter()
+            .filter(|p| !before.iter().any(|b| b.id == p.id))
+        {
+            let _ = self.call(&strings(&["pane", "close", &pane.id]));
+        }
+    }
+
+    /// The worker's pane while it still carries the saved label and workspace; None when it
+    /// is gone, `NotOurs` when the id now names another pane. Every call that touches the
+    /// pane checks this first, so no prompt lands in, and no text is read from, a pane that
+    /// is not the worker's (D4, A9).
+    fn verified(&self, handle: &Handle) -> Result<Option<Pane>, HostError> {
+        let panes = self.panes(None)?;
+        let Some(pane) = panes.into_iter().find(|p| p.id == handle.pane) else {
+            return Ok(None);
+        };
+        let ours = pane.label.as_deref() == Some(handle.label.as_str())
+            && pane.workspace_id.as_deref() == Some(handle.workspace.as_str());
+        match ours {
+            true => Ok(Some(pane)),
+            false => Err(HostError::NotOurs {
+                pane: handle.pane.clone(),
+            }),
+        }
     }
 
     /// Names the pane, puts its shell in the background class and starts the agent in it.
@@ -171,8 +226,10 @@ impl WorkerHost for HerdrHost {
             shell_pid: None,
             foreground: Vec::new(),
         };
-        if !self.panes(None)?.iter().any(|p| p.id == handle.pane) {
-            return Ok(gone);
+        match self.verified(handle) {
+            Ok(Some(_)) => {}
+            Ok(None) | Err(HostError::NotOurs { .. }) => return Ok(gone),
+            Err(e) => return Err(e),
         }
         let agents = self.parsed(&["agent", "list"], "agents", parse::agents)?;
         let row = agents.into_iter().find(|a| a.pane == handle.pane);
@@ -186,38 +243,38 @@ impl WorkerHost for HerdrHost {
     }
 
     fn send(&self, handle: &Handle, text: &str) -> Result<(), HostError> {
+        if self.verified(handle)?.is_none() {
+            return Err(missing("pane list", "worker pane"));
+        }
         self.call(&strings(&["agent", "prompt", &handle.pane, text]))
             .map(drop)
     }
 
     fn stop(&self, handle: &Handle) -> Result<(), HostError> {
-        let panes = self.panes(None)?;
-        let Some(pane) = panes.iter().find(|p| p.id == handle.pane) else {
+        if self.verified(handle)?.is_none() {
             return Ok(());
-        };
-        let ours = pane.label.as_deref() == Some(handle.label.as_str())
-            && pane.workspace_id.as_deref() == Some(handle.workspace.as_str());
-        if !ours {
-            return Err(HostError::NotOurs {
-                pane: handle.pane.clone(),
-            });
         }
         self.call(&strings(&["pane", "close", &handle.pane]))
             .map(drop)
     }
 
     fn matches(&self, handle: &Handle) -> Result<bool, HostError> {
-        Ok(self.panes(None)?.iter().any(|p| {
-            p.id == handle.pane
-                && p.label.as_deref() == Some(handle.label.as_str())
-                && p.workspace_id.as_deref() == Some(handle.workspace.as_str())
-        }))
+        match self.verified(handle) {
+            Ok(pane) => Ok(pane.is_some()),
+            Err(HostError::NotOurs { .. }) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     fn end_text(&self, handle: &Handle) -> Option<String> {
+        self.verified(handle).ok().flatten()?;
         let args = strings(&["agent", "read", &handle.pane, "--source", "recent"]);
         let args = [args, strings(&["--lines", END_LINES])].concat();
-        let text = parse::read_text(&self.call(&args).ok()?)?;
+        let Some(text) = self.call(&args).ok().and_then(|out| parse::read_text(&out)) else {
+            // A limit message read as no text makes the Run look like a turn with no commit.
+            warn!(pane = %handle.pane, "herdr agent read gave no text; end_text is unknown");
+            return None;
+        };
         let tail = last_lines(&text, 40);
         let skip = tail.chars().count().saturating_sub(MAX_END_TEXT_CHARS);
         Some(tail.chars().skip(skip).collect())
