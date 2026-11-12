@@ -694,6 +694,9 @@ A production server never takes `cpu_heavy` or `ai` jobs.
 Each job sets `on_user_active`: `pause` (default), `continue` (only machine-health checks apply) or `kill`.
 The dispatcher's own jobs (its orchestrator pass and a project's setup and check commands) follow the worker lines instead of the idle-user and memory-pressure rules, so they can run while you work.
 The kill switch, every pause and `stop-all` still stop them, and no job you add can ask for that admission.
+A server gets a credential of its own with `idlemax device credential <id> --raw | ssh <server> idlemax setup --role agent --coord-url <url> --token-stdin`.
+It opens only the routes an agent uses and speaks only for that device, so a server set up this way keeps no owner token, and nothing a job finds on it opens an owner route of the coordinator.
+The dispatcher holds a server until its agent uses its own credential; a laptop keeps the owner token, which your own commands need there anyway.
 
 AI workers follow the same worker lines, never the guard: a worker starts only while the line state is `run`, and the guard never pauses or kills one, so it keeps working while you type.
 The kill switch, a local pause and `stop-all` still hold and stop workers like any job.
@@ -1035,6 +1038,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax logs <id> [--tail N] [-f]` | print a job's output from this device |
 | `idlemax inbox [list \| show <id \| n<id>>]` | finished-job notes and notices on this device (default `list`) |
 | `idlemax device list \| on <id> \| off <id>` | whether the dispatcher may use each device; every device starts off, and `off` stops only the dispatcher's own jobs there |
+| `idlemax device credential <id> [--raw \| --revoke]` | make a server its own credential, shown once, which opens only the agent routes; `--raw` prints it alone for a pipe, `--revoke` removes it |
 | `idlemax pause [--device D \| --account A \| --job N] [--reason TEXT]` | pause the whole cluster or one scope |
 | `idlemax resume [same flags]` | lift exactly that pause; resuming the cluster does not clear device, account or job pauses |
 | `idlemax stop-all [same flags]` | kill the scope's running jobs and hold new ones until you resume; a worker it stops keeps its state and continues only after `idlemax start` |

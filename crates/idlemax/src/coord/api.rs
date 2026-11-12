@@ -149,6 +149,10 @@ pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
         .route("/v1/limits", get(limits::list).post(limits::set))
         .route("/v1/devices/{id}/on", post(devices::on))
         .route("/v1/devices/{id}/off", post(devices::off))
+        .route(
+            "/v1/devices/{id}/credential",
+            post(devices::credential).delete(devices::revoke),
+        )
         .route("/v1/projects", get(projects::list).post(projects::add))
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))
@@ -160,8 +164,11 @@ pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
         .route("/v1/workers/stop", post(runs::stop))
         .route("/v1/workers/start", post(runs::start))
         .route_layer(middleware::from_fn_with_state(
-            BearerToken::new(token),
-            http::require_bearer,
+            http::CoordAccess {
+                token: BearerToken::new(token),
+                app: state.clone(),
+            },
+            http::require_access,
         ));
     let guard = HostGuard::new(coordinator_hosts(state.config()), HOST_HINT);
     Router::new()

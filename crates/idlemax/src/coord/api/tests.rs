@@ -23,7 +23,7 @@ use super::{router, router_with, AppState};
 use crate::coord::store::Store;
 use crate::state::now_ms;
 
-const TOKEN: &str = "coord-t0ken";
+pub(super) const TOKEN: &str = "coord-t0ken";
 
 #[tokio::test]
 async fn keep_awake_is_typed_metadata_in_status_and_why_not_a_guard_reason() {
@@ -204,6 +204,24 @@ impl Api {
             .send()
             .await
             .unwrap()
+    }
+
+    /// A request with `bearer` in place of the owner token; `body` None sends a GET.
+    pub(super) async fn send_as(
+        &self,
+        bearer: &str,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> reqwest::Response {
+        let mut req = self
+            .http
+            .request(method, format!("{}{path}", self.base))
+            .bearer_auth(bearer);
+        if let Some(body) = body {
+            req = req.json(body);
+        }
+        req.send().await.unwrap()
     }
 
     /// A GET without the token.

@@ -1,5 +1,6 @@
 //! Adapter: the dispatcher routes of the coordinator API (projects, mode, plan, view).
 
+use idlemax_core::control::credential::{CredentialReply, RevokeReply};
 use idlemax_core::control::device::SwitchReply;
 use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectView};
@@ -47,6 +48,20 @@ impl ApiClient {
         let word = if on { "on" } else { "off" };
         self.post(&format!("/v1/devices/{}/{word}", segment(id)), None::<&()>)
             .await
+    }
+}
+
+impl ApiClient {
+    /// `POST /v1/devices/{id}/credential`: a new credential, shown this once.
+    pub async fn device_credential(&self, id: &str) -> Result<CredentialReply> {
+        let path = format!("/v1/devices/{}/credential", segment(id));
+        self.post(&path, None::<&()>).await
+    }
+
+    /// `DELETE /v1/devices/{id}/credential`.
+    pub async fn revoke_device_credential(&self, id: &str) -> Result<RevokeReply> {
+        let path = format!("/v1/devices/{}/credential", segment(id));
+        self.send(self.http.delete(self.url(&path)), &path).await
     }
 }
 

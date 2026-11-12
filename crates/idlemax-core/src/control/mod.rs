@@ -351,6 +351,7 @@ fn finish(job: &Job, status: JobStatus, note: &str, now_ms: UnixMs) -> Job {
 }
 
 pub mod caller;
+pub mod credential;
 pub mod device;
 pub use device::{device_gate, off_reason, plan_switch, Switch};
 mod scope;

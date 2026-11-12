@@ -2,8 +2,9 @@
 //! candidate projects and owner activity, and replies with the device's switched-on projects.
 
 use axum::extract::State;
-use axum::Json;
+use axum::{Extension, Json};
 use idlemax_core::control::caller::Access;
+use idlemax_core::control::credential::Identity;
 use idlemax_core::control::{device_gate, may_assign};
 use idlemax_core::dispatch::inputs::{DispatchInputs, DispatchReply};
 use idlemax_core::dispatch::plan::Plan;
@@ -70,8 +71,10 @@ pub async fn ingest_pass(app: &AppState, job: JobId, output: String, now: UnixMs
 /// `POST /v1/agent/dispatch-inputs`.
 pub async fn dispatch_inputs(
     State(app): State<AppState>,
+    Extension(identity): Extension<Identity>,
     JsonBody(inputs): JsonBody<DispatchInputs>,
 ) -> Result<Json<DispatchReply>, ApiFailure> {
+    super::agents::own_device(&identity, &inputs.device)?;
     if inputs.device.trim().is_empty() {
         return Err(ApiFailure::BadRequest("device is empty".into()));
     }

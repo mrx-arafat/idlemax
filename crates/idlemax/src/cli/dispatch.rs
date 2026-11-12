@@ -112,7 +112,7 @@ fn access_of(cmd: &Cmd) -> Access {
         Cmd::Resume(_)
         | Cmd::Start
         | Cmd::Local(LocalCmd::Resume)
-        | Cmd::Device(DeviceCmd::On { .. })
+        | Cmd::Device(DeviceCmd::On { .. } | DeviceCmd::Credential { .. })
         | Cmd::Project(ProjectCmd::On { .. } | ProjectCmd::Add { .. } | ProjectCmd::Set { .. }) => {
             Access::Owner
         }

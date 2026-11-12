@@ -5,6 +5,7 @@
 mod advice;
 mod budget;
 mod controls;
+mod credentials;
 mod devices;
 mod dispatch;
 mod events;

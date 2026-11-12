@@ -11,6 +11,13 @@ Every call except `GET /healthz`, `GET /` and `GET /dashboard.js` needs `Authori
 The token comes from `IDLEMAX_TOKEN` or `$IDLEMAX_HOME/token` (mode 0600) and must be at least 32 characters; `idlemax init` makes 64.
 Any non-2xx response has the body `{"error": "..."}` (`protocol::ApiError`).
 
+The coordinator takes two kinds of bearer.
+The owner token opens every route.
+A device credential, made by `POST /v1/devices/{id}/credential`, opens only the `/v1/agent/*` routes and speaks only for its own device; the coordinator keeps its SHA-256 digest, never the credential.
+On any other route it is `403` with `this credential belongs to device <id> and opens only the agent routes; run owner commands from a device that holds the owner token`, and an agent route whose body names another device is `403` too.
+Any other bearer is `401`.
+The agent's local API takes whatever its own token file holds, so a server set up with its credential needs no owner token.
+
 Every route, token-free ones included, also checks the `Host` header (DNS-rebinding defence).
 It must be an IP address, `localhost` or a `*.localhost` name, the host of `coordinator.url`, or a name in `coordinator.allowed_hosts`; any other name gets `421 Misdirected Request`.
 A request with no `Host` header is served.
@@ -23,7 +30,7 @@ Each write is in one class; a route not listed is token-only, as before.
 |---|---|
 | `Read` | every `GET` |
 | `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/devices/{id}/off`; `POST /v1/dispatcher/mode` toward `off`; `POST /v1/workers/stop` |
-| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/devices/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject`; `POST /v1/workers/start`; `POST /v1/runs/{id}/keep` and `/discard` |
+| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/devices/{id}/on`; both `/v1/devices/{id}/credential` routes; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject`; `POST /v1/workers/start`; `POST /v1/runs/{id}/keep` and `/discard` |
 | token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
 
 For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.
@@ -89,6 +96,8 @@ The coordinator binds only to loopback or private network addresses (such as RFC
 | POST | /v1/limits | `{"key": "...", "value": "..." \| null}` | `{"key", "before", "after", "changed", "report"}` |
 | POST | /v1/devices/{id}/on | | `{"device", "enabled", "changed", "runs_stopped", "jobs_stopped"}` |
 | POST | /v1/devices/{id}/off | | `{"device", "enabled", "changed", "runs_stopped", "jobs_stopped"}` |
+| POST | /v1/devices/{id}/credential | | `{"device", "credential"}`, shown this once; it replaces an older one |
+| DELETE | /v1/devices/{id}/credential | | `{"device", "removed"}` |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
 | POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
 | POST | /v1/projects/{id}/on | | `ProjectView` |
@@ -575,6 +584,9 @@ A heartbeat never changes it; only `POST /v1/devices/{id}/on` and `/off` do, and
   Plain jobs keep their usual rules.
 - `off` cancels the device's queued dispatcher jobs and kills its active ones (`jobs_stopped`), as `stop_all` on each job, and stores no pause.
   `runs_stopped` counts the Runs stopped with their state saved; this build reports 0.
+- A server is held like an off device until its agent proves itself with its own credential: a device whose profile is not `laptop` and whose `DeviceView.agent_auth` is `owner_token_remote`, or not known yet, gets `server <id> has no credential of its own: idlemax device credential <id>` as `held`.
+  `agent_auth` is how the agent proved itself on its last heartbeat: `credential`, `owner_token_local` (the owner token from the coordinator's own host) or `owner_token_remote`; it is absent before the first heartbeat.
+  A credential is made for any id, known or not, since a new server has not sent a heartbeat; making and revoking one each log a `control` event that never holds the credential.
 - `on` drops the base check record of each of the device's projects whose check ended without a result, so the check runs again.
 
 ## Advice

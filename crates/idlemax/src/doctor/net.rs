@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use idlemax_core::control::credential::ONLY_AGENT_ROUTES;
 use idlemax_core::doctor::{version_mismatch, Check, Report};
 use idlemax_core::protocol::LocalStatus;
 use idlemax_core::{Config, Paths, VERSION};
@@ -60,6 +61,14 @@ pub(super) fn coordinator_error(url: &str, e: &ClientError) -> Check {
             "coordinator",
             format!("{url} refused this host name: {}", e.describe()),
             "add the name used in coordinator.url to coordinator.allowed_hosts in the coordinator's config.toml, or put the coordinator's IP address in coordinator.url",
+        ),
+        ClientError::Api {
+            status: 403,
+            message,
+            ..
+        } if message.contains(ONLY_AGENT_ROUTES) => Check::ok(
+            "coordinator",
+            "this device holds its own credential; owner commands run from a device with the owner token",
         ),
         _ if auth_rejected(e) => Check::fail(
             "coordinator",
@@ -238,5 +247,27 @@ fn agent_error(url: &str, e: &ClientError, agent_unit: bool) -> Check {
             format!("{url} returned an error: {}", e.describe()),
             "restart the agent and read its log",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use idlemax_core::control::credential::refused;
+    use idlemax_core::doctor::Level;
+
+    use super::*;
+
+    #[test]
+    fn a_device_credential_refused_an_owner_route_is_a_working_coordinator() {
+        let api = |status, message: String| ClientError::Api {
+            status,
+            path: "/v1/status".into(),
+            message,
+        };
+        let held = coordinator_error("http://c", &api(403, refused("box")));
+        assert_eq!(held.level, Level::Ok, "{held:?}");
+        assert!(held.detail.contains("its own credential"), "{held:?}");
+        let other = coordinator_error("http://c", &api(403, "launched".into()));
+        assert_eq!(other.level, Level::Fail);
     }
 }

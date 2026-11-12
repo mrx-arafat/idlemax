@@ -2,6 +2,7 @@
 //! in-memory store.
 
 use idlemax_core::control::caller::{Link, Mark};
+use idlemax_core::control::credential::{AgentAuth, Identity};
 use idlemax_core::dispatch::room::{LineState, RoomDecision};
 use idlemax_core::protocol::{ClusterStatus, Heartbeat, HeartbeatReply};
 use idlemax_core::types::{Admission, JobSpec, JobStatus};
@@ -115,4 +116,113 @@ async fn a_switch_off_ends_the_dispatchers_jobs_and_an_off_device_leases_none() 
         "{:?}",
         reply.assign
     );
+}
+
+fn credential_of(res: serde_json::Value) -> String {
+    res["credential"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn a_device_credential_opens_only_its_own_agent_routes() {
+    use reqwest::Method;
+    let api = Api::start().await;
+    let issued = api.post("/v1/devices/box/credential", &()).await;
+    assert_eq!(issued.status(), StatusCode::OK);
+    let cred = credential_of(issued.json().await.unwrap());
+    let beat = |id: &str| serde_json::to_value(roomy(id)).unwrap();
+    let send = |bearer: &str, method, path: &str, body: Option<serde_json::Value>| {
+        let (api, bearer, path) = (&api, bearer.to_string(), path.to_string());
+        async move {
+            api.send_as(&bearer, method, &path, body.as_ref())
+                .await
+                .status()
+        }
+    };
+    let hb = "/v1/agent/heartbeat";
+    assert_eq!(
+        send(&cred, Method::POST, hb, Some(beat("box"))).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(&cred, Method::POST, hb, Some(beat("mac"))).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(&cred, Method::GET, "/v1/status", None).await,
+        StatusCode::FORBIDDEN
+    );
+    let on = "/v1/devices/box/on";
+    assert_eq!(
+        send(&cred, Method::POST, on, None).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send("nope", Method::GET, "/v1/status", None).await,
+        StatusCode::UNAUTHORIZED
+    );
+
+    let status: ClusterStatus = api
+        .get_as("/v1/status", "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status.devices[0].agent_auth, Some(AgentAuth::Credential));
+    api.heartbeat(Vec::new()).await;
+    let status: ClusterStatus = api
+        .get_as("/v1/status", "localhost")
+        .await
+        .json()
+        .await
+        .unwrap();
+    let mac = status.devices.iter().find(|d| d.info.id == "mac").unwrap();
+    assert_eq!(mac.agent_auth, Some(AgentAuth::OwnerTokenLocal));
+
+    let second = credential_of(
+        api.post("/v1/devices/box/credential", &())
+            .await
+            .json()
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        send(&cred, Method::POST, hb, Some(beat("box"))).await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        send(&second, Method::POST, hb, Some(beat("box"))).await,
+        StatusCode::OK
+    );
+    let gone = api
+        .send_as(
+            super::super::tests::TOKEN,
+            Method::DELETE,
+            "/v1/devices/box/credential",
+            None,
+        )
+        .await;
+    assert_eq!(gone.status(), StatusCode::OK);
+    assert_eq!(
+        send(&second, Method::POST, hb, Some(beat("box"))).await,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[test]
+fn the_store_keeps_the_digest_and_a_remote_owner_token_is_marked() {
+    let mut store = Store::open_in_memory().unwrap();
+    let reply = issue_credential(&mut store, "box", T0).unwrap();
+    assert_eq!(store.credential_device(&reply.credential).unwrap(), None);
+    let digest = super::super::http::credential_digest(&reply.credential);
+    assert_eq!(
+        store.credential_device(&digest).unwrap().as_deref(),
+        Some("box")
+    );
+
+    let remote = crate::coord::server::Conn {
+        peer: ([192, 0, 2, 1], 50000).into(),
+        local: ([192, 0, 2, 2], 7878).into(),
+    };
+    let auth = super::super::agents::auth_of(&Identity::Owner, Some(remote));
+    assert_eq!(auth, AgentAuth::OwnerTokenRemote);
 }

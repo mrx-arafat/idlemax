@@ -207,6 +207,10 @@ pub struct DeviceView {
     /// Whether the device is switched on for dispatcher work.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// How the device's agent proved itself on its last heartbeat; absent before the first
+    /// one and from a coordinator that predates device credentials.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_auth: Option<crate::control::credential::AgentAuth>,
     /// How much of the device's allowance is in use and why it is not using more. Set by
     /// the coordinator; absent from one that predates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -2,8 +2,10 @@
 //! job updates. Adapter: reads the store, asks the domain, persists the result.
 
 use axum::extract::State;
-use axum::Json;
+use axum::{Extension, Json};
 use idlemax_core::advice::{is_ai_pass, AdvisorInputs};
+use idlemax_core::control::caller::same_host;
+use idlemax_core::control::credential::{agent_auth, speaks_for, AgentAuth, Identity};
 use idlemax_core::control::{
     came_online, device_gate, is_held, may_assign, paused_accounts, reconcile_heartbeat,
     transition_event,
@@ -24,31 +26,54 @@ use super::http::{ApiFailure, JsonBody};
 use super::jobs::quota_views;
 use super::offline_after_ms;
 use super::{advice, AppState};
+use crate::coord::server::Conn;
 use crate::coord::store::{NewEvent, Store, StoreError, UpdateWrites};
 use crate::state::now_ms;
 
-/// `POST /v1/agent/heartbeat`.
+/// `POST /v1/agent/heartbeat`; also records how the agent proved itself (A15).
 pub async fn heartbeat(
     State(app): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    conn: Option<Extension<Conn>>,
     JsonBody(hb): JsonBody<Heartbeat>,
 ) -> Result<Json<HeartbeatReply>, ApiFailure> {
     if hb.device.id.trim().is_empty() {
         return Err(ApiFailure::BadRequest("device.id is empty".into()));
     }
     hb.check().map_err(ApiFailure::BadRequest)?;
+    own_device(&identity, &hb.device.id)?;
+    let auth = auth_of(&identity, conn.map(|Extension(c)| c));
     let now = now_ms();
     let reply = app
-        .with_store(move |store, cfg| on_heartbeat(store, cfg, &hb, now))
+        .with_store(move |store, cfg| {
+            let reply = on_heartbeat(store, cfg, &hb, now)?;
+            store.set_agent_auth(&hb.device.id, auth)?;
+            Ok::<_, ApiFailure>(reply)
+        })
         .await?;
     Ok(Json(reply))
+}
+
+/// 403 unless the bearer may speak for `device`.
+pub(super) fn own_device(identity: &Identity, device: &str) -> Result<(), ApiFailure> {
+    speaks_for(identity, device).map_err(ApiFailure::Forbidden)
+}
+
+/// The owner token counts as local only from the coordinator's own host; a connection
+/// whose address is unknown counts as remote.
+pub(super) fn auth_of(identity: &Identity, conn: Option<Conn>) -> AgentAuth {
+    let local = conn.is_some_and(|c| same_host(c.peer.ip(), &[c.local.ip()]));
+    agent_auth(identity, local)
 }
 
 /// `POST /v1/agent/job-update`. A succeeded advisor AI pass feeds its output to the advisor.
 /// The reply acks the update's `seq` once it is stored, or was stored before.
 pub async fn job_update(
     State(app): State<AppState>,
+    Extension(identity): Extension<Identity>,
     JsonBody(update): JsonBody<JobUpdate>,
 ) -> Result<Json<JobUpdateReply>, ApiFailure> {
+    own_device(&identity, &update.device)?;
     let now = now_ms();
     let (seq, job_id) = (update.seq, update.id);
     let live = std::sync::Arc::clone(app.live());
@@ -73,8 +98,10 @@ pub async fn job_update(
 /// `POST /v1/agent/advisor-inputs`: keeps the newest copy per device for the advisor.
 pub async fn advisor_inputs(
     State(app): State<AppState>,
+    Extension(identity): Extension<Identity>,
     JsonBody(inputs): JsonBody<AdvisorInputs>,
 ) -> Result<Json<Value>, ApiFailure> {
+    own_device(&identity, &inputs.device)?;
     if inputs.device.trim().is_empty() {
         return Err(ApiFailure::BadRequest("device is empty".into()));
     }

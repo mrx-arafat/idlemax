@@ -9,6 +9,7 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use idlemax_core::control::credential::{refused, route_allowed, Identity};
 use idlemax_core::host::AllowedHosts;
 use idlemax_core::protocol::ApiError;
 use serde::de::DeserializeOwned;
@@ -145,11 +146,70 @@ impl BearerToken {
 
     /// Constant-time compare of an `Authorization` header value; the scheme is case-insensitive.
     fn accepts(&self, authorization: &str) -> bool {
-        let Some((scheme, presented)) = authorization.split_once(' ') else {
-            return false;
-        };
-        scheme.eq_ignore_ascii_case("bearer") && constant_time_eq(presented.trim(), &self.0)
+        presented(authorization).is_some_and(|p| constant_time_eq(p, &self.0))
     }
+}
+
+/// The bearer of an `Authorization` header value; the scheme is case-insensitive.
+fn presented(authorization: &str) -> Option<&str> {
+    let (scheme, presented) = authorization.split_once(' ')?;
+    scheme
+        .eq_ignore_ascii_case("bearer")
+        .then_some(presented.trim())
+}
+
+/// The SHA-256 digest of a device credential as lowercase hex; the coordinator stores only this.
+pub fn credential_digest(credential: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(credential.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// The coordinator's auth: the owner token, or a device credential found by its digest.
+#[derive(Clone)]
+pub struct CoordAccess {
+    pub token: BearerToken,
+    pub app: super::AppState,
+}
+
+/// Middleware of the coordinator's `/v1` routes: the owner token is `Identity::Owner`, a
+/// known device credential is `Identity::Device` and opens only the agent routes (A15), and
+/// anything else is 401. The identity travels to the handlers as a request extension.
+pub async fn require_access(
+    State(access): State<CoordAccess>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let header = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let identity = if access.token.accepts(header) {
+        Identity::Owner
+    } else if let Some(bearer) = presented(header).filter(|b| !b.is_empty()) {
+        let digest = credential_digest(bearer);
+        let found = access
+            .app
+            .with_store(move |store, _| store.credential_device(&digest).map_err(ApiFailure::from))
+            .await;
+        match found {
+            Ok(Some(device)) => Identity::Device(device),
+            Ok(None) => return ApiFailure::Unauthorized.into_response(),
+            Err(e) => return e.into_response(),
+        }
+    } else {
+        return ApiFailure::Unauthorized.into_response();
+    };
+    if let Identity::Device(device) = &identity {
+        if !route_allowed(&identity, req.uri().path()) {
+            return ApiFailure::Forbidden(refused(device)).into_response();
+        }
+    }
+    req.extensions_mut().insert(identity);
+    next.run(req).await
 }
 
 fn constant_time_eq(a: &str, b: &str) -> bool {

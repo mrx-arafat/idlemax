@@ -138,7 +138,7 @@ The repository is public: no address, host name or device id of the owner's mach
 - [ ] Task 6: Keep one Budget per login and pace a server-only account
 - [ ] Task 7: Run the base checks again when the day's budget is spent
 - [ ] Task 8: Add the headless runner
-- [ ] Task 9: Give each device its own credential
+- [x] Task 9: Give each device its own credential
 - [x] Task 10: Refuse a public coordinator address and write the server rollout
 - [ ] Task 11: Needs the owner's OK: move the coordinator to the always-on server
 - [ ] Task 12: Needs the owner's OK: join both servers as workbox and prove the dispatcher there
@@ -796,15 +796,15 @@ A worker on a server then finds nothing on that server that opens an owner route
 
 **Definition of Done:**
 
-- [ ] `route_allowed` passes every path for `Owner`, passes `/v1/agent/heartbeat` for a device and refuses `/v1/status`, `/v1/devices/x/on` and `/` for it.
-- [ ] A request with a device credential gets 200 on `POST /v1/agent/heartbeat` for its own device, 403 on the same route with another device id in the body, 403 on `GET /v1/status` and 403 on `POST /v1/devices/<id>/on`; a request with an unknown bearer gets 401.
-- [ ] After `POST /v1/devices/<id>/credential` the store holds a digest and not the credential, a second call makes the first credential answer 401, and `DELETE` makes the second one answer 401.
-- [ ] A heartbeat with the owner token from a loopback peer stores `owner_token_local`, one from another address stores `owner_token_remote`, and one with the device's credential stores `credential`.
-- [ ] `device_gate` holds a `workbox` that is on with `owner_token_remote` and with no `agent_auth`, and gives `None` for the same device with `credential`, for a `workbox` with `owner_token_local` and for a `laptop` with `owner_token_remote`.
-- [ ] In `tests/devices.rs`, an agent started in a second temp home whose `token` file holds the output of `idlemax device credential <id> --raw` appears online, runs one plain job, and `idlemax status` from that home exits non-zero with the 403 text.
-- [ ] `idlemax doctor --json` in that second home reports the coordinator check as `ok` with the credential text.
-- [ ] `docs/API.md` and `README.md` describe the credential.
-- [ ] Verify: `cargo test -p idlemax-core control::credential && cargo test -p idlemax-core control::device && cargo test -p idlemax --bin idlemax coord::api::devices && cargo test -p idlemax --bin idlemax doctor && cargo test -p idlemax --test devices && cargo test -p idlemax --test e2e && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `route_allowed` passes every path for `Owner`, passes `/v1/agent/heartbeat` for a device and refuses `/v1/status`, `/v1/devices/x/on` and `/` for it.
+- [x] A request with a device credential gets 200 on `POST /v1/agent/heartbeat` for its own device, 403 on the same route with another device id in the body, 403 on `GET /v1/status` and 403 on `POST /v1/devices/<id>/on`; a request with an unknown bearer gets 401.
+- [x] After `POST /v1/devices/<id>/credential` the store holds a digest and not the credential, a second call makes the first credential answer 401, and `DELETE` makes the second one answer 401.
+- [x] A heartbeat with the owner token from a loopback peer stores `owner_token_local`, one from another address stores `owner_token_remote`, and one with the device's credential stores `credential`.
+- [x] `device_gate` holds a `workbox` that is on with `owner_token_remote` and with no `agent_auth`, and gives `None` for the same device with `credential`, for a `workbox` with `owner_token_local` and for a `laptop` with `owner_token_remote`.
+- [x] In `tests/devices.rs`, an agent started in a second temp home whose `token` file holds the output of `idlemax device credential <id> --raw` appears online, runs one plain job, and `idlemax status` from that home exits non-zero with the 403 text.
+- [x] `idlemax doctor --json` in that second home reports the coordinator check as `ok` with the credential text.
+- [x] `docs/API.md` and `README.md` describe the credential.
+- [x] Verify: `cargo test -p idlemax-core control::credential && cargo test -p idlemax-core control::device && cargo test -p idlemax --bin idlemax coord::api::devices && cargo test -p idlemax --bin idlemax doctor && cargo test -p idlemax --test devices && cargo test -p idlemax --test e2e && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 10: Refuse a public coordinator address and write the server rollout
 

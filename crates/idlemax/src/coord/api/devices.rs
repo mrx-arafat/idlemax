@@ -1,18 +1,20 @@
-//! Device routes: switch a device on or off for dispatcher work (D19, A23).
+//! Device routes: switch a device on or off for dispatcher work (D19, A23), and make or
+//! revoke its own credential (A15).
 //! Adapter: the domain plans the switch and names what it stops; these handlers persist,
-//! stop and log. Both are owner actions, so no pause, kill switch, guard or line state
-//! holds them (A10).
+//! stop and log. Every route is an owner action, so no pause, kill switch, guard or line
+//! state holds it (A10).
 
 use axum::extract::rejection::PathRejection;
 use axum::extract::{Path, State};
 use axum::Json;
 use idlemax_core::control::caller::Access;
+use idlemax_core::control::credential::{CredentialReply, RevokeReply};
 use idlemax_core::control::device::{checks_to_rerun, plan_switch, stop_targets, SwitchReply};
 use idlemax_core::protocol::{name_problem, ControlRequest, MAX_DEVICE_ID_CHARS};
-use idlemax_core::types::{ControlAction, ControlScope, UnixMs};
+use idlemax_core::types::{ControlAction, ControlScope, EventKind, UnixMs};
 
 use super::caller::Who;
-use super::http::ApiFailure;
+use super::http::{credential_digest, ApiFailure};
 use super::jobs::apply_control;
 use super::AppState;
 use crate::coord::store::Store;
@@ -43,10 +45,7 @@ async fn switch(
     path: Result<Path<String>, PathRejection>,
     on: bool,
 ) -> Result<Json<SwitchReply>, ApiFailure> {
-    let Path(id) = path?;
-    if let Some(why) = name_problem("device id", &id, MAX_DEVICE_ID_CHARS) {
-        return Err(ApiFailure::BadRequest(why));
-    }
+    let id = device_id(path)?;
     let now = now_ms();
     let reply = app
         .with_store(move |store, _| switch_device(store, &id, on, now))
@@ -102,6 +101,70 @@ pub(super) fn switch_device(
         runs_stopped: 0,
         jobs_stopped,
     })
+}
+
+/// `POST /v1/devices/{id}/credential`: owner-only; a new credential for the id, known or
+/// not, since a new server has never sent a heartbeat. It replaces an older one.
+pub async fn credential(
+    State(app): State<AppState>,
+    who: Who,
+    path: Result<Path<String>, PathRejection>,
+) -> Result<Json<CredentialReply>, ApiFailure> {
+    who.ensure(Access::Owner).await?;
+    let id = device_id(path)?;
+    let now = now_ms();
+    let reply = app
+        .with_store(move |store, _| issue_credential(store, &id, now))
+        .await?;
+    Ok(Json(reply))
+}
+
+/// `DELETE /v1/devices/{id}/credential`: owner-only.
+pub async fn revoke(
+    State(app): State<AppState>,
+    who: Who,
+    path: Result<Path<String>, PathRejection>,
+) -> Result<Json<RevokeReply>, ApiFailure> {
+    who.ensure(Access::Owner).await?;
+    let id = device_id(path)?;
+    let now = now_ms();
+    let reply = app
+        .with_store(move |store, _| {
+            let removed = store.delete_device_credential(&id)?;
+            if removed {
+                let msg = format!("device {id}: credential revoked");
+                store.append_event(EventKind::Control, Some(&id), None, &msg, now)?;
+            }
+            Ok::<_, ApiFailure>(RevokeReply {
+                device: id,
+                removed,
+            })
+        })
+        .await?;
+    Ok(Json(reply))
+}
+
+/// Makes a credential, keeps its digest and logs an event that never names the credential.
+pub(super) fn issue_credential(
+    store: &mut Store,
+    id: &str,
+    now: UnixMs,
+) -> Result<CredentialReply, ApiFailure> {
+    let credential =
+        crate::state::generate_token().map_err(|e| ApiFailure::Internal(e.to_string()))?;
+    store.set_device_credential(id, &credential_digest(&credential), now)?;
+    let device = id.to_string();
+    let msg = format!("device {id}: new credential made");
+    store.append_event(EventKind::Control, Some(&device), None, &msg, now)?;
+    Ok(CredentialReply { device, credential })
+}
+
+fn device_id(path: Result<Path<String>, PathRejection>) -> Result<String, ApiFailure> {
+    let Path(id) = path?;
+    match name_problem("device id", &id, MAX_DEVICE_ID_CHARS) {
+        Some(why) => Err(ApiFailure::BadRequest(why)),
+        None => Ok(id),
+    }
 }
 
 #[cfg(test)]

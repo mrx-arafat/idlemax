@@ -154,7 +154,8 @@ impl Store {
         let paused = self.paused_scopes()?;
         let global = paused.contains(&ControlScope::Global);
         let mut stmt = self.conn.prepare_cached(
-            "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room, dispatch_on
+            "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room, dispatch_on,
+                    agent_auth
              FROM devices ORDER BY id",
         )?;
         let rows = stmt.query_map([], device_from_row)?;
@@ -249,6 +250,10 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
         capacity: None,
         room: opt_json_col(r, 6)?,
         enabled: Some(r.get(7)?),
+        agent_auth: r
+            .get::<_, Option<String>>(8)?
+            .map(|_| super::enum_col(r, 8))
+            .transpose()?,
     })
 }
 

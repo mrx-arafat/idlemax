@@ -18,11 +18,24 @@ pub enum DeviceCmd {
     On { id: String },
     /// Stop the dispatcher's work on a device; plain jobs keep running
     Off { id: String },
+    /// Make the device's own credential, which opens only the agent routes; shown once
+    Credential {
+        id: String,
+        /// Print the credential alone, for `| idlemax setup --role agent --token-stdin`
+        #[arg(long, conflicts_with = "revoke")]
+        raw: bool,
+        /// Remove the device's credential; its agent is refused from then on
+        #[arg(long)]
+        revoke: bool,
+    },
 }
 
 pub async fn run(cmd: DeviceCmd, c: &ApiClient, out: &Out) -> Result<()> {
     let (id, on) = match cmd {
         DeviceCmd::List => return list(c, out).await,
+        DeviceCmd::Credential { id, raw, revoke } => {
+            return credential(c, &id, raw, revoke, out).await
+        }
         DeviceCmd::On { id } => (id, true),
         DeviceCmd::Off { id } => (id, false),
     };
@@ -33,6 +46,57 @@ pub async fn run(cmd: DeviceCmd, c: &ApiClient, out: &Out) -> Result<()> {
         |_| format!("device {}: {text}", reply.device),
         || Ok(switch_node(&text, &reply)),
         &switch_hints(&reply),
+    )
+}
+
+/// Prints a new credential (alone with `--raw`), or revokes the device's credential.
+async fn credential(c: &ApiClient, id: &str, raw: bool, revoke: bool, out: &Out) -> Result<()> {
+    if revoke {
+        let reply = c.revoke_device_credential(id).await?;
+        let text = if reply.removed {
+            "credential revoked".to_string()
+        } else {
+            noop::already("without a credential")
+        };
+        return out.emit_with(
+            &reply,
+            |_| format!("device {}: {text}", reply.device),
+            || {
+                Ok(Node::obj([
+                    ("result", Node::str(&text)),
+                    ("device", Node::str(&reply.device)),
+                ]))
+            },
+            &[],
+        );
+    }
+    let reply = c.device_credential(id).await?;
+    if raw {
+        println!("{}", reply.credential);
+        return Ok(());
+    }
+    let next = format!(
+        "idlemax device credential {id} --raw | ssh <server> idlemax setup --role agent \
+         --coord-url <url> --token-stdin"
+    );
+    out.emit_with(
+        &reply,
+        |r| {
+            format!(
+                "device {}: credential {} (shown once; it replaces any older one)",
+                r.device, r.credential
+            )
+        },
+        || {
+            Ok(Node::obj([
+                ("device", Node::str(&reply.device)),
+                ("credential", Node::str(&reply.credential)),
+            ]))
+        },
+        &[hint(
+            &next,
+            "give the server its credential in place of the owner token",
+        )],
     )
 }
 

@@ -3,10 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::credential::AgentAuth;
 use super::ControlError;
 use crate::dispatch::check::BaseCheck;
 use crate::protocol::DeviceView;
-use crate::types::{is_dispatcher_job, DeviceId, Job, JobId, JobStatus};
+use crate::types::{is_dispatcher_job, DeviceId, DeviceProfile, Job, JobId, JobStatus};
 
 /// The reply of `POST /v1/devices/{id}/on` and `/off`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,13 +66,24 @@ pub fn off_reason(id: &str) -> String {
     format!("device {id} is off: idlemax device on {id}")
 }
 
-/// Why this device takes no dispatcher work whatever its room, or None.
+/// Why this device takes no dispatcher work whatever its room, or None: it is off, or it is
+/// a server whose agent has no credential of its own (A15). A laptop keeps the owner token,
+/// and so may an agent on the coordinator's own host.
 pub fn device_gate(view: &DeviceView) -> Option<String> {
-    if view.enabled == Some(true) {
-        None
-    } else {
-        Some(off_reason(&view.info.id))
+    let id = &view.info.id;
+    if view.enabled != Some(true) {
+        return Some(off_reason(id));
     }
+    let own = matches!(
+        view.agent_auth,
+        Some(AgentAuth::Credential | AgentAuth::OwnerTokenLocal)
+    );
+    if view.info.profile != DeviceProfile::Laptop && !own {
+        return Some(format!(
+            "server {id} has no credential of its own: idlemax device credential {id}"
+        ));
+    }
+    None
 }
 
 /// The dispatcher's own jobs a switch-off ends on `device`: queued for it or active there.
@@ -186,6 +198,38 @@ mod tests {
             device_gate(&view("mac", None)),
             Some("device mac is off: idlemax device on mac".into())
         );
+    }
+
+    #[test]
+    fn a_server_without_its_own_credential_is_held_like_an_off_device() {
+        use crate::control::credential::AgentAuth;
+        use crate::types::DeviceProfile;
+        let server = |profile, auth| DeviceView {
+            info: DeviceInfo {
+                id: "box".into(),
+                profile,
+                ..Default::default()
+            },
+            enabled: Some(true),
+            agent_auth: auth,
+            ..Default::default()
+        };
+        let held = "server box has no credential of its own: idlemax device credential box";
+        for auth in [Some(AgentAuth::OwnerTokenRemote), None] {
+            let got = device_gate(&server(DeviceProfile::Workbox, auth));
+            assert_eq!(got.as_deref(), Some(held), "{auth:?}");
+        }
+        for (profile, auth) in [
+            (DeviceProfile::Workbox, AgentAuth::Credential),
+            (DeviceProfile::Workbox, AgentAuth::OwnerTokenLocal),
+            (DeviceProfile::Laptop, AgentAuth::OwnerTokenRemote),
+        ] {
+            assert_eq!(
+                device_gate(&server(profile, Some(auth))),
+                None,
+                "{profile:?}"
+            );
+        }
     }
 
     #[test]
