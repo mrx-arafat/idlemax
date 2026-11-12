@@ -282,10 +282,9 @@ async fn repo_root(path: &Path) -> Result<String> {
         )
         .into()
     };
+    let args = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
     let output = tokio::process::Command::new("git")
-        .arg("-C")
-        .arg(path)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .args(crate::safe_git::args(path, &args))
         .stdin(std::process::Stdio::null())
         .output()
         .await

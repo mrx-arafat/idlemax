@@ -123,3 +123,51 @@ fn a_high_risk_diff_asks_the_reviewer_once_and_its_concern_needs_the_owner() {
     assert_eq!(judged.verdict, Verdict::NeedsYou);
     assert!(judged.concern.unwrap().contains("it skips the retry path"));
 }
+
+/// Red-team case 5 through the whole launch: the worker sets `core.fsmonitor` and writes a
+/// hook in the shared `.git`; idlemax's git runs neither, puts both back and rejects the Run.
+#[test]
+fn a_worker_that_changes_the_shared_git_config_or_hooks_is_rejected_and_undone() {
+    let mut rig = rig();
+    let j = scoped(&rig);
+    let worker = j.spec.worker.clone().unwrap();
+    for status in [
+        AgentStatus::Idle,
+        AgentStatus::Idle,
+        AgentStatus::Working,
+        AgentStatus::Done,
+    ] {
+        rig.host.push_state(status, None, &[SHELL, AGENT]);
+    }
+    let mut now = 1_000;
+    rig.workers.handle(Msg::Start(Box::new(j)), now, now);
+    drive(&mut rig, &mut now, briefed);
+    let folder = rig.host.starts.lock().unwrap()[0].folder.clone();
+    let common = rig.repo.join(".git");
+    let config = std::fs::read(common.join("config")).unwrap();
+    std::fs::write(folder.join("file.txt"), "changed\n").unwrap();
+    git(&folder, &["commit", "-qam", "the worker's change"]);
+    let mark = folder.parent().unwrap().join("pwned");
+    let touch = format!("touch {}; false #", mark.display());
+    git(&folder, &["config", "core.fsmonitor", &touch]);
+    let hook = common.join("hooks/post-checkout");
+    std::fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", mark.display())).unwrap();
+    let updates = drive(&mut rig, &mut now, terminal);
+    let facts = last(&updates)
+        .worker
+        .as_ref()
+        .unwrap()
+        .facts
+        .clone()
+        .unwrap();
+    assert!(facts.git_changed);
+    let judged = verdict(&facts, &worker);
+    assert_eq!(judged.verdict, Verdict::Rejected);
+    assert!(judged
+        .concern
+        .unwrap_or_default()
+        .contains("git config or hooks"));
+    assert_eq!(std::fs::read(common.join("config")).unwrap(), config);
+    assert!(!hook.exists());
+    assert!(!mark.exists(), "idlemax's git ran the worker's code");
+}

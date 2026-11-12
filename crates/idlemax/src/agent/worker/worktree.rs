@@ -97,21 +97,10 @@ fn write_marker(marker_path: &Path, marker: &WorktreeMarker) -> Result<(), Workt
     Ok(())
 }
 
+/// The owner's global git config stays in force (git-lfs filters, safe.directory), except
+/// that no fsmonitor or hook runs; `OsCommands` already sets GIT_TERMINAL_PROMPT=0.
 fn git_cmd(dir: &Path, args: &[&str], limit: Duration) -> Cmd {
-    let mut full = vec!["-C".to_string(), dir.display().to_string()];
-    full.extend(args.iter().map(|s| s.to_string()));
-    Cmd {
-        program: "git".into(),
-        args: full,
-        cwd: None,
-        // The owner's global git config stays in force (git-lfs filters, safe.directory,
-        // hooksPath); `OsCommands` already sets GIT_TERMINAL_PROMPT=0.
-        env: Vec::new(),
-        stdin: None,
-        limit,
-        throttle: false,
-        tag: None,
-    }
+    Cmd::git(dir, args, limit)
 }
 
 fn check_git(out: Output) -> Result<String, WorktreeError> {

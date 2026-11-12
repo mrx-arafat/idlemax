@@ -220,20 +220,8 @@ fn run(
     args: &[&str],
     limit: Duration,
 ) -> Result<super::cmd::Output, String> {
-    let mut all = vec!["-C".to_string(), dir.display().to_string()];
-    all.extend(args.iter().map(|s| s.to_string()));
-    let cmd = Cmd {
-        program: "git".into(),
-        args: all,
-        cwd: None,
-        env: Vec::new(),
-        stdin: None,
-        limit,
-        throttle: false,
-        tag: None,
-    };
     commands
-        .run(&cmd)
+        .run(&Cmd::git(dir, args, limit))
         .map_err(|e| format!("git {}: {e}", args.first().unwrap_or(&"")))
 }
 

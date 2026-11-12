@@ -1,5 +1,7 @@
 //! Adapter: git facts of one folder, read with `git --no-optional-locks` so no read takes a
-//! lock in the owner's repository. Every call has a 5 s timeout; a failed call leaves its
+//! lock in the owner's repository, and with `safe_git::SAFE`, so no git here runs a hook or
+//! an fsmonitor command: one started from the agent would run outside the allowlist, the
+//! lines and the kill switch. Every call has a 5 s timeout; a failed call leaves its
 //! field empty.
 
 use std::path::{Path, PathBuf};
@@ -22,6 +24,7 @@ pub(crate) async fn git(dir: &Path, args: &[&str]) -> Option<String> {
 async fn git_result(dir: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("--no-optional-locks")
+        .args(crate::safe_git::SAFE)
         .arg("-C")
         .arg(dir)
         .args(args)
@@ -40,10 +43,6 @@ async fn git_result(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// Git writes in the base checkout never run a repository hook: a hook started from the agent
-/// would run outside the allowlist, the lines and the kill switch.
-const NO_HOOKS: [&str; 2] = ["-c", "core.hooksPath=/dev/null"];
-
 /// Makes or moves `dir`, a detached worktree of `project` at `commit`. A folder that is not
 /// this project's checkout is left alone.
 pub async fn prepare_checkout(project: &Path, dir: &Path, commit: &str) -> Checkout {
@@ -53,11 +52,7 @@ pub async fn prepare_checkout(project: &Path, dir: &Path, commit: &str) -> Check
     }
     let shown = dir.to_string_lossy().into_owned();
     let result = if dir.exists() {
-        git_result(
-            dir,
-            &[&NO_HOOKS[..], &["checkout", "-q", "--detach", commit]].concat(),
-        )
-        .await
+        git_result(dir, &["checkout", "-q", "--detach", commit]).await
     } else {
         if let Some(parent) = dir.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
@@ -66,7 +61,7 @@ pub async fn prepare_checkout(project: &Path, dir: &Path, commit: &str) -> Check
             }
         }
         let add = ["worktree", "add", "-q", "--detach", shown.as_str(), commit];
-        git_result(project, &[&NO_HOOKS[..], &add].concat()).await
+        git_result(project, &add).await
     };
     match result {
         Ok(_) => checkout_state(project, dir).await,

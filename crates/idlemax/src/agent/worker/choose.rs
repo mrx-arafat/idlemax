@@ -107,6 +107,7 @@ impl Workers {
             commands: Arc::clone(&self.commands),
             procs: Arc::clone(&self.procs),
             worktrees_dir: self.paths.worktrees_dir(),
+            snapshots_dir: self.paths.agent_state_dir().join("git-snapshots"),
             job: job.clone(),
             worker: worker.clone(),
             tag,

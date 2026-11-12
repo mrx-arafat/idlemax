@@ -73,6 +73,10 @@ pub struct Judged {
 
 /// The worst finding wins: `rejected`, then `needs_you`, else `clean` (D8). New untracked
 /// files never change the verdict; the concern or the summary names them.
+/// The rejection of a launch that changed the repository's shared git config or hooks.
+pub const GIT_CHANGED: &str =
+    "the worker changed the repository's git config or hooks (idlemax put them back)";
+
 pub fn verdict(facts: &CheckFacts, spec: &WorkerSpec) -> Judged {
     let mut changed: Vec<String> = facts.diff.files.iter().map(|f| f.path.clone()).collect();
     changed.extend(facts.modified.iter().cloned());
@@ -106,6 +110,9 @@ pub fn verdict(facts: &CheckFacts, spec: &WorkerSpec) -> Judged {
 /// The findings that reject a task: no commit, an off-limits path, a check it broke.
 fn rejections(facts: &CheckFacts, scope: &ScopeFindings) -> Vec<String> {
     let mut found = Vec::new();
+    if facts.git_changed {
+        found.push(GIT_CHANGED.to_string());
+    }
     if facts.commits == 0 {
         found.push("no commit was made".to_string());
     }

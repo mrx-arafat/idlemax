@@ -1,19 +1,23 @@
-//! Domain: the "needs you" lines of the dispatcher view: tasks sent to the owner, accounts
-//! resting past today, devices in an emergency and devices switched off with a project on.
-//! Pure.
+//! Domain: the "needs you" lines of the dispatcher view: tasks sent to the owner, runs that
+//! changed the repository's git config or hooks, accounts resting past today, devices in an
+//! emergency and devices switched off with a project on. Pure.
 
 use super::{DeviceLine, NeedKind, NeedsYouLine};
-use crate::dispatch::label::plain;
+use crate::dispatch::label::{plain, RunLine};
 use crate::dispatch::plan::Plan;
 use crate::dispatch::project::ProjectView;
 use crate::dispatch::room::LineState;
 use crate::quota::budget::{Budget, BudgetBasis};
 use crate::quota::identity::AccountProblem;
+use crate::worker::checks::GIT_CHANGED;
+use crate::worker::run::RunState;
 
-/// What needs the owner, in this order: tasks the orchestrator sent to them, accounts out of
-/// quota past today, accounts their logins close, then devices (see `device_needs`).
+/// What needs the owner, in this order: tasks the orchestrator sent to them, rejected runs
+/// that changed the git config or hooks, accounts out of quota past today, accounts their
+/// logins close, then devices (see `device_needs`).
 pub(super) fn needs_you(
     plan: &Plan,
+    runs: &[RunLine],
     budgets: &[Budget],
     problems: &[AccountProblem],
     devices: &[DeviceLine],
@@ -25,6 +29,20 @@ pub(super) fn needs_you(
         subject: plain(&format!("{}: {}", t.project, t.title)),
         reason: plain(t.needs_you.as_deref().unwrap_or_default()),
     });
+    let changed_git = runs
+        .iter()
+        .map(|l| &l.run)
+        .filter(|r| r.state == RunState::Rejected)
+        .filter(|r| r.facts.check.as_ref().is_some_and(|f| f.git_changed))
+        .map(|r| NeedsYouLine {
+            key: format!("run:{}:git", r.id),
+            kind: NeedKind::Task,
+            subject: plain(&format!("{}: {}", r.project, r.task_title)),
+            reason: format!(
+                "{GIT_CHANGED}: look at its repository, then idlemax review discard {}",
+                r.id
+            ),
+        });
     let accounts = budgets
         .iter()
         .filter(|b| b.basis == BudgetBasis::Resting)
@@ -44,6 +62,7 @@ pub(super) fn needs_you(
         })
     });
     tasks
+        .chain(changed_git)
         .chain(accounts)
         .chain(closed)
         .chain(device_needs(devices, projects))

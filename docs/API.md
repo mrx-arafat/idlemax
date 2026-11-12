@@ -761,7 +761,7 @@ It costs one plan, the same work as `GET /v1/plan`, and reads at most 200 runs p
 - `ready_unjudged[]`: ready tasks no orchestrator pass has judged (`project`, `task`, `title`); no slot is filled from them, and surfaces label them `not judged by the orchestrator`.
 - `workers[]`: the runs in `starting`, `running`, `checking`, `stopped` and `shed`, newest first; `review[]`: the runs in `clean`, `needs_you` and `rejected`, newest first.
   Each has `run`, `device`, `project`, `task`, `state`, `label`, `summary`, `why` (why the task was picked), `provider`, `account`, `model`, `branch` and `start_ms`.
-- `needs_you[]`: `key` (stable across polls), `kind` (`task`, `account` or `device`), `subject` and `reason`, in this order: tasks the orchestrator sent to the owner (`task:<project id>:<task id>`), accounts resting past the end of today (`account:<name>`), accounts their logins close (`account:<name>:<kind>`, the kind of `account_problems`, with its message and fix), devices over the emergency line (`device:<id>:emergency`) and devices switched off while a project on them is on (`device:<id>:off`).
+- `needs_you[]`: `key` (stable across polls), `kind` (`task`, `account` or `device`), `subject` and `reason`, in this order: tasks the orchestrator sent to the owner (`task:<project id>:<task id>`), rejected Runs whose worker changed the repository's git config or hooks (`run:<id>:git`, kind `task`, until the Run is kept or discarded), accounts resting past the end of today (`account:<name>`), accounts their logins close (`account:<name>:<kind>`, the kind of `account_problems`, with its message and fix), devices over the emergency line (`device:<id>:emergency`) and devices switched off while a project on them is on (`device:<id>:off`).
 - `budgets[]`: per account `account`, `provider`, `unit` and `days`, today first and then up to six earlier account days, newest first; a day has `day_start_ms`, `day_end_ms`, `spendable_pct`, `spent_pct`, `left_pct` and `why`, null where the stored day has no value.
 - `proposals_open`: open rule proposals.
 
@@ -881,6 +881,9 @@ A worker job is an AI job (`cost = "ai"`) that stands outside the one-AI-lease r
 ### Checking a finished task
 
 A worker saying "done" counts for nothing (D8).
+Every git command the agent runs on a project repository carries `-c core.fsmonitor=false -c core.hooksPath=/dev/null`, since a worktree shares `config` and `hooks/` with the owner's checkout.
+Right before the worker starts, the agent hashes the repository's common `config` and `hooks/` and keeps a copy under `$IDLEMAX_HOME/agent/git-snapshots/<job id>`; once none of the worker's processes is left, and again after the check, it compares them and puts any change back.
+
 After its turn ends the agent closes the pane, waits until none of the worker's processes is left, reports phase `checking`, and gathers `CheckFacts` in the worktree; the last update of the launch carries them as `worker.facts`:
 
 | Field | Meaning |
@@ -888,6 +891,7 @@ After its turn ends the agent closes the pane, waits until none of the worker's 
 | `commits` | commits since the base commit on the Run's branch (`refs/heads/<branch>`), never whatever `HEAD` points at |
 | `tip` | the commit of the Run's branch that was judged; null when the branch is gone |
 | `head_off_branch` | the worktree's `HEAD` was not the Run's branch at `tip` |
+| `git_changed` | the repository's shared git config or hooks changed during the launch (the agent put them back); sent on any end of a launch, even a killed one or a worker lost to an agent restart |
 | `modified`, `untracked` | tracked paths left uncommitted, and new untracked paths (`git status --porcelain`) |
 | `diff.files` | `{path, added, removed}` per changed file (`git diff --numstat <base>..<tip>`) |
 | `summary` | the subject of the last commit |
@@ -900,7 +904,7 @@ On high risk the agent asks the job's reviewer, always another provider than the
 
 The coordinator turns the facts into one verdict, the worst finding winning:
 
-- `rejected`: no commit, a worktree `HEAD` that is not the Run's branch at its tip, a changed path under an off-limits path, or a check that passed before the change and fails after it.
+- `rejected`: a change to the repository's git config or hooks (whatever the job's end status, so the Run is never queued again by itself), no commit, a worktree `HEAD` that is not the Run's branch at its tip, a changed path under an off-limits path, or a check that passed before the change and fails after it.
 - `needs_you`, with the exact concern: a changed path outside the scope paths or no scope named, tracked files left uncommitted, a check that failed before and still fails or did not finish after, the reviewer's concern, or a high risk with no review.
 - `clean` otherwise.
 

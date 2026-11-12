@@ -158,10 +158,8 @@ fn merge_refuses_a_dirty_checkout_and_a_conflict_and_merges_a_clean_branch() {
 fn a_merge_that_fails_after_it_started_is_aborted() {
     let r = repo("new.txt");
     commit(&r.repo, "other.txt", "owner\n");
-    let hook = r.repo.join(".git/hooks/pre-merge-commit");
-    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // idlemax's git runs no hook, so a stale index lock makes the started merge fail.
+    std::fs::write(r.repo.join(".git/index.lock"), "").unwrap();
     let head = git(&r.repo, &["rev-parse", "HEAD"]);
     let err = act(&r, WorkerAction::KeepMerge).unwrap_err();
     assert!(err.contains("aborted"), "{err}");

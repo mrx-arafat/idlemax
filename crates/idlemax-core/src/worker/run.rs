@@ -200,6 +200,14 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
             .clone()
             .unwrap_or_else(|| format!("job {}", update.status))
     };
+    // A launch that changed the shared git config or hooks is rejected however it ended, so
+    // it is never queued again on its own.
+    let changed = report
+        .and_then(|r| r.facts.as_ref())
+        .is_some_and(|f| f.git_changed);
+    if changed && update.status.is_terminal() {
+        return judge(next, run.state, report, worker, now_ms);
+    }
     // A turn a usage limit cut is not a failed check: back in the queue, state saved (D10.7).
     let limit = report
         .and_then(|r| r.end_text.as_deref())

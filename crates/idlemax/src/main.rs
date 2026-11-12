@@ -10,6 +10,7 @@ mod doctor;
 mod error_text;
 mod files;
 mod live_config;
+mod safe_git;
 mod state;
 mod tui;
 

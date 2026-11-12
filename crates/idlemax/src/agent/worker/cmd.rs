@@ -34,6 +34,22 @@ pub enum CmdError {
     Io(String),
 }
 
+impl Cmd {
+    /// `git` on a project repository, with the safe options of `crate::safe_git`.
+    pub fn git(dir: &std::path::Path, args: &[&str], limit: Duration) -> Self {
+        Self {
+            program: "git".into(),
+            args: crate::safe_git::args(dir, args),
+            cwd: None,
+            env: Vec::new(),
+            stdin: None,
+            limit,
+            throttle: false,
+            tag: None,
+        }
+    }
+}
+
 pub trait Commands: Send + Sync {
     fn run(&self, cmd: &Cmd) -> Result<Output, CmdError>;
 }

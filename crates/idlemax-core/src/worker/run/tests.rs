@@ -153,6 +153,24 @@ mod after_job {
     }
 
     #[test]
+    fn a_launch_that_changed_the_git_config_or_hooks_is_rejected_whatever_its_end() {
+        use crate::worker::report::CheckFacts;
+        let mut killed = with_phase(update(JobStatus::Killed), WorkerPhase::Done);
+        killed.retryable = true;
+        if let Some(r) = killed.worker.as_mut() {
+            r.facts = Some(CheckFacts {
+                commits: 1,
+                git_changed: true,
+                ..Default::default()
+            });
+        }
+        let next = moved(run(RunState::Running), killed).unwrap();
+        assert_eq!(next.state, RunState::Rejected);
+        let concern = next.concern.unwrap_or_default();
+        assert!(concern.contains("git config or hooks"), "{concern}");
+    }
+
+    #[test]
     fn the_third_start_that_fails_in_a_row_needs_the_owner() {
         let mut r = run(RunState::Starting);
         for tries in 1..START_TRIES {

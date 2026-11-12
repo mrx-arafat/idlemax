@@ -312,22 +312,9 @@ impl Workers {
     }
 
     fn commits_since(&self, folder: &Path, base: &str) -> u64 {
-        let cmd = Cmd {
-            program: "git".into(),
-            args: vec![
-                "-C".into(),
-                folder.display().to_string(),
-                "rev-list".into(),
-                "--count".into(),
-                format!("{base}..HEAD"),
-            ],
-            cwd: None,
-            env: Vec::new(),
-            stdin: None,
-            limit: Duration::from_secs(10),
-            throttle: false,
-            tag: None,
-        };
+        let range = format!("{base}..HEAD");
+        let args = ["rev-list", "--count", range.as_str()];
+        let cmd = Cmd::git(folder, &args, Duration::from_secs(10));
         let out = self.commands.run(&cmd).ok();
         let out = out.filter(|o| o.code == Some(0));
         out.and_then(|o| o.stdout.trim().parse().ok()).unwrap_or(0)

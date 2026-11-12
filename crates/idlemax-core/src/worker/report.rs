@@ -92,6 +92,9 @@ pub struct CheckFacts {
     pub tip: Option<String>,
     /// The worktree's HEAD was not the Run's branch at that commit.
     pub head_off_branch: bool,
+    /// The repository's shared git config or hooks changed during the launch; the device put
+    /// them back.
+    pub git_changed: bool,
     /// Tracked paths left modified and uncommitted.
     pub modified: Vec<String>,
     /// New untracked paths.

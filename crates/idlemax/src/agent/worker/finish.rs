@@ -11,6 +11,7 @@ use idlemax_core::types::{JobId, JobStatus, UnixMs};
 use idlemax_core::worker::report::{CheckFacts, WorkerPhase};
 
 use super::check::{self, CheckCtx};
+use super::gitdir;
 use super::{End, Phase, Workers};
 use crate::agent::runner::os::Sig;
 
@@ -40,14 +41,26 @@ impl Workers {
             return None;
         }
         let end = end.clone();
+        // Before any git of idlemax's runs again in the repository: undo the worker's change.
+        let git_changed = t.progress.git.as_ref().is_some_and(gitdir::undo_change);
         if end.status == JobStatus::Succeeded {
-            return self.begin_check(id, end, now_ms);
+            return self.begin_check(id, end, git_changed, now_ms);
         }
-        Some(self.finish(id, end, None, now_ms))
+        let facts = git_changed.then(|| CheckFacts {
+            git_changed,
+            ..Default::default()
+        });
+        Some(self.finish(id, end, facts, now_ms))
     }
 
     /// Starts gathering the facts of a finished turn and reports the `checking` phase.
-    fn begin_check(&mut self, id: JobId, end: End, now_ms: UnixMs) -> Option<JobUpdate> {
+    fn begin_check(
+        &mut self,
+        id: JobId,
+        end: End,
+        git_changed: bool,
+        now_ms: UnixMs,
+    ) -> Option<JobUpdate> {
         let t = self.tracked.get(&id)?;
         let (Some(folder), Some(base)) =
             (t.progress.folder.clone(), t.progress.base_commit.clone())
@@ -64,6 +77,8 @@ impl Workers {
             folder,
             branch: t.progress.branch.clone().unwrap_or_default(),
             base_commit: base,
+            git: t.progress.git.clone(),
+            git_changed,
             remotes: t.progress.remotes.clone(),
             readings: Arc::clone(&self.readings),
             cancel: Arc::clone(&cancel),
@@ -86,8 +101,9 @@ impl Workers {
             Err(TryRecvError::Disconnected) => None,
         };
         let end = end.clone();
-        // A kill during the check ends the job as killed; its facts are not a verdict.
-        let facts = facts.filter(|_| end.status == JobStatus::Succeeded);
+        // A kill during the check ends the job as killed; its facts are not a verdict, unless
+        // they say the git config or hooks changed, which rejects the Run however it ended.
+        let facts = facts.filter(|f| end.status == JobStatus::Succeeded || f.git_changed);
         Some(self.finish(id, end, facts, now_ms))
     }
 
@@ -143,6 +159,9 @@ impl Workers {
         now_ms: UnixMs,
     ) -> JobUpdate {
         let t = &self.tracked[&id];
+        if let Some(s) = &t.progress.git {
+            gitdir::discard(s);
+        }
         let mut update = self.update(t, end.status, WorkerPhase::Done, now_ms);
         update.error = end.error;
         update.retryable = end.retryable;

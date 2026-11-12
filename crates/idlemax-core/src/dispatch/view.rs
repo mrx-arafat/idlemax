@@ -222,6 +222,7 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
         review: run_lines(input.runs, is_review, |r| r.updated_ms),
         needs_you: needs_you(
             plan,
+            input.runs,
             input.budgets,
             input.account_problems,
             &devices,

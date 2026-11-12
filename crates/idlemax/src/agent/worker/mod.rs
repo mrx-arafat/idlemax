@@ -8,6 +8,7 @@ mod choose;
 pub mod cmd;
 mod end;
 mod finish;
+mod gitdir;
 #[cfg(unix)]
 pub mod headless;
 pub mod herdr;

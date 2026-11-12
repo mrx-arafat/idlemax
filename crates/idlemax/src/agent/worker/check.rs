@@ -19,6 +19,7 @@ use idlemax_core::worker::report::{CheckFacts, DiffStat, FileDiff, ReviewFacts};
 use idlemax_core::worker::{Reviewer, WorkerCli, WorkerSpec};
 
 use super::cmd::{Cmd, Commands};
+use super::gitdir::{self, GitSnapshot};
 use super::steps::{run_project, Fence};
 use super::worktree;
 
@@ -34,6 +35,11 @@ pub struct CheckCtx {
     /// The Run's own branch: the check judges it, never whatever HEAD points at.
     pub branch: String,
     pub base_commit: String,
+    /// The repository's git config and hooks before the launch, compared again once the
+    /// project's check and the reviewer have run.
+    pub git: Option<GitSnapshot>,
+    /// They had already changed when the worker ended.
+    pub git_changed: bool,
     pub remotes: Vec<String>,
     /// The agent's newest quota readings, so a review counts for the account that paid.
     pub readings: Arc<Mutex<Vec<QuotaSnapshot>>>,
@@ -74,6 +80,7 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
         commits,
         tip,
         head_off_branch,
+        git_changed: false,
         modified,
         untracked,
         diff,
@@ -93,6 +100,8 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
     if let (true, Some(reviewer), false) = (high, &w.reviewer, cancelled(ctx)) {
         facts.review = Some(review(ctx, reviewer, &range));
     }
+    let changed_now = ctx.git.as_ref().is_some_and(gitdir::undo_change);
+    facts.git_changed = ctx.git_changed || changed_now;
     facts
 }
 
@@ -248,19 +257,10 @@ fn numstat(text: &str) -> DiffStat {
 }
 
 fn git(ctx: &CheckCtx, args: &[&str]) -> Option<String> {
-    let mut all = vec!["-C".to_string(), ctx.folder.display().to_string()];
-    all.extend(args.iter().map(|s| s.to_string()));
-    let cmd = Cmd {
-        program: "git".into(),
-        args: all,
-        cwd: None,
-        env: Vec::new(),
-        stdin: None,
-        limit: GIT_LIMIT,
-        throttle: false,
-        tag: None,
-    };
-    let out = ctx.commands.run(&cmd).ok()?;
+    let out = ctx
+        .commands
+        .run(&Cmd::git(&ctx.folder, args, GIT_LIMIT))
+        .ok()?;
     (out.code == Some(0)).then_some(out.stdout)
 }
 
@@ -348,6 +348,8 @@ mod tests {
             folder: dir.to_path_buf(),
             branch: "main".into(),
             base_commit: base,
+            git: None,
+            git_changed: false,
             remotes: Vec::new(),
             readings: Arc::default(),
             cancel: Arc::default(),
@@ -395,6 +397,8 @@ mod tests {
             folder: dir.to_path_buf(),
             branch: "idlemax/task-1".into(),
             base_commit: base,
+            git: None,
+            git_changed: false,
             remotes: Vec::new(),
             readings: Arc::default(),
             cancel: Arc::default(),

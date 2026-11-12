@@ -16,6 +16,7 @@ use idlemax_core::worker::launch::{
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
 use super::cmd::{Cmd, Commands};
+use super::gitdir::{self, GitSnapshot};
 use super::host::{Handle, WorkerHost};
 use super::procs::Procs;
 use super::worktree::{self, NewWorktree};
@@ -32,6 +33,8 @@ pub struct LaunchCtx {
     pub commands: Arc<dyn Commands>,
     pub procs: Arc<Mutex<dyn Procs>>,
     pub worktrees_dir: PathBuf,
+    /// Where the copy of the repository's git config and hooks is kept during a launch.
+    pub snapshots_dir: PathBuf,
     pub job: Job,
     pub worker: WorkerSpec,
     pub tag: u64,
@@ -60,6 +63,8 @@ pub struct Progress {
     pub remotes: Vec<String>,
     /// `HEAD` of the worktree when this launch began: a commit after it is this launch's.
     pub start_head: Option<String>,
+    /// The repository's shared git config and hooks before the worker started.
+    pub git: Option<GitSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +169,10 @@ fn prepare(ctx: &LaunchCtx, p: &mut Progress) -> Result<PathBuf, Stop> {
     if w.action == WorkerAction::Launch && !reused {
         setup_and_baseline(ctx, p, &folder)?;
     }
+    // Last before the worker starts: whatever changes after this is the worker's.
+    let copy = ctx.snapshots_dir.join(ctx.job.id.to_string());
+    let snapshot = gitdir::take(ctx.commands.as_ref(), &folder, &copy).map_err(Stop::Failed)?;
+    p.git = Some(snapshot);
     write_brief(ctx, &folder)?;
     Ok(folder)
 }
@@ -315,8 +324,7 @@ fn cancelled(ctx: &LaunchCtx) -> Result<(), Stop> {
 }
 
 fn git(ctx: &LaunchCtx, dir: &Path, args: &[&str]) -> Result<String, Stop> {
-    let mut all = vec!["-C".to_string(), dir.display().to_string()];
-    all.extend(args.iter().map(|s| s.to_string()));
+    let all = crate::safe_git::args(dir, args);
     let all: Vec<&str> = all.iter().map(String::as_str).collect();
     run_ok(ctx, "git", &all, None)
 }

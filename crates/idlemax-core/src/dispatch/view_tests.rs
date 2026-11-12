@@ -306,3 +306,21 @@ fn an_account_closed_by_its_logins_needs_the_owner() {
         .reason
         .ends_with("give one login its own [[quota.accounts]] entry"));
 }
+
+#[test]
+fn a_run_that_changed_the_git_config_or_hooks_needs_the_owner_until_reviewed() {
+    let mut changed = run(5, RunState::Rejected, 5);
+    changed.run.facts.check = Some(crate::worker::report::CheckFacts {
+        git_changed: true,
+        ..Default::default()
+    });
+    let mut kept = changed.clone();
+    kept.run.id = 6;
+    kept.run.state = RunState::Kept;
+    let runs = [changed, kept, run(7, RunState::Rejected, 7)];
+    let v = view(&plan(LineState::Run, Vec::new()), &runs, &[], &[]);
+    let keys: Vec<&str> = v.needs_you.iter().map(|n| n.key.as_str()).collect();
+    assert_eq!(keys, ["run:5:git"]);
+    assert_eq!(v.needs_you[0].subject, "app: task 5");
+    assert!(v.needs_you[0].reason.contains("git config or hooks"));
+}

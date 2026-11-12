@@ -9,8 +9,10 @@ use std::sync::Arc;
 use idlemax_core::job_run::RunClock;
 use idlemax_core::protocol::JobUpdate;
 use idlemax_core::types::{Job, JobId, JobStatus, UnixMs};
+use idlemax_core::worker::report::{CheckFacts, WorkerPhase, WorkerReport};
 use serde::{Deserialize, Serialize};
 
+use super::gitdir::{self, GitSnapshot};
 use super::host::{Handle, HostKind};
 use super::procs::Member;
 use super::steps::Progress;
@@ -41,6 +43,9 @@ struct Record {
     label: Option<String>,
     shell: Option<Member>,
     members: Vec<Member>,
+    /// The repository's git config and hooks before the worker started.
+    #[serde(default)]
+    git: Option<GitSnapshot>,
 }
 
 impl Workers {
@@ -146,6 +151,7 @@ impl Workers {
                 shell_pid: r.shell.map(|(pid, _)| pid),
                 remotes: Vec::new(),
                 start_head: r.start_head.clone(),
+                git: r.git.clone(),
             },
             members: r.members.clone(),
             throttled: r
@@ -183,6 +189,22 @@ impl Workers {
             let left = procs.alive(&r.members, r.tag, r.started_ms);
             procs.signal(&left, Sig::Kill);
         }
+        // A lost worker's change to the git config or hooks rejects its Run like any other.
+        let changed = r.git.as_ref().is_some_and(gitdir::undo_change);
+        if let Some(s) = &r.git {
+            gitdir::discard(s);
+        }
+        let worker = r.job.spec.worker.as_ref().filter(|_| changed).map(|w| {
+            Box::new(WorkerReport {
+                run: w.run,
+                phase: WorkerPhase::Done,
+                facts: Some(CheckFacts {
+                    git_changed: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+        });
         JobUpdate {
             id: r.job.id,
             device: self.device.clone(),
@@ -191,6 +213,7 @@ impl Workers {
             at_ms: now_ms,
             error: Some("agent restarted; the worker was lost".into()),
             retryable: true,
+            worker,
             ..Default::default()
         }
     }
@@ -220,6 +243,7 @@ fn record_of(t: &Tracked) -> Record {
             (pid, start)
         }),
         members: t.members.clone(),
+        git: t.progress.git.clone(),
     }
 }
 
@@ -264,6 +288,7 @@ mod tests {
             label: None,
             shell: None,
             members: Vec::new(),
+            git: None,
         };
         let mut json = serde_json::to_value(&record).unwrap();
         assert_eq!(json["host"], "headless");
