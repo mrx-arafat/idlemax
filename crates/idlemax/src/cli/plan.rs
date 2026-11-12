@@ -11,7 +11,7 @@ use super::{ApiClient, Out};
 pub struct PlanArgs {
     /// Ask for an orchestrator pass now (one `claude -p --model opus` job; it spends quota)
     #[arg(long)]
-    refresh: bool,
+    pub refresh: bool,
 }
 
 pub async fn run(args: PlanArgs, c: &ApiClient, out: &Out) -> Result<()> {

@@ -113,6 +113,7 @@ fn access_of(cmd: &Cmd) -> Access {
             Access::Owner
         }
         Cmd::Config(args) if args.changes_settings() => Access::Owner,
+        Cmd::Plan(args) if args.refresh => Access::Owner,
         Cmd::Review(args) if args.acts() => Access::Owner,
         Cmd::Mode(args) if !args.switches_off() => Access::Owner,
         Cmd::Mode(_)

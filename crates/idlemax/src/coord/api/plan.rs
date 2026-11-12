@@ -3,6 +3,7 @@
 
 use axum::extract::State;
 use axum::Json;
+use idlemax_core::control::caller::Access;
 use idlemax_core::control::may_assign;
 use idlemax_core::dispatch::inputs::{DispatchInputs, DispatchReply};
 use idlemax_core::dispatch::plan::Plan;
@@ -10,6 +11,7 @@ use idlemax_core::dispatch::Mode;
 use idlemax_core::types::{JobId, UnixMs};
 use idlemax_core::Config;
 
+use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::offline_after_ms;
 use super::AppState;
@@ -31,8 +33,9 @@ pub async fn plan(State(app): State<AppState>) -> Result<Json<Plan>, ApiFailure>
 
 /// `POST /v1/plan/refresh`: runs the dispatcher step with a pass asked for, and returns the
 /// plan. It launches nothing, so no pause holds it; the pass job obeys every pause and the
-/// lines.
-pub async fn refresh(State(app): State<AppState>) -> Result<Json<Plan>, ApiFailure> {
+/// lines. It spends quota, so it is owner-only (Spec 4 Task 4).
+pub async fn refresh(State(app): State<AppState>, who: Who) -> Result<Json<Plan>, ApiFailure> {
+    who.ensure(Access::Owner).await?;
     let _serial = app.dispatch_lock().lock().await;
     let now = now_ms();
     let live = std::sync::Arc::clone(app.live());

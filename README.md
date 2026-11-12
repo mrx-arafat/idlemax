@@ -776,7 +776,7 @@ System sleep does not consume this runtime budget on macOS or Linux.
 - Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
 **Who may switch idlemax on.**
-A job that idlemax started can stop and pause work, but it cannot resume it, reload the agent's settings, switch the dispatcher out of `off`, or add, switch on or change a project, even when it reads the token file.
+A job that idlemax started can stop and pause work, but it cannot resume it, reload the agent's settings, switch the dispatcher out of `off`, add, switch on or change a project, change a limit, or ask for an orchestrator pass, even when it reads the token file.
 The CLI refuses those commands when its own environment has `IDLEMAX_JOB_ID`, and the coordinator and the agent answer 403 when the calling process, or any process above it, carries the marker of this idlemax home.
 Run them from your own terminal, the dashboard or the TUI.
 The lock stops accidents and a launched process that tries the documented switches; it is not a sandbox.

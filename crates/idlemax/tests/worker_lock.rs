@@ -224,6 +224,7 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
             "/v1/limits",
             r#"{"key":"dispatcher.hold_mem_used_pct","value":"85"}"#,
         ),
+        ("/v1/plan/refresh", ""),
     ] {
         assert_eq!(home.post_marked(coord, path, body), "403", "{path} {body}");
     }
@@ -233,7 +234,10 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
     );
     let stop = r#"{"action":"stop_all","scope":{"type":"global"}}"#;
     assert_eq!(home.post_marked(coord, "/v1/control", stop), "200");
-    assert_eq!(home.post_marked(coord, "/v1/projects/1/off", "{}"), "404");
+    assert_eq!(
+        home.post_marked(coord, "/v1/projects/999999/off", "{}"),
+        "404"
+    );
 
     assert_eq!(home.post_marked(&home.agent, "/v1/local/reload", ""), "403");
     let pause = r#"{"action":"pause","scope":{"type":"global"}}"#;
