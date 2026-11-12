@@ -88,6 +88,9 @@ pub struct DueInput<'a> {
     pub pass_active: bool,
     /// An offered account has room for one Run of its cheapest tier (`quota::pass::any_room`).
     pub room: bool,
+    /// A usable account has room but its CLI is not in `workers.clis`
+    /// (`quota::pass::room_off_clis`).
+    pub room_off_clis: bool,
 }
 
 /// The account and device a due pass runs on.
@@ -100,6 +103,10 @@ pub struct DuePass {
 /// Why `pass_due` refuses when no account could place a worker: a pass would only spend Opus
 /// quota (D10.9).
 pub const NO_ROOM: &str = "no account has room for one more Run today";
+
+/// Why `pass_due` refuses when an account has room but no worker CLI may spend it (A21).
+pub const NO_CLI: &str = "no account with room for one more Run today has its CLI in \
+     workers.clis; list one with: idlemax config set workers.clis claude";
 
 /// Why `pass_due` refuses because a pass job is already active.
 pub const PASS_ACTIVE: &str = "an orchestrator pass is already queued or running";
@@ -182,7 +189,7 @@ pub fn pass_due(input: &DueInput<'_>) -> Result<DuePass, String> {
         return Err("no Claude account may be spent on a device with an open slot".into());
     };
     if !input.room {
-        return Err(NO_ROOM.into());
+        return Err(if input.room_off_clis { NO_CLI } else { NO_ROOM }.into());
     }
     if input.pass_active {
         return Err(PASS_ACTIVE.into());

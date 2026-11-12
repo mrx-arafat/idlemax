@@ -82,6 +82,17 @@ pub fn any_room(offers: &[AccountOffer]) -> bool {
     })
 }
 
+/// True when no offer has room only because no CLI in `worker_clis` can spend the usable
+/// Budgets that have room (A21): the reason then names `workers.clis`, not the quota.
+pub fn room_off_clis(offered: &[&Budget], worker_clis: &[String]) -> bool {
+    let every: Vec<String> = offered
+        .iter()
+        .filter_map(|b| b.provider.cli())
+        .map(String::from)
+        .collect();
+    !any_room(&account_offers(offered, worker_clis)) && any_room(&account_offers(offered, &every))
+}
+
 fn clip(s: &str) -> String {
     s.chars().take(NAME_CHARS).collect()
 }

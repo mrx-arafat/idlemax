@@ -84,6 +84,7 @@ fn due_now(
         newest,
         pass_active: inputs.pass_active,
         room: any_room(&inputs.quota.offers),
+        room_off_clis: inputs.quota.room_off_clis,
     })
 }
 

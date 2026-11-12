@@ -8,7 +8,7 @@ use idlemax_core::dispatch::task::Task;
 use idlemax_core::quota::budget::Budget;
 use idlemax_core::quota::cost::CostTable;
 use idlemax_core::quota::pass::{
-    account_offers, check_picks, AccountOffer, PickFacts, PickRefusal,
+    account_offers, check_picks, room_off_clis, AccountOffer, PickFacts, PickRefusal,
 };
 use idlemax_core::quota::spend::offers;
 use idlemax_core::quota::{QuotaConfig, QuotaView};
@@ -25,6 +25,8 @@ pub struct QuotaSide {
     pub cfg: QuotaConfig,
     /// (task id, Runs whose verdict is `rejected`).
     pub failed: Vec<(String, u32)>,
+    /// A usable Budget has room but no CLI in `workers.clis` can spend it.
+    pub room_off_clis: bool,
 }
 
 impl QuotaSide {
@@ -37,13 +39,16 @@ impl QuotaSide {
         now: UnixMs,
     ) -> Result<Self, StoreError> {
         let (budgets, table) = budgets_with_table(store, cfg, live, views, now)?;
-        let offers = account_offers(&offers(&budgets), &live.workers.clis);
+        let offered = offers(&budgets);
+        let room_off_clis = room_off_clis(&offered, &live.workers.clis);
+        let offers = account_offers(&offered, &live.workers.clis);
         Ok(Self {
             budgets,
             offers,
             table,
             cfg: live.quota.clone(),
             failed: store.failed_checks()?,
+            room_off_clis,
         })
     }
 

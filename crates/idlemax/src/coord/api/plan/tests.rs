@@ -390,6 +390,18 @@ fn five_hour_at(store: &mut Store, at: UnixMs, five_pct: f64) {
 }
 
 #[test]
+fn with_no_worker_cli_the_plan_names_workers_clis_not_the_quota() {
+    let (store, mut cfg, _beat) = pass_world();
+    cfg.workers.clis.clear();
+    let plan = gather_plan(&store, &cfg, &cfg, T0).unwrap().plan;
+    assert!(
+        plan.picked_by.contains("workers.clis"),
+        "{}",
+        plan.picked_by
+    );
+}
+
+#[test]
 fn a_pick_on_an_account_at_the_five_hour_stop_names_the_budgets_reason() {
     let (mut store, cfg, _beat) = pass_world();
     crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0, false).unwrap();

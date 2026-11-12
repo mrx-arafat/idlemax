@@ -150,6 +150,7 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         newest: None,
         pass_active: false,
         room: true,
+        room_off_clis: false,
     };
     assert_eq!(
         pass_due(&base),
@@ -314,8 +315,14 @@ fn no_pass_runs_when_no_account_has_room() {
         newest: None,
         pass_active: false,
         room: false,
+        room_off_clis: false,
     };
     assert_eq!(pass_due(&input), Err(NO_ROOM.into()));
+    let input = DueInput {
+        room_off_clis: true,
+        ..input
+    };
+    assert_eq!(pass_due(&input), Err(NO_CLI.into()));
 }
 
 #[test]

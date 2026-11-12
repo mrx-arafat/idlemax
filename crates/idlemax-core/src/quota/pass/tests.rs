@@ -168,6 +168,8 @@ fn offers_follow_the_worker_clis_and_room_needs_the_cheapest_tier() {
     assert!(!any_room(&[]));
     assert!(!any_room(&[offer("max", Provider::Claude, 2.0, false)]));
     assert!(any_room(&[offer("max", Provider::Claude, 3.0, false)]));
+    assert!(room_off_clis(&[&claude, &agy], &[]));
+    assert!(!room_off_clis(&[&claude], &["claude".to_string()]));
 }
 
 #[test]

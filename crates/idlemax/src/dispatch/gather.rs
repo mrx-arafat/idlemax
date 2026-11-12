@@ -243,6 +243,7 @@ fn picked_by(inputs: &Inputs) -> String {
         newest: None,
         pass_active: false,
         room: any_room(&inputs.quota.offers),
+        room_off_clis: inputs.quota.room_off_clis,
     });
     match due {
         Ok(_) => "no orchestrator pass yet: one is due".into(),
