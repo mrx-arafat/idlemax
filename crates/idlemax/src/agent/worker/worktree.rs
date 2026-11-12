@@ -88,11 +88,9 @@ fn git_cmd(dir: &Path, args: &[&str], limit: Duration) -> Cmd {
         program: "git".into(),
         args: full,
         cwd: None,
-        env: vec![
-            ("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()),
-            ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
-            ("GIT_TERMINAL_PROMPT".into(), "0".into()),
-        ],
+        // The owner's global git config stays in force (git-lfs filters, safe.directory,
+        // hooksPath); `OsCommands` already sets GIT_TERMINAL_PROMPT=0.
+        env: Vec::new(),
         stdin: None,
         limit,
         throttle: false,
@@ -173,81 +171,97 @@ fn branch_exists_in_repo(
     Ok(out.code == Some(0))
 }
 
-fn rollback_worktree(commands: &dyn Commands, repo: &Path, folder_str: &str, branch: &str) {
+/// Undoes a `worktree add` whose follow-up failed. The folder was made by that call a moment
+/// ago and holds only tracked files, so git's safe remove (no force) suffices; the branch is
+/// the one the call created.
+fn rollback_worktree(commands: &dyn Commands, repo: &Path, folder: &str, branch: &str) {
     let _ = commands.run(&git_cmd(
         repo,
-        &["worktree", "remove", "--force", folder_str],
+        &["worktree", "remove", folder],
         GIT_CMD_LIMIT,
     ));
     let _ = commands.run(&git_cmd(repo, &["branch", "-D", branch], GIT_CMD_LIMIT));
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What to create a worktree for.
+#[derive(Debug, Clone, Copy)]
+pub struct NewWorktree<'a> {
+    pub repo: &'a Path,
+    pub project: &'a str,
+    pub task_id: &'a str,
+    pub run_id: u64,
+    pub base_branch: &'a str,
+}
+
+/// The branch and folder of a task; `-r<run id>` on both when either already exists, so a
+/// task tried again never reuses an old branch.
+fn pick_branch_and_folder(
+    commands: &dyn Commands,
+    worktrees_dir: &Path,
+    new: &NewWorktree<'_>,
+) -> Result<(String, PathBuf), WorktreeError> {
+    let p_slug = name::slug(new.project);
+    let t_slug = name::task_slug(new.task_id);
+    let branch = name::branch_name(&t_slug, None);
+    let folder = name::worktree_dir(worktrees_dir, &p_slug, &t_slug, None);
+    if folder.exists() || branch_exists_in_repo(commands, new.repo, &branch)? {
+        let run = Some(new.run_id);
+        return Ok((
+            name::branch_name(&t_slug, run),
+            name::worktree_dir(worktrees_dir, &p_slug, &t_slug, run),
+        ));
+    }
+    Ok((branch, folder))
+}
+
+/// Creates the task's worktree on a new `idlemax/` branch at the base branch, with plain git
+/// and no fetch, and writes the marker that proves idlemax made it.
 pub fn create_worktree(
     commands: &dyn Commands,
     worktrees_dir: &Path,
-    repo: &Path,
-    project: &str,
-    task_id: &str,
-    run_id: u64,
-    base_branch: &str,
+    new: &NewWorktree<'_>,
     now_ms: UnixMs,
 ) -> Result<WorktreeInfo, WorktreeError> {
-    let p_slug = name::slug(project);
-    let t_slug = name::task_slug(task_id);
-
-    let base_branch_name = name::branch_name(&t_slug, None);
-    let base_folder = name::worktree_dir(worktrees_dir, &p_slug, &t_slug, None);
-
-    let exists = base_folder.exists() || branch_exists_in_repo(commands, repo, &base_branch_name)?;
-
-    let (branch, folder) = if exists {
-        (
-            name::branch_name(&t_slug, Some(run_id)),
-            name::worktree_dir(worktrees_dir, &p_slug, &t_slug, Some(run_id)),
-        )
-    } else {
-        (base_branch_name, base_folder)
-    };
-
+    let (branch, folder) = pick_branch_and_folder(commands, worktrees_dir, new)?;
     if let Some(parent) = folder.parent() {
         std::fs::create_dir_all(parent)?;
     }
-
     let folder_str = folder.display().to_string();
-    let add_cmd = git_cmd(
-        repo,
-        &["worktree", "add", "-b", &branch, &folder_str, base_branch],
-        GIT_ADD_LIMIT,
-    );
-    check_git(commands.run(&add_cmd)?)?;
-
-    let rev_cmd = git_cmd(&folder, &["rev-parse", "HEAD"], GIT_CMD_LIMIT);
-    let base_commit = match check_git(commands.run(&rev_cmd)?) {
-        Ok(s) => s.trim().to_string(),
+    let add = [
+        "worktree",
+        "add",
+        "-b",
+        &branch,
+        &folder_str,
+        new.base_branch,
+    ];
+    check_git(commands.run(&git_cmd(new.repo, &add, GIT_ADD_LIMIT))?)?;
+    let marked = base_commit(commands, &folder).and_then(|base_commit| {
+        let marker = WorktreeMarker {
+            run: new.run_id,
+            repo: new.repo.to_path_buf(),
+            branch: branch.clone(),
+            base_commit,
+            creation_time: now_ms,
+        };
+        write_marker(&marker_path_for(&folder), &marker).map(|()| marker.base_commit)
+    });
+    match marked {
+        Ok(base_commit) => Ok(WorktreeInfo {
+            folder,
+            branch,
+            base_commit,
+        }),
         Err(e) => {
-            rollback_worktree(commands, repo, &folder_str, &branch);
-            return Err(e);
+            rollback_worktree(commands, new.repo, &folder_str, &branch);
+            Err(e)
         }
-    };
-
-    let marker = WorktreeMarker {
-        run: run_id,
-        repo: repo.to_path_buf(),
-        branch: branch.clone(),
-        base_commit: base_commit.clone(),
-        creation_time: now_ms,
-    };
-    if let Err(e) = write_marker(&marker_path_for(&folder), &marker) {
-        rollback_worktree(commands, repo, &folder_str, &branch);
-        return Err(e);
     }
+}
 
-    Ok(WorktreeInfo {
-        folder,
-        branch,
-        base_commit,
-    })
+fn base_commit(commands: &dyn Commands, folder: &Path) -> Result<String, WorktreeError> {
+    let rev = git_cmd(folder, &["rev-parse", "HEAD"], GIT_CMD_LIMIT);
+    Ok(check_git(commands.run(&rev)?)?.trim().to_string())
 }
 
 pub fn remove_worktree(
@@ -289,175 +303,4 @@ pub fn delete_branch(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::agent::worker::cmd::OsCommands;
-
-    fn setup_temp_repo() -> (tempfile::TempDir, PathBuf, PathBuf, String) {
-        let temp = tempfile::tempdir().unwrap();
-        let (repo, worktrees) = (temp.path().join("repo"), temp.path().join("worktrees"));
-        std::fs::create_dir_all(&repo).unwrap();
-        std::fs::create_dir_all(&worktrees).unwrap();
-
-        let run = |args: &[&str]| {
-            std::process::Command::new("git")
-                .args(["-C", repo.to_str().unwrap()])
-                .args(args)
-                .envs([
-                    ("GIT_CONFIG_GLOBAL", "/dev/null"),
-                    ("GIT_CONFIG_NOSYSTEM", "1"),
-                ])
-                .output()
-                .unwrap()
-        };
-
-        run(&["init", "-b", "main"]);
-        run(&["config", "user.name", "Test"]);
-        run(&["config", "user.email", "test@test.local"]);
-        run(&["config", "commit.gpgsign", "false"]);
-
-        std::fs::write(repo.join("tracked.txt"), "tracked content\n").unwrap();
-        run(&["add", "tracked.txt"]);
-        run(&["commit", "-m", "initial commit"]);
-        std::fs::write(repo.join(".env"), "SECRET=abc\n").unwrap();
-
-        let head = String::from_utf8(run(&["rev-parse", "HEAD"]).stdout)
-            .unwrap()
-            .trim()
-            .to_string();
-        (temp, repo, worktrees, head)
-    }
-
-    #[test]
-    fn worktree_create_gives_clean_worktree_without_untracked_env() {
-        let (_temp, repo, worktrees, base_commit) = setup_temp_repo();
-        let os = OsCommands::new();
-
-        let info = create_worktree(
-            &os,
-            &worktrees,
-            &repo,
-            "test-project",
-            "task-123",
-            1,
-            "main",
-            1_700_000_000,
-        )
-        .expect("worktree create failed");
-
-        assert_eq!(info.base_commit, base_commit);
-        assert!(info.branch.starts_with("idlemax/"));
-        assert!(info.folder.join("tracked.txt").exists());
-        assert!(!info.folder.join(".env").exists());
-
-        let marker_path = marker_path_for(&info.folder);
-        assert!(marker_path.exists());
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            assert_eq!(
-                std::fs::metadata(&marker_path).unwrap().mode() & 0o777,
-                0o600
-            );
-        }
-    }
-
-    #[test]
-    fn creating_same_task_twice_appends_run_id() {
-        let (_temp, repo, worktrees, _base_commit) = setup_temp_repo();
-        let os = OsCommands::new();
-
-        let info1 = create_worktree(
-            &os,
-            &worktrees,
-            &repo,
-            "test-project",
-            "task-repeat",
-            1,
-            "main",
-            1_700_000_000,
-        )
-        .unwrap();
-
-        let info2 = create_worktree(
-            &os,
-            &worktrees,
-            &repo,
-            "test-project",
-            "task-repeat",
-            2,
-            "main",
-            1_700_000_100,
-        )
-        .unwrap();
-
-        assert_ne!(info1.branch, info2.branch);
-        assert_ne!(info1.folder, info2.folder);
-        assert!(info2.branch.ends_with("-r2"));
-        assert!(info2.folder.display().to_string().ends_with("-r2"));
-    }
-
-    #[test]
-    fn remove_refuses_dirty_worktree_and_removes_clean_one() {
-        let (_temp, repo, worktrees, _base_commit) = setup_temp_repo();
-        let os = OsCommands::new();
-
-        let info = create_worktree(
-            &os,
-            &worktrees,
-            &repo,
-            "test-project",
-            "task-dirty",
-            1,
-            "main",
-            1_700_000_000,
-        )
-        .unwrap();
-
-        std::fs::write(info.folder.join("uncommitted.txt"), "dirty").unwrap();
-
-        let err = remove_worktree(&os, &worktrees, &repo, &info.folder).unwrap_err();
-        match err {
-            WorktreeError::Git(msg) => {
-                assert!(
-                    msg.contains("contains modified or untracked files"),
-                    "unexpected: {msg}"
-                );
-            }
-            other => panic!("expected WorktreeError::Git, got {other:?}"),
-        }
-
-        std::fs::remove_file(info.folder.join("uncommitted.txt")).unwrap();
-        remove_worktree(&os, &worktrees, &repo, &info.folder).expect("remove clean failed");
-        assert!(!info.folder.exists());
-
-        delete_branch(&os, &worktrees, &repo, &info.folder, &info.branch)
-            .expect("delete branch failed");
-    }
-
-    #[test]
-    fn remove_refuses_parent_traversal_and_outside_paths() {
-        let (_temp, repo, worktrees, _base_commit) = setup_temp_repo();
-        let os = OsCommands::new();
-
-        // 1. Outside folder
-        let outside = repo.clone();
-        let err = remove_worktree(&os, &worktrees, &repo, &outside).unwrap_err();
-        assert!(matches!(err, WorktreeError::OutsideWorktreesDir(..)));
-
-        // 2. Traversal with .. (worktrees/../repo)
-        let traversal = worktrees.join("..").join("repo");
-        let err_traversal = remove_worktree(&os, &worktrees, &repo, &traversal).unwrap_err();
-        assert!(matches!(
-            err_traversal,
-            WorktreeError::OutsideWorktreesDir(..)
-        ));
-
-        // 3. Under worktrees dir but missing marker
-        let fake_folder = worktrees.join("fake-proj").join("fake-task");
-        std::fs::create_dir_all(&fake_folder).unwrap();
-        let err_missing = remove_worktree(&os, &worktrees, &repo, &fake_folder).unwrap_err();
-        assert!(matches!(err_missing, WorktreeError::MissingMarker(..)));
-    }
-}
+mod tests;

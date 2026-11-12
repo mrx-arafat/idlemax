@@ -150,7 +150,7 @@ target/debug/idlemax init
 - [x] Task 1: Add the Run, its states, the worker job section and the `[workers]` settings to the core
 - [x] Task 2: Store runs, list them, and take worker jobs out of the old AI rules
 - [x] Task 3: End a worker job instead of retrying it, and let its Run follow
-- [ ] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
+- [x] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
 - [ ] Task 5: Build the runner seam, the Herdr host and the fenced launch
 - [ ] Task 6: Run one worker job on the agent from lease to exit
 - [ ] Task 7: Start, hold, shed and stop workers in the agent tick
@@ -359,13 +359,13 @@ idlemax touches only folders and branches it created itself.
 
 **Definition of Done:**
 
-- [ ] `pane_name` matches `[a-z][a-z0-9_-]{0,31}` for a long project name, a task id with spaces and symbols, and a run id above one million, and two runs of the same task get different names.
-- [ ] Two task ids that share their first 40 characters get different task slugs.
-- [ ] `OsCommands` returns `TimedOut` for a child that outlives its limit and leaves no process of its group, and the child's environment holds no `IDLEMAX_TOKEN` and nothing beyond `job_run::inherits`, `GIT_TERMINAL_PROMPT` and the given pairs.
-- [ ] In a temp repository, create gives a folder on a new `idlemax/` branch at the base commit, and an untracked `.env` in the owner's checkout is absent from it.
-- [ ] Remove refuses a folder with an uncommitted file and reports git's message, removes a clean one, and refuses a folder that has no marker or lies outside `worktrees_dir()`.
-- [ ] Creating the same task twice gives a second branch and folder that end in `-r<run id>`.
-- [ ] Verify: `cargo test -p idlemax-core worker::name && cargo test -p idlemax --bin idlemax agent::worker::cmd && cargo test -p idlemax --bin idlemax agent::worker::worktree && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `pane_name` matches `[a-z][a-z0-9_-]{0,31}` for a long project name, a task id with spaces and symbols, and a run id above one million, and two runs of the same task get different names.
+- [x] Two task ids that share their first 40 characters get different task slugs.
+- [x] `OsCommands` returns `TimedOut` for a child that outlives its limit and leaves no process of its group, and the child's environment holds no `IDLEMAX_TOKEN` and nothing beyond `job_run::inherits`, `GIT_TERMINAL_PROMPT` and the given pairs.
+- [x] In a temp repository, create gives a folder on a new `idlemax/` branch at the base commit, and an untracked `.env` in the owner's checkout is absent from it.
+- [x] Remove refuses a folder with an uncommitted file and reports git's message, removes a clean one, and refuses a folder that has no marker or lies outside `worktrees_dir()`.
+- [x] Creating the same task twice gives a second branch and folder that end in `-r<run id>`.
+- [x] Verify: `cargo test -p idlemax-core worker::name && cargo test -p idlemax --bin idlemax agent::worker::cmd && cargo test -p idlemax --bin idlemax agent::worker::worktree && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 5: Build the runner seam, the Herdr host and the fenced launch
 
