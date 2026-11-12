@@ -925,6 +925,14 @@ idlemax mode off        # plan nothing
 idlemax mode propose    # show what it would launch, and launch nothing (the default)
 idlemax mode auto       # launch the planned workers, one at a time
 ```
+Every device is off for the dispatcher too, the Mac included, until you switch it on, and upgrading to this version leaves every known device off; both the device and the project must be on before the dispatcher plans work there:
+
+```sh
+idlemax device list     # every device and whether the dispatcher may use it
+idlemax device on mac   # let the dispatcher use this device
+idlemax device off mac  # stop its dispatcher jobs there; plain jobs keep running
+```
+
 `add` sets the base branch to the local branch `origin/HEAD` names, else to the branch checked out now; change it with `project set <name> base <branch>`.
 `--device <id>` picks a device when the same name exists on more than one.
 
@@ -1026,6 +1034,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax why <id>` | every reason a job is not running, with the fix for each |
 | `idlemax logs <id> [--tail N] [-f]` | print a job's output from this device |
 | `idlemax inbox [list \| show <id \| n<id>>]` | finished-job notes and notices on this device (default `list`) |
+| `idlemax device list \| on <id> \| off <id>` | whether the dispatcher may use each device; every device starts off, and `off` stops only the dispatcher's own jobs there |
 | `idlemax pause [--device D \| --account A \| --job N] [--reason TEXT]` | pause the whole cluster or one scope |
 | `idlemax resume [same flags]` | lift exactly that pause; resuming the cluster does not clear device, account or job pauses |
 | `idlemax stop-all [same flags]` | kill the scope's running jobs and hold new ones until you resume; a worker it stops keeps its state and continues only after `idlemax start` |
@@ -1359,6 +1368,7 @@ For rolling out the coordinator and dispatcher across servers, see [docs/ROLLOUT
    ```
 
    Add `--dry-run` first to see every file and command.
+   A device joins with the dispatcher off; run `idlemax device on <id>` when it should take dispatcher work.
    Then set `device_id`, `ai_accounts` and `command_allowlist` in `~/.idlemax/config.toml`, keep `[[quota.accounts]]` identical on every host, and restart the agent with `idlemax service install agent`.
 
 4. `setup` fills in your binary, `PATH` and state dir, which the templates in `packaging/` leave as placeholders; [Keep it running](#keep-it-running) describes the service commands it uses.

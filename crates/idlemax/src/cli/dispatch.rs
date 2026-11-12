@@ -7,13 +7,14 @@ use idlemax_core::types::ControlAction;
 use idlemax_core::Paths;
 
 use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd, LocalCmd};
+use super::device::DeviceCmd;
 use super::init_cmd::run_init;
 use super::out::OWNER_ONLY_HELP;
 use super::project::ProjectCmd;
 use super::{
-    config_cmd, handlers, home, hooks, inbox, job, logs, mcp, mode, out, plan, print, project,
-    report, review, rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli,
-    CliError, ClientError, ExitWith, Out, Peer,
+    config_cmd, device, handlers, home, hooks, inbox, job, logs, mcp, mode, out, plan, print,
+    project, report, review, rows, schedule, service, setup, skill, statusline, workers, ApiClient,
+    Cli, CliError, ClientError, ExitWith, Out, Peer,
 };
 use crate::state::{self, now_ms};
 
@@ -111,6 +112,7 @@ fn access_of(cmd: &Cmd) -> Access {
         Cmd::Resume(_)
         | Cmd::Start
         | Cmd::Local(LocalCmd::Resume)
+        | Cmd::Device(DeviceCmd::On { .. })
         | Cmd::Project(ProjectCmd::On { .. } | ProjectCmd::Add { .. } | ProjectCmd::Set { .. }) => {
             Access::Owner
         }
@@ -124,10 +126,12 @@ fn access_of(cmd: &Cmd) -> Access {
         | Cmd::StopAll(_)
         | Cmd::Local(LocalCmd::Pause | LocalCmd::StopAll)
         | Cmd::Project(ProjectCmd::Off { .. })
+        | Cmd::Device(DeviceCmd::Off { .. })
         | Cmd::Job(JobCmd::Cancel { .. }) => Access::Stop,
         Cmd::Config(_)
         | Cmd::Local(LocalCmd::Status)
         | Cmd::Project(ProjectCmd::List { .. })
+        | Cmd::Device(DeviceCmd::List)
         | Cmd::Job(JobCmd::Add(_))
         | Cmd::Agent
         | Cmd::Coord
@@ -222,6 +226,7 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         Cmd::Schedule(cmd) => schedule::run(cmd, c, out, now).await,
         Cmd::Project(cmd) => project::run(cmd, c, out).await,
         Cmd::Mode(args) => mode::run(args, c, out).await,
+        Cmd::Device(cmd) => device::run(cmd, c, out).await,
         Cmd::Plan(args) => plan::run(args, c, out).await,
         Cmd::Stop(args) => workers::stop(args, c, out).await,
         Cmd::Start => workers::start(c, out).await,

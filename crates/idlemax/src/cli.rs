@@ -3,6 +3,7 @@
 mod client;
 mod commands;
 mod config_cmd;
+mod device;
 mod dispatch;
 pub(crate) use crate::files;
 mod handlers;

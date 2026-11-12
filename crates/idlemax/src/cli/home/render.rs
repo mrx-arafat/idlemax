@@ -50,6 +50,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "see the projects idlemax knows and switch one on or off",
     ),
     (
+        "idlemax device on <id>",
+        "let the dispatcher use a device; every device starts off",
+    ),
+    (
         "idlemax plan",
         "see which workers the dispatcher would launch now and why",
     ),

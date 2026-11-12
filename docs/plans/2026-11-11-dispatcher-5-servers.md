@@ -455,13 +455,13 @@ Switching a device off stops its workers with their state saved and ends the dis
 
 **Definition of Done:**
 
-- [ ] In a temp home, `idlemax device on <id> --json` exits 0 with `enabled` true and `changed` true, a second run reports the no-op, and `idlemax status --json` shows the device enabled.
-- [ ] `idlemax device off nope` exits non-zero, and its message lists the known device ids and names `idlemax status`.
-- [ ] With `IDLEMAX_JOB_ID` in its environment and `--coord` at a closed port, `idlemax device on <id>` ends with the lock's text and `idlemax device off <id>` ends with a connection error.
+- [x] In a temp home, `idlemax device on <id> --json` exits 0 with `enabled` true and `changed` true, a second run reports the no-op, and `idlemax status --json` shows the device enabled.
+- [x] `idlemax device off nope` exits non-zero, and its message lists the known device ids and names `idlemax status`.
+- [x] With `IDLEMAX_JOB_ID` in its environment and `--coord` at a closed port, `idlemax device on <id>` ends with the lock's text and `idlemax device off <id>` ends with a connection error.
 - [ ] In the TUI, `t` then `y` on a device that is off yields one `DeviceSwitch` request with `on` true, `t` on a device that is on yields one with `on` false and no question, and the regenerated `dispatch-80x24.txt` holds the `devices` pane.
 - [ ] The dashboard script calls `/v1/devices/` with the encoded id for both directions, draws the toggle for a view with one device, and the dashboard test still finds one script tag and no HTML sink.
 - [ ] `dispatcher_view` over two devices gives the reported limits to the one that is not `limits_device` and an empty list to the one that is.
-- [ ] `idlemax skill --check` passes and the skill lists `idlemax device on <id>`.
+- [x] `idlemax skill --check` passes and the skill lists `idlemax device on <id>`.
 - [ ] Verify: `cargo test -p idlemax --test devices && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax tui:: && cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 5: Read each device's Claude login and check the logins in doctor

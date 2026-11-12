@@ -20,6 +20,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 - `idlemax quota`: see AI account windows, today's budget per account and why
 - `idlemax advise`: review the advisor's recommendations
 - `idlemax project list`: see the projects idlemax knows and switch one on or off
+- `idlemax device on <id>`: let the dispatcher use a device; every device starts off
 - `idlemax plan`: see which workers the dispatcher would launch now and why
 - `idlemax mode <off|propose|auto>`: switch the dispatcher off, to propose, where it only shows what it would launch, or to auto, where it launches workers
 - `idlemax stop`: stop every AI worker with its state saved; nothing launches until idlemax start

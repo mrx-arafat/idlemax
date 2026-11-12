@@ -143,6 +143,7 @@ fn list_command(path: &str) -> Option<&'static str> {
         ("/v1/jobs", "idlemax jobs"),
         ("/v1/advice", "idlemax advise"),
         ("/v1/schedules", "idlemax schedule list"),
+        ("/v1/devices", "idlemax status"),
     ]
     .into_iter()
     .find_map(|(prefix, cmd)| path.starts_with(prefix).then_some(cmd))

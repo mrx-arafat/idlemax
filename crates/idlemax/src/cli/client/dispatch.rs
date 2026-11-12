@@ -1,5 +1,6 @@
 //! Adapter: the dispatcher routes of the coordinator API (projects, mode, plan, view).
 
+use idlemax_core::control::device::SwitchReply;
 use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectView};
 use idlemax_core::dispatch::view::DispatcherView;
@@ -38,6 +39,27 @@ impl ApiClient {
         self.post(&format!("/v1/projects/{id}/settings"), Some(settings))
             .await
     }
+}
+
+impl ApiClient {
+    /// `POST /v1/devices/{id}/on|off`, with the id as one percent-encoded path segment.
+    pub async fn switch_device(&self, id: &str, on: bool) -> Result<SwitchReply> {
+        let word = if on { "on" } else { "off" };
+        self.post(&format!("/v1/devices/{}/{word}", segment(id)), None::<&()>)
+            .await
+    }
+}
+
+/// `id` as one path segment: every byte but the unreserved ones percent-encoded.
+fn segment(id: &str) -> String {
+    id.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 impl ApiClient {
