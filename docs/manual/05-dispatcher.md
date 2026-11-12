@@ -190,12 +190,12 @@ It also sees the start of the project's `AGENTS.md` (else `CLAUDE.md`), up to 2,
 It is told to build scope paths from the project's files, adding every file the task names and the new files the conventions call for.
 
 - A named path that matches no file is kept as a new file when its folder exists, so a task can create `seqs/pascal.py` next to the other files in `seqs/`. A new top-level file counts too when its name has an extension, such as `pascal.py` (not a dot file such as `.envrc`).
-- A file the task's title, roadmap detail or done check names joins the scope when its folder exists.
+- A file the task's title, roadmap detail or done check names joins the scope when its folder exists (roadmap and broken-check tasks only, see below).
   A roadmap item's detail is its section's text before the "Done when" line, at most 600 characters, so write `Add seqs/pascal.py ...` there and the file is in scope.
 - The project's top-level test folder (`tests`, `test`, `spec` or `__tests__`) joins the scope only when the task asks for tests in its title or roadmap text ("with two tests"); the done check does not count. It never joins under an off-limits path.
 - Only text the owner wrote adds scope: roadmap items and broken checks. A GitHub issue title or session text never does, and no path in or of a dot folder (`.github/`, `.claude/`, `.env`) is added from any text.
 - Every project starts with these off-limits paths besides its own: CI and release config, secret files, and agent or tool config that would run code for you later (hooks, MCP servers): `.github/`, `.gitlab-ci.yml`, `.circleci/`, `secrets/`, `*.env`, `.env.*`, `.envrc`, `*.pem`, `*.key`, `.claude/`, `.mcp.json`, `.husky/`, `.githooks/` and `.git/hooks/`. `idlemax project set app default-off-limits off` drops them for that project, and `on` brings them back.
-- A named path that matches no file and sits in no existing folder is dropped on its own, and the pick's reason ends with `(scope paths that do not exist were dropped: <paths>)`. When none of the named paths is left, the pick is not used: its task waits for the next pass, and the empty slot says `none of its scope paths exist`. A pick with no scope path at all, because the pass named none or named only `*`, is refused the same way (`it names no scope path`). idlemax never widens a scope to the whole project.
+- A named path that matches no file and sits in no existing folder is dropped on its own (a new top-level name counts only with an extension and not as a dot file: `pascal.py` yes, `Makefile` or `.env.local` no; a glob such as `*.rs` that matches no file is always dropped, never kept as a new file), and the pick's reason ends with `(scope paths that do not exist were dropped: <paths>)`. When none of the named paths is left, the pick is not used: its task waits for the next pass, and the empty slot says `none of its scope paths exist`. A pick with no scope path at all, because the pass named none or named only `*`, is refused the same way (`it names no scope path`). idlemax never widens a scope to the whole project.
 - When the device reported no file list for the project (an older agent, for example), the named scope paths are kept as given. When the list was cut at 200 files, a named path missing from it may still exist, so it is kept if it is a plain relative path (not absolute, no `..`).
 
 - It runs with no tools, no hooks and no MCP servers.
@@ -358,7 +358,8 @@ When a worker finishes, idlemax checks the result before it tells you:
 
 - **Baseline:** the project's focused checks, recorded on the base branch before the worker started, must still pass on the worker's branch.
 - **Scope:** the diff touches only what the task needs.
-  A change under an off-limits path (yours or the defaults) rejects the task; a change outside the scope paths, or a task that named no scope paths, makes it `needs_you`.
+  A change under an off-limits path (yours or the defaults) rejects the task with `changed off-limits paths: <paths>`; a change outside the scope paths makes it `needs_you` with `changed paths outside the scope: <paths>`.
+  A pick with no scope paths is refused before launch, so `the task named no files in scope` appears only on a Run launched before that rule.
 - **Git config and hooks:** a Run whose worker changed the repository's shared git config or hooks is `rejected` however its job ended, so it is never queued again by itself; idlemax puts the files back and lists the Run under "needs you" until you keep or discard it.
 - **What is judged:** the Run's own branch `idlemax/<task>`, never whatever the worktree's `HEAD` points at. idlemax records the branch commit it judged, and a worktree whose `HEAD` is not that branch at that commit rejects the task.
 - **Independent review**, only when risk is high: an agent from a different provider (from `workers.reviewers`) reads the diff.

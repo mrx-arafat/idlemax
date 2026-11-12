@@ -70,6 +70,7 @@ At agent startup on Linux, the agent's own cgroup memory limit (minus 128 MiB) a
 | No untracked files of yours such as `.env` | a fresh worktree holds tracked files only |
 | No CI, release, secret or agent-config paths | every project's off-limits paths include `.github/`, `.gitlab-ci.yml`, `*.env`, `secrets/`, `.claude/`, `.mcp.json`, `.husky/`, `.githooks/`, `.git/hooks/`, `.envrc`, `.circleci/`, `.env.*`, `*.pem` and `*.key` (unless you set `default-off-limits off`); the brief names them, no scope ever includes them, and a change there rejects the task |
 | No changes to your git config or hooks | a worktree shares `.git/config` and `hooks/` with your checkout, so every git command idlemax runs on a project passes `-c core.fsmonitor=false -c core.hooksPath=/dev/null`; the agent snapshots both before a launch, compares them when the worker ends and after the check, puts any change back, rejects the Run and raises a needs-you entry |
+| Nothing outlives a stop (Linux with a systemd manager) | each worker runs in a transient systemd scope of its own (`idlemax-w-<job>-...`): a headless worker starts in it, and a Herdr pane's shell is moved into it before the agent starts; a stop ends every process in the scope, including what the worker forked or `setsid`-ed; elsewhere, or when the move fails, a stop ends the process group or the pane only |
 | No `git push` | every remote and every push URL (any scheme, a path, a remote added later) gets a dead push address, with no credential helper and no askpass helper, for the agent and for the setup and check commands; a worker that drops its environment gets past it, which only an OS sandbox stops (A13) |
 | Codex writes and network | Codex's own `workspace-write` sandbox, approval `never` |
 | No pull requests, deploys, databases, messages or spending | the brief and `rules.md` say so, and the credential variables are missing |
@@ -82,7 +83,7 @@ These fences are **soft**: a worker runs as your own user.
 
 - Credentials on disk or in the keychain (ssh keys, the `gh` login, cloud CLI logins) stay readable to a worker that goes looking.
 - The idlemax token file and `coord.db` stay readable too.
-- The push block can be undone on purpose.
+- The push block lives in git's environment and config: a worker that drops its environment gets past it, and only an OS sandbox stops that.
 
 > [!WARNING]
 > Switch on `auto` only after the checks in [docs/WORKER-PROOF.md](../WORKER-PROOF.md) passed for each CLI you list in `workers.clis`.
@@ -93,6 +94,7 @@ A job or worker that idlemax started can stop and pause work, but it cannot resu
 
 - The CLI refuses those commands when its environment has `IDLEMAX_JOB_ID`.
 - The coordinator and the agent answer 403 when the calling process, or any process above it, carries the marker of this idlemax home.
+- On Linux with a systemd manager, every process in a worker's systemd scope (`idlemax-w-...`) also counts as launched, whatever its environment, because `setsid` and double forks keep the scope.
 - `idlemax mcp` gives a job or worker no `start` or `project_on`.
 
 ### What this lock does not stop

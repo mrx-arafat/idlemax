@@ -21,7 +21,7 @@ A guard on that device runs it at the lowest priority the OS offers and backs of
 > **Status: v0.2.0.**
 > Built and tested on macOS (Apple Silicon) and Ubuntu 24.04; CI runs the full suite on both.
 > It has run live with real AI on a Linux server (Ubuntu, `workbox` profile): real statusline quota readings, real Opus orchestrator passes on real repos (sending owner and infra items to needs you), about 60 real Claude Sonnet and Haiku workers in Herdr with checks and verdicts, stop and start, and review keep.
-> A production server rollout and the Mac install are still unproven.
+> A production server rollout and a real install on a Mac (`idlemax setup` with its launchd services) are still unproven.
 > The details are in the [FAQ](docs/manual/12-faq.md#what-has-been-tested-and-what-has-not).
 
 ## How it works

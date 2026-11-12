@@ -61,6 +61,6 @@ flowchart TD
 > idlemax is at version 0.2.0.
 > It is built and tested on macOS (Apple Silicon) and on Ubuntu 24.04.
 > It has run live with real AI on a Linux server (Ubuntu, `workbox` profile): real statusline quota readings, real Opus orchestrator passes on real repos (sending owner and infra items to needs you), about 60 real Claude Sonnet and Haiku workers in Herdr with checks and verdicts, stop and start, and review keep.
-> A production server rollout and the Mac install are still unproven.
+> A production server rollout and a real install on a Mac (`idlemax setup` with its launchd services) are still unproven.
 
 Next: [Install idlemax](01-install.md)

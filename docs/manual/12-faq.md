@@ -119,15 +119,15 @@ Verified on macOS (Apple Silicon): focused tests for the safety-critical rules, 
 CI runs the full suite on macOS and Ubuntu.
 
 It has run live with real AI on a Linux server (Ubuntu, `workbox` profile): real statusline quota readings, real Opus orchestrator passes on real repos (sending owner and infra items to needs you), about 60 real Claude Sonnet and Haiku workers in Herdr with checks and verdicts, stop and start, and review keep.
-A production server rollout and the Mac install are still unproven.
+A production server rollout and a real install on a Mac (`idlemax setup` with its launchd services) are still unproven.
 
 | Area | Limit |
 |---|---|
 | Linux | verified on one Ubuntu 24.04 host with systemd 255 (`scripts/verify-linux.sh`: kernel signals, capped user scopes, a memory hog killed at `MemoryMax`, a CPU job held to its quota, `systemd-analyze verify` on both units); a production server rollout has not run |
-| Service install | `idlemax service install` and `idlemax setup` are checked with `--dry-run` and against a stand-in service manager, but have not driven a real launchd or systemd yet |
+| Service install | `idlemax service install` and `idlemax setup` are checked with `--dry-run` and against a stand-in service manager; a real launchd install on a Mac has not run |
 | Agent integrations | `idlemax hooks install` ran against temp copies of the Claude Code and Codex files; the OpenCode plugin passes `node --check` and ran under a fake plugin host, but OpenCode itself was not driven; installing the skill with `npx skills add` has not run |
 | Windows | code paths are neither compiled nor run; no idle, power or thermal signals, no pause, tree kill through `taskkill`, no packaging |
-| AI pass | the advisor's `claude -p` pass has not run end to end, because that spends quota |
+| AI pass | the dispatcher's Opus orchestrator pass ran live on the Linux workbox (above); the advisor's own `claude -p` pass has not run end to end |
 | Claude quota | needs `idlemax statusline install`; until the first capture lands, Claude accounts are never spendable |
 | Schedules | no cron-style times; they live in `coord.db`, so an older idlemax refuses a database a newer one wrote, and the CLI and TUI should match the coordinator's release |
 | macOS memory cap | `taskpolicy -m` is soft; the runner's memory check every 5 s is the real cap, and a job child that daemonizes escapes its sum |
