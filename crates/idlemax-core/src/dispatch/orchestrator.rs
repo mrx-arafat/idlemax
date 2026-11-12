@@ -282,7 +282,14 @@ pub fn validate(output: &Value, offer: &Offer<'_>) -> Result<PassResult, Dispatc
                 .push(format!("needs_you {}: not an offered task", n.task));
         }
     }
-    for p in out.picks {
+    for mut p in out.picks {
+        for s in super::scope::drop_broad(&mut p.scope_paths) {
+            let why = format!(
+                "{}: scope path {s:?} covers every file or has too many '*'",
+                p.task
+            );
+            result.dropped.push(why);
+        }
         match pick_problem(&p, offer, &result) {
             Some(why) => result.dropped.push(format!("{}: {why}", p.task)),
             None => result.picks.push(p),

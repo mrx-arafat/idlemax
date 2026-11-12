@@ -93,6 +93,31 @@ fn scope_paths_follow_gitignore_rules() {
 }
 
 #[test]
+fn a_scope_name_means_the_top_level_and_a_scope_glob_a_file_name() {
+    let scope = strings(&["tests", "*.py"]);
+    let changed = strings(&[
+        "tests/a.rs",
+        "vendor/lib/tests/x.rs",
+        "calc/__init__.py",
+        "x.py/evil.rs",
+    ]);
+    let found = scope_findings(&changed, &scope, &strings(&["tests"]));
+    assert_eq!(found.outside, ["vendor/lib/tests/x.rs", "x.py/evil.rs"]);
+    // Off-limits paths keep the wide match: a name at any depth.
+    assert_eq!(found.off_limits, ["tests/a.rs", "vendor/lib/tests/x.rs"]);
+}
+
+#[test]
+fn a_glob_with_many_stars_is_matched_in_linear_time() {
+    let name = "a".repeat(200);
+    let pattern = format!("{}b", "a*".repeat(40));
+    let started = std::time::Instant::now();
+    assert!(!super::glob(pattern.as_bytes(), name.as_bytes()));
+    assert!(super::glob(b"a*a*a", name.as_bytes()));
+    assert!(started.elapsed() < std::time::Duration::from_millis(200));
+}
+
+#[test]
 fn risk_is_high_for_a_big_diff_core_code_or_no_check() {
     let small = diff(&["src/sync.rs"], 5);
     let core = strings(&["crates/core"]);

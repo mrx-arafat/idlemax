@@ -44,6 +44,26 @@ fn pick(task: &str, account: &str, model: &str, scope: &[&str]) -> Value {
 }
 
 #[test]
+fn validate_drops_scope_paths_that_cover_every_file_or_too_many_wildcards() {
+    let tasks = [task("a")];
+    let refs: Vec<&Task> = tasks.iter().collect();
+    let accounts = [account("max", Provider::Claude, true)];
+    let models = models();
+    let offer = Offer {
+        tasks: &refs,
+        accounts: &accounts,
+        models: &models,
+        quota: None,
+        finished: &[],
+    };
+    let scope = ["*", "**", "*/**", "", "./", "src/", "a*b*c*d*e*f*g*h*i*j"];
+    let result = validate(&out(json!([pick("a", "max", "sonnet", &scope)])), &offer).unwrap();
+    assert_eq!(result.picks.len(), 1, "{:?}", result.dropped);
+    assert_eq!(result.picks[0].scope_paths, ["src/"]);
+    assert_eq!(result.dropped.len(), 6, "{:?}", result.dropped);
+}
+
+#[test]
 fn validate_keeps_offered_picks_and_drops_the_rest_by_name() {
     let tasks = [task("a"), task("b")];
     let refs: Vec<&Task> = tasks.iter().collect();

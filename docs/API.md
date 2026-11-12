@@ -729,6 +729,8 @@ No pass is queued while no offered account has room for one Run of its cheapest 
 A pick is then checked against the quota rules: it takes the model of its task's tier; a pick refused for good (an account not offered, a tier model that is not set, a task that failed its checks twice) is dropped and its refusal named under `dropped`; one that only does not fit now (over the day's budget, or on an account the owner is using while a free one has room) is kept.
 
 At most 64 picks (as many as a pass is offered tasks), 20 needs-you entries, 300 characters per reason and 20 scope paths of at most 300 characters per pick; a shape error, an unknown field or a length over a limit rejects the whole answer.
+A scope path that covers every file (`*`, `**`, `*/**`, empty) or holds more than 8 `*` is dropped from its pick and named under `dropped`.
+Scope paths read like this: one with `/` is anchored at the repository root, a plain name is a top-level file or folder (`tests` is not `vendor/lib/tests`), and a glob without `/` matches a file name at any depth (`*.py`); off-limits and core paths match a plain name at any depth.
 A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.
 Each `needs_you` task is stored as a judgment that lasts until the task's digest changes.
 The plan uses the newest pass with a result; `picked_by` reads `orchestrator pass <age> ago`.

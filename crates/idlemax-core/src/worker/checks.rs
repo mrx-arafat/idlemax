@@ -30,6 +30,7 @@ pub fn scope_findings(
     off_limits: &[String],
 ) -> ScopeFindings {
     let any_under = |path: &str, roots: &[String]| roots.iter().any(|r| under(path, r));
+    let in_any = |path: &str| scope.iter().any(|s| in_scope(path, s));
     ScopeFindings {
         off_limits: changed
             .iter()
@@ -38,7 +39,7 @@ pub fn scope_findings(
             .collect(),
         outside: changed
             .iter()
-            .filter(|p| !scope.is_empty() && !any_under(p, scope))
+            .filter(|p| !scope.is_empty() && !in_any(p))
             .cloned()
             .collect(),
         no_scope: scope.is_empty(),
@@ -217,14 +218,51 @@ fn from_root(pattern: &[&str], parts: &[&str]) -> bool {
     }
 }
 
-/// One name against one glob with `*` and `?`.
-fn glob(pattern: &[u8], name: &[u8]) -> bool {
-    match pattern.split_first() {
-        None => name.is_empty(),
-        Some((b'*', rest)) => (0..=name.len()).any(|i| glob(rest, &name[i..])),
-        Some((b'?', rest)) => !name.is_empty() && glob(rest, &name[1..]),
-        Some((c, rest)) => name.first() == Some(c) && glob(rest, &name[1..]),
+/// `path` lies in the scope `pattern`, read as the orchestrator means it: a pattern with `/`
+/// is anchored at the root, a plain name is a top-level file or folder (`tests` is not
+/// `vendor/lib/tests`), and a glob without `/` matches the file name at any depth (`*.py`
+/// is `calc/__init__.py`, never the folder of `x.py/evil.rs`). Off-limits and core paths
+/// keep the wider `under`.
+pub fn in_scope(path: &str, pattern: &str) -> bool {
+    let pattern = pattern.trim_end_matches('/');
+    if pattern.contains('/') || pattern.is_empty() {
+        return under(path, pattern);
     }
+    let parts: Vec<&str> = path.split('/').collect();
+    match pattern.contains(['*', '?']) {
+        true => parts
+            .last()
+            .is_some_and(|name| glob(pattern.as_bytes(), name.as_bytes())),
+        false => from_root(&[pattern], &parts),
+    }
+}
+
+/// One name against one glob with `*` and `?`: the iterative wildcard match, linear in the
+/// name for each star, so no pattern can make it backtrack without end.
+fn glob(pattern: &[u8], name: &[u8]) -> bool {
+    let (mut p, mut n) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while n < name.len() {
+        match pattern.get(p) {
+            Some(b'*') => {
+                star = Some((p, n));
+                p += 1;
+            }
+            Some(&c) if c == b'?' || c == name[n] => {
+                p += 1;
+                n += 1;
+            }
+            _ => match star {
+                Some((sp, sn)) => {
+                    p = sp + 1;
+                    n = sn + 1;
+                    star = Some((sp, sn + 1));
+                }
+                None => return false,
+            },
+        }
+    }
+    pattern[p..].iter().all(|&c| c == b'*')
 }
 
 fn join(items: Vec<String>) -> String {
