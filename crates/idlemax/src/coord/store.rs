@@ -161,6 +161,12 @@ impl Store {
         Self::init(Connection::open_in_memory()?, false)
     }
 
+    /// Runs seed SQL, such as a fixture under `tests/fixtures`, against the store.
+    #[cfg(test)]
+    pub fn load_sql(&mut self, sql: &str) -> StoreResult<()> {
+        Ok(self.conn.execute_batch(sql)?)
+    }
+
     fn init(conn: Connection, on_disk: bool) -> StoreResult<Self> {
         conn.busy_timeout(BUSY_TIMEOUT)?;
         // auto_vacuum only takes effect before the first table exists.

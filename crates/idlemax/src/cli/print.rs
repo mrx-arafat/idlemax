@@ -1,5 +1,6 @@
 //! Delivery: plain-text rendering of API responses for the CLI.
 
+use idlemax_core::dispatch::view::DispatcherView;
 use idlemax_core::doctor::Report;
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::quota::QuotaView;
@@ -74,7 +75,8 @@ pub fn control_label(r: &ControlRequest) -> String {
     format!("{} {scope}", rows::snake(&r.action))
 }
 
-pub fn status(s: &ClusterStatus, now_ms: UnixMs) -> String {
+/// The status text; `dispatcher` adds the dispatcher block after the devices.
+pub fn status(s: &ClusterStatus, dispatcher: Option<&DispatcherView>, now_ms: UnixMs) -> String {
     let rows: Vec<_> = s
         .devices
         .iter()
@@ -93,6 +95,10 @@ pub fn status(s: &ClusterStatus, now_ms: UnixMs) -> String {
         if let Some(state) = &device.keep_awake {
             text.push_str(&format!("\n{} keep-awake: {state}", device.info.id));
         }
+    }
+    if let Some(view) = dispatcher {
+        text.push_str("\n\n");
+        text.push_str(&super::out::dispatcher_view::block(view, now_ms));
     }
     if let Some(list) = &s.accounts {
         text.push_str("\n\n");

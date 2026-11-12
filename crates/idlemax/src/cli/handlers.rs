@@ -6,17 +6,34 @@ use anyhow::Result;
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus, UnixMs};
 
+use super::out::dispatcher_view::{self, StatusOut};
+use super::out::toon::Node;
 use super::out::{hints, lists, views};
 use super::rows::Zone;
-use super::{noop, print, AdviseCmd, ApiClient, LocalCmd, Out};
+use super::{noop, print, AdviseCmd, ApiClient, ClientError, LocalCmd, Out};
 use crate::state::now_ms;
 
+/// The cluster status and, from a coordinator that serves it, the dispatcher view.
 pub async fn status(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
     let s = c.status().await?;
+    let view = match c.dispatcher().await {
+        Err(ClientError::Api { status: 404, .. }) => None,
+        other => Some(other?),
+    };
+    let both = StatusOut {
+        status: &s,
+        dispatcher: view.as_ref(),
+    };
     out.emit_with(
-        &s,
-        |s| print::status(s, now),
-        || Ok(views::status(&s, now, out.fields())?),
+        &both,
+        |b| print::status(b.status, b.dispatcher, now),
+        || {
+            let mut node = views::status(&s, now, out.fields())?;
+            if let (Some(v), Node::Obj(fields)) = (&view, &mut node) {
+                fields.push(("dispatcher".into(), dispatcher_view::node(v, now)));
+            }
+            Ok(node)
+        },
         &hints::status(s.devices.len(), s.global_paused),
     )
 }

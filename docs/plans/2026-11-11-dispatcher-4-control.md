@@ -234,7 +234,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 ## Progress Tracking
 
 - [x] Task 1: Add the state labels and the dispatcher view to the core
-- [ ] Task 2: Serve the view and show it in `idlemax status`
+- [x] Task 2: Serve the view and show it in `idlemax status`
 - [x] Task 3: Decide who is calling
 - [ ] Task 4: Refuse owner-only calls from a launched process
 - [x] Task 5: Change limits through the API
@@ -348,10 +348,10 @@ A coordinator without the route leaves `idlemax status` as it is today.
 
 **Definition of Done:**
 
-- [ ] `GET /v1/dispatcher` without a token is 401, and on a store loaded with the fixture it returns two workers with the labels `working` and `checking`, two review rows, one `needs_you` line and two projects.
-- [ ] `idlemax status` prints the dispatcher line and a workers table whose STATE cells equal `run_label`, and `idlemax status --json` carries the same text in `dispatcher.workers[].label`.
-- [ ] Against a coordinator without the route, `idlemax status` prints what it prints today and exits 0.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax coord::api::dispatcher_view && cargo test -p idlemax --bin idlemax cli::print && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `GET /v1/dispatcher` without a token is 401, and on a store loaded with the fixture it returns two workers with the labels `working` and `checking`, two review rows, one `needs_you` line and two projects.
+- [x] `idlemax status` prints the dispatcher line and a workers table whose STATE cells equal `run_label`, and `idlemax status --json` carries the same text in `dispatcher.workers[].label`.
+- [x] Against a coordinator without the route, `idlemax status` prints what it prints today and exits 0.
+- [x] Verify: `cargo test -p idlemax --bin idlemax coord::api::dispatcher_view && cargo test -p idlemax --bin idlemax cli::print && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 3: Decide who is calling
 

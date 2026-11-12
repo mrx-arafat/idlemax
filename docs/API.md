@@ -77,6 +77,7 @@ What the lock does not stop:
 | POST | /v1/schedules/{id}/pause | | `ScheduleView` |
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 | POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose" \| "auto"}` | `{"mode", "before", "changed"}` |
+| GET | /v1/dispatcher | | `DispatcherView`, see [The dispatcher view](#the-dispatcher-view) |
 | GET | /v1/plan | | `Plan` |
 | POST | /v1/plan/refresh | | `Plan`, after a dispatcher step that asks for an orchestrator pass |
 | GET | /v1/limits | | `[Setting]`, the limits in a fixed order |
@@ -662,6 +663,40 @@ At most 8 picks, 20 needs-you entries, 300 characters per reason and 20 scope pa
 A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.
 Each `needs_you` task is stored as a judgment that lasts until the task's digest changes.
 The plan uses the newest pass with a result; `picked_by` reads `orchestrator pass <age> ago`.
+
+## The dispatcher view
+
+`GET /v1/dispatcher` returns everything the owner looks at in one `DispatcherView`; the dashboard, the TUI, `idlemax status` and `idlemax mcp` render it and compute nothing themselves.
+Types live in `crates/idlemax-core/src/dispatch/view.rs` and `dispatch/label.rs`, and every struct reads missing fields as their defaults.
+It costs one plan, the same work as `GET /v1/plan`, and reads at most 200 runs per state and seven account days per account.
+
+- `at_ms`, `mode`, `picked_by` (where the picks come from, from the plan).
+- `devices[]`: `id`, `enabled` (null until devices can be switched off), `state` (the line state), `reason`, `open_slots`, `held`, `limits` (the device's own limits, read-only; empty for now).
+- `projects[]`: `id`, `name`, `device`, `enabled`, `waiting` (its runs in `clean` and `needs_you`, the two counted against `workers.review_cap`) and `review_cap`.
+- `planned[]`: each pick of the plan with its `device`, `project`, `task`, `title`, `provider`, `account`, `model` and `reason`.
+- `ready_unjudged[]`: ready tasks no orchestrator pass has judged (`project`, `task`, `title`); no slot is filled from them, and surfaces label them `not judged by the orchestrator`.
+- `workers[]`: the runs in `starting`, `running`, `checking`, `stopped` and `shed`, newest first; `review[]`: the runs in `clean`, `needs_you` and `rejected`, newest first.
+  Each has `run`, `device`, `project`, `task`, `state`, `label`, `summary`, `why` (why the task was picked), `provider`, `account`, `model`, `branch` and `start_ms`.
+- `needs_you[]`: `key` (stable across polls), `kind` (`task`, `account` or `device`), `subject` and `reason`, in this order: tasks the orchestrator sent to the owner (`task:<project id>:<task id>`), accounts resting past the end of today (`account:<name>`), devices over the emergency line (`device:<id>:emergency`) and devices switched off while a project on them is on (`device:<id>:off`).
+- `budgets[]`: per account `account`, `provider`, `unit` and `days`, today first and then up to six earlier account days, newest first; a day has `day_start_ms`, `day_end_ms`, `spendable_pct`, `spent_pct`, `left_pct` and `why`, null where the stored day has no value.
+- `proposals_open`: open rule proposals.
+
+The label and summary of a run, the same text on every surface; `<task>` is the run's task title, and a summary is one line of at most 160 characters:
+
+| State | Label | Summary |
+|---|---|---|
+| `starting` | `starting` | `setting up <task>` |
+| `running` | `working` | `<task> on <provider> <model>` |
+| `checking` | `checking` | `idlemax is checking <task>` |
+| `clean` | `ready for review` | `<task>: checks passed` |
+| `needs_you` | `needs you` | `<task>: <concern>` |
+| `rejected` | `rejected` | `<task>: <concern>, branch kept` |
+| `stopped` | `stopped by you` | `<task>: state saved, continues after you start it again` |
+| `shed` | `back in queue` | `<task>: state saved, restarts when memory and quota allow` |
+| `kept` | `kept` | `<task>: accepted` |
+| `discarded` | `discarded` | `<task>: branch and worktree removed` |
+
+A `starting`, `running` or `checking` run whose job a pause holds is labelled `paused`, with the summary `<task>: frozen by a pause, continues on resume`.
 
 ## Dispatcher mode
 

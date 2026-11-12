@@ -349,6 +349,8 @@ accounts: "0 AI accounts configured ([[quota.accounts]] in config.toml)"
   It uses the scheduler's own checks, so it never disagrees with `idlemax why <job-id>`, and you do not have to run that per job.
 - With `[[quota.accounts]]` configured, an `accounts` table lists each AI account: whether idlemax may spend it now (`spend`), the quota left above the reserve before the limiting window resets (`left`, shown even while spending is held, `-` when that window has no data yet), that window and when it resets.
 - `--fields guard,jobs` adds the raw guard verdict and the job count, `--json` prints the same data as `GET /v1/status` (see [docs/API.md](docs/API.md)), and a coordinator older than this field shows only the running count and no accounts list.
+- A `dispatcher` block follows the devices: the mode and each device's line state with its reason, a table of the workers (`STATE  PROJECT  TASK  MODEL  AGE  SUMMARY`, where the state is the label the dashboard and the TUI show, such as `working`, `checking` or `back in queue`), and the counts `needs you` and `waiting for review`.
+  `--json` adds the whole view as `dispatcher` ([docs/API.md](docs/API.md#the-dispatcher-view)), and a coordinator without the dispatcher leaves the block out.
 
 The TUI's Devices tab shows the same columns with an "AI quota" panel under them, and each device card on the web dashboard shows slot and RAM meters, the reason and the AI accounts that device may spend.
 
@@ -988,7 +990,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax coord` | run the coordinator |
 | `idlemax init [--profile macos-laptop\|linux-server] [--coord-url URL] [--token-stdin]` | create the state dirs, `config.toml` and a 0600 token; never overwrites, and refuses the flags when a config already exists |
 | `idlemax config [list [--all] \| get KEY \| set KEY VALUE \| unset KEY]` | show or change a setting in `config.toml` and apply it to the running agent without a restart; see [Change a setting](#change-a-setting) |
-| `idlemax status` | cluster summary, and per device the slots and RAM budget in use and why it is not using more, see [How much is used right now?](#how-much-is-used-right-now) |
+| `idlemax status` | cluster summary, per device the slots and RAM budget in use and why it is not using more, and the dispatcher's workers with their labels, see [How much is used right now?](#how-much-is-used-right-now) |
 | `idlemax report [--days N]` | what idlemax did today and in the last 7 days, or in the last N days, and what held it back, see [Did it help?](#did-it-help) |
 | `idlemax jobs [--status S] [--limit N]` | list jobs (default limit 50) |
 | `idlemax job add [flags] -- <argv...> \| <spec.toml> \| -` | queue a job from flags, a spec file or stdin; `--wait [--timeout S]` waits for the result and `--key K` makes a retry safe, see [Run a command on idle capacity](#run-a-command-on-idle-capacity) |

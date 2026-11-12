@@ -1,7 +1,8 @@
-//! Adapter: the dispatcher routes of the coordinator API (projects, mode, plan).
+//! Adapter: the dispatcher routes of the coordinator API (projects, mode, plan, view).
 
 use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectView};
+use idlemax_core::dispatch::view::DispatcherView;
 use idlemax_core::dispatch::{Mode, ModeReply, ModeRequest};
 use idlemax_core::types::Job;
 use idlemax_core::worker::control::{StartReply, StopReply, StopRequest};
@@ -82,5 +83,12 @@ impl ApiClient {
     /// Runs the dispatcher step with a pass asked for, then returns the plan.
     pub async fn refresh_plan(&self) -> Result<Plan> {
         self.post("/v1/plan/refresh", None::<&()>).await
+    }
+}
+
+impl ApiClient {
+    /// `GET /v1/dispatcher`; a coordinator that predates it answers 404.
+    pub async fn dispatcher(&self) -> Result<DispatcherView> {
+        self.get("/v1/dispatcher").await
     }
 }

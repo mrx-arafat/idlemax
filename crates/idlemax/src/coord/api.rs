@@ -5,6 +5,7 @@ mod advice;
 mod agents;
 mod budget;
 pub mod caller;
+mod dispatcher_view;
 pub mod http;
 mod jobs;
 mod limits;
@@ -135,6 +136,7 @@ pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
         .route("/v1/schedules/{id}/pause", post(schedules::pause))
         .route("/v1/schedules/{id}/resume", post(schedules::resume))
         .route("/v1/dispatcher/mode", post(mode::set))
+        .route("/v1/dispatcher", get(dispatcher_view::view))
         .route("/v1/plan", get(plan::plan))
         .route("/v1/plan/refresh", post(plan::refresh))
         .route("/v1/limits", get(limits::list).post(limits::set))

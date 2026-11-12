@@ -51,7 +51,7 @@ fn keep_awake_is_a_separate_status_line_only_when_reported() {
     status.devices[0].guard.as_mut().unwrap().memory_limit = Some(limit.clone());
     why.devices[0].memory_limit = Some(limit.clone());
     let message = "RAM budget clamped from 4096 to 512 MiB by effective cgroup memory limit=671088640 bytes (128 MiB reserved for agent)";
-    assert!(super::status(&status, 0).contains(message));
+    assert!(super::status(&status, None, 0).contains(message));
     assert!(crate::cli::why::render(&why).contains(message));
     assert!(encode(&views::status(&status, 0, &[]).unwrap()).contains(message));
     assert!(encode(&views::why(&why)).contains(message));
@@ -66,13 +66,13 @@ fn keep_awake_is_a_separate_status_line_only_when_reported() {
     };
     why.devices[0].memory_limit = Some(unknown.clone());
     status.devices[0].guard.as_mut().unwrap().memory_limit = Some(unknown);
-    assert!(super::status(&status, 0).contains("reference fallback"));
+    assert!(super::status(&status, None, 0).contains("reference fallback"));
     assert!(crate::cli::why::render(&why).contains("reference fallback"));
     assert!(serde_json::from_str::<GuardDecision>("{}")
         .unwrap()
         .memory_limit
         .is_none());
-    assert!(super::status(&status, 0).contains(&format!("\nmac keep-awake: {note}")));
+    assert!(super::status(&status, None, 0).contains(&format!("\nmac keep-awake: {note}")));
     assert!(crate::cli::why::render(&why).contains(&format!("\n  keep-awake: {note}")));
     assert!(encode(&views::status(&status, 0, &[]).unwrap()).contains(note));
     assert!(encode(&views::why(&why)).contains(note));
@@ -82,7 +82,7 @@ fn keep_awake_is_a_separate_status_line_only_when_reported() {
     );
     status.devices[0].keep_awake = None;
     why.devices[0].keep_awake = None;
-    assert!(!super::status(&status, 0).contains("keep-awake"));
+    assert!(!super::status(&status, None, 0).contains("keep-awake"));
     assert!(!crate::cli::why::render(&why).contains("keep-awake"));
     assert!(!encode(&views::status(&status, 0, &[]).unwrap()).contains("keep_awake"));
     assert!(!encode(&views::why(&why)).contains("keep_awake"));
@@ -192,7 +192,7 @@ fn status_shows_what_is_used_what_is_idle_and_why_per_device_and_per_account() {
         ..Default::default()
     }]);
 
-    let table = super::status(&status, NOW);
+    let table = super::status(&status, None, NOW);
     for want in ["2/4", "1.0G/4.0G", "2 queued jobs cannot run here: no git"] {
         assert!(table.contains(want), "{want} in\n{table}");
     }
@@ -242,11 +242,62 @@ fn status_fields_pick_device_columns_and_a_missing_accounts_list_is_not_an_empty
     // A coordinator that predates the field sends none: say nothing, not "none configured".
     let old = status("");
     assert!(!encode(&views::status(&old, 0, &[]).unwrap()).contains("accounts"));
-    assert!(!super::status(&old, 0).contains("AI accounts"));
+    assert!(!super::status(&old, None, 0).contains("AI accounts"));
     // One that sends an empty list says none are configured.
     let none = status(r#","accounts":[]"#);
     assert!(encode(&views::status(&none, 0, &[]).unwrap()).contains("0 AI accounts configured"));
-    assert!(super::status(&none, 0).contains("no AI accounts configured"));
+    assert!(super::status(&none, None, 0).contains("no AI accounts configured"));
+}
+
+#[test]
+fn status_shows_the_dispatcher_block_with_the_run_labels_only_when_served() {
+    use crate::cli::out::dispatcher_view::StatusOut;
+    use idlemax_core::dispatch::label::run_label;
+    use idlemax_core::dispatch::room::LineState;
+    use idlemax_core::dispatch::view::{DeviceLine, DispatcherView, WorkerLine};
+    use idlemax_core::worker::run::RunState;
+
+    let status = ClusterStatus::default();
+    let label = run_label(RunState::Running, false);
+    let view = DispatcherView {
+        devices: vec![DeviceLine {
+            id: "mac".into(),
+            state: LineState::Hold,
+            reason: "memory 91% over 90%".into(),
+            ..DeviceLine::default()
+        }],
+        workers: vec![WorkerLine {
+            project: "app".into(),
+            task: "roadmap:1:fix".into(),
+            label: label.into(),
+            summary: "fix on claude sonnet".into(),
+            ..WorkerLine::default()
+        }],
+        ..DispatcherView::default()
+    };
+
+    let text = super::status(&status, Some(&view), 0);
+    assert!(
+        text.contains("dispatcher: propose | mac: hold: memory 91% over 90%"),
+        "{text}"
+    );
+    let row = text.lines().find(|l| l.contains("roadmap:1:fix")).unwrap();
+    assert!(row.starts_with(label), "{row}");
+    assert!(
+        text.ends_with("needs you: 0\nwaiting for review: 0"),
+        "{text}"
+    );
+
+    let json = serde_json::to_value(StatusOut {
+        status: &status,
+        dispatcher: Some(&view),
+    })
+    .unwrap();
+    assert_eq!(json["dispatcher"]["workers"][0]["label"], label);
+    assert!(json.get("devices").is_some());
+
+    let without = super::status(&status, None, 0);
+    assert!(!without.contains("dispatcher"), "{without}");
 }
 
 #[test]

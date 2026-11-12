@@ -11,6 +11,7 @@
 
 pub mod budget;
 pub mod dispatch;
+pub mod dispatcher_view;
 mod failure;
 pub mod hints;
 pub mod lists;

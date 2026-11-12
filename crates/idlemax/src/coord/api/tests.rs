@@ -206,6 +206,12 @@ impl Api {
             .unwrap()
     }
 
+    /// A GET without the token.
+    pub(super) async fn get_anon(&self, path: &str) -> reqwest::Response {
+        let url = format!("{}{path}", self.base);
+        self.http.get(url).send().await.unwrap()
+    }
+
     /// A GET that carries the token and the given `Host` header.
     pub(super) async fn get_as(&self, path: &str, host: &str) -> reqwest::Response {
         self.http
