@@ -376,7 +376,7 @@ See the finished tasks per project, and keep or discard each one.
 | Subcommand | Does |
 |---|---|
 | `review` | list the finished tasks |
-| `review keep <RUN> [--merge]` | keep the task's branch and remove its worktree folder; `--merge` also merges the branch into your current branch, when your checkout is clean and the merge has no conflict |
+| `review keep <RUN> [--merge]` | keep the task's branch and remove its worktree folder; `--merge` also merges the commit the check judged into your current branch, when the branch has not moved since, your checkout is clean and the merge has no conflict |
 | `review discard <RUN> [--yes]` | delete the task's branch and worktree, after one confirmation; `--yes` does not ask, needed when no terminal is attached |
 
 ## config

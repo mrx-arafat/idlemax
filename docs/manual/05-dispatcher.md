@@ -296,6 +296,7 @@ On Linux with a systemd manager each worker runs in a transient scope of its own
 
 **Claude's folder trust dialog.** An interactive Claude Code started in a folder it has not seen asks whether you trust it, and its default answer exits.
 In Herdr, idlemax answers yes only when the dialog names exactly the worktree it made for that launch; any other dialog, or another folder, still fails the start.
+A resumed Run reuses a folder, and has its dialog answered, only when the folder lies under the worktrees folder the agent resolved at launch and its marker names this Run.
 
 A worker is stopped after `workers.max_runtime_secs` (3600) awake seconds per launch, and after `workers.blocked_secs` (120) waiting for input.
 
@@ -357,6 +358,7 @@ When a worker finishes, idlemax checks the result before it tells you:
 - **Baseline:** the project's focused checks, recorded on the base branch before the worker started, must still pass on the worker's branch.
 - **Scope:** the diff touches only what the task needs.
   A change under an off-limits path (yours or the defaults) rejects the task; a change outside the scope paths, or a task that named no scope paths, makes it `needs_you`.
+- **What is judged:** the Run's own branch `idlemax/<task>`, never whatever the worktree's `HEAD` points at. idlemax records the branch commit it judged, and a worktree whose `HEAD` is not that branch at that commit rejects the task.
 - **Independent review**, only when risk is high: an agent from a different provider (from `workers.reviewers`) reads the diff.
   Risk is high when the diff has more than `workers.review_diff_lines` (300) added plus removed lines, or touches the project's `core-paths`.
 
@@ -375,7 +377,8 @@ idlemax review discard 12         # delete the branch and the worktree (asks onc
 idlemax review discard 12 --yes   # no question; needed when no terminal is attached
 ```
 
-- `--merge` merges only when your checkout is clean and the merge has no conflict; otherwise it stops and says why.
+- `--merge` merges the exact commit that was checked, and refuses if the branch moved since its check.
+  It also merges only when your checkout is clean and on a branch and the merge has no conflict; otherwise it stops and says why.
 - idlemax never merges into your branches unless you ask, for that task.
 - Worktrees are removed with git's safe removal, without force, so git refuses while uncommitted work is left in the folder, and nothing is deleted.
 - Your `keep` and `discard` are never held by a line, a pause or the kill switch.

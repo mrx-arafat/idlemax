@@ -19,7 +19,7 @@ flowchart TD
 - **Never closes your apps.** It names the biggest memory users so you can decide.
 - **Never works in your checkout.** Workers get their own worktree and branch; base checks use a separate detached checkout.
 - **Never pushes, opens or merges a pull request, deploys, touches a database, sends a message or spends money** on a worker's behalf.
-- **Never merges into your branch** unless you run `idlemax review keep <run> --merge` for that task.
+- **Never merges into your branch** unless you run `idlemax review keep <run> --merge` for that task, and then only the commit its check judged.
 - **Never force-removes a worktree.** git refuses while uncommitted work is left, and nothing is deleted.
 - **Never reads or copies an AI login.** It launches only the official CLIs with the login already on that device, and reads `claude auth status --json` (no token) to tell logins apart.
 - **Never retries an AI job,** and stops spending an account after any limit message.
