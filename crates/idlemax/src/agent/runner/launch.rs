@@ -13,11 +13,7 @@ use tracing::warn;
 
 use super::{pidfile, wrapper, RunnerError};
 
-/// Env var every job gets with its own id.
-pub const JOB_ID_ENV: &str = "IDLEMAX_JOB_ID";
-/// Env var every job gets with the random tag of this attempt: the agent finds the job's
-/// processes by it, so it must not be shared with another agent's job of the same id.
-pub const JOB_TAG_ENV: &str = "IDLEMAX_JOB_TAG";
+pub use idlemax_core::job_run::{JOB_ID_ENV, JOB_TAG_ENV};
 
 pub struct Launched {
     pub child: Child,

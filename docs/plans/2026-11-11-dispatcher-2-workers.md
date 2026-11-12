@@ -151,7 +151,7 @@ target/debug/idlemax init
 - [x] Task 2: Store runs, list them, and take worker jobs out of the old AI rules
 - [x] Task 3: End a worker job instead of retrying it, and let its Run follow
 - [x] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
-- [ ] Task 5: Build the runner seam, the Herdr host and the fenced launch
+- [x] Task 5: Build the runner seam, the Herdr host and the fenced launch
 - [ ] Task 6: Run one worker job on the agent from lease to exit
 - [ ] Task 7: Start, hold, shed and stop workers in the agent tick
 - [ ] Task 8: Check a finished task and give it a verdict
@@ -418,13 +418,13 @@ The written manual check that proves each fence is added here too.
 
 **Definition of Done:**
 
-- [ ] `agent_args` returns the exact Claude lists above for a first start and for a continued session, the Codex list with one `enabled=false` override per given server name, and an `Unsupported` error for OpenCode and agy that names what is missing.
-- [ ] `env_problems` reports `IDLEMAX_TOKEN`, `GH_TOKEN`, `SSH_AUTH_SOCK`, `ANTHROPIC_API_KEY` and `DATABASE_URL` when set, and nothing for `PATH`, `HOME`, `TERM`, `HERDR_PANE_ID`, `IDLEMAX_JOB_ID` or a blank `GH_TOKEN`.
-- [ ] `pane_env` with `blank` of `["FOO_TOKEN"]` holds `FOO_TOKEN=` and `IDLEMAX_JOB_ID=<job id>`.
-- [ ] The Herdr host builds the commands above from fixture JSON in the observed shapes through `FakeCommands`, never emits `focus`, refuses to close a pane whose label or workspace differs from the saved one, and reports a start as failed when a call returns `TimedOut`.
-- [ ] With `pane_env` applied, `git push` from a worktree to a local bare remote fails and the remote has no new ref.
-- [ ] The brief of a sample task contains each fixed section, the scope paths and the task's done check.
-- [ ] Verify: `cargo test -p idlemax-core worker::launch && cargo test -p idlemax-core worker::brief && cargo test -p idlemax --bin idlemax agent::worker::herdr && cargo test -p idlemax --bin idlemax agent::worker::host && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `agent_args` returns the exact Claude lists above for a first start and for a continued session, the Codex list with one `enabled=false` override per given server name, and an `Unsupported` error for OpenCode and agy that names what is missing.
+- [x] `env_problems` reports `IDLEMAX_TOKEN`, `GH_TOKEN`, `SSH_AUTH_SOCK`, `ANTHROPIC_API_KEY` and `DATABASE_URL` when set, and nothing for `PATH`, `HOME`, `TERM`, `HERDR_PANE_ID`, `IDLEMAX_JOB_ID` or a blank `GH_TOKEN`.
+- [x] `pane_env` with `blank` of `["FOO_TOKEN"]` holds `FOO_TOKEN=` and `IDLEMAX_JOB_ID=<job id>`.
+- [x] The Herdr host builds the commands above from fixture JSON in the observed shapes through `FakeCommands`, never emits `focus`, refuses to close a pane whose label or workspace differs from the saved one, and reports a start as failed when a call returns `TimedOut`.
+- [x] With `pane_env` applied, `git push` from a worktree to a local bare remote fails and the remote has no new ref.
+- [x] The brief of a sample task contains each fixed section, the scope paths and the task's done check.
+- [x] Verify: `cargo test -p idlemax-core worker::launch && cargo test -p idlemax-core worker::brief && cargo test -p idlemax --bin idlemax agent::worker::herdr && cargo test -p idlemax --bin idlemax agent::worker::host && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 6: Run one worker job on the agent from lease to exit
 

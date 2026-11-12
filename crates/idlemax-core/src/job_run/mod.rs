@@ -8,7 +8,7 @@ mod log;
 mod usage;
 mod wrap;
 
-pub use env::inherits;
+pub use env::{inherits, JOB_ID_ENV, JOB_TAG_ENV};
 pub use exit_marker::{orphan_verdict, ExitMarker, OrphanVerdict};
 pub use log::LogProgress;
 pub use usage::{

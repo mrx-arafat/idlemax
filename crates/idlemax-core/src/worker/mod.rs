@@ -1,6 +1,8 @@
 //! Domain: AI workers, one coding agent process idlemax starts for one task: the CLI, the
 //! action of one worker job and the `worker` section that turns a job into a launch. Pure.
 
+pub mod brief;
+pub mod launch;
 pub mod name;
 pub mod report;
 pub mod run;

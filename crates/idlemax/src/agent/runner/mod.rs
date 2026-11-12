@@ -7,7 +7,7 @@ mod daemon_tests;
 mod error;
 mod finish;
 mod launch;
-mod os;
+pub(super) mod os;
 mod pidfile;
 mod stop;
 #[cfg(all(test, unix))]

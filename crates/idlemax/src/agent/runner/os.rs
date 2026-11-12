@@ -10,7 +10,7 @@ use idlemax_core::types::UnixMs;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
 use tracing::warn;
 
-use super::launch::JOB_TAG_ENV;
+use idlemax_core::job_run::JOB_TAG_ENV;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sig {
@@ -189,6 +189,29 @@ impl ProcTable {
         i64::try_from(secs).ok().map(|s| s.saturating_mul(1000))
     }
 
+    /// The variables of process `pid` as `name=value` pairs; None when the process is gone or
+    /// its environment cannot be read (macOS hides it for some binaries), which the worker
+    /// check treats as a failure.
+    // The worker manager (dispatcher Spec 2 Task 6) is its caller.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn environ(&mut self, pid: u32) -> Option<Vec<(String, String)>> {
+        let pid = Pid::from_u32(pid);
+        let kind = ProcessRefreshKind::nothing()
+            .with_environ(UpdateKind::Always)
+            .without_tasks();
+        self.sys
+            .refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, kind);
+        let environ = self.sys.process(pid)?.environ();
+        if environ.is_empty() {
+            return None;
+        }
+        let pairs = environ.iter().filter_map(|entry| {
+            let (name, value) = entry.to_str()?.split_once('=')?;
+            Some((name.to_string(), value.to_string()))
+        });
+        Some(pairs.collect())
+    }
+
     /// Processes of each live job, keyed by root pid, from the last refresh.
     pub fn usages(&mut self, jobs: &[JobKey]) -> HashMap<u32, JobProcs> {
         let facts = self.tagged_facts(jobs);
@@ -296,4 +319,31 @@ fn group_of(pid: u32) -> Option<u32> {
 #[cfg(not(unix))]
 fn group_of(_pid: u32) -> Option<u32> {
     None
+}
+
+#[cfg(all(test, unix))]
+mod environ_tests {
+    #[test]
+    fn environ_reads_a_childs_variables() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .env("IDLEMAX_ENV_PROBE", "seen")
+            .spawn()
+            .unwrap();
+        let mut table = super::ProcTable::new().unwrap();
+        let mut vars = None;
+        for _ in 0..50 {
+            vars = table.environ(child.id());
+            if vars.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        let vars = vars.expect("environment read");
+        assert!(vars
+            .iter()
+            .any(|(k, v)| k == "IDLEMAX_ENV_PROBE" && v == "seen"));
+    }
 }

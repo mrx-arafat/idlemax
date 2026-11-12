@@ -26,7 +26,7 @@ pub struct Output {
     pub stderr: String,
 }
 
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CmdError {
     #[error("command timed out")]
     TimedOut,
@@ -54,7 +54,10 @@ where
         .collect();
     out.push(("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()));
     if let Some(tag) = tag {
-        out.push(("IDLEMAX_JOB_TAG".to_string(), tag.to_string()));
+        out.push((
+            idlemax_core::job_run::JOB_TAG_ENV.to_string(),
+            tag.to_string(),
+        ));
     }
     for (k, v) in custom_env {
         out.push((k.clone(), v.clone()));

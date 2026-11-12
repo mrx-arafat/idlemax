@@ -3,6 +3,13 @@
 //! spec anyone with the token can write, so it gets only what a tool needs to find its home,
 //! its login and its settings. Anything else goes in the spec's own `env`. Pure.
 
+/// Env var every job and every worker pane gets with its own job id; it is also the worker
+/// marker (A12).
+pub const JOB_ID_ENV: &str = "IDLEMAX_JOB_ID";
+/// Env var every job gets with the random tag of this attempt: the agent finds the job's
+/// processes by it, so it must not be shared with another agent's job of the same id.
+pub const JOB_TAG_ENV: &str = "IDLEMAX_JOB_TAG";
+
 /// Names inherited as they are: where tools live and who runs them, locale and time zone, the
 /// temp dir, the state dir of idlemax itself, the Claude and Codex login dirs, the XDG base
 /// dirs, and the user-manager address `systemd-run --user` needs. All are paths or settings.

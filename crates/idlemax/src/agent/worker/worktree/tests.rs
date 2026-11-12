@@ -188,3 +188,58 @@ fn a_failed_marker_write_removes_the_new_folder_and_branch() {
     let branch = name::branch_name(&t_slug, None);
     assert!(!branch_exists_in_repo(&os, &repo, &branch).unwrap());
 }
+
+#[test]
+fn pane_env_blocks_a_push_to_a_local_bare_remote() {
+    use idlemax_core::worker::launch::pane_env;
+
+    let (temp, repo, worktrees, _base_commit) = setup_temp_repo();
+    let os = git();
+    let bare = temp.path().join("remote.git");
+    let git_in = |dir: &Path, args: &[&str], env: &[(String, String)]| {
+        let mut all = vec!["-C".to_string(), dir.display().to_string()];
+        all.extend(args.iter().map(|s| s.to_string()));
+        let cmd = Cmd {
+            program: "git".into(),
+            args: all,
+            cwd: None,
+            env: env.to_vec(),
+            stdin: None,
+            limit: Duration::from_secs(10),
+            throttle: false,
+            tag: None,
+        };
+        os.run(&cmd).unwrap()
+    };
+    let init = git_in(temp.path(), &["init", "--bare", "remote.git"], &[]);
+    assert_eq!(init.code, Some(0), "{}", init.stderr);
+    let bare_str = bare.display().to_string();
+    git_in(&repo, &["remote", "add", "origin", &bare_str], &[]);
+
+    let info = create_worktree(&os, &worktrees, &new(&repo, "task-push", 1), 1).unwrap();
+    std::fs::write(info.folder.join("tracked.txt"), "changed\n").unwrap();
+    let identity = [
+        ("GIT_AUTHOR_NAME".to_string(), "W".to_string()),
+        ("GIT_AUTHOR_EMAIL".to_string(), "w@test.local".to_string()),
+        ("GIT_COMMITTER_NAME".to_string(), "W".to_string()),
+        (
+            "GIT_COMMITTER_EMAIL".to_string(),
+            "w@test.local".to_string(),
+        ),
+    ];
+    let env: Vec<(String, String)> = pane_env(7, 1, &["origin".to_string()], &[])
+        .into_iter()
+        .chain(identity)
+        .collect();
+    let commit = git_in(&info.folder, &["commit", "-am", "work"], &env);
+    assert_eq!(commit.code, Some(0), "{}", commit.stderr);
+
+    let push = git_in(
+        &info.folder,
+        &["push", "origin", "HEAD:refs/heads/leak"],
+        &env,
+    );
+    assert_ne!(push.code, Some(0), "the push went through");
+    let refs = git_in(&bare, &["for-each-ref"], &[]);
+    assert!(refs.stdout.trim().is_empty(), "{}", refs.stdout);
+}
