@@ -217,6 +217,50 @@ A smaller fleet (two workers at a time) landed what a new owner asked for ("I do
 - **How:** Track forks with kqueue `NOTE_TRACK` or Endpoint Security, both heavier than the current poll.
 - **Done when:** A daemonized `/usr/bin/perl` memory hog is killed at its job's cap on macOS.
 
+## v0.5: the dispatcher
+
+The owner asked for idlemax to staff AI coding workers on the leftover tasks of their own projects, on every device, without getting in the way and without burning a week's quota in a day.
+The design was agreed on 2026-11-11 in 22 decisions, recorded in [`docs/DISPATCHER.md`](DISPATCHER.md).
+Each item below has its own spec in `docs/plans/`, written to that record.
+A spec is implemented with `/spec <file>` once the owner has approved it.
+Items 4, 7 and 31 come first, because nothing here can be proven live until the current build runs for real on the Mac.
+Item 30 is answered by decision D14 and item 11 by decision D10.
+
+### 33. Decide without acting
+
+- **Why:** The owner has to trust the picks before the dispatcher may launch anything.
+- **How:** Project switches that are off by default, the memory, swap and disk readings with the hold line, task discovery from four sources, a short orchestrator pass, and `idlemax plan`.
+  Spec: [`docs/plans/2026-11-11-dispatcher-1-plan.md`](plans/2026-11-11-dispatcher-1-plan.md).
+- **Done when:** On the Mac, `idlemax plan` names a project, a task, a provider and a model for each open slot, gives a reason for each pick and for each slot left empty, and launches nothing.
+
+### 34. Launch, verify, stop
+
+- **Why:** A worker must never work in the owner's folder, a worker saying "done" proves nothing, and the owner must be able to stop everything at once when other work comes first.
+- **How:** Workers in their own git worktrees and in their own panes of an `idlemax workers` workspace, a written brief, baseline and scope checks with a verdict, `idlemax stop` and `idlemax start`, and `idlemax review` to keep or discard each result.
+  Spec: [`docs/plans/2026-11-11-dispatcher-2-workers.md`](plans/2026-11-11-dispatcher-2-workers.md).
+- **Done when:** In `auto` mode a finished task carries a verdict from idlemax's own checks, `idlemax stop` frees every worker within seconds, `idlemax start` continues the same sessions, and nothing a worker did has left the machine.
+
+### 35. The quota brain
+
+- **Why:** The owner needs the weekly quota for their own work, so idlemax may spend only what would expire unused, and the reserves in the code are estimates (item 11).
+- **How:** Measure what each run costs per model, learn the owner's own daily use, and pace the surplus by day, with model tiers, a stop on the 5-hour window and rest after a rate limit.
+  Spec: [`docs/plans/2026-11-11-dispatcher-3-quota.md`](plans/2026-11-11-dispatcher-3-quota.md).
+- **Done when:** After a week of runs the budget of each account comes from measured costs and the owner's own use, a day's spend never passes that day's budget, and no limit that stops the owner was caused by a worker.
+
+### 36. Control and visibility
+
+- **Why:** The owner wants to see everything, be interrupted for almost nothing, and switch the dispatcher from the browser or through an agent they instruct.
+- **How:** A switch, toggles and a live worker list in the dashboard and the TUI, three kinds of notification, an MCP server, and a lock that keeps idlemax's own workers away from the controls.
+  Spec: [`docs/plans/2026-11-11-dispatcher-4-control.md`](plans/2026-11-11-dispatcher-4-control.md).
+- **Done when:** The dashboard and the TUI show every worker with its state and switch the dispatcher on and off, an agent the owner instructs can do the same through `idlemax mcp`, and a worker cannot.
+
+### 37. Servers
+
+- **Why:** A laptop sleeps, and the owner's Linux servers should work around the clock on their own accounts.
+- **How:** An agent on each server, the coordinator on an always-on one, the `laptop`, `workbox` and `production` profiles, Linux pressure readings, and budgets that follow the account across devices.
+  Spec: [`docs/plans/2026-11-11-dispatcher-5-servers.md`](plans/2026-11-11-dispatcher-5-servers.md).
+- **Done when:** A server with the `workbox` profile runs workers around the clock while the laptop sleeps, and two devices on one account share one budget.
+
 ## Later
 
 ### 16. Roll out to more devices

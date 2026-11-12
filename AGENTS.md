@@ -27,7 +27,8 @@ crates/idlemax/src/        agent/, coord/ (store/schema.rs holds the migrations)
 crates/idlemax/tests/      e2e.rs, examples.rs, doctor.rs, logs_inbox.rs and other integration tests
 examples/  packaging/  scripts/   example configs and jobs, service units, install and changelog scripts
 skills/                    the generated agent skill (see Traps)
-docs/                      API.md, ROADMAP.md, ROLLOUT.md, RELEASING.md
+docs/                      API.md, ROADMAP.md, ROLLOUT.md, RELEASING.md,
+                           DISPATCHER.md (the agreed dispatcher decisions), plans/ (its specs)
 ```
 
 Rules that keep it clean:
