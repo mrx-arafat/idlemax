@@ -2,7 +2,7 @@
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -22,12 +22,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │hetzner-fsn1-build-server-eu-central-01 (online, heartbeat 5s ago):           │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+p/r pause/resume job 46  k cancel job  w close  x stop workers  q quit
 ##### scrolled with PgDn
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -47,12 +47,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │    fix: wait for the load to drop, or raise guard.load_1m_pause              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+p/r pause/resume job 46  k cancel job  w close  x stop workers  q quit
 ##### scrolled to the end
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -72,12 +72,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │  - no heartbeat for 2d1h                                                     │
 │    fix: start `idlemax agent` on old-mac-mini                                │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+p/r pause/resume job 46  k cancel job  w close  x stop workers  q quit
 ##### loading
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -97,12 +97,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+p/r pause/resume job 46  k cancel job  w close  x stop workers  q quit
 ##### could not load
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -122,12 +122,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w close  s stop-all  q quit
+p/r pause/resume job 46  k cancel job  w close  x stop workers  q quit
 ##### a running job is selected
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │  46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -147,4 +147,4 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 41  k cancel job  w close  s stop-all  q quit
+p/r pause/resume job 41  k cancel job  w close  x stop workers  q quit

@@ -4,6 +4,8 @@ use std::future::Future;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
+use idlemax_core::config::{LimitRequest, Setting};
+use idlemax_core::dispatch::view::DispatcherView;
 use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest};
 use idlemax_core::quota::QuotaView;
@@ -14,7 +16,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::MissedTickBehavior;
 
 use crate::cli::rows::Zone;
-use crate::cli::{print, report, ApiClient, ClientError};
+use crate::cli::{print, report, ApiClient, ClientError, Proposal};
 use crate::state::now_ms;
 
 const REFRESH: Duration = Duration::from_secs(2);
@@ -34,6 +36,12 @@ pub struct Snapshot {
     pub schedules: Vec<ScheduleView>,
     /// A headline reason for each waiting job (empty from a coordinator without `/v1/why`).
     pub why: Vec<WhySummary>,
+    /// None from a coordinator without `/v1/dispatcher`; the Dispatch tab then says so.
+    pub dispatcher: Option<DispatcherView>,
+    /// The owner limits (empty from a coordinator without `/v1/limits`).
+    pub limits: Vec<Setting>,
+    /// The rule proposals (empty from a coordinator without `/v1/proposals`).
+    pub proposals: Vec<Proposal>,
 }
 
 /// An action the user confirmed in the dashboard.
@@ -49,6 +57,22 @@ pub enum Request {
     RemoveSchedule(ScheduleId),
     /// The full explanation of one job, for the detail pane.
     Why(JobId),
+    StopWorkers,
+    StartWorkers,
+    /// The mode by name: `auto` reaches the coordinator even before this build knows it.
+    SetMode(String),
+    SwitchProject {
+        id: i64,
+        name: String,
+        on: bool,
+    },
+    /// `value` None puts the limit back to its default.
+    SetLimit {
+        key: String,
+        value: Option<String>,
+    },
+    ApproveRule(i64),
+    RejectRule(i64),
 }
 
 impl Request {
@@ -63,6 +87,19 @@ impl Request {
             Request::ResumeSchedule(id) => format!("resume schedule {id}"),
             Request::RemoveSchedule(id) => format!("remove schedule {id}"),
             Request::Why(id) => format!("explain job {id}"),
+            Request::StopWorkers => "stop workers".into(),
+            Request::StartWorkers => "start workers".into(),
+            Request::SetMode(mode) => format!("mode {mode}"),
+            Request::SwitchProject { name, on, .. } => {
+                format!("project {name} {}", if *on { "on" } else { "off" })
+            }
+            Request::SetLimit { key, value: None } => format!("{key} back to its default"),
+            Request::SetLimit {
+                key,
+                value: Some(v),
+            } => format!("{key} = {v}"),
+            Request::ApproveRule(id) => format!("rule {id} added to rules.md"),
+            Request::RejectRule(id) => format!("rule {id} rejected"),
         }
     }
 }
@@ -138,10 +175,24 @@ async fn fetch(c: &ApiClient) -> Update {
         c.advice(),
         c.events(EVENT_LIMIT),
         or_empty(c.schedules()),
-        or_empty(c.why_summaries(JOB_LIMIT))
+        or_empty(c.why_summaries(JOB_LIMIT)),
+        or_none(c.dispatcher()),
+        or_empty(c.limits()),
+        or_empty(c.proposals())
     );
     match all {
-        Ok((status, jobs, quota, advice, events, schedules, why)) => Update::Snapshot(
+        Ok((
+            status,
+            jobs,
+            quota,
+            advice,
+            events,
+            schedules,
+            why,
+            dispatcher,
+            limits,
+            proposals,
+        )) => Update::Snapshot(
             Box::new(Snapshot {
                 status,
                 jobs,
@@ -150,6 +201,9 @@ async fn fetch(c: &ApiClient) -> Update {
                 events,
                 schedules,
                 why,
+                dispatcher,
+                limits,
+                proposals,
             }),
             now_ms(),
         ),
@@ -168,6 +222,16 @@ async fn or_empty<T>(
     }
 }
 
+/// A coordinator older than the dispatcher view answers 404: the tab says so.
+async fn or_none<T>(
+    call: impl Future<Output = Result<T, ClientError>>,
+) -> Result<Option<T>, ClientError> {
+    match call.await {
+        Err(ClientError::Api { status: 404, .. }) => Ok(None),
+        other => other.map(Some),
+    }
+}
+
 async fn perform(c: &ApiClient, req: Request) -> Update {
     let label = req.label();
     let result = match req {
@@ -180,6 +244,16 @@ async fn perform(c: &ApiClient, req: Request) -> Update {
         Request::ResumeSchedule(id) => c.resume_schedule(id).await.map(|_| ()),
         Request::RemoveSchedule(id) => c.remove_schedule(id).await.map(|_| ()),
         Request::Why(id) => return Update::Why(id, c.why(id).await.map_err(|e| e.describe())),
+        Request::StopWorkers => c.stop_all_workers("tui").await.map(|_| ()),
+        Request::StartWorkers => c.start_workers().await.map(|_| ()),
+        Request::SetMode(mode) => c.set_mode_named(&mode).await.map(|_| ()),
+        Request::SwitchProject { id, on, .. } => c.switch_project(id, on).await.map(|_| ()),
+        Request::SetLimit { key, value } => {
+            let req = LimitRequest { key, value };
+            c.set_limit(&req).await.map(|_| ())
+        }
+        Request::ApproveRule(id) => c.decide_proposal(id, true).await.map(|_| ()),
+        Request::RejectRule(id) => c.decide_proposal(id, false).await.map(|_| ()),
     };
     match result {
         Ok(()) => Update::Done(label),

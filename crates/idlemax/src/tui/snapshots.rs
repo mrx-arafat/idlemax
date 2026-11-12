@@ -18,6 +18,8 @@ use idlemax_core::explain::Explanation;
 use super::feed::{Snapshot, Update};
 use super::view;
 
+mod dispatch;
+
 const NOW: UnixMs = 1_800_000_000_000;
 const MIN: i64 = 60_000;
 const HOUR: i64 = 60 * MIN;
@@ -245,6 +247,7 @@ fn fixture() -> Snapshot {
         events: parse(events()),
         schedules: parse(schedules()),
         why: parse(why_summaries()),
+        ..Snapshot::default()
     }
 }
 

@@ -2,6 +2,8 @@
 
 mod accounts;
 mod app;
+mod dispatcher;
+mod dispatcher_view;
 mod feed;
 mod layout;
 mod report;

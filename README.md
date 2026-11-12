@@ -1035,13 +1035,13 @@ The layout is built for 80x24 and up: long names and errors are cut with an elli
 ```text
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 1 running, 1 queued | advice: 1 open
- 1 Devices (2) │ 2 Jobs (3) │ 3 Quota (1) │ 4 Advice (1) │ 5 Events (0) │ 6 Schedules (0)
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
 │  DEVICE  STATE   GUARD                  IDLE  CPU  LOAD  MEM FREE  SWAP  DISK    POWER  JOBS     │
 │> laptop  online  run 1                  25m   9%   2.10  41% 5.0G  1.0G  120.0G  ac     1        │
 │  server  online  hold: load 1.70 > 1.5  -     9%   1.70  52% 5.0G  1.0G  120.0G  -      0        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume device laptop  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume device laptop  x stop workers  P/R all  s stop-all  tab/1-7 switch  q quit
 ```
 
 The last Jobs column, `RESULT / WHY`, says why a waiting job waits.
@@ -1066,24 +1066,35 @@ The last Jobs column, `RESULT / WHY`, says why a waiting job waits.
 │  - load per CPU 0.85 > 0.75 (guard pause)                                                        │
 │    fix: wait for the load outside the jobs to drop; threshold is guard.load_per_cpu_pause        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 3  k cancel job  w close  PgUp/PgDn scroll  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 3  k cancel job  w close  PgUp/PgDn scroll  x stop workers  s stop-all  q quit
 ```
 
 The pane asks for one job's reasons only when it opens, when you move to another job, or when that job's headline changed in the last refresh.
 An empty tab says what to run next, for example `idlemax job add <spec.toml>`.
 
+The Dispatch tab shows one pane at a time, and `v` moves to the next: workers, would launch (then the ready tasks the orchestrator did not judge), needs you, review, budget, projects, limits (a device's own limits are listed read-only) and rules.
+The pane's title carries the dispatcher mode and each device's line state, and the box under it explains the selected row.
+A coordinator without the dispatcher view gets one line saying so, and no key on that tab sends anything.
+
 | Key | Action |
 |---|---|
-| `1`-`6`, `Tab`, `Left`, `Right` | switch between Devices, Jobs, Quota, Advice, Events and Schedules |
+| `1`-`7`, `Tab`, `Left`, `Right` | switch between Devices, Jobs, Quota, Advice, Events, Schedules and Dispatch |
 | `Up`, `Down` | select a row |
-| `p`, `r` | pause or resume the selected device, job, account or schedule |
+| `p`, `r` | pause or resume the selected device, job, account or schedule; everything on Advice, Events and Dispatch |
 | `P`, `R` | pause or resume everything |
 | `s` | stop-all everywhere (asks first) |
+| `x` | stop every worker on any tab (asks first); they continue only after `g` or `idlemax start` |
 | `k` | cancel the selected job (asks first) |
 | `w` | on the Jobs tab, show or hide the reasons for the selected waiting job |
 | `PgUp`, `PgDn` | scroll the reasons |
 | `a`, `d` | accept or dismiss the selected advice; on Schedules, `d` removes the selected schedule (asks first) |
 | `f` | re-run the advisor (Advice tab) |
+| `v` | on Dispatch, show the next pane |
+| `m` | on Dispatch, move to the next mode: off, propose, auto (asks first, except toward off) |
+| `g` | on Dispatch, start the stopped workers (asks first) |
+| `t` | on the projects pane, switch the selected project (on asks first) |
+| `e` | on the limits pane, type a new value in the footer: `Enter` saves, an empty value puts back the default, `Esc` closes |
+| `a`, `d` | on the rules pane, approve (asks first) or reject the selected proposal |
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
 | `q`, `Esc`, `Ctrl-C` | quit |
 

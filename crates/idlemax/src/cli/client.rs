@@ -1,6 +1,7 @@
 //! Adapter: typed HTTP client for the coordinator API and the local agent API.
 
 mod dispatch;
+mod owner;
 mod report;
 mod schedules;
 
@@ -11,6 +12,7 @@ use idlemax_core::explain::{Explanation, WhySummary};
 use idlemax_core::protocol::{ClusterStatus, ControlRequest, LocalStatus};
 use idlemax_core::quota::QuotaView;
 use idlemax_core::types::{Event, Job, JobId, JobSpec, JobStatus, Recommendation};
+pub use owner::Proposal;
 pub use report::Period;
 use serde::de::DeserializeOwned;
 use serde::Serialize;

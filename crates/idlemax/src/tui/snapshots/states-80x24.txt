@@ -1,7 +1,7 @@
 ##### connecting
 idlemax http://127.0.0.1:7878   connecting   updated never
 
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │waiting for the coordinator...                                                │
 │                                                                              │
@@ -22,13 +22,13 @@ idlemax http://127.0.0.1:7878   connecting   updated never
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume selection  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume selection  x stop workers  s stop-all  tab/1-7 switch  q quit
 ##### unreachable, nothing loaded yet
 idlemax http://127.0.0.1:7878   unreachable   updated never
 coordinator unreachable: cannot reach http://127.0.0.1:7878: error sending
 request for url (http://127.0.0.1:7878/v1/status): client error (Connect): tcp
 connect error: Connection refused (os error 61)
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │waiting for the coordinator...                                                │
 │                                                                              │
@@ -47,13 +47,13 @@ connect error: Connection refused (os error 61)
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume selection  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume selection  x stop workers  s stop-all  tab/1-7 switch  q quit
 ##### unreachable, showing the last data
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator unreachable: cannot reach http://127.0.0.1:7878: error sending
 request for url (http://127.0.0.1:7878/v1/status): client error (Connect): tcp
 connect error: Connection refused (os error 61)
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -72,12 +72,12 @@ connect error: Connection refused (os error 61)
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w why  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 46  k cancel job  w why  x stop workers  s stop-all  q quit
 ##### confirm stop all
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -97,12 +97,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w why  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 46  k cancel job  w why  x stop workers  s stop-all  q quit
 ##### confirm remove a schedule with a long name
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       EVERY  STATE          LAST RESULT            │
 │  1   index-refresh              12h    job 46 queued  -                      │
@@ -122,12 +122,12 @@ jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume schedule  d remove  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume schedule  d remove  x stop workers  s stop-all  q quit
 ##### flash after an action
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │
@@ -152,7 +152,7 @@ ok: pause schedule 3
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work
 jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                       STATUS     AGE      RESULT / WHY             │
 │> 46  index-refresh              queued     46m ago  battery is at 28%, belo… │

@@ -40,7 +40,7 @@ use clap::{CommandFactory, Parser};
 use commands::Cmd;
 use dispatch::{execute, hint};
 
-pub use client::{ApiClient, ClientError};
+pub use client::{ApiClient, ClientError, Proposal};
 pub use commands::{AdviseCmd, LocalCmd};
 pub use job::ExitWith;
 pub use out::{CliError, Format, Out, Peer};

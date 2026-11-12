@@ -1,7 +1,7 @@
 ##### Devices 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  DEVICE                 STATE   SLOTS  RAM        WHY                    CPU │
 │> ビルドサーバー-東京-…  online  1/2    512M/2.5G  1 queued job cannot …  12% │
@@ -22,11 +22,11 @@ global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume device ビルドサーバー…  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume device ビルドサーバー…  x stop workers  s stop-all  q quit
 ##### Jobs 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME               STATUS   DEVICE            AGE      RESULT / WHY     │
 │> 53  日本語のレポート…  queued   -                 53m ago  -                │
@@ -47,11 +47,11 @@ global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 53  k cancel job  w why  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 53  k cancel job  w why  x stop workers  s stop-all  q quit
 ##### Events 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  TIME            KIND         JOB  MESSAGE                                   │
 │> 01-15 07:59:00  error        51   🔥 job 51 failed: ビルドに失敗しました。… │
@@ -72,11 +72,11 @@ global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume all  x stop workers  s stop-all  tab/1-7 switch  q quit
 ##### Schedules 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                      EVERY  STATE          LAST RESULT             │
 │> 1   毎日のヘルスチェック-リ…  1d     next in 5h00m  failed (メモリ不足で終… │
@@ -97,4 +97,4 @@ global: running | jobs: 1 running, 1 queued, 1 failed | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume schedule  d remove  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume schedule  d remove  x stop workers  s stop-all  q quit

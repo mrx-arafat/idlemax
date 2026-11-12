@@ -242,7 +242,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [x] Task 7: Decide and store the three kinds of notice
 - [x] Task 8: Deliver a notice to the desktop and the inbox
 - [ ] Task 9: Add the dispatcher controls and views to the dashboard
-- [ ] Task 10: Add the Dispatch tab to the TUI
+- [x] Task 10: Add the Dispatch tab to the TUI
 - [ ] Task 11: Add `idlemax mcp`
 - [ ] Task 12: Needs the owner's OK: switch control and visibility on for real
 
@@ -740,13 +740,13 @@ Every screen still fits 80x24.
 
 **Definition of Done:**
 
-- [ ] `dispatch-80x24.txt` holds every pane, the stop question, the limit input, a read-only limit row and a lock refusal, each within 80 columns and 24 rows.
-- [ ] `tab_titles` for the seven titles fits 80 cells, and the six regenerated 80x24 snapshots and the two 120x40 ones were reviewed.
-- [ ] `x` then `y` on the Jobs tab yields the stop request, and `x` then any other key yields none.
-- [ ] On the limits pane, `e`, typed text that holds a `q` and Enter yield one set limit request with that text, and Esc yields none and does not quit.
-- [ ] On the rules pane `a` then `y` yields the approve request and no advice request.
-- [ ] Without a dispatcher view from the coordinator, the tab says so in one line and no key on it sends a request.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax tui:: && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `dispatch-80x24.txt` holds every pane, the stop question, the limit input, a read-only limit row and a lock refusal, each within 80 columns and 24 rows.
+- [x] `tab_titles` for the seven titles fits 80 cells, and the six regenerated 80x24 snapshots and the two 120x40 ones were reviewed.
+- [x] `x` then `y` on the Jobs tab yields the stop request, and `x` then any other key yields none.
+- [x] On the limits pane, `e`, typed text that holds a `q` and Enter yield one set limit request with that text, and Esc yields none and does not quit.
+- [x] On the rules pane `a` then `y` yields the approve request and no advice request.
+- [x] Without a dispatcher view from the coordinator, the tab says so in one line and no key on it sends a request.
+- [x] Verify: `cargo test -p idlemax --bin idlemax tui:: && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 11: Add `idlemax mcp`
 

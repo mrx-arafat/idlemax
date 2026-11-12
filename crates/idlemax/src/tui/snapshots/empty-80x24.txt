@@ -1,7 +1,7 @@
 ##### Devices 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │No device has sent a heartbeat yet. Start `idlemax agent` on a device.        │
 │                                                                              │
@@ -22,11 +22,11 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume selection  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume selection  x stop workers  s stop-all  tab/1-7 switch  q quit
 ##### Jobs 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │No jobs yet. Queue one with `idlemax job add <spec.toml>`.                    │
 │                                                                              │
@@ -47,11 +47,11 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume selection  k cancel job  w why  s stop-all  q quit
+p/r pause/resume selection  k cancel job  w why  x stop workers  q quit
 ##### Quota 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │No AI accounts configured. Add [[quota.accounts]] to config.toml.             │
 │                                                                              │
@@ -72,11 +72,11 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume selection  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume selection  x stop workers  s stop-all  tab/1-7 switch  q quit
 ##### Advice 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Nothing needs you right now.                                                  │
 │                                                                              │
@@ -97,11 +97,11 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  a accept  d dismiss  f refresh  s stop-all  q quit
+p/r pause/resume all  a accept  d dismiss  f refresh  x stop workers  q quit
 ##### Events 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │No events yet.                                                                │
 │                                                                              │
@@ -122,11 +122,11 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume all  x stop workers  s stop-all  tab/1-7 switch  q quit
 ##### Schedules 80x24
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
- 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │No schedules yet. Repeat a job with `idlemax schedule add <spec.toml> --every │
 │1d`.                                                                          │
@@ -147,4 +147,29 @@ coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume schedule  d remove  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume schedule  d remove  x stop workers  s stop-all  q quit
+##### Dispatch 80x24
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+coordinator 0.1.0 | global: running | jobs: 0 running, 0 queued | advice: 0 open
+ 1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
+┌──────────────────────────────────────────────────────────────────────────────┐
+│No dispatcher view: this coordinator predates it, so update it.               │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume all  x stop workers  s stop-all  tab/1-7 switch  q quit

@@ -2,7 +2,7 @@
 idlemax http://127.0.0.1:7878   running   updated 2s ago
 global: running | paused accounts: claude-work | jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed
 advice: 1 open
- 1 Devices (3) │ 2 Jobs (6) │ 3 Quota (3) │ 4 Advice (2) │ 5 Events (4) │ 6 Schedules (3)
+ 1 Devices (3) │ 2 Jobs (6) │ 3 Quota (3) │ 4 Advice (2) │ 5 Events (4) │ 6 Schedules (3) │ 7 Dispatch (0)
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │  ID  NAME                   STATUS     DEVICE                 COST       PRIO  TRIES  AGE      RESULT / WHY          │
 │> 46  index-refresh          queued     -                      cpu_light  0     0/3    46m ago  battery is at 28%, b… │
@@ -38,4 +38,4 @@ advice: 1 open
 │                                                                                                                      │
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume job 46  k cancel job  w close  PgUp/PgDn scroll  P/R all  s stop-all  tab/1-6 switch  q quit
+p/r pause/resume job 46  k cancel job  w close  PgUp/PgDn scroll  x stop workers  s stop-all  tab/1-7 switch  q quit

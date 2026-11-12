@@ -5,6 +5,7 @@ use idlemax_core::report::Report;
 use idlemax_core::types::{ControlScope, Job, JobId, UnixMs};
 use ratatui::widgets::TableState;
 
+use super::dispatcher::{pane_rows, LimitInput, Pane};
 use super::feed::{Request, Snapshot, Update};
 use super::why::WhyState;
 
@@ -23,16 +24,18 @@ pub enum Tab {
     Advice,
     Events,
     Schedules,
+    Dispatch,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 6] = [
+    pub const ALL: [Tab; 7] = [
         Tab::Devices,
         Tab::Jobs,
         Tab::Quota,
         Tab::Advice,
         Tab::Events,
         Tab::Schedules,
+        Tab::Dispatch,
     ];
 
     pub fn title(self) -> &'static str {
@@ -43,6 +46,7 @@ impl Tab {
             Tab::Advice => "Advice",
             Tab::Events => "Events",
             Tab::Schedules => "Schedules",
+            Tab::Dispatch => "Dispatch",
         }
     }
 
@@ -76,7 +80,11 @@ pub struct App {
     pub fetch_error: Option<String>,
     pub flash: Option<Flash>,
     pub confirm: Option<Confirm>,
-    pub tables: [TableState; 6],
+    pub tables: [TableState; 7],
+    /// The pane the Dispatch tab shows.
+    pub pane: Pane,
+    /// The limit being typed in the footer; it takes every key while open.
+    pub input: Option<LimitInput>,
     pub quit: bool,
     /// The Jobs tab shows the reasons for the selected job.
     pub why_open: bool,
@@ -99,6 +107,8 @@ impl App {
             flash: None,
             confirm: None,
             tables: Default::default(),
+            pane: Pane::default(),
+            input: None,
             quit: false,
             why_open: false,
             why: None,
@@ -139,6 +149,7 @@ impl App {
             Tab::Advice => d.advice.len(),
             Tab::Events => d.events.len(),
             Tab::Schedules => d.schedules.len(),
+            Tab::Dispatch => pane_rows(d, self.pane),
         })
     }
 
@@ -169,7 +180,10 @@ impl App {
                 )
             }),
             Tab::Schedules => None,
-            Tab::Advice | Tab::Events => Some((ControlScope::Global, "everything".into())),
+            Tab::Dispatch if data.dispatcher.is_none() => None,
+            Tab::Advice | Tab::Events | Tab::Dispatch => {
+                Some((ControlScope::Global, "everything".into()))
+            }
         }
     }
 

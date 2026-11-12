@@ -77,6 +77,61 @@ pub const SCHEDULES: Spec = Spec {
     empty: "No schedules yet. Repeat a job with `idlemax schedule add <spec.toml> --every 1d`.",
 };
 
+// The Dispatch tab's panes.
+pub const D_WORKERS: Spec = Spec {
+    header: &["STATE", "PROJECT", "TASK", "MODEL", "AGE", "SUMMARY"],
+    flex: &[2, 5],
+    drop: &[3, 4, 1],
+    min_width: 14,
+    empty: "No worker is running.",
+};
+pub const D_REVIEW: Spec = Spec {
+    empty: "Nothing waits for review.",
+    ..D_WORKERS
+};
+pub const D_LAUNCH: Spec = Spec {
+    header: &["DEVICE", "PROJECT", "TASK", "MODEL", "NOTE"],
+    flex: &[2, 4],
+    drop: &[0, 3],
+    min_width: 14,
+    empty: "Nothing would launch now.",
+};
+pub const D_NEEDS: Spec = Spec {
+    header: &["KIND", "SUBJECT", "REASON"],
+    flex: &[1, 2],
+    drop: &[],
+    min_width: 14,
+    empty: "Nothing needs you.",
+};
+pub const D_BUDGET: Spec = Spec {
+    header: &["ACCOUNT", "DAY", "SPENT", "OF", "LEFT"],
+    flex: &[0],
+    drop: &[],
+    min_width: 12,
+    empty: "No AI account is configured.",
+};
+pub const D_PROJECTS: Spec = Spec {
+    header: &["ON", "NAME", "DEVICE", "WAITING FOR REVIEW"],
+    flex: &[1],
+    drop: &[2],
+    min_width: 10,
+    empty: "No project yet. Add one with `idlemax project add <path>`.",
+};
+pub const D_LIMITS: Spec = Spec {
+    header: &["KEY", "VALUE", "DEFAULT", "SET IN"],
+    flex: &[0],
+    drop: &[2],
+    min_width: 20,
+    empty: "This coordinator cannot change limits.",
+};
+pub const D_RULES: Spec = Spec {
+    header: &["ID", "RUN", "LINE", "REASON"],
+    flex: &[2, 3],
+    drop: &[1],
+    min_width: 14,
+    empty: "No open rule proposal.",
+};
+
 /// Draws the rows, or the tab's empty-state message when there are none.
 pub fn table(
     f: &mut Frame,
@@ -85,8 +140,20 @@ pub fn table(
     rows: Vec<(Vec<String>, Style)>,
     state: &mut TableState,
 ) {
+    table_in(f, area, spec, rows, state, Block::bordered());
+}
+
+/// `table` inside `block`, which may carry a title.
+pub fn table_in(
+    f: &mut Frame,
+    area: Rect,
+    spec: &Spec,
+    rows: Vec<(Vec<String>, Style)>,
+    state: &mut TableState,
+    block: Block,
+) {
     if rows.is_empty() {
-        return empty_state(f, area, spec.empty);
+        return empty_in(f, area, spec.empty, block);
     }
     let cell_len = |cells: &[String], c: usize| cells.get(c).map_or(0, |s| text_width(s));
     let natural: Vec<usize> = spec
@@ -115,7 +182,7 @@ pub fn table(
     let widths = fit.widths.iter().map(|w| Constraint::Length(clamp_u16(*w)));
     let t = Table::new(body, widths)
         .header(head)
-        .block(Block::bordered())
+        .block(block)
         .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
         .column_spacing(2)
         .highlight_symbol("> ");
@@ -124,10 +191,14 @@ pub fn table(
 
 /// A bordered box with a hint instead of an empty table.
 pub fn empty_state(f: &mut Frame, area: Rect, text: &str) {
+    empty_in(f, area, text, Block::bordered());
+}
+
+pub fn empty_in(f: &mut Frame, area: Rect, text: &str, block: Block) {
     let p = Paragraph::new(text.to_string())
         .dark_gray()
         .wrap(Wrap { trim: true })
-        .block(Block::bordered());
+        .block(block);
     f.render_widget(p, area);
 }
 

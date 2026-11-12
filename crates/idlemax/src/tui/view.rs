@@ -15,6 +15,7 @@ use ratatui::Frame;
 
 use super::accounts;
 use super::app::{App, Tab};
+use super::dispatcher_view;
 use super::feed::Snapshot;
 use super::layout::{ellipsize, fit_hints, join_parts, tab_titles, text_width, wrap_words};
 use super::report;
@@ -125,7 +126,7 @@ fn render_header(
 }
 
 fn render_tabs(f: &mut Frame, area: Rect, app: &App) {
-    let counts = Tab::ALL.map(|t| (t.title(), app.rows(t)));
+    let counts = Tab::ALL.map(|t| (t.title(), app.tab_count(t)));
     let titles = tab_titles(&counts, usize::from(area.width));
     let tabs = Tabs::new(titles).select(app.tab.index()).highlight_style(
         Style::new()
@@ -191,6 +192,7 @@ fn render_body(f: &mut Frame, area: Rect, app: &mut App, d: &Snapshot, now_ms: U
                 .map(|v| (rows::schedule_cells(v, now_ms), schedule_style(v)));
             table(f, area, &table::SCHEDULES, rows.collect(), state);
         }
+        Tab::Dispatch => dispatcher_view::render(f, area, d, app.pane, state, now_ms),
     }
 }
 
@@ -308,6 +310,10 @@ fn advice_detail(r: &Recommendation) -> Vec<Line<'static>> {
 /// Footer lines and their style: a flash message (wrapped, so an error is not cut
 /// short) while one is live, else the key hints.
 fn footer_text(app: &App, width: usize, now_ms: UnixMs) -> (Vec<String>, Style) {
+    if let Some(input) = &app.input {
+        let text = dispatcher_view::input_text(input);
+        return (wrap_words(&text, width, 3), Style::new().cyan());
+    }
     match app.live_flash(now_ms) {
         Some(fl) => {
             let style = if fl.error {
@@ -330,7 +336,7 @@ fn render_footer(f: &mut Frame, area: Rect, (lines, style): (Vec<String>, Style)
 fn key_hints(app: &App, width: usize) -> String {
     // On Advice and Events p/r already act on everything, so P/R would repeat them.
     let (target, global_keys) = match app.tab {
-        Tab::Advice | Tab::Events => ("all".to_string(), false),
+        Tab::Advice | Tab::Events | Tab::Dispatch => ("all".to_string(), false),
         Tab::Schedules => ("schedule".to_string(), true),
         _ => {
             let label = app.target().map_or_else(|| "selection".into(), |(_, l)| l);
@@ -348,13 +354,17 @@ fn key_hints(app: &App, width: usize) -> String {
         }
         Tab::Advice => hints.push((2, "a accept  d dismiss  f refresh".into())),
         Tab::Schedules => hints.push((2, "d remove".into())),
+        Tab::Dispatch if app.view().is_some() => {
+            hints.push((2, dispatcher_view::pane_keys(app.pane).into()))
+        }
         _ => {}
     }
+    hints.push((1, "x stop workers".into()));
     if global_keys {
         hints.push((5, "P/R all".into()));
     }
     hints.push((3, "s stop-all".into()));
-    hints.push((4, "tab/1-6 switch".into()));
+    hints.push((4, "tab/1-7 switch".into()));
     hints.push((0, "q quit".into()));
     fit_hints(&hints, width)
 }
