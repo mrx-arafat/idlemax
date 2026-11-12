@@ -25,6 +25,15 @@ pub struct GitSnapshot {
     pub copy: PathBuf,
     /// sha256 over both, as `digest` reads them.
     pub hash: String,
+    /// The worktree's own admin dir (`git rev-parse --absolute-git-dir`) before the launch:
+    /// idlemax's git is pinned to it and to `common`, never to what the worktree says later.
+    #[serde(default)]
+    pub admin: Option<PathBuf>,
+    /// The files that point a worktree at its repository (its `.git`, the admin dir's
+    /// `commondir`, `gitdir` and `config.worktree`) with their contents, None for a missing
+    /// one (review finding 4).
+    #[serde(default)]
+    pub pointers: Vec<(PathBuf, Option<String>)>,
 }
 
 /// Copies `config` and `hooks/` of the repository that holds `dir` into `copy`, replacing
@@ -53,18 +62,63 @@ pub fn take(commands: &dyn Commands, dir: &Path, copy: &Path) -> Result<GitSnaps
             common.display()
         )
     })?;
+    let admin = rev_parse(commands, dir, "--absolute-git-dir")?;
+    let pointers = pointer_files(dir, &admin)
+        .into_iter()
+        .map(|p| {
+            let text = fs::read_to_string(&p).ok();
+            (p, text)
+        })
+        .collect();
     Ok(GitSnapshot {
         common,
         copy: copy.to_path_buf(),
         hash,
+        admin: Some(admin),
+        pointers,
     })
+}
+
+fn rev_parse(commands: &dyn Commands, dir: &Path, flag: &str) -> Result<PathBuf, String> {
+    let out = commands
+        .run(&Cmd::git(dir, &["rev-parse", flag], GIT_LIMIT))
+        .map_err(|e| format!("git rev-parse: {e}"))?;
+    match out.code {
+        Some(0) => Ok(PathBuf::from(out.stdout.trim())),
+        _ => Err(format!("git rev-parse: {}", out.stderr.trim())),
+    }
+}
+
+fn pointer_files(folder: &Path, admin: &Path) -> Vec<PathBuf> {
+    let mut files = vec![folder.join(".git")];
+    files.extend(["commondir", "gitdir", "config.worktree"].map(|n| admin.join(n)));
+    files
+}
+
+/// True when a pointer file differs from the snapshot; each is then written back as it was.
+fn undo_pointers(s: &GitSnapshot) -> bool {
+    let mut changed = false;
+    for (path, before) in &s.pointers {
+        let now = fs::read_to_string(path).ok();
+        if &now == before && !fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+            continue;
+        }
+        changed = true;
+        let _ = remove_any(path);
+        if let Some(text) = before {
+            let _ = fs::write(path, text);
+        }
+        tracing::warn!(file = %path.display(), "a worker changed a worktree's git pointer; restored");
+    }
+    changed
 }
 
 /// True when `config` or `hooks/` differ from the snapshot; they are then put back as they
 /// were. A change that cannot be read or undone still counts as a change.
 pub fn undo_change(s: &GitSnapshot) -> bool {
+    let pointers = undo_pointers(s);
     if digest(&s.common).is_ok_and(|h| h == s.hash) {
-        return false;
+        return pointers;
     }
     let restored = put_back(&s.copy, &s.common).and_then(|()| digest(&s.common));
     match restored {

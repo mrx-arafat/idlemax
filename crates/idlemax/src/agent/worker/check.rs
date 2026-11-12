@@ -77,7 +77,15 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
         .unwrap_or(0);
     let (modified, untracked) =
         porcelain(&git(ctx, &["status", "--porcelain", "-z", "--no-renames"]).unwrap_or_default());
-    let numstat_args = ["diff", "--numstat", "-z", "--no-renames", &range];
+    let numstat_args = [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--numstat",
+        "-z",
+        "--no-renames",
+        &range,
+    ];
     let diff = numstat(&git(ctx, &numstat_args).unwrap_or_default());
     let summary = (commits > 0)
         .then(|| git(ctx, &["log", "-1", "--format=%s", &target]))
@@ -162,7 +170,7 @@ fn review(ctx: &CheckCtx, r: &Reviewer, range: &str) -> ReviewFacts {
         quota_before: readings_of(ctx, &r.account),
         ..Default::default()
     };
-    let diff = git(ctx, &["diff", range]).unwrap_or_default();
+    let diff = git(ctx, &["diff", "--no-ext-diff", "--no-textconv", range]).unwrap_or_default();
     if diff.len() > MAX_REVIEW_DIFF_BYTES {
         facts.concern = Some("the diff is too large to send to a reviewer".into());
         return facts;
@@ -271,11 +279,27 @@ fn numstat(text: &str) -> DiffStat {
     DiffStat { files }
 }
 
+/// git on the worktree, pinned to the git dirs the snapshot recorded before the launch, so a
+/// rewritten `.git` or `commondir` cannot point it at a repository the worker made (review
+/// finding 4).
 fn git(ctx: &CheckCtx, args: &[&str]) -> Option<String> {
-    let out = ctx
-        .commands
-        .run(&Cmd::git(&ctx.folder, args, GIT_LIMIT))
-        .ok()?;
+    let mut cmd = Cmd::git(&ctx.folder, args, GIT_LIMIT);
+    if let Some(snap) = ctx.git.as_ref() {
+        if let Some(admin) = &snap.admin {
+            let mut pinned: Vec<String> = crate::safe_git::SAFE
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            pinned.push(format!("--git-dir={}", admin.display()));
+            pinned.push(format!("--work-tree={}", ctx.folder.display()));
+            pinned.extend(args.iter().map(|a| a.to_string()));
+            cmd.args = pinned;
+            cmd.cwd = Some(ctx.folder.clone());
+            cmd.env
+                .push(("GIT_COMMON_DIR".into(), snap.common.display().to_string()));
+        }
+    }
+    let out = ctx.commands.run(&cmd).ok()?;
     (out.code == Some(0)).then_some(out.stdout)
 }
 

@@ -211,3 +211,37 @@ fn live_finding_2_a_worker_cannot_delete_the_owners_objects() {
         .success();
     assert!(ok, "the owner's objects were deleted: {report}");
 }
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_finding_4_a_worker_cannot_redirect_idlemaxs_git() {
+    let Some(w) = world() else { return };
+    let pwned = w.home.join("pwned");
+    let report = run_worker(
+        &w,
+        WorkerCli::Claude,
+        &format!(
+            "git --git-dir=.evil init -q; \
+             git --git-dir=.evil config filter.x.clean \"sh -c 'touch {p}; cat'\"; \
+             echo '* filter=x' > .gitattributes; \
+             git --git-dir=.evil --work-tree=. add file.txt; echo changed >> file.txt; \
+             printf 'gitdir: %s/.evil\\n' \"$PWD\" > .git && echo REWROTE-GITFILE; \
+             echo /tmp > {admin}/commondir && echo REWROTE-COMMONDIR; true",
+            p = pwned.display(),
+            admin = w.repo.join(".git/worktrees/t1").display(),
+        ),
+    );
+    // The check's own `git status`, outside the sandbox, as the agent.
+    let _ = Command::new("git")
+        .args(crate::safe_git::args(
+            &w.folder,
+            &["status", "--porcelain", "-z"],
+        ))
+        .output()
+        .unwrap();
+    assert!(
+        !pwned.exists(),
+        "idlemax's git ran the worker's filter: {report}"
+    );
+    assert!(!report.contains("REWROTE"), "{report}");
+}

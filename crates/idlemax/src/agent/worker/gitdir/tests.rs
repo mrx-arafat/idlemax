@@ -153,3 +153,33 @@ fn a_change_to_the_shared_config_or_hooks_is_found_and_put_back() {
     super::discard(&snap);
     assert!(!copy.exists());
 }
+
+#[test]
+fn a_change_to_the_worktrees_git_pointers_is_found_and_put_back() {
+    // Review finding 4: the worktree's `.git` file and its admin dir's `commondir` decide
+    // which repository idlemax's own git reads; a worker without the sandbox can rewrite them.
+    let r = rig();
+    let copy = r.temp.path().join("snap");
+    let snap = super::take(&IsolatedGit(OsCommands::new()), &r.folder, &copy).unwrap();
+    let gitfile = std::fs::read_to_string(r.folder.join(".git")).unwrap();
+    let admin = r
+        .repo
+        .join(".git/worktrees")
+        .join(r.folder.file_name().unwrap());
+    let commondir = std::fs::read_to_string(admin.join("commondir")).unwrap();
+    sh(
+        &r.folder,
+        "git --git-dir=.evil init -q && printf 'gitdir: %s/.evil\\n' \"$PWD\" > .git",
+    );
+    std::fs::write(admin.join("commondir"), "/tmp\n").unwrap();
+    assert!(super::undo_change(&snap));
+    assert_eq!(
+        std::fs::read_to_string(r.folder.join(".git")).unwrap(),
+        gitfile
+    );
+    assert_eq!(
+        std::fs::read_to_string(admin.join("commondir")).unwrap(),
+        commondir
+    );
+    assert!(!super::undo_change(&snap), "nothing changed since");
+}

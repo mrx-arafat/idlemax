@@ -142,11 +142,8 @@ pub fn wrap(
     .map_err(|e| io("start its proxy", e))?;
     let fence = Fence {
         worktree: show(folder),
-        git_writable: git_writable(git, &private),
-        read_only: private_git::read_only(&private)
-            .iter()
-            .map(|p| show(p))
-            .collect(),
+        git_writable: git_writable(&private),
+        read_only: read_only(folder, &private),
         env: vec![
             ("GIT_DIR".into(), show(&private)),
             ("GIT_WORK_TREE".into(), show(folder)),
@@ -212,11 +209,20 @@ fn claude_home(sandbox: &Path, home: Option<&Path>, folder: &Path) -> Result<Cla
     })
 }
 
-/// What the worker's git writes: its private git dir, and the worktree's admin dir. Never
-/// the owner's refs, logs, `packed-refs` (review finding 1) or objects (finding 2), which the
-/// worker reads through its alternate.
-fn git_writable(git: &GitDirs, private: &Path) -> Vec<String> {
-    vec![show(&git.admin), show(private)]
+/// What the worker's git writes: its private git dir alone. Never the owner's refs, logs,
+/// `packed-refs` (review finding 1) or objects (finding 2), and never the worktree's admin dir
+/// (finding 4): the worker reads the owner's objects through its alternate.
+fn git_writable(private: &Path) -> Vec<String> {
+    vec![show(private)]
+}
+
+/// Read-only inside the writable worktree and private git dir: the worktree's `.git` file, so
+/// the worker cannot point idlemax's own git at a repository it made (finding 4), and the
+/// private dir's settings.
+fn read_only(folder: &Path, private: &Path) -> Vec<String> {
+    let mut out = vec![show(&folder.join(".git"))];
+    out.extend(private_git::read_only(private).iter().map(|p| show(p)));
+    out
 }
 
 /// The `names` under `home` that exist, plus `extra` (the state dir) when it is a folder.
