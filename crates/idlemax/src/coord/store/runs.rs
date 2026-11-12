@@ -41,6 +41,12 @@ impl Store {
         )?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
+
+    /// The Runs of `tasks`, oldest first: what `task_open` needs, not the whole history.
+    pub fn runs_of_tasks(&self, tasks: &[&str]) -> StoreResult<Vec<Run>> {
+        let ids = json_text(&tasks)?;
+        self.runs_where("task IN (SELECT value FROM json_each(?1))", [ids])
+    }
 }
 
 // Tests build Runs and leased jobs directly; the launch step writes them together through

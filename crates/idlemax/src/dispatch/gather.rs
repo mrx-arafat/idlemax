@@ -99,7 +99,8 @@ pub fn read_inputs(
         judgments: &store.judgments()?,
         scoped: &scoped,
     });
-    let open = open_tasks(&tasks, &store.list_runs(None, None, 0)?);
+    let ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    let open = open_tasks(&tasks, &store.runs_of_tasks(&ids)?);
     let views = quota_views(store, cfg, now)?;
     let quota = QuotaSide::read(store, cfg, live, &views, now)?;
     let accounts = account_uses(&quota.budgets, &views);

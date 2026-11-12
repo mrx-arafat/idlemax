@@ -395,3 +395,19 @@ fn a_task_a_run_holds_is_offered_to_no_pass_and_the_plan_picks_it_not() {
         .collect();
     assert!(!picked.contains(&FASTER), "{picked:?}");
 }
+
+#[test]
+fn a_task_a_run_takes_changes_what_a_pass_is_offered_so_the_next_pass_is_queued() {
+    let (mut store, cfg, live) = world();
+    let first = store.newest_pass(false).unwrap().unwrap();
+    put_run(&mut store, FASTER, RunState::Kept, T0);
+    let later = T0 + 2 * 3_600_000;
+    beat(&mut store, later, 20.0, LineState::Run, &[]);
+    crate::dispatch::step(&mut store, &cfg, &live, "rules", later, false).unwrap();
+    let next = store.newest_pass(false).unwrap().unwrap();
+    assert_ne!(
+        next.id, first.id,
+        "the offered set changed, so a pass is due"
+    );
+    assert_eq!(next.offered, [DARK]);
+}

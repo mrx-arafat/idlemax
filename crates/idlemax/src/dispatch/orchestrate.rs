@@ -110,9 +110,10 @@ fn queue_pass(
     Ok(())
 }
 
-/// The fingerprint of A20: the devices that take picks, every ready task and every task a
-/// stored judgment holds (so a judgment itself never looks like a change), the usable
-/// accounts, the models and the rules.
+/// The fingerprint of A20: the devices that take picks, every task a pass is offered (no Run
+/// holds it) and every task a stored judgment holds (so a judgment itself never looks like a
+/// change), the usable accounts, the models and the rules. A Run taking or freeing a task
+/// changes it.
 fn pass_fingerprint(
     store: &Store,
     inputs: &Inputs,
@@ -121,7 +122,7 @@ fn pass_fingerprint(
 ) -> Result<String, StoreError> {
     let judged = store.judgments()?;
     let tasks: Vec<(String, String)> = inputs
-        .tasks
+        .open
         .iter()
         .filter(|t| {
             t.needs_you.is_none()
