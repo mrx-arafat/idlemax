@@ -4,6 +4,7 @@
 //! never widened to the whole project. Pure.
 
 use super::plan::{PassPick, PlanInput};
+use super::project::relative_path_problem;
 use super::task::Task;
 use crate::worker::checks::{in_scope, under};
 
@@ -53,25 +54,40 @@ pub fn pick_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> Result<S
             .find(|r| r.device == p.device && r.repo.path == p.path)
     });
     let files = repo.map_or(&[][..], |r| r.repo.files.as_slice());
+    let complete = repo.is_none_or(|r| r.repo.files_cut == 0);
     let detail = repo
         .and_then(|r| r.repo.roadmap.iter().find(|i| i.title == task.title))
         .map_or("", |i| i.detail.as_str());
     let done = task.done_check.as_deref().unwrap_or("");
     let text = format!("{} {detail} {done}", task.title);
     let off_limits = project.map_or(&[][..], |v| v.project.settings.off_limits.as_slice());
-    narrow_scope(&pp.scope_paths, files, &text, off_limits)
+    narrow_scope(
+        &pp.scope_paths,
+        &Files { files, complete },
+        &text,
+        off_limits,
+    )
+}
+
+/// The tracked files a project reported, and whether that is all of them: a list cut at
+/// `MAX_FILES` cannot prove a path missing.
+pub struct Files<'a> {
+    pub files: &'a [String],
+    pub complete: bool,
 }
 
 /// The named paths that match a tracked file or are a new file in a folder the project has,
 /// plus the files `task_text` names whose folder exists and the project's test folder, none
 /// under `off_limits`. Named paths that do not exist are dropped; with none left, Err. An
-/// empty file list means it is unknown, and the named paths stay.
+/// empty file list means it is unknown, and the named paths stay; on a cut list a missing
+/// path is unknown, and it stays when it is a safe relative path.
 pub fn narrow_scope(
     named: &[String],
-    files: &[String],
+    listed: &Files<'_>,
     task_text: &str,
     off_limits: &[String],
 ) -> Result<Scope, String> {
+    let files = listed.files;
     if files.is_empty() {
         return Ok(Scope {
             kept: named.to_vec(),
@@ -82,8 +98,11 @@ pub fn narrow_scope(
         p.rsplit_once('/')
             .is_some_and(|(dir, _)| files.iter().any(|f| f.starts_with(&format!("{dir}/"))))
     };
+    let unknown = |n: &str| !listed.complete && relative_path_problem(n).is_ok() && !too_broad(n);
     let real = |n: &String| {
-        files.iter().any(|f| in_scope(f, n)) || (!n.contains(['*', '?']) && folder_exists(n))
+        files.iter().any(|f| in_scope(f, n))
+            || (!n.contains(['*', '?']) && folder_exists(n))
+            || unknown(n)
     };
     let (mut kept, dropped): (Vec<String>, Vec<String>) = named.iter().cloned().partition(real);
     if kept.is_empty() && !dropped.is_empty() {

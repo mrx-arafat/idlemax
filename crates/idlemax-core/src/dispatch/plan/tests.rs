@@ -290,6 +290,21 @@ fn the_paths_a_roadmap_item_names_and_the_test_folder_join_the_scope_but_never_o
 }
 
 #[test]
+fn a_path_missing_from_a_cut_file_list_is_unknown_not_wrong() {
+    // Over MAX_FILES the list is cut, so a real `src/` file may simply not be in it.
+    let mut w = World::new().with_pass(&["a"]);
+    w.repos[0].repo.files = vec!["docs/a.md".into()];
+    w.repos[0].repo.files_cut = 300;
+    w.pass.as_mut().unwrap().picks[0].scope_paths = vec!["src/deep/x.rs".into(), "../up".into()];
+    let p = &w.build().devices[0].picks[0];
+    assert_eq!(p.scope_paths, ["src/deep/x.rs"]);
+    assert_eq!(
+        p.reason,
+        "a is small (scope paths that do not exist were dropped: ../up)"
+    );
+}
+
+#[test]
 fn auto_mode_picks_like_propose() {
     let mut world = World::new().with_pass(&["b", "a"]);
     world.mode = Mode::Auto;
