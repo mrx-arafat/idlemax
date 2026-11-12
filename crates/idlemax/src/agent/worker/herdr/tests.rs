@@ -291,3 +291,39 @@ fn two_new_panes_fail_the_start_and_both_are_closed() {
     assert!(calls.contains(&"herdr pane close p3".to_string()));
     assert!(!calls.contains(&"herdr pane close p1".to_string()));
 }
+
+#[test]
+fn a_start_stuck_at_the_trust_dialog_of_our_worktree_answers_yes_and_goes_on() {
+    let fake = existing_tab();
+    let inner = existing_tab();
+    let screen = "Accessing workspace:\n\n /w/app/fix\n\n Quick safety check: Is this a \
+                  project you created or one you trust?\n ❯ 1. No, exit\n   2. Yes, I trust \
+                  this folder\n";
+    fake.set_fallback(move |cmd| {
+        let line = cmd.args.join(" ");
+        match line.as_str() {
+            l if l.starts_with("agent start") => Ok(Output {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "agent_not_ready: blocked during startup".into(),
+            }),
+            l if l.starts_with("pane read p2") => ok(screen),
+            "agent list" => ok(r#"{"result":{"agents":[{"pane_id":"p2","agent_status":"idle"}]}}"#),
+            _ => inner.run(cmd),
+        }
+    });
+    let host = HerdrHost::with_background(fake.clone(), None);
+    assert_eq!(host.start(&launch()).unwrap().pane, "p2");
+    let calls = lines(&fake);
+    let down = calls
+        .iter()
+        .position(|c| c == "herdr pane send-keys p2 Down");
+    let enter = calls
+        .iter()
+        .position(|c| c == "herdr pane send-keys p2 Enter");
+    assert!(down.is_some() && down < enter, "{calls:#?}");
+    assert!(
+        !calls.iter().any(|c| c.starts_with("herdr pane close")),
+        "{calls:#?}"
+    );
+}

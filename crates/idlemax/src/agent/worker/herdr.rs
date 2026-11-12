@@ -6,6 +6,7 @@
 mod parse;
 #[cfg(test)]
 mod tests;
+mod trust;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -194,7 +195,13 @@ impl HerdrHost {
             "--",
         ]));
         args.extend(launch.args.iter().cloned());
-        self.call(&args).map(drop)
+        let started = self.call(&args);
+        if let Err(HostError::Failed { why, .. }) = &started {
+            if why.contains("agent_not_ready") && self.accept_trust(pane, &launch.folder) {
+                return Ok(());
+            }
+        }
+        started.map(drop)
     }
 
     fn process_info(&self, pane: &str) -> Result<parse::ProcInfo, HostError> {
