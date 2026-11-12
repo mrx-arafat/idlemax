@@ -254,3 +254,23 @@ fn pane_env_blocks_a_push_to_a_local_bare_remote() {
     let refs = git_in(&bare, &["for-each-ref"], &[]);
     assert!(refs.stdout.trim().is_empty(), "{}", refs.stdout);
 }
+
+#[test]
+fn only_a_marked_folder_under_the_worktrees_dir_is_ours() {
+    // Red team case 9: a marker beside the owner's own checkout must not make it a worktree.
+    let (temp, repo, worktrees, _base) = setup_temp_repo();
+    let info = create_worktree(&git(), &worktrees, &new(&repo, "task-ours", 4), 1).unwrap();
+    assert_eq!(ours(&worktrees, &info.folder, 4).map(|m| m.run), Some(4));
+    assert!(
+        ours(&worktrees, &info.folder, 5).is_none(),
+        "another Run's marker"
+    );
+    let owner = temp.path().join("owner-checkout");
+    std::fs::create_dir_all(&owner).unwrap();
+    let marker = std::fs::read(format!("{}.json", info.folder.display())).unwrap();
+    std::fs::write(format!("{}.json", owner.display()), marker).unwrap();
+    assert!(
+        ours(&worktrees, &owner, 4).is_none(),
+        "outside the worktrees dir"
+    );
+}

@@ -138,10 +138,12 @@ fn hold_while_paused(ctx: &LaunchCtx) -> Result<(), Stop> {
 /// The worktree, the setup and the baseline of a first launch, then the brief file.
 fn prepare(ctx: &LaunchCtx, p: &mut Progress) -> Result<PathBuf, Stop> {
     let w = &ctx.worker;
-    let reuse = w.worktree.as_ref().map(PathBuf::from).filter(|f| {
-        worktree::marker_of(f)
-            .is_some_and(|m| m.run == run_id(w) || w.action == WorkerAction::Resume)
-    });
+    // Only a folder under the worktrees dir with this Run's marker is reused.
+    let reuse = w
+        .worktree
+        .as_ref()
+        .map(PathBuf::from)
+        .filter(|f| worktree::ours(&ctx.worktrees_dir, f, run_id(w)).is_some());
     let reused = reuse.is_some();
     let folder = match reuse {
         Some(folder) => {

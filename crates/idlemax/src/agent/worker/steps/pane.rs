@@ -32,6 +32,8 @@ pub(super) fn start_checked(
             args: args.to_vec(),
             job: ctx.job.id,
             attempt: ctx.job.attempts,
+            run: u64::try_from(ctx.worker.run).unwrap_or(0),
+            worktrees_dir: ctx.worktrees_dir.clone(),
         };
         let handle = ctx
             .host

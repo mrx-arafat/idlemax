@@ -26,6 +26,10 @@ pub struct Launch {
     /// The worker job and its attempt; the headless host names its log file and header by them.
     pub job: JobId,
     pub attempt: u32,
+    /// The Run this launch is for, and the worktrees dir as the agent resolved it at launch:
+    /// the trust dialog is answered only for this Run's worktree under that dir.
+    pub run: u64,
+    pub worktrees_dir: PathBuf,
 }
 
 /// Which host started a worker; saved with it, so a stop, a kill and a recovery go to that host.
@@ -246,6 +250,8 @@ mod tests {
             args: Vec::new(),
             job: 1,
             attempt: 1,
+            run: 1,
+            worktrees_dir: "/w".into(),
         };
         let handle = host.start(&launch).unwrap();
         let first = host.state(&handle).unwrap();

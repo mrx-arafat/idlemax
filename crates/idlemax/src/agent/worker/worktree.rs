@@ -126,6 +126,15 @@ fn check_git(out: Output) -> Result<String, WorktreeError> {
     Ok(out.stdout)
 }
 
+/// The marker of `folder` when it is a worktree idlemax made for Run `run`: under the
+/// worktrees dir by canonical path, with a marker that names that Run (red team case 9). A
+/// marker beside any other folder, such as the owner's checkout, counts for nothing.
+pub fn ours(worktrees_dir: &Path, folder: &Path, run: u64) -> Option<WorktreeMarker> {
+    validate_worktree_folder(worktrees_dir, folder)
+        .ok()
+        .filter(|m| m.run == run)
+}
+
 fn validate_worktree_folder(
     worktrees_dir: &Path,
     folder: &Path,

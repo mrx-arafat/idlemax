@@ -27,6 +27,8 @@ fn launch() -> Launch {
         args: vec!["--model".into(), "sonnet".into()],
         job: 7,
         attempt: 1,
+        run: 3,
+        worktrees_dir: "/w".into(),
     }
 }
 
@@ -292,13 +294,34 @@ fn two_new_panes_fail_the_start_and_both_are_closed() {
     assert!(!calls.contains(&"herdr pane close p1".to_string()));
 }
 
-#[test]
-fn a_start_stuck_at_the_trust_dialog_of_our_worktree_answers_yes_and_goes_on() {
+/// A worktree idlemax made for Run 3 under `<temp>/worktrees`, and a launch into `folder`.
+fn trust_rig(folder_in: &str) -> (tempfile::TempDir, Launch) {
+    let temp = tempfile::tempdir().unwrap();
+    let worktrees = temp.path().join("worktrees");
+    let folder = temp.path().join(folder_in);
+    std::fs::create_dir_all(&folder).unwrap();
+    let marker =
+        r#"{"run":3,"repo":"/r","branch":"idlemax/x","base_commit":"abc","creation_time":1}"#;
+    std::fs::write(format!("{}.json", folder.display()), marker).unwrap();
+    std::fs::create_dir_all(&worktrees).unwrap();
+    let launch = Launch {
+        folder: folder.clone(),
+        run: 3,
+        worktrees_dir: worktrees,
+        ..launch()
+    };
+    (temp, launch)
+}
+
+/// A Herdr whose agent start is stuck at the trust dialog for `folder`.
+fn stuck_at_trust(folder: &std::path::Path) -> Arc<FakeCommands> {
     let fake = existing_tab();
     let inner = existing_tab();
-    let screen = "Accessing workspace:\n\n /w/app/fix\n\n Quick safety check: Is this a \
-                  project you created or one you trust?\n ❯ 1. No, exit\n   2. Yes, I trust \
-                  this folder\n";
+    let screen = format!(
+        "Accessing workspace:\n\n {}\n\n Quick safety check: Is this a project you created or \
+         one you trust?\n ❯ 1. No, exit\n   2. Yes, I trust this folder\n",
+        folder.display()
+    );
     fake.set_fallback(move |cmd| {
         let line = cmd.args.join(" ");
         match line.as_str() {
@@ -307,13 +330,20 @@ fn a_start_stuck_at_the_trust_dialog_of_our_worktree_answers_yes_and_goes_on() {
                 stdout: String::new(),
                 stderr: "agent_not_ready: blocked during startup".into(),
             }),
-            l if l.starts_with("pane read p2") => ok(screen),
+            l if l.starts_with("pane read p2") => ok(&screen),
             "agent list" => ok(r#"{"result":{"agents":[{"pane_id":"p2","agent_status":"idle"}]}}"#),
             _ => inner.run(cmd),
         }
     });
+    fake
+}
+
+#[test]
+fn a_start_stuck_at_the_trust_dialog_of_our_worktree_answers_yes_and_goes_on() {
+    let (_temp, launch) = trust_rig("worktrees/app/fix");
+    let fake = stuck_at_trust(&launch.folder);
     let host = HerdrHost::with_background(fake.clone(), None);
-    assert_eq!(host.start(&launch()).unwrap().pane, "p2");
+    assert_eq!(host.start(&launch).unwrap().pane, "p2");
     let calls = lines(&fake);
     let down = calls
         .iter()
@@ -326,4 +356,19 @@ fn a_start_stuck_at_the_trust_dialog_of_our_worktree_answers_yes_and_goes_on() {
         !calls.iter().any(|c| c.starts_with("herdr pane close")),
         "{calls:#?}"
     );
+}
+
+#[test]
+fn the_trust_dialog_of_a_folder_outside_the_worktrees_or_of_another_run_is_never_answered() {
+    // Red team case 9: a marker beside the owner's checkout, or another Run's worktree.
+    let (_a, outside) = trust_rig("owner-checkout");
+    let (_b, mut other_run) = trust_rig("worktrees/app/other");
+    other_run.run = 4;
+    for launch in [outside, other_run] {
+        let fake = stuck_at_trust(&launch.folder);
+        let host = HerdrHost::with_background(fake.clone(), None);
+        assert!(host.start(&launch).is_err());
+        let calls = lines(&fake);
+        assert!(!calls.iter().any(|c| c.contains("send-keys")), "{calls:#?}");
+    }
 }

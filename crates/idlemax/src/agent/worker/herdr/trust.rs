@@ -4,10 +4,11 @@
 //! names exactly the worktree it made for this launch; any other dialog or folder still
 //! fails the start.
 
-use std::path::Path;
 use std::time::Duration;
 
 use super::{parse, strings, HerdrHost};
+use crate::agent::worker::host::Launch;
+use crate::agent::worker::worktree::ours;
 
 /// How often, and how long, the agent is looked at after the dialog is answered.
 const READY_WAIT: Duration = Duration::from_secs(1);
@@ -38,9 +39,15 @@ pub fn is_our_trust_dialog(screen: &str, folder: &str) -> bool {
 }
 
 impl HerdrHost {
-    /// Answers yes to the trust dialog in `pane` when it is for `folder`, then waits for the
-    /// agent to be ready. False, having sent nothing, when the pane shows anything else.
-    pub(super) fn accept_trust(&self, pane: &str, folder: &Path) -> bool {
+    /// Answers yes to the trust dialog in `pane` when it is for the launch's folder and that
+    /// folder is this Run's worktree under the worktrees dir the agent resolved at launch
+    /// (red team case 9), then waits for the agent to be ready. False, having sent nothing,
+    /// when the pane shows anything else or the folder is not idlemax's own.
+    pub(super) fn accept_trust(&self, pane: &str, launch: &Launch) -> bool {
+        let folder = launch.folder.as_path();
+        if ours(&launch.worktrees_dir, folder, launch.run).is_none() {
+            return false;
+        }
         let read = strings(&["pane", "read", pane, "--source", "recent-unwrapped"]);
         let read = [read, strings(&["--lines", "40"])].concat();
         let Ok(screen) = self.call(&read) else {

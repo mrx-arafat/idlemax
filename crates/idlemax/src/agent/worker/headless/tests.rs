@@ -55,6 +55,8 @@ fn launch(rig: &Rig, mode: &str) -> Launch {
         args: vec![mode.into(), "--session-id".into(), "u-1".into()],
         job: 7,
         attempt: 2,
+        run: 3,
+        worktrees_dir: rig._temp.path().to_path_buf(),
     }
 }
 
