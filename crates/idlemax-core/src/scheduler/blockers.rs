@@ -89,8 +89,8 @@ pub fn token_class_pct(class: Option<TokenClass>) -> f64 {
 /// Servers take only CpuLight and Io jobs.
 pub fn cost_allowed(profile: DeviceProfile, cost: CostClass) -> bool {
     match profile {
-        DeviceProfile::MacosLaptop => true,
-        DeviceProfile::LinuxServer => matches!(cost, CostClass::CpuLight | CostClass::Io),
+        DeviceProfile::Laptop | DeviceProfile::Workbox => true,
+        DeviceProfile::Production => matches!(cost, CostClass::CpuLight | CostClass::Io),
     }
 }
 

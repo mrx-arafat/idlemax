@@ -1,0 +1,31 @@
+# idlemax config for a work server (workbox agent).
+# Copy to /var/lib/idlemax/config.toml (the systemd units set IDLEMAX_HOME=/var/lib/idlemax).
+
+[coordinator]
+url = "http://coordinator.tailnet.ts.net:7878"
+
+[agent]
+device_id = "my-workbox"
+profile = "workbox"
+listen = "127.0.0.1:7879"
+# Work servers run AI jobs and workers around the clock.
+ai_accounts = ["claude-max", "codex-pro"]
+command_allowlist = ["gh", "git", "cargo"]
+
+# Same accounts as on every agent; the coordinator owns the reserve and spendable math.
+[[quota.accounts]]
+name = "claude-max"
+provider = "claude"
+probe = "claude_statusline"
+windows = [
+  { kind = "rolling", minutes = 300, reserve_pct = 40.0 },
+  { kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 },
+]
+
+[[quota.accounts]]
+name = "codex-pro"
+provider = "codex"
+probe = "codex_sessions"
+windows = [
+  { kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 },
+]

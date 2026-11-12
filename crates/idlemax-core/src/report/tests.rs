@@ -245,7 +245,7 @@ fn the_guard_reasons_are_read_from_what_the_real_guard_says() {
         memory_pressure: Some(MemoryPressure::Warn),
         ..Default::default()
     };
-    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let mut guard = Guard::new(GuardPolicy::laptop());
     let decision = guard.evaluate(&m, &[], true, false);
     assert_eq!(
         GuardState::of(&decision).reasons,
@@ -264,7 +264,7 @@ fn the_guard_reasons_are_read_from_what_the_real_guard_says() {
         memory_pressure: Some(MemoryPressure::Normal),
         ..m.clone()
     };
-    let held = Guard::new(GuardPolicy::macos_laptop()).evaluate(&unknown, &[], false, false);
+    let held = Guard::new(GuardPolicy::laptop()).evaluate(&unknown, &[], false, false);
     assert_eq!(GuardState::of(&held).reasons, [HoldReason::IdleUnknown]);
     for (line, reason) in [
         ("pause: swap +300 MiB in 60s > 256 MiB", HoldReason::Memory),
@@ -422,10 +422,10 @@ fn waiting_counts_only_on_devices_that_could_take_the_job_and_only_once() {
     let infos = vec![
         DeviceInfo {
             ai_accounts: vec!["claude".into()],
-            ..device("mac", DeviceProfile::MacosLaptop)
+            ..device("mac", DeviceProfile::Laptop)
         },
-        device("srv", DeviceProfile::LinuxServer),
-        device("gone", DeviceProfile::LinuxServer),
+        device("srv", DeviceProfile::Production),
+        device("gone", DeviceProfile::Production),
     ];
     let extra = Extra {
         devices: infos,
@@ -460,7 +460,7 @@ fn waiting_counts_only_on_devices_that_could_take_the_job_and_only_once() {
 fn a_queued_job_no_device_can_take_is_stuck_not_an_empty_queue() {
     let mac = DeviceInfo {
         command_allowlist: Some(vec!["/bin/echo".into()]),
-        ..device("mac", DeviceProfile::MacosLaptop)
+        ..device("mac", DeviceProfile::Laptop)
     };
     let extra = Extra {
         devices: vec![mac],

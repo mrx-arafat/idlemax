@@ -39,9 +39,18 @@ fn job_specs() -> Vec<(String, JobSpec)> {
 fn examples_parse_validate_and_agree() {
     let mac = config("config.toml");
     let server = config("config.server.toml");
+    let workbox = config("config.workbox.toml");
     assert_eq!(
         mac.quota, server.quota,
         "quota accounts must match on every host"
+    );
+    assert_eq!(
+        mac.quota, workbox.quota,
+        "quota accounts must match on every host"
+    );
+    assert_eq!(
+        workbox.agent.profile,
+        Some(idlemax_core::types::DeviceProfile::Workbox)
     );
     let mac_id = mac.agent.device_id.clone().unwrap();
     let ram_budget = mac.guard_policy(Os::Macos).unwrap().ram_budget_mib;

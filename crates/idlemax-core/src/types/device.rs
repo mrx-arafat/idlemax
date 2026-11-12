@@ -30,16 +30,19 @@ impl Os {
 #[serde(rename_all = "snake_case")]
 pub enum DeviceProfile {
     #[default]
-    MacosLaptop,
-    LinuxServer,
+    #[serde(alias = "macos_laptop")]
+    Laptop,
+    Workbox,
+    #[serde(alias = "linux_server")]
+    Production,
 }
 
 impl DeviceProfile {
-    // SHORTCUT: Windows maps to linux_server, add a windows_desktop preset when a Windows device joins.
+    // SHORTCUT: Windows maps to production, add a windows_desktop preset when a Windows device joins.
     pub fn default_for(os: Os) -> Self {
         match os {
-            Os::Macos => DeviceProfile::MacosLaptop,
-            _ => DeviceProfile::LinuxServer,
+            Os::Macos => DeviceProfile::Laptop,
+            _ => DeviceProfile::Production,
         }
     }
 }

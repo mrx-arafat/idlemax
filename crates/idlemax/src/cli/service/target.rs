@@ -27,8 +27,9 @@ pub(super) fn render(
         None if facts.is_some() => Config::default(),
         None => crate::state::load_config(paths)?,
     };
-    if config.agent.profile_or_default(Os::Linux) != DeviceProfile::LinuxServer {
-        bail!("target config must use linux_server; pass --cpus N --memory-mib N and optionally --config <server-config>");
+    let profile = config.agent.profile_or_default(Os::Linux);
+    if profile != DeviceProfile::Production && profile != DeviceProfile::Workbox {
+        bail!("target config must use production or workbox; pass --cpus N --memory-mib N and optionally --config <server-config>");
     }
     let (cpus, memory_mib) = match facts {
         Some(facts) => facts,
@@ -45,6 +46,7 @@ pub(super) fn render(
     let policy = config.guard_policy_for(Os::Linux, cpus, bytes)?;
     env.agent_jobs = policy.max_jobs;
     env.agent_ram_mib = policy.ram_budget_mib;
+    env.agent_tasks_max = idlemax_core::install::service::tasks_max(profile);
     env.bin = bin.unwrap_or_else(|| PathBuf::from("/usr/local/bin/idlemax"));
     if facts.is_some() {
         env.state_dir = PathBuf::from("/var/lib/idlemax");
@@ -58,6 +60,11 @@ pub(super) fn render(
         env.state_dir = state_dir;
     }
     let mut unit = idlemax_core::install::service::render_system(kind, &env)?;
-    unit.content = format!("# target facts: cpus={cpus} memory_mib={memory_mib} profile=linux_server config={source}\n{}", unit.content);
+    let profile_str = match profile {
+        DeviceProfile::Production => "production",
+        DeviceProfile::Workbox => "workbox",
+        DeviceProfile::Laptop => "laptop",
+    };
+    unit.content = format!("# target facts: cpus={cpus} memory_mib={memory_mib} profile={profile_str} config={source}\n{}", unit.content);
     Ok(unit)
 }

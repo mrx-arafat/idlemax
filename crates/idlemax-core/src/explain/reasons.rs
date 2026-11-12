@@ -204,7 +204,7 @@ fn cost_name(cost: CostClass) -> &'static str {
 }
 
 fn cost_class(cost: CostClass, device: Option<&DeviceInfo>, on: &str) -> Reason {
-    let profile = device.map_or(DeviceProfile::LinuxServer, |d| d.profile);
+    let profile = device.map_or(DeviceProfile::Production, |d| d.profile);
     let kind = format!("{cost:?}");
     Reason::new(
         ReasonKind::CostClass,

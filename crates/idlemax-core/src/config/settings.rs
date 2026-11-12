@@ -77,7 +77,7 @@ fn auto_value() -> Value {
     Value::String("auto".into())
 }
 
-/// A value as people read it: `false`, `40`, `macos_laptop`, `["git", "make"]`; `off` for a
+/// A value as people read it: `false`, `40`, `laptop`, `["git", "make"]`; `off` for a
 /// check that is disabled. Text is shown bare, except inside a list.
 pub fn show_value(value: &Value) -> String {
     match value {
@@ -143,7 +143,7 @@ mod tests {
             (ram.value.clone(), ram.default.clone()),
             (json!("auto"), json!(1024))
         );
-        let server = list_settings("[agent]\nprofile = \"linux_server\"\n", Os::Macos).unwrap();
+        let server = list_settings("[agent]\nprofile = \"production\"\n", Os::Macos).unwrap();
         assert_eq!(find(&server, "guard.max_jobs").value, json!("auto"));
         assert_eq!(find(&server, "guard.ram_budget_mib").value, json!("auto"));
 

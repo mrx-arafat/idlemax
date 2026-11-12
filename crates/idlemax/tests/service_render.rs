@@ -11,7 +11,7 @@ fn rendering_a_server_with_a_laptop_config_requires_target_facts() {
     std::fs::create_dir_all(&home).unwrap();
     std::fs::write(
         state.join("config.toml"),
-        "[agent]\nprofile = \"macos_laptop\"\n[guard]\nram_budget_mib = 9216\n",
+        "[agent]\nprofile = \"laptop\"\n[guard]\nram_budget_mib = 9216\n",
     )
     .unwrap();
     let run = |args: &[&str]| {
@@ -51,7 +51,8 @@ fn rendering_a_server_with_a_laptop_config_requires_target_facts() {
     let unit: serde_json::Value = serde_json::from_slice(&explicit.stdout).unwrap();
     let content = unit["content"].as_str().unwrap();
     assert!(content.contains("MemoryMax=1152M"), "{content}");
-    assert!(content.contains("cpus=4 memory_mib=4096"));
+    assert!(content.contains("TasksMax=256"), "{content}");
+    assert!(content.contains("cpus=4 memory_mib=4096 profile=production"));
     assert!(content.contains("IDLEMAX_HOME=/var/lib/idlemax"));
     assert!(!content.contains("Environment=\"PATH="));
     assert!(!content.contains(home.to_str().unwrap()));
@@ -78,4 +79,53 @@ fn rendering_a_server_with_a_laptop_config_requires_target_facts() {
     let partial = run(&["service", "render", "agent", "--cpus", "4", "--json"]);
     assert!(!partial.status.success());
     assert!(!home.join("Library/LaunchAgents").exists());
+
+    let workbox_target = temp.path().join("workbox.toml");
+    std::fs::write(&workbox_target, "[agent]\nprofile = \"workbox\"\n").unwrap();
+    let wb = run(&[
+        "service",
+        "render",
+        "agent",
+        "--cpus",
+        "4",
+        "--memory-mib",
+        "4096",
+        "--config",
+        workbox_target.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(
+        wb.status.success(),
+        "{}",
+        String::from_utf8_lossy(&wb.stderr)
+    );
+    let wb_unit: serde_json::Value = serde_json::from_slice(&wb.stdout).unwrap();
+    let wb_content = wb_unit["content"].as_str().unwrap();
+    assert!(wb_content.contains("TasksMax=4096"), "{wb_content}");
+    assert!(wb_content.contains("profile=workbox"), "{wb_content}");
+
+    let laptop_target = temp.path().join("laptop.toml");
+    std::fs::write(&laptop_target, "[agent]\nprofile = \"laptop\"\n").unwrap();
+    let laptop_render = run(&[
+        "service",
+        "render",
+        "agent",
+        "--cpus",
+        "4",
+        "--memory-mib",
+        "4096",
+        "--config",
+        laptop_target.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(!laptop_render.status.success());
+    let err_msg = format!(
+        "{} {}",
+        String::from_utf8_lossy(&laptop_render.stderr),
+        String::from_utf8_lossy(&laptop_render.stdout)
+    );
+    assert!(
+        err_msg.contains("target config must use production or workbox"),
+        "{err_msg}"
+    );
 }

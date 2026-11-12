@@ -31,7 +31,7 @@ fn parse<T: DeserializeOwned>(v: Value) -> T {
 fn healthy_mac() -> Value {
     json!({
         "info": {"id": "macbook-pro-arafat", "hostname": "macbook-pro-arafat.local", "os": "macos",
-                 "cpu_count": 10, "agent_version": "0.1.0", "profile": "macos_laptop"},
+                 "cpu_count": 10, "agent_version": "0.1.0", "profile": "laptop"},
         "online": true, "last_seen_ms": NOW - 2_000,
         "metrics": {"cpu_count": 10, "cpu_busy_pct": 23.4, "load_avg_1m": 2.31, "mem_free_pct": 41.0,
                     "mem_available_bytes": 6_700_000_000u64, "swap_used_bytes": 0,

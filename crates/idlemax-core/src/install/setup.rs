@@ -81,6 +81,7 @@ impl Role {
 pub struct Request<'a> {
     pub role: Role,
     pub os: Os,
+    pub profile: Option<DeviceProfile>,
     /// `--coord-url`.
     pub coord_url: Option<&'a str>,
     /// `--token-stdin`.
@@ -179,7 +180,7 @@ pub fn plan(req: &Request<'_>, existing: &Existing<'_>) -> Result<SetupPlan, Set
             if req.role == Role::Agent && wanted.is_none() {
                 return Err(SetupError::NeedsCoordUrl);
             }
-            let cfg = config_for(req.role, req.os, wanted.as_deref())?;
+            let cfg = config_for(req.role, req.os, req.profile, wanted.as_deref())?;
             let url = cfg.coordinator.url.clone();
             (ConfigPlan::Write(Box::new(cfg)), url)
         }
@@ -221,9 +222,14 @@ pub fn plan(req: &Request<'_>, existing: &Existing<'_>) -> Result<SetupPlan, Set
 /// The `config.toml` a new setup starts from: the defaults, this OS's guard profile, and the
 /// coordinator address. A coordinator that others must reach listens on that address too, so
 /// it must be an IP address: the coordinator binds a socket address and cannot bind a name.
-pub fn config_for(role: Role, os: Os, coord_url: Option<&str>) -> Result<Config, SetupError> {
+pub fn config_for(
+    role: Role,
+    os: Os,
+    profile: Option<DeviceProfile>,
+    coord_url: Option<&str>,
+) -> Result<Config, SetupError> {
     let mut cfg = Config::default();
-    cfg.agent.profile = Some(DeviceProfile::default_for(os));
+    cfg.agent.profile = Some(profile.unwrap_or_else(|| DeviceProfile::default_for(os)));
     if let Some(url) = coord_url {
         cfg.coordinator.url = url.to_string();
         if let Some(authority) = authority_with_port(url).filter(|_| role.runs_coordinator()) {

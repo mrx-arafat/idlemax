@@ -135,9 +135,9 @@ fn pick_respects_guard_budget_requirements_profile_and_one_ai_lease_per_account(
     ];
     for c in cases {
         let profile = if c.server {
-            DeviceProfile::LinuxServer
+            DeviceProfile::Production
         } else {
-            DeviceProfile::MacosLaptop
+            DeviceProfile::Laptop
         };
         let device = DeviceInfo {
             id: "mac".into(),
@@ -551,4 +551,16 @@ fn pick_lines_follows_the_room_not_the_owner() {
         ..ctx
     };
     assert_eq!(pick_lines(&ctx, &lines(1), &[pass]), None);
+}
+
+#[test]
+fn cost_allowed_by_profile() {
+    assert!(cost_allowed(DeviceProfile::Workbox, CostClass::Ai));
+    assert!(!cost_allowed(
+        DeviceProfile::Production,
+        CostClass::CpuHeavy
+    ));
+    assert!(cost_allowed(DeviceProfile::Laptop, CostClass::CpuHeavy));
+    assert!(cost_allowed(DeviceProfile::Production, CostClass::CpuLight));
+    assert!(cost_allowed(DeviceProfile::Production, CostClass::Io));
 }

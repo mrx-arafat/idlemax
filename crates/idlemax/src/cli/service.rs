@@ -257,6 +257,7 @@ pub(super) fn service_env(
     Ok(ServiceEnv {
         agent_jobs: 1,
         agent_ram_mib: 512,
+        agent_tasks_max: 256,
         bin,
         home,
         state_dir,
@@ -277,9 +278,11 @@ pub(super) fn size_service(paths: &Paths, platform: Platform, env: &mut ServiceE
     } else {
         Os::current()
     };
+    let profile = config.agent.profile_or_default(os);
     let policy = config.guard_policy_for(os, sys.cpus().len() as u32, sys.total_memory())?;
     env.agent_jobs = policy.max_jobs;
     env.agent_ram_mib = policy.ram_budget_mib;
+    env.agent_tasks_max = idlemax_core::install::service::tasks_max(profile);
     Ok(())
 }
 

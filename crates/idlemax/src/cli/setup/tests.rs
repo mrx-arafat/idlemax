@@ -47,6 +47,7 @@ fn env<'a>(root: &Path, paths: &'a Paths, runner: &'a Fake, dry_run: bool) -> En
         env: ServiceEnv {
             agent_jobs: 1,
             agent_ram_mib: 512,
+            agent_tasks_max: 256,
             bin: "/opt/idlemax".into(),
             home: root.join("home"),
             state_dir: paths.root().to_path_buf(),
@@ -70,6 +71,7 @@ fn plan_both(paths: &Paths) -> SetupPlan {
     let req = Request {
         role: Role::Both,
         os: Os::Linux,
+        profile: None,
         coord_url: None,
         token_given: false,
         service: true,
@@ -255,6 +257,7 @@ fn a_different_token_on_stdin_is_refused_and_the_same_one_is_a_no_op() {
     let req = Request {
         role: Role::Agent,
         os: Os::Linux,
+        profile: None,
         coord_url: Some("http://100.64.0.10:7878"),
         token_given: true,
         service: false,

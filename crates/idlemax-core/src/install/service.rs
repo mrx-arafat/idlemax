@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use super::quote::{is_plain_text, shell_quote, systemd_env_line, systemd_exec_word, xml_escape};
 use super::setup::UnitChange;
-use crate::types::Os;
+use crate::types::{DeviceProfile, Os};
 
 mod render;
 pub use render::render_system;
@@ -80,6 +80,7 @@ pub enum ServiceError {
 pub struct ServiceEnv {
     pub agent_jobs: u32,
     pub agent_ram_mib: u64,
+    pub agent_tasks_max: u32,
     pub bin: PathBuf,
     /// The user's home directory; service files live under it.
     pub home: PathBuf,
@@ -90,6 +91,16 @@ pub struct ServiceEnv {
     pub vars: Vec<(String, String)>,
     /// Numeric user id, for the launchd `gui/<uid>` domain.
     pub uid: u32,
+}
+
+pub const WORKBOX_TASKS_MAX: u32 = 4096;
+pub const DEFAULT_TASKS_MAX: u32 = 256;
+
+pub fn tasks_max(profile: DeviceProfile) -> u32 {
+    match profile {
+        DeviceProfile::Workbox => WORKBOX_TASKS_MAX,
+        _ => DEFAULT_TASKS_MAX,
+    }
 }
 
 /// One external command.

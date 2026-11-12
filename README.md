@@ -192,7 +192,7 @@ Every step is `done`, `already done`, `skipped`, `would do` (a dry run), `starti
 $ idlemax setup --dry-run
 dry run: nothing is written or run
 idlemax setup, role both
-would do      config          coordinator.url http://127.0.0.1:7878, coordinator.listen 127.0.0.1:7878, agent.profile macos_laptop
+would do      config          coordinator.url http://127.0.0.1:7878, coordinator.listen 127.0.0.1:7878, agent.profile laptop
                               would write: ~/.idlemax/config.toml
                               by hand: idlemax init
 would do      token           a new random token, mode 0600
@@ -234,7 +234,7 @@ ssh <server> cat ~/.idlemax/token | idlemax setup --role agent --coord-url http:
 - `--allow git,cargo` sets the programs jobs may run in the same setup, preserving config comments and backing up the old file.
   It replaces the list; include every program the agent should allow.
   An existing running agent reloads the change, while a newly started service reads it at startup.
-- The guard profile comes from the OS: `macos_laptop` on macOS and `linux_server` on Linux.
+- The guard profile comes from the OS: `laptop` on macOS and `production` on Linux, with `workbox` set with `--profile workbox` for dedicated work servers.
 - With `--role coord` or `--role both` the `--coord-url` host must be an IP address (or `localhost`), because the coordinator binds it; a name such as a MagicDNS host is refused with that advice.
 - Existing settings and tokens are kept; `--allow` edits only `agent.command_allowlist`.
   A `--coord-url` that disagrees with the existing `config.toml`, or a `--token-stdin` token that differs from the existing token file, is refused with the fix.
@@ -689,8 +689,8 @@ A single breach pauses running jobs with SIGSTOP.
 Kill-level breaches on 2 consecutive samples kill them (SIGTERM, then SIGKILL after 15 s).
 After a pause or kill, jobs resume only after 2 clear samples.
 
-The profile defaults to `macos_laptop` on macOS and `linux_server` elsewhere.
-A server never takes `cpu_heavy` or `ai` jobs.
+The profile defaults to `laptop` on macOS and `production` elsewhere.
+A production server never takes `cpu_heavy` or `ai` jobs.
 Each job sets `on_user_active`: `pause` (default), `continue` (only machine-health checks apply) or `kill`.
 The dispatcher's own jobs (its orchestrator pass and a project's setup and check commands) follow the worker lines instead of the idle-user and memory-pressure rules, so they can run while you work.
 The kill switch, every pause and `stop-all` still stop them, and no job you add can ask for that admission.
@@ -714,22 +714,22 @@ Linux and a busy machine have not been measured.
 <details>
 <summary>Every guard threshold and the config key that changes it</summary>
 
-| Signal | `macos_laptop` pause | `macos_laptop` kill | `linux_server` pause | `linux_server` kill | `[guard]` keys |
-|---|---|---|---|---|---|
-| You are using the machine | idle < 600 s | | | | `user_idle_min_secs` |
-| Power | on battery, or battery < 40% | | | | `require_ac_power`, `min_battery_pct` |
-| Thermal throttling | any | | any | | `pause_on_thermal` |
-| macOS memory pressure | warn | critical | | | `memory_pressure_pause`, `memory_pressure_kill` |
-| Memory free | < 30% | < 20% | | | `mem_free_pct_pause`, `mem_free_pct_kill` |
-| MemAvailable | | | < 1024 MiB | < 768 MiB | `mem_available_mib_pause`, `mem_available_mib_kill` |
-| Swap growth | +256 MiB in 60 s | +1 GiB in 5 min | | | `swap_growth_pause`, `swap_growth_kill` |
-| Swap used (off) | | | | | `swap_used_mib_pause`, `swap_used_mib_kill` |
-| Swap-in rate | | | > 100 pages/s for 60 s | | `swap_in_pages_per_sec_pause`, `swap_in_sustain_secs` |
-| PSI memory | | | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
-| PSI I/O full avg10 | | | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
-| Load per CPU, outside the jobs | > 1.0 | > 2.0 | > 0.75 | > 1.5 | `load_per_cpu_pause`, `load_per_cpu_kill` |
-| Disk free | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | `disk_free_mib_pause`, `disk_free_mib_kill` |
-| Capacity | half the CPUs, a quarter of the RAM (at least 2 jobs, 1 GiB) | | spare CPUs bounded by RAM slots; quarter-RAM target with a 512-MiB floor | | `max_jobs`, `ram_budget_mib` |
+| Signal | `laptop` pause | `laptop` kill | `workbox` pause | `workbox` kill | `production` pause | `production` kill | `[guard]` keys |
+|---|---|---|---|---|---|---|---|
+| You are using the machine | idle < 600 s | | | | | | `user_idle_min_secs` |
+| Power | on battery, or battery < 40% | | | | | | `require_ac_power`, `min_battery_pct` |
+| Thermal throttling | any | | any | | any | | `pause_on_thermal` |
+| macOS memory pressure | warn | critical | | | | | `memory_pressure_pause`, `memory_pressure_kill` |
+| Memory free | < 30% | < 20% | | | | | `mem_free_pct_pause`, `mem_free_pct_kill` |
+| MemAvailable | | | < 1024 MiB | < 768 MiB | < 1024 MiB | < 768 MiB | `mem_available_mib_pause`, `mem_available_mib_kill` |
+| Swap growth | +256 MiB in 60 s | +1 GiB in 5 min | | | | | `swap_growth_pause`, `swap_growth_kill` |
+| Swap used (off) | | | | | | | `swap_used_mib_pause`, `swap_used_mib_kill` |
+| Swap-in rate | | | > 100 pages/s for 60 s | | > 100 pages/s for 60 s | | `swap_in_pages_per_sec_pause`, `swap_in_sustain_secs` |
+| PSI memory | | | some avg10 > 10% | full avg10 > 5% | some avg10 > 5% | full avg10 > 1% | `psi_mem_some_pause`, `psi_mem_full_kill` |
+| PSI I/O full avg10 | | | > 10% | > 25% | > 10% | > 25% | `psi_io_full_pause`, `psi_io_full_kill` |
+| Load per CPU, outside the jobs | > 1.0 | > 2.0 | | | > 0.75 | > 1.5 | `load_per_cpu_pause`, `load_per_cpu_kill` |
+| Disk free | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | < 2 GiB (no new jobs) | < 1 GiB | `disk_free_mib_pause`, `disk_free_mib_kill` |
+| Capacity | half the CPUs, a quarter of the RAM (at least 2 jobs, 1 GiB) | | all CPUs but one, all RAM but 1024 MiB reserve and 128 MiB agent overhead (at least 1 job, 512 MiB) | | spare CPUs bounded by RAM slots; quarter-RAM target with a 512-MiB floor | | `max_jobs`, `ram_budget_mib` |
 
 The laptop sizes its capacity to the machine when the agent starts: a 10 core Mac with 16 GiB runs up to 5 jobs and 4 GiB of job memory, and setting `max_jobs` or `ram_budget_mib` pins that value.
 The server targets a reserve of one CPU and 1536 MiB for sites plus 128 MiB for the agent, and limits job RAM to a quarter of host RAM within that reserve.
@@ -1161,7 +1161,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `coordinator.offline_after_secs` | `90` | a device is offline after this long without a heartbeat |
 | `coordinator.metrics_retention_days` | `7` | days of per-minute device metrics kept |
 | `agent.device_id` | short lowercase hostname | the name job specs use in `devices` |
-| `agent.profile` | from the OS | `macos_laptop` or `linux_server` guard preset |
+| `agent.profile` | from the OS | `laptop`, `workbox` or `production` guard preset |
 | `agent.listen` | `127.0.0.1:7879` | local agent API |
 | `agent.sample_secs`, `agent.heartbeat_secs` | `30`, `30` | guard sample and heartbeat intervals |
 | `agent.dispatch_inputs_secs` | `60` | how often the agent sends the paths of its git repositories, owner activity, roadmap items and the owner's changed files of switched-on projects to the coordinator; `0` sends nothing |

@@ -390,11 +390,11 @@ function powerStat(m) {
   return stat("Power", m.on_ac_power == null ? "n/a" : ["AC", pct].filter(Boolean).join(" "));
 }
 
-// "macos laptop" already says macos, so the OS is shown only when the profile does not repeat it.
+// The OS and the profile.
 function osAndProfile(info) {
   const os = label(info.os);
   const profile = label(info.profile);
-  return profile.startsWith(os) ? profile : [os, profile].filter(Boolean).join(" · ");
+  return [os, profile].filter(Boolean).join(" · ");
 }
 
 // How much of the device's allowance is in use and why it is not using more, as the coordinator

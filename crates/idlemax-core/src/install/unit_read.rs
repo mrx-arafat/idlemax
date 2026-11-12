@@ -98,6 +98,7 @@ mod tests {
         ServiceEnv {
             agent_jobs: 1,
             agent_ram_mib: 512,
+            agent_tasks_max: 256,
             bin: "/opt/my tools/idlemax".into(),
             home: "/home/u".into(),
             state_dir: "/data & more/idlemax".into(),

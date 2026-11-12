@@ -23,17 +23,21 @@ pub(super) struct InitArgs {
     token_stdin: bool,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug)]
-pub(super) enum ProfileArg {
-    MacosLaptop,
-    LinuxServer,
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProfileArg {
+    #[value(alias = "macos_laptop")]
+    Laptop,
+    Workbox,
+    #[value(alias = "linux_server")]
+    Production,
 }
 
 impl From<ProfileArg> for DeviceProfile {
     fn from(p: ProfileArg) -> Self {
         match p {
-            ProfileArg::MacosLaptop => DeviceProfile::MacosLaptop,
-            ProfileArg::LinuxServer => DeviceProfile::LinuxServer,
+            ProfileArg::Laptop => DeviceProfile::Laptop,
+            ProfileArg::Workbox => DeviceProfile::Workbox,
+            ProfileArg::Production => DeviceProfile::Production,
         }
     }
 }

@@ -411,7 +411,8 @@ fn a_job_gets_a_minimal_environment_plus_its_own() {
                 "PWD",
                 "SHLVL",
                 "_",
-                "OLDPWD"
+                "OLDPWD",
+                "INVOCATION_ID",
             ]
             .contains(n)),
         "unexpected variables in:\n{log}"

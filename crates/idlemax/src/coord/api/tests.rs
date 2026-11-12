@@ -243,7 +243,7 @@ pub(super) fn mac_heartbeat(running: Vec<RunningJob>) -> Heartbeat {
             hostname: "mac".into(),
             os: Os::Macos,
             cpu_count: 10,
-            profile: DeviceProfile::MacosLaptop,
+            profile: DeviceProfile::Laptop,
             ..DeviceInfo::default()
         },
         guard: GuardDecision {

@@ -39,6 +39,7 @@ fn ctx(root: &Path) -> (Ctx, Paths) {
     let env = ServiceEnv {
         agent_jobs: 1,
         agent_ram_mib: 512,
+        agent_tasks_max: 256,
         bin: "/opt/idlemax".into(),
         home: root.join("home"),
         state_dir: paths.root().to_path_buf(),

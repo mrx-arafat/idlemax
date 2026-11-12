@@ -4,6 +4,7 @@ fn env() -> ServiceEnv {
     ServiceEnv {
         agent_jobs: 1,
         agent_ram_mib: 512,
+        agent_tasks_max: 256,
         bin: "/opt/my tools/idlemax".into(),
         home: "/home/u".into(),
         state_dir: "/data & more/idlemax".into(),
@@ -286,4 +287,25 @@ fn status_reads_each_state() {
         .note
         .unwrap()
         .contains("launchctl not found"));
+}
+
+#[test]
+fn rendered_agent_tasks_max_follows_profile() {
+    assert_eq!(tasks_max(DeviceProfile::Workbox), 4096);
+    assert_eq!(tasks_max(DeviceProfile::Production), 256);
+    assert_eq!(tasks_max(DeviceProfile::Laptop), 256);
+
+    let workbox_env = ServiceEnv {
+        agent_tasks_max: tasks_max(DeviceProfile::Workbox),
+        ..env()
+    };
+    let unit = render_system(ServiceKind::Agent, &workbox_env).unwrap();
+    assert!(unit.content.contains("TasksMax=4096"), "{}", unit.content);
+
+    let prod_env = ServiceEnv {
+        agent_tasks_max: tasks_max(DeviceProfile::Production),
+        ..env()
+    };
+    let unit = render_system(ServiceKind::Agent, &prod_env).unwrap();
+    assert!(unit.content.contains("TasksMax=256"), "{}", unit.content);
 }

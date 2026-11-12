@@ -37,7 +37,7 @@ fn config_set_edits_the_file_keeps_comments_and_a_backup_and_refuses_bad_input()
     // nothing listens on; and a comment the edits must keep.
     std::fs::write(
         &file,
-        "# my notes\n[agent]\nprofile = \"macos_laptop\"\nlisten = \"127.0.0.1:1\"\n",
+        "# my notes\n[agent]\nprofile = \"laptop\"\nlisten = \"127.0.0.1:1\"\n",
     )
     .unwrap();
 

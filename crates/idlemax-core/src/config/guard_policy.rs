@@ -63,6 +63,8 @@ const GIB_MIB: u64 = 1024;
 /// Site reserve target; the legacy budget takes precedence on small hosts.
 const SERVER_CPU_RESERVE: u32 = 1;
 const SERVER_RAM_RESERVE_MIB: u64 = 1536;
+const WORKBOX_CPU_RESERVE: u32 = 1;
+const WORKBOX_RAM_RESERVE_MIB: u64 = 1024;
 /// Room for the agent itself in addition to its jobs.
 pub const AGENT_OVERHEAD_MIB: u64 = 128;
 
@@ -77,13 +79,14 @@ pub enum MemoryCap {
 impl GuardPolicy {
     pub fn for_profile(profile: DeviceProfile) -> Self {
         match profile {
-            DeviceProfile::MacosLaptop => Self::macos_laptop(),
-            DeviceProfile::LinuxServer => Self::linux_server(),
+            DeviceProfile::Laptop => Self::laptop(),
+            DeviceProfile::Workbox => Self::workbox(),
+            DeviceProfile::Production => Self::production(),
         }
     }
 
     /// Numbers from the capacity research summarized in docs/PLAN.md (guard presets).
-    pub fn macos_laptop() -> Self {
+    pub fn laptop() -> Self {
         Self {
             max_jobs: 2,
             ram_budget_mib: GIB_MIB,
@@ -124,7 +127,11 @@ impl GuardPolicy {
         }
     }
 
-    pub fn linux_server() -> Self {
+    pub fn macos_laptop() -> Self {
+        Self::laptop()
+    }
+
+    pub fn production() -> Self {
         Self {
             max_jobs: 1,
             ram_budget_mib: 512,
@@ -159,6 +166,19 @@ impl GuardPolicy {
             disk_free_mib_pause: Some(2 * GIB_MIB),
             disk_free_mib_kill: Some(GIB_MIB),
         }
+    }
+
+    pub fn linux_server() -> Self {
+        Self::production()
+    }
+
+    pub fn workbox() -> Self {
+        let mut policy = Self::production();
+        policy.load_per_cpu_pause = None;
+        policy.load_per_cpu_kill = None;
+        policy.psi_mem_some_pause = Some(10.0);
+        policy.psi_mem_full_kill = Some(5.0);
+        policy
     }
 
     /// Raises the job slots and RAM budget to what a bigger machine can take: half its CPUs
@@ -198,6 +218,31 @@ impl GuardPolicy {
                 .max(1);
             self.max_jobs = cpus
                 .saturating_sub(SERVER_CPU_RESERVE)
+                .max(1)
+                .min(memory_slots);
+        }
+        self
+    }
+
+    /// Gives plain jobs all the memory but a reserve of 1024 MiB and the agent's own 128 MiB,
+    /// never under 512 MiB, and all CPUs but one, bounded by the memory slots.
+    pub fn workbox_sized_for(mut self, cpus: u32, bytes: u64, overrides: &toml::Table) -> Self {
+        if !overrides.contains_key("ram_budget_mib") {
+            let total = bytes / (1024 * 1024);
+            self.ram_budget_mib = if total == 0 {
+                512
+            } else {
+                total
+                    .saturating_sub(WORKBOX_RAM_RESERVE_MIB + AGENT_OVERHEAD_MIB)
+                    .max(512)
+            };
+        }
+        if !overrides.contains_key("max_jobs") {
+            let memory_slots = u32::try_from(self.ram_budget_mib / crate::types::DEFAULT_MEM_MB)
+                .unwrap_or(u32::MAX)
+                .max(1);
+            self.max_jobs = cpus
+                .saturating_sub(WORKBOX_CPU_RESERVE)
                 .max(1)
                 .min(memory_slots);
         }

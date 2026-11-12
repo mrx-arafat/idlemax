@@ -130,7 +130,7 @@ The repository is public: no address, host name or device id of the owner's mach
 
 ## Progress Tracking
 
-- [ ] Task 1: Add the laptop, workbox and production profiles
+- [x] Task 1: Add the laptop, workbox and production profiles
 - [ ] Task 2: Feed the Linux readings into the worker room
 - [ ] Task 3: Switch devices on and off on the coordinator
 - [ ] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
@@ -203,15 +203,15 @@ A device that names no profile is `laptop` on macOS and `production` everywhere 
 
 **Definition of Done:**
 
-- [ ] `Config::parse` reads `profile = "linux_server"` as `Production` and `profile = "macos_laptop"` as `Laptop`, and `to_toml_string` writes `production` and `laptop`.
-- [ ] `DeviceProfile::default_for(Os::Linux)` is `Production` and `default_for(Os::Macos)` is `Laptop`.
-- [ ] On 8 CPUs and 16 GiB, `guard_policy_for` gives 7 jobs and 15232 MiB for `workbox` and 7 jobs and 4096 MiB for `production`; on 2 CPUs and 2 GiB `workbox` gives 1 job and 896 MiB.
-- [ ] `GuardPolicy::workbox()` has `psi_mem_some_pause` 10.0, `psi_mem_full_kill` 5.0 and no `load_per_cpu` check, and `production()` equals what `linux_server()` returned before.
-- [ ] `cost_allowed(Workbox, Ai)` is true and `cost_allowed(Production, CpuHeavy)` is false.
-- [ ] A rendered agent unit holds `TasksMax=4096` for a `workbox` target and `TasksMax=256` for a `production` one, and a `laptop` target config is refused with a message that names `production` and `workbox`.
-- [ ] `idlemax setup --role agent --profile workbox --dry-run` in a temp home prints `agent.profile workbox`, and without `--profile` on Linux the planned config holds `production`.
-- [ ] `examples/config.workbox.toml` parses.
-- [ ] Verify: `cargo test -p idlemax-core config && cargo test -p idlemax-core scheduler && cargo test -p idlemax-core guard && cargo test -p idlemax-core explain && cargo test -p idlemax-core report && cargo test -p idlemax-core capacity && cargo test -p idlemax-core install && cargo test -p idlemax --bin idlemax agent:: && cargo test -p idlemax --bin idlemax tui::snapshots && cargo test -p idlemax --bin idlemax coord::api::tests && cargo test -p idlemax --test setup --test examples --test service_render --test config_cmd && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `Config::parse` reads `profile = "linux_server"` as `Production` and `profile = "macos_laptop"` as `Laptop`, and `to_toml_string` writes `production` and `laptop`.
+- [x] `DeviceProfile::default_for(Os::Linux)` is `Production` and `default_for(Os::Macos)` is `Laptop`.
+- [x] On 8 CPUs and 16 GiB, `guard_policy_for` gives 7 jobs and 15232 MiB for `workbox` and 7 jobs and 4096 MiB for `production`; on 2 CPUs and 2 GiB `workbox` gives 1 job and 896 MiB.
+- [x] `GuardPolicy::workbox()` has `psi_mem_some_pause` 10.0, `psi_mem_full_kill` 5.0 and no `load_per_cpu` check, and `production()` equals what `linux_server()` returned before.
+- [x] `cost_allowed(Workbox, Ai)` is true and `cost_allowed(Production, CpuHeavy)` is false.
+- [x] A rendered agent unit holds `TasksMax=4096` for a `workbox` target and `TasksMax=256` for a `production` one, and a `laptop` target config is refused with a message that names `production` and `workbox`.
+- [x] `idlemax setup --role agent --profile workbox --dry-run` in a temp home prints `agent.profile workbox`, and without `--profile` on Linux the planned config holds `production`.
+- [x] `examples/config.workbox.toml` parses.
+- [x] Verify: `cargo test -p idlemax-core config && cargo test -p idlemax-core scheduler && cargo test -p idlemax-core guard && cargo test -p idlemax-core explain && cargo test -p idlemax-core report && cargo test -p idlemax-core capacity && cargo test -p idlemax-core install && cargo test -p idlemax --bin idlemax agent:: && cargo test -p idlemax --bin idlemax tui::snapshots && cargo test -p idlemax --bin idlemax coord::api::tests && cargo test -p idlemax --test setup --test examples --test service_render --test config_cmd && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 2: Feed the Linux readings into the worker room
 

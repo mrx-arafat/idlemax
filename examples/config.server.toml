@@ -1,4 +1,4 @@
-# idlemax config for the server (coordinator plus a linux_server agent).
+# idlemax config for the server (coordinator plus a production agent).
 # Copy to /var/lib/idlemax/config.toml (the systemd units set IDLEMAX_HOME=/var/lib/idlemax).
 
 [coordinator]
@@ -15,11 +15,11 @@ metrics_retention_days = 7
 
 [agent]
 device_id = "my-server"
-profile = "linux_server"
+profile = "production"
 listen = "127.0.0.1:7879"
 # Never run AI jobs here: no CLI logins on the server and no credential copying.
 ai_accounts = []
-# The server takes only cpu_light and io jobs.
+# A production server takes only cpu_light and io jobs.
 command_allowlist = ["gh", "git"]
 
 [advisor]

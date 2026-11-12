@@ -187,7 +187,7 @@ fn device_mismatches_are_listed_per_device_with_the_setting_to_change() {
     job.spec.cost = CostClass::CpuHeavy;
     let mut w = World::new(job);
     w.devices[0].info.id = "server".into();
-    w.devices[0].info.profile = DeviceProfile::LinuxServer;
+    w.devices[0].info.profile = DeviceProfile::Production;
     let e = w.explain();
     assert_eq!(
         kinds(&e.devices[0].reasons),
@@ -220,10 +220,10 @@ fn a_device_the_job_can_never_use_says_why_in_one_phrase_per_cause() {
     job.spec.requires = vec!["cargo".into()];
     job.spec.cost = CostClass::CpuHeavy;
     let mut w = World::new(job);
-    w.devices[0].info.profile = DeviceProfile::MacosLaptop;
+    w.devices[0].info.profile = DeviceProfile::Laptop;
     w.devices[0].info.capabilities.push("cargo".into());
     let mut server = device("server");
-    server.info.profile = DeviceProfile::LinuxServer;
+    server.info.profile = DeviceProfile::Production;
     w.devices.push(server);
     let e = w.explain();
     assert!(e.devices[0].ineligible.is_empty(), "{e:?}");
@@ -238,13 +238,13 @@ fn a_device_the_job_can_never_use_says_why_in_one_phrase_per_cause() {
 
 #[test]
 fn guard_reasons_carry_the_config_key_and_slots_and_ram_are_counted() {
-    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let mut guard = Guard::new(GuardPolicy::laptop());
     let on_battery = MetricsSnapshot {
         on_ac_power: Some(false),
         ..calm()
     };
     let mut decision = guard.evaluate(&on_battery, &[], false, false);
-    let mut policy = GuardPolicy::macos_laptop();
+    let mut policy = GuardPolicy::laptop();
     decision.memory_limit = policy.clamp_memory(Some(640 << 20));
     let mut w = World::new(queued(1));
     w.devices[0].guard = Some(decision);
@@ -294,7 +294,7 @@ fn every_reason_the_guard_produces_comes_with_a_fix() {
         psi_io_full_avg10: Some(50.0),
         ..calm()
     };
-    for policy in [GuardPolicy::macos_laptop(), GuardPolicy::linux_server()] {
+    for policy in [GuardPolicy::laptop(), GuardPolicy::production()] {
         let mut guard = Guard::new(policy);
         let first = guard.evaluate(&storm, &[], true, true);
         let calm_after = guard.evaluate(&calm(), &[], false, false);
@@ -307,7 +307,7 @@ fn every_reason_the_guard_produces_comes_with_a_fix() {
 
 #[test]
 fn a_guard_reason_names_the_setting_that_holds_the_job() {
-    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let mut guard = Guard::new(GuardPolicy::laptop());
     let metrics = MetricsSnapshot {
         memory_pressure: Some(MemoryPressure::Warn),
         load_avg_1m: 20.0,
@@ -530,7 +530,7 @@ fn the_headline_is_what_holds_everywhere_else_the_reason_of_the_device_closest_t
     let mut heavy = queued(2);
     heavy.spec.cost = CostClass::CpuHeavy;
     let mut server = device("server");
-    server.info.profile = DeviceProfile::LinuxServer;
+    server.info.profile = DeviceProfile::Production;
     let mut laptop = device("mac");
     laptop.guard = Some(GuardDecision {
         action: GuardAction::Pause,

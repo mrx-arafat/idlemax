@@ -55,7 +55,7 @@ async fn device_info_refreshes_on_ticker() {
         cfg.clone(),
     );
     let runner = Runner::new(paths.clone(), "refreshed-device-id".into(), cfg);
-    let guard = Guard::new(GuardPolicy::macos_laptop());
+    let guard = Guard::new(GuardPolicy::laptop());
     let client = CoordClient::new("http://127.0.0.1:9999", "dummy").unwrap();
     let initial_status = LocalStatus {
         device: "initial-device-id".into(),

@@ -265,8 +265,8 @@ mod tests {
         assert_eq!(same.text, "");
         // Text settings take the bare word.
         assert_eq!(
-            set("", "agent.profile", "linux_server").unwrap().after,
-            json!("linux_server")
+            set("", "agent.profile", "production").unwrap().after,
+            json!("production")
         );
     }
 

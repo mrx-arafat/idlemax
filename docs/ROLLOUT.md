@@ -175,7 +175,7 @@ Set `[agent] device_id` to the server name used in job specs, for example:
 ```toml
 [agent]
 device_id = "my-server"
-profile = "linux_server"
+profile = "production"
 listen = "127.0.0.1:7879"
 command_allowlist = ["gh", "git"]
 
@@ -183,6 +183,9 @@ command_allowlist = ["gh", "git"]
 max_jobs = 1
 ram_budget_mib = 512
 ```
+
+The older preset names `linux_server` and `macos_laptop` remain accepted as aliases on input.
+An older coordinator cannot read the new profile names, so upgrade the coordinator before any agent.
 
 Keep `ai_accounts = []` on the server unless that server has its own CLI logins.
 Keep `[[quota.accounts]]` identical on every host.

@@ -9,8 +9,8 @@ url = "http://100.64.0.10:7878"
 [agent]
 # Device id used in job specs' `devices`; defaults to the hostname.
 device_id = "my-laptop"
-# Guard preset: macos_laptop (default on macOS) or linux_server.
-profile = "macos_laptop"
+# Guard preset: laptop (default on macOS), workbox, or production.
+profile = "laptop"
 # Local agent API, always loopback: `idlemax local status|stop-all|resume`.
 listen = "127.0.0.1:7879"
 sample_secs = 30

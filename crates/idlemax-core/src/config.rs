@@ -89,7 +89,7 @@ impl Default for CoordinatorConfig {
 pub struct AgentConfig {
     /// Defaults to the hostname.
     pub device_id: Option<String>,
-    /// Defaults from the OS (macos_laptop on macOS, linux_server elsewhere).
+    /// Defaults from the OS (laptop on macOS, production elsewhere).
     pub profile: Option<DeviceProfile>,
     /// Local agent API bind address.
     pub listen: String,
@@ -195,8 +195,11 @@ impl Config {
     ) -> Result<GuardPolicy, ConfigError> {
         let policy = self.guard_policy(os)?;
         Ok(match self.agent.profile_or_default(os) {
-            DeviceProfile::MacosLaptop => policy.sized_for(cpu_count, mem_total_bytes, &self.guard),
-            DeviceProfile::LinuxServer => {
+            DeviceProfile::Laptop => policy.sized_for(cpu_count, mem_total_bytes, &self.guard),
+            DeviceProfile::Workbox => {
+                policy.workbox_sized_for(cpu_count, mem_total_bytes, &self.guard)
+            }
+            DeviceProfile::Production => {
                 policy.server_sized_for(cpu_count, mem_total_bytes, &self.guard)
             }
         })
@@ -330,5 +333,62 @@ mod tests {
             msg.starts_with("guard.swap_growth_kill: invalid type"),
             "{msg:?}"
         );
+    }
+
+    #[test]
+    fn profiles_parse_aliases_defaults_and_sizing() {
+        const GIB: u64 = 1 << 30;
+        let linux_old = Config::parse("[agent]\nprofile = \"linux_server\"\n").unwrap();
+        assert_eq!(linux_old.agent.profile, Some(DeviceProfile::Production));
+        let mac_old = Config::parse("[agent]\nprofile = \"macos_laptop\"\n").unwrap();
+        assert_eq!(mac_old.agent.profile, Some(DeviceProfile::Laptop));
+        let prod_new = Config::parse("[agent]\nprofile = \"production\"\n").unwrap();
+        assert_eq!(prod_new.agent.profile, Some(DeviceProfile::Production));
+        let laptop_new = Config::parse("[agent]\nprofile = \"laptop\"\n").unwrap();
+        assert_eq!(laptop_new.agent.profile, Some(DeviceProfile::Laptop));
+        let workbox = Config::parse("[agent]\nprofile = \"workbox\"\n").unwrap();
+        assert_eq!(workbox.agent.profile, Some(DeviceProfile::Workbox));
+
+        assert!(prod_new
+            .to_toml_string()
+            .unwrap()
+            .contains("profile = \"production\""));
+        assert!(laptop_new
+            .to_toml_string()
+            .unwrap()
+            .contains("profile = \"laptop\""));
+        assert!(workbox
+            .to_toml_string()
+            .unwrap()
+            .contains("profile = \"workbox\""));
+
+        assert_eq!(
+            DeviceProfile::default_for(Os::Linux),
+            DeviceProfile::Production
+        );
+        assert_eq!(DeviceProfile::default_for(Os::Macos), DeviceProfile::Laptop);
+
+        let workbox_policy = workbox.guard_policy_for(Os::Linux, 8, 16 * GIB).unwrap();
+        assert_eq!(
+            (workbox_policy.max_jobs, workbox_policy.ram_budget_mib),
+            (7, 15232)
+        );
+        let prod_policy = prod_new.guard_policy_for(Os::Linux, 8, 16 * GIB).unwrap();
+        assert_eq!(
+            (prod_policy.max_jobs, prod_policy.ram_budget_mib),
+            (7, 4096)
+        );
+        let small_workbox = workbox.guard_policy_for(Os::Linux, 2, 2 * GIB).unwrap();
+        assert_eq!(
+            (small_workbox.max_jobs, small_workbox.ram_budget_mib),
+            (1, 896)
+        );
+
+        let wb_preset = GuardPolicy::workbox();
+        assert_eq!(wb_preset.psi_mem_some_pause, Some(10.0));
+        assert_eq!(wb_preset.psi_mem_full_kill, Some(5.0));
+        assert_eq!(wb_preset.load_per_cpu_pause, None);
+        assert_eq!(wb_preset.load_per_cpu_kill, None);
+        assert_eq!(GuardPolicy::production(), GuardPolicy::linux_server());
     }
 }

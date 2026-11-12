@@ -361,6 +361,10 @@ Finished and parked jobs are left out; a waiting job nothing holds back is liste
 The scheduler leases a job only to a device whose list contains the job's `argv[0]`, because the agent would refuse it otherwise.
 It is `null` for an agent that predates the field, and such a device is not filtered.
 
+`DeviceInfo.profile` is the device's guard preset: `laptop` (macOS default), `workbox`, or `production` (Linux default).
+The older names `macos_laptop` and `linux_server` are accepted on input as aliases.
+An older coordinator cannot read the new profile names, so the coordinator is upgraded before any agent.
+
 ## How much of each device is used
 
 `GET /v1/status` (and the reply of `POST /v1/control`) answers "how much is used, how much is idle, and why" without a `why` call per job.

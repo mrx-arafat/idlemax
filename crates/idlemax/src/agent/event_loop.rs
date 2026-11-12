@@ -142,7 +142,7 @@ impl Agent {
             && w.config
                 .agent
                 .profile_or_default(idlemax_core::types::Os::Linux)
-                == idlemax_core::types::DeviceProfile::LinuxServer;
+                != idlemax_core::types::DeviceProfile::Laptop;
         let mut policy = w.guard.policy().clone();
         let memory_limit = policy.apply_memory_cap(memory_cap, server_profile);
         w.guard.set_policy(policy);

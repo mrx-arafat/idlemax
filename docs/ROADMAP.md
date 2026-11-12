@@ -272,6 +272,6 @@ Item 30 is answered by decision D14 and item 11 by decision D10.
 
 ### 17. Support Windows
 
-- **Why:** Windows code paths were never built, and several parts are SHORTCUTs: it maps to the `linux_server` preset, reports no idle, power or thermal data, measures its largest disk, cannot pause jobs, kills trees with `taskkill`, stops only on Ctrl-C, gets no token file ACL check, reads `/dev/urandom` for tokens, has no service detection in `doctor`, no session hooks, and the advisor feed reads only `HOME`.
+- **Why:** Windows code paths were never built, and several parts are SHORTCUTs: it maps to the `production` preset, reports no idle, power or thermal data, measures its largest disk, cannot pause jobs, kills trees with `taskkill`, stops only on Ctrl-C, gets no token file ACL check, reads `/dev/urandom` for tokens, has no service detection in `doctor`, no session hooks, and the advisor feed reads only `HOME`.
 - **How:** A `windows_desktop` preset, `GetLastInputInfo` idle and `GetSystemPowerStatus` power, the system drive, job objects for pause and tree kill, service stop events, a token file ACL check, `BCryptGenRandom`, a `USERPROFILE` fallback, and Task Scheduler packaging after checking each primitive against Microsoft's documentation.
 - **Done when:** A Windows device passes the same guard, runner and end-to-end tests as macOS, and every Windows SHORTCUT is gone.

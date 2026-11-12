@@ -292,9 +292,9 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
     ];
     for &(name, laptop, change, swap_growth_mib, kill_switch, want) in cases {
         let policy = if laptop {
-            GuardPolicy::macos_laptop()
+            GuardPolicy::laptop()
         } else {
-            GuardPolicy::linux_server()
+            GuardPolicy::production()
         };
         let run = GuardAction::Run {
             slots: policy.max_jobs,
@@ -319,7 +319,7 @@ fn pauses_and_kills_at_preset_thresholds_and_on_the_kill_switch() {
 
 #[test]
 fn a_server_pauses_for_sustained_swap_in_however_little_swap_is_used() {
-    let mut guard = Guard::new(GuardPolicy::linux_server());
+    let mut guard = Guard::new(GuardPolicy::production());
     let mut m = linux();
     m.swap_used_bytes = 100 * MIB;
     m.swap_in_per_sec = Some(500.0);
@@ -350,23 +350,23 @@ fn load_is_counted_outside_the_running_jobs_and_an_absolute_limit_still_applies(
     let mut m = mac();
     m.load_avg_1m = 12.0; // 10 CPUs
 
-    let alone = Guard::new(GuardPolicy::macos_laptop()).evaluate(&m, &[], false, false);
+    let alone = Guard::new(GuardPolicy::laptop()).evaluate(&m, &[], false, false);
     assert_eq!(alone.action, GuardAction::Pause, "{:?}", alone.reasons);
 
     // Three CPUs of that load are the job's own: 9.0 left over, 0.9 per CPU.
     let jobs = [busy_job(300.0, JobStatus::Running)];
-    let own = Guard::new(GuardPolicy::macos_laptop()).evaluate(&m, &jobs, false, false);
+    let own = Guard::new(GuardPolicy::laptop()).evaluate(&m, &jobs, false, false);
     assert!(own.action.may_start(), "{:?}", own.reasons);
 
     // A paused job adds no load, so nothing is taken out.
     let jobs = [busy_job(300.0, JobStatus::Paused)];
-    let paused = Guard::new(GuardPolicy::macos_laptop()).evaluate(&m, &jobs, false, false);
+    let paused = Guard::new(GuardPolicy::laptop()).evaluate(&m, &jobs, false, false);
     assert_eq!(paused.action, GuardAction::Pause);
 
     // `load_1m_pause` from an older config still pauses on the raw load average.
     let policy = GuardPolicy {
         load_1m_pause: Some(4.0),
-        ..GuardPolicy::macos_laptop()
+        ..GuardPolicy::laptop()
     };
     m.load_avg_1m = 5.0;
     let raw = Guard::new(policy).evaluate(&m, &[], false, false);
@@ -378,7 +378,7 @@ fn load_is_counted_outside_the_running_jobs_and_an_absolute_limit_still_applies(
 
 #[test]
 fn pins_kill_switch_and_local_pause_reasons_distinctly() {
-    let policy = GuardPolicy::macos_laptop();
+    let policy = GuardPolicy::laptop();
     let mut guard = Guard::new(policy.clone());
     let m = mac();
 
@@ -428,7 +428,7 @@ fn unknown_idle_time_holds_only_when_an_idle_minimum_is_required() {
     let mut m = mac();
     m.user_idle_secs = None;
 
-    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let mut guard = Guard::new(GuardPolicy::laptop());
     let held = guard.evaluate(&m, &[], false, false);
     assert_eq!(held.action, GuardAction::Hold);
     assert!(held
@@ -438,7 +438,7 @@ fn unknown_idle_time_holds_only_when_an_idle_minimum_is_required() {
     // 0 means "start whatever the user is doing", so there is nothing to wait for.
     let policy = GuardPolicy {
         user_idle_min_secs: Some(0),
-        ..GuardPolicy::macos_laptop()
+        ..GuardPolicy::laptop()
     };
     let run = GuardAction::Run {
         slots: policy.max_jobs,
@@ -453,7 +453,7 @@ fn unknown_idle_time_holds_only_when_an_idle_minimum_is_required() {
 fn a_reloaded_policy_applies_at_the_next_sample_and_keeps_the_guard_s_memory() {
     let mut on_battery = mac();
     on_battery.on_ac_power = Some(false);
-    let mut guard = Guard::new(GuardPolicy::macos_laptop());
+    let mut guard = Guard::new(GuardPolicy::laptop());
     let held = guard.evaluate(&on_battery, &[], false, false);
     assert_eq!(held.action, GuardAction::Pause);
     assert!(
@@ -465,7 +465,7 @@ fn a_reloaded_policy_applies_at_the_next_sample_and_keeps_the_guard_s_memory() {
     // Run on battery above the 40% floor, as `idlemax config set guard.require_ac_power false`.
     guard.set_policy(GuardPolicy {
         require_ac_power: false,
-        ..GuardPolicy::macos_laptop()
+        ..GuardPolicy::laptop()
     });
     let now = guard.evaluate(&on_battery, &[], false, false);
     assert!(

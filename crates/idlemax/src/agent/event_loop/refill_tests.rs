@@ -79,7 +79,7 @@ fn permissive_policy() -> GuardPolicy {
         swap_growth_kill: None,
         disk_free_mib_pause: None,
         disk_free_mib_kill: None,
-        ..GuardPolicy::linux_server()
+        ..GuardPolicy::production()
     }
 }
 

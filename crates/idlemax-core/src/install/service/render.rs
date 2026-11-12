@@ -70,6 +70,7 @@ pub(super) fn sized_unit(content: String, kind: ServiceKind, env: &ServiceEnv) -
             "CPUQuota",
             format!("{}%", u64::from(env.agent_jobs.max(1)) * 100),
         ),
+        ("TasksMax", format!("{}", env.agent_tasks_max)),
     ];
     content
         .lines()

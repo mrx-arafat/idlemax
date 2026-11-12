@@ -9,7 +9,7 @@ use tokio::sync::{oneshot, watch};
 use super::*;
 use crate::agent::{metrics::Sampler, ring::MetricsRing};
 
-const LAPTOP: &str = "[agent]\nprofile = \"macos_laptop\"\n";
+const LAPTOP: &str = "[agent]\nprofile = \"laptop\"\n";
 
 fn agent_at(paths: &Paths) -> Agent {
     let config = Config::parse(LAPTOP).unwrap();
@@ -29,7 +29,7 @@ fn agent_at(paths: &Paths) -> Agent {
             mem_total_bytes: 8 << 30,
             ..DeviceInfo::default()
         },
-        guard: Guard::new(GuardPolicy::macos_laptop()),
+        guard: Guard::new(GuardPolicy::laptop()),
         client: CoordClient::new("http://127.0.0.1:9", "test").unwrap(),
         probes,
         runner: Runner::new(paths.clone(), "reload".into(), config.agent.clone()),

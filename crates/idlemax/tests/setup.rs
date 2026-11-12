@@ -31,13 +31,17 @@ impl Home {
     }
 
     fn setup(&self, args: &[&str]) -> Output {
+        self.setup_with_stdin(args, &[])
+    }
+
+    fn setup_with_stdin(&self, args: &[&str], stdin: &[u8]) -> Output {
         // The tests pin the human report unless they ask for JSON.
         let format: &[&str] = if args.contains(&"--json") {
             &[]
         } else {
             &["--format", "table"]
         };
-        Command::new(BIN)
+        let mut child = Command::new(BIN)
             .args(format)
             .arg("setup")
             .args(args)
@@ -47,8 +51,16 @@ impl Home {
             .env_remove("CODEX_HOME")
             .env_remove("IDLEMAX_TOKEN")
             .env_remove("IDLEMAX_COORD")
-            .output()
-            .unwrap()
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        if !stdin.is_empty() {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(stdin).unwrap();
+        }
+        child.wait_with_output().unwrap()
     }
 
     /// Runs `setup ... --json` and returns (exit code, report).
@@ -265,4 +277,52 @@ fn every_setup_usage_error_points_to_setup_help_and_preserves_the_message() {
         .as_str()
         .unwrap()
         .contains("already sets coordinator.url"));
+}
+
+#[test]
+fn setup_agent_profile_flag_and_default() {
+    let h = Home::new();
+    let out = h.setup_with_stdin(
+        &[
+            "--role",
+            "agent",
+            "--profile",
+            "workbox",
+            "--coord-url",
+            "http://100.64.0.10:7878",
+            "--token-stdin",
+            "--dry-run",
+        ],
+        b"dummy-token\n",
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("agent.profile workbox"), "{text}");
+
+    #[cfg(target_os = "linux")]
+    {
+        let h2 = Home::new();
+        let out2 = h2.setup_with_stdin(
+            &[
+                "--role",
+                "agent",
+                "--coord-url",
+                "http://100.64.0.10:7878",
+                "--token-stdin",
+                "--dry-run",
+            ],
+            b"dummy-token\n",
+        );
+        assert!(
+            out2.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&out2.stderr)
+        );
+        let text2 = String::from_utf8_lossy(&out2.stdout);
+        assert!(text2.contains("agent.profile production"), "{text2}");
+    }
 }

@@ -10,7 +10,7 @@ cost = "cpu_heavy"
 requires = ["cargo", "git"]
 devices = ["my-laptop"]
 priority = 3
-# The whole macos_laptop RAM budget: nothing else runs beside a Rust build.
+# The whole laptop RAM budget: nothing else runs beside a Rust build.
 mem_mb = 1024
 max_runtime_secs = 1500
 # Kill rather than SIGSTOP: a stopped cargo holds the target dir lock and blocks your builds.

@@ -34,6 +34,7 @@ fn request(role: Role) -> Request<'static> {
     Request {
         role,
         os: Os::Linux,
+        profile: None,
         coord_url: None,
         token_given: false,
         service: true,
@@ -59,9 +60,27 @@ fn both_is_a_complete_single_machine_setup_with_the_coordinator_started_first() 
     let cfg = written(&plan);
     assert_eq!(cfg.coordinator.url, "http://127.0.0.1:7878");
     assert_eq!(cfg.coordinator.listen, "127.0.0.1:7878");
-    assert_eq!(cfg.agent.profile, Some(DeviceProfile::LinuxServer));
+    assert_eq!(cfg.agent.profile, Some(DeviceProfile::Production));
     assert_eq!(plan.token, TokenPlan::Generate);
     assert_eq!(plan.services, [ServiceKind::Coord, ServiceKind::Agent]);
+}
+
+#[test]
+fn setup_with_explicit_profile_honors_it() {
+    let req = Request {
+        profile: Some(DeviceProfile::Workbox),
+        coord_url: Some(TAILNET),
+        ..request(Role::Agent)
+    };
+    let plan = plan(
+        &req,
+        &Existing {
+            config: None,
+            token: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(written(&plan).agent.profile, Some(DeviceProfile::Workbox));
 }
 
 #[test]
@@ -123,7 +142,7 @@ fn plan_err(req: Request<'_>) -> SetupError {
 
 #[test]
 fn a_finished_setup_plans_nothing_to_write_and_refuses_a_different_address() {
-    let cfg = config_for(Role::Both, Os::Linux, Some(TAILNET)).unwrap();
+    let cfg = config_for(Role::Both, Os::Linux, None, Some(TAILNET)).unwrap();
     let existing = Existing {
         config: Some(&cfg),
         token: true,
@@ -189,7 +208,7 @@ fn a_unit_file_is_only_rewritten_when_its_content_changes() {
 #[test]
 fn a_coordinator_listens_on_an_ip_never_on_a_name_it_cannot_bind() {
     let listen =
-        |role, url| config_for(role, Os::Linux, Some(url)).map(|cfg| cfg.coordinator.listen);
+        |role, url| config_for(role, Os::Linux, None, Some(url)).map(|cfg| cfg.coordinator.listen);
     assert_eq!(listen(Role::Coord, TAILNET).unwrap(), "100.64.0.10:7878");
     assert_eq!(
         listen(Role::Both, "http://localhost:9000").unwrap(),
@@ -206,6 +225,7 @@ fn a_coordinator_listens_on_an_ip_never_on_a_name_it_cannot_bind() {
     let agent = config_for(
         Role::Agent,
         Os::Linux,
+        None,
         Some("http://box.tail1234.ts.net:7878"),
     );
     assert!(agent.is_ok());

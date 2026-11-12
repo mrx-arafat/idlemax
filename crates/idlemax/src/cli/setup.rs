@@ -53,6 +53,9 @@ pub struct SetupArgs {
     /// Programs jobs may run, replacing the allowlist while preserving config comments
     #[arg(long, value_name = "PROGRAMS")]
     allow: Option<String>,
+    /// Guard preset [default: from the OS]
+    #[arg(long, value_enum)]
+    profile: Option<super::init_cmd::ProfileArg>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -80,6 +83,7 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
     let request = Request {
         role: args.role.into(),
         os: Os::current(),
+        profile: args.profile.map(Into::into),
         coord_url: args.coord_url.as_deref(),
         token_given: token.is_some(),
         service: !args.no_service,

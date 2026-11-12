@@ -254,7 +254,7 @@ fn paused_jobs_a_device_could_never_run_are_not_counted_for_it() {
     mac.info.ai_accounts = vec!["claude".into()];
     let mut server = device(run(2, 1024));
     server.info.id = "srv".into();
-    server.info.profile = crate::types::DeviceProfile::LinuxServer;
+    server.info.profile = crate::types::DeviceProfile::Production;
     let held = [held];
     let input = CapacityInput {
         now_ms: NOW,
