@@ -51,7 +51,7 @@ This plan answers A13 (Q22) as the orchestrator decided it under the owner's del
    `config` and `hooks/` are read-only, which closes red-team case 5 for a sandboxed worker.
 7. **One process tree.**
    bwrap runs with `--unshare-pid --die-with-parent`, so when the stop kills bwrap every process of the worker dies with its PID namespace, a `setsid` daemon included (red-team case 10).
-   The headless host adds `--new-session`; the pane host does not, because the TUI needs its controlling terminal.
+   Both hosts add `--new-session`, so a pane's CLI cannot push keystrokes into the pane's shell with `TIOCSTI` (review finding 9); the pane TUI then has no controlling terminal, and the proof checks that it still resizes and takes Ctrl-C.
 8. **The pane host wraps through a shim.**
    `herdr agent start --kind claude` runs the CLI by its name, so the launch writes a shim directory with one script named after the CLI that `exec`s bwrap with the real program, and puts it first in the pane's `PATH` env pair.
    After the start the launch checks that the agent's process runs in another mount namespace than the agent; when the sandbox was meant to apply and it does not, the launch fails closed.

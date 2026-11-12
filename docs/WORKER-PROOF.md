@@ -104,6 +104,7 @@ Run the first rows in the throwaway setup with the stub CLIs of `~/idlemax-wt/sm
 | A commit | `git commit` in the worktree | Succeeds: objects, refs and the worktree's own git dir are writable | |
 | Network | In the worker, `curl https://example.com` and `curl https://api.anthropic.com` | The first gets `403` from the proxy, the second reaches the host | |
 | A detached process | In the worker, `setsid -f sleep 600`, then `idlemax stop` | No `sleep 600` is left | |
+| The pane TUI in its own session | A Herdr worker: resize the pane, then press Ctrl-C in it | The CLI redraws at the new size and takes the Ctrl-C; nothing typed by the worker reaches the pane's shell |
 | The pane took the shim | A Herdr worker | Its CLI runs in another mount namespace than the agent (`/proc/<pid>/ns/mnt`) | |
 | Real Claude | One worker on the sample task | Reaches `idle` with no trust dialog, commits | |
 | A token refresh | A worker that runs past the access token's expiry | Keeps working; the owner's own `claude` is still logged in after it | |

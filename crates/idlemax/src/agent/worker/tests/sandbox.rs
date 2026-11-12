@@ -106,6 +106,8 @@ fn a_pane_gets_the_shim_first_on_path_and_fails_closed_when_it_did_not_take() {
         shim.contains(&format!("exec '{bwrap}' '--ro-bind' '/' '/'")),
         "{shim}"
     );
+    // A pane gets its own session too, so the CLI cannot push keys into the pane (TIOCSTI).
+    assert!(shim.contains("'--new-session'"), "{shim}");
     assert!(
         shim.contains("'--unshare-net'") && shim.ends_with("\"$cli\" \"$@\"\n"),
         "{shim}"

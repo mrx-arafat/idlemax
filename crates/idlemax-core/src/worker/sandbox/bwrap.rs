@@ -42,8 +42,6 @@ pub struct Fence {
     pub proxy_socket: String,
     pub relay_port: u16,
     pub idlemax_bin: String,
-    /// `--new-session`: the headless host; a pane keeps its controlling terminal.
-    pub new_session: bool,
 }
 
 /// The arguments after `bwrap`, up to the relay script's `$0`; the caller appends the CLI's
@@ -86,10 +84,8 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
         "--unshare-ipc",
         "--unshare-uts",
     ]);
-    a.push(&["--die-with-parent"]);
-    if f.new_session {
-        a.push(&["--new-session"]);
-    }
+    // Its own session in every host: no TIOCSTI into the pane's shell (CVE-2017-5226).
+    a.push(&["--die-with-parent", "--new-session"]);
     let proxy = format!("http://127.0.0.1:{}", f.relay_port);
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
         a.push(&["--setenv", name, &proxy]);
@@ -159,7 +155,6 @@ mod tests {
             proxy_socket: "/s/sandbox/proxy-7-1.sock".into(),
             relay_port: 3128,
             idlemax_bin: "/usr/local/bin/idlemax".into(),
-            new_session: true,
         }
     }
 
@@ -194,14 +189,12 @@ mod tests {
     }
 
     #[test]
-    fn a_pane_keeps_its_terminal_and_codex_gets_no_claude_home() {
+    fn codex_gets_no_claude_home_and_never_a_writable_config_or_hooks() {
         let f = Fence {
-            new_session: false,
             claude: None,
             ..fence()
         };
         let argv = bwrap_args(&f);
-        assert!(!argv.iter().any(|a| a == "--new-session"));
         assert!(!argv.iter().any(|a| a == "CLAUDE_CONFIG_DIR"));
         assert!(!argv
             .iter()

@@ -51,7 +51,7 @@ pub struct SandboxPlan {
     /// The state dir: hidden, and where the sandbox's own files live.
     pub root: PathBuf,
     pub hosts: Vec<String>,
-    /// The headless host: a new session, and the CLI appended by the host.
+    /// The headless host, which appends the CLI itself; a pane gets the shim.
     pub headless: bool,
 }
 
@@ -133,7 +133,6 @@ pub fn wrap(
         proxy_socket: show(&socket),
         relay_port: RELAY_PORT,
         idlemax_bin: show(&std::env::current_exe().map_err(|e| io("find idlemax", e))?),
-        new_session: plan.headless,
     };
     let wrap = Wrap {
         program: plan.bwrap.clone(),
