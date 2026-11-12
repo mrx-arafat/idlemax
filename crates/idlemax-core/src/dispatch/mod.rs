@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod accounts;
 pub mod check;
+pub mod dropped;
 pub mod inputs;
 pub mod label;
 pub mod linux;

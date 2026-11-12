@@ -686,7 +686,7 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 ```
 
 - `mode` is `off` or `propose`; in `off` no device takes a pick.
-- `picked_by` names the orchestrator pass the picks come from and its age, or why no pass has run.
+- `picked_by` names the orchestrator pass the picks come from and its age, or why no pass has run; when the pass's picks were dropped it says why, most common reason first, such as `orchestrator pass 3m ago, 23 picks dropped: account max may not be spent: resting (23)`.
 - Per device, `room` is the worker room the agent reported (`hold` with `this agent reports no worker room` when it sent none), and `held` says why the device takes nothing whatever its room: `offline`, `paused by you: idlemax resume`, or `kill switch or local pause is on`.
   A device takes picks only in `propose` mode, not held, with the room at `run`; it has `room.open_slots` slots.
 - Each pick names `project`, `task`, `title`, `provider`, `account`, `model`, the orchestrator's `reason`, `by: "orchestrator"`, the `scope_paths` the orchestrator named and the `avoid_paths` a worker must not touch.
@@ -731,7 +731,7 @@ A pick is then checked against the quota rules: it takes the model of its task's
 At most 64 picks (as many as a pass is offered tasks), 20 needs-you entries, 300 characters per reason and 20 scope paths of at most 300 characters per pick; a shape error, an unknown field or a length over a limit rejects the whole answer.
 A scope path that covers every file (`*`, `**`, `*/**`, empty) or holds more than 8 `*` is dropped from its pick and named under `dropped`.
 Scope paths read like this: one with `/` is anchored at the repository root, a plain name is a top-level file or folder (`tests` is not `vendor/lib/tests`), and a glob without `/` matches a file name at any depth (`*.py`); off-limits and core paths match a plain name at any depth.
-A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.
+A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one; `picked_by` and the pass's `control` event say why (up to three reasons with their counts), and each dropped pick is logged at info.
 Each `needs_you` task is stored as a judgment that lasts until the task's digest changes.
 The plan uses the newest pass with a result; `picked_by` reads `orchestrator pass <age> ago`.
 

@@ -3,6 +3,7 @@
 //! records the pass and its judgments, and cancels a pass that stopped being due.
 
 use idlemax_core::control::plan_control;
+use idlemax_core::dispatch::dropped::dropped_summary;
 use idlemax_core::dispatch::orchestrator::{
     fingerprint, is_pass, pass_due, schema, taking_devices, validate, DueInput, DuePass,
     FingerprintParts, Offer, PASS_ACTIVE,
@@ -281,11 +282,14 @@ fn record_result(
     if let Some(p) = &result.rule_proposal {
         keep_proposal(store, p, rules, job, now)?;
     }
+    for why in &result.dropped {
+        tracing::info!(job, "orchestrator pick dropped: {why}");
+    }
+    let dropped = dropped_summary(&result.dropped).unwrap_or_else(|| "0 dropped".into());
     let msg = format!(
-        "orchestrator pass: {} picks, {} sent to needs you, {} dropped",
+        "orchestrator pass: {} picks, {} sent to needs you, {dropped}",
         result.picks.len(),
         result.needs_you.len(),
-        result.dropped.len()
     );
     store.append_event(EventKind::Control, None, Some(job), &msg, now)?;
     Ok(())

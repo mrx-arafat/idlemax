@@ -6,6 +6,7 @@ use idlemax_core::dispatch::accounts::account_uses;
 use idlemax_core::dispatch::accounts::AccountUse;
 use idlemax_core::dispatch::check::checks_run_on;
 use idlemax_core::dispatch::check::BaseCheck;
+use idlemax_core::dispatch::dropped::dropped_summary;
 use idlemax_core::dispatch::inputs::StoredRepo;
 use idlemax_core::dispatch::orchestrator::{is_pass, pass_due, DueInput, Offer};
 use idlemax_core::dispatch::plan::{build, offered, PassResult, Plan, PlanInput};
@@ -238,9 +239,9 @@ pub fn gather_plan(
 fn picked_by(inputs: &Inputs) -> String {
     if let Some(row) = &inputs.newest_result {
         let mut text = format!("orchestrator pass {} ago", age(inputs.now - row.queued_ms));
-        let dropped = row.result.as_ref().map_or(0, |r| r.dropped.len());
-        if dropped > 0 {
-            text.push_str(&format!(", {dropped} picks dropped"));
+        let dropped = row.result.as_ref().map(|r| r.dropped.as_slice());
+        if let Some(summary) = dropped.and_then(dropped_summary) {
+            text.push_str(&format!(", {summary}"));
         }
         return text;
     }
