@@ -3,6 +3,7 @@
 //! It persists what the domain decided and makes no scheduling decisions itself.
 
 mod advice;
+mod budget;
 mod controls;
 mod devices;
 mod dispatch;

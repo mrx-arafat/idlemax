@@ -76,6 +76,27 @@ impl Store {
 }
 
 impl Store {
+    /// Runs of `account` started at or after `since_ms`, oldest first.
+    // The account's Budget reads it from Spec 3 Task 6 on.
+    #[allow(dead_code)]
+    pub fn runs_of_account(&self, account: &str, since_ms: UnixMs) -> StoreResult<Vec<Run>> {
+        self.runs_where(
+            "account = ?1 AND start_ms >= ?2",
+            params![account, since_ms],
+        )
+    }
+
+    pub(super) fn runs_where(
+        &self,
+        filter: &str,
+        args: impl rusqlite::Params,
+    ) -> StoreResult<Vec<Run>> {
+        let sql = format!("SELECT {COLUMNS} FROM runs WHERE {filter} ORDER BY start_ms, id");
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(args, run_from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     /// Job and Run changes in one transaction, so a Run never misses its job's end.
     pub fn update_jobs_and_runs(
         &mut self,

@@ -9,11 +9,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::Window;
-use crate::quota::window_label;
+use crate::quota::{window_label, SAME_RESET_MS};
 use crate::types::{QuotaSnapshot, QuotaWindowKind, UnixMs};
-
-/// Reset times closer than this belong to the same cycle (probes round them differently).
-const SAME_RESET_MS: i64 = 5 * 60_000;
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]

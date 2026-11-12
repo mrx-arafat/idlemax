@@ -77,7 +77,7 @@ impl fmt::Display for Blocker {
 }
 
 /// Rough share of one window a job of this class may burn, in percent.
-// SHORTCUT: fixed estimates, learn per-job usage from the quota ledger once it holds a week of runs.
+// SHORTCUT: fixed estimates for old AI jobs only (workers use quota::cost), measure them once an old AI job runs as a Run.
 pub fn token_class_pct(class: Option<TokenClass>) -> f64 {
     match class {
         Some(TokenClass::Small) | None => 3.0,

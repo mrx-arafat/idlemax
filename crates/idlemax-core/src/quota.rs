@@ -3,6 +3,7 @@
 //! Numbers come from 03-design-options.md and are estimates to tune after a week of data.
 
 mod config;
+pub mod cost;
 mod rules;
 pub mod tier;
 
@@ -15,13 +16,17 @@ use serde::{Deserialize, Serialize};
 use crate::types::{ProbeSource, QuotaSnapshot, QuotaWindowKind, UnixMs};
 
 pub const MINUTE_MS: i64 = 60_000;
+/// Reset times closer than this belong to the same cycle (probes round them differently).
+pub const SAME_RESET_MS: i64 = 5 * MINUTE_MS;
 pub const WEEK_MINUTES: u32 = 7 * 24 * 60;
 pub const ROLLING_RESERVE_PCT: f64 = 40.0;
 pub const WEEKLY_RESERVE_PCT: f64 = 30.0;
 /// Weekly reserve in the last 24 h before the weekly reset.
 pub const WEEKLY_FINAL_DAY_RESERVE_PCT: f64 = 15.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
     #[default]

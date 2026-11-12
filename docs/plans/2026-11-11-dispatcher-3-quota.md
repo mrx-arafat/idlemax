@@ -115,7 +115,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 
 - [ ] Task 1: Needs the owner's OK: measure how each plan counts usage
 - [x] Task 2: Add the quota settings, the Tier and the OpenCode provider
-- [ ] Task 3: Build the cost table from Run records
+- [x] Task 3: Build the cost table from Run records
 - [ ] Task 4: Learn the owner's own use per account day
 - [ ] Task 5: Compute the surplus, the daily Budget and the worker rules
 - [ ] Task 6: Gather the Budget on the coordinator and gate every worker start
@@ -323,14 +323,14 @@ The table gives workers a measured cost and says plainly what it uses before it 
 
 **Definition of Done:**
 
-- [ ] A Run alone on its account costs its after reading minus its before reading on each window.
-- [ ] Run A from minute 0 to 10 and Run B from minute 5 to 15 on one account, with weekly readings 40.0, 41.0, 43.0 and 44.0 at those four moments, each cost 2.0.
-- [ ] A Run whose after reading is older than its end has `pct` `None`, a Run with `launches` of 2 has `pct` `None`, and `expected` for either key still returns the seed.
-- [ ] With 5 measured samples of 1.0, 2.0, 1.0, 2.0 and 1.5 for a key, `expected` returns 1.5 with basis `Measured`; with 4 it returns 8.0 for the standard tier with basis `Seed`; with 5 samples spread over two task types of one model it returns their mean with basis `SameModel`.
-- [ ] `tier_costs` for a claude account with the default config has a `small` line with `haiku` and a `standard` line with `sonnet`, each with its estimate, basis and sample count.
-- [ ] `grep -rnE '(#|//) ?SHORTCUT:' crates/idlemax-core/src/scheduler/blockers.rs` shows one line that names old AI jobs, and `token_class_pct` still returns 3.0, 8.0 and 20.0.
-- [ ] Store test: for a Run stored through Spec 2's store methods whose `quota_after` is older than its end, and one weekly snapshot inserted after its end, `run_samples_since` returns the sample with that later snapshot as its after reading; with no later snapshot its `after` is empty.
-- [ ] Verify: `cargo test -p idlemax-core quota::cost`, `cargo test -p idlemax-core scheduler`, `cargo test -p idlemax-core report`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A Run alone on its account costs its after reading minus its before reading on each window.
+- [x] Run A from minute 0 to 10 and Run B from minute 5 to 15 on one account, with weekly readings 40.0, 41.0, 43.0 and 44.0 at those four moments, each cost 2.0.
+- [x] A Run whose after reading is older than its end has `pct` `None`, a Run with `launches` of 2 has `pct` `None`, and `expected` for either key still returns the seed.
+- [x] With 5 measured samples of 1.0, 2.0, 1.0, 2.0 and 1.5 for a key, `expected` returns 1.5 with basis `Measured`; with 4 it returns 8.0 for the standard tier with basis `Seed`; with 5 samples spread over two task types of one model it returns their mean with basis `SameModel`.
+- [x] `tier_costs` for a claude account with the default config has a `small` line with `haiku` and a `standard` line with `sonnet`, each with its estimate, basis and sample count.
+- [x] `grep -rnE '(#|//) ?SHORTCUT:' crates/idlemax-core/src/scheduler/blockers.rs` shows one line that names old AI jobs, and `token_class_pct` still returns 3.0, 8.0 and 20.0.
+- [x] Store test: for a Run stored through Spec 2's store methods whose `quota_after` is older than its end, and one weekly snapshot inserted after its end, `run_samples_since` returns the sample with that later snapshot as its after reading; with no later snapshot its `after` is empty.
+- [x] Verify: `cargo test -p idlemax-core quota::cost`, `cargo test -p idlemax-core scheduler`, `cargo test -p idlemax-core report`, `cargo test -p idlemax --bin idlemax store::budget`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 4: Learn the owner's own use per account day
 
