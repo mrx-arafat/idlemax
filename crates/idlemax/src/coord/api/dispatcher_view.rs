@@ -1,6 +1,6 @@
 //! `GET /v1/dispatcher`: the dispatcher view every surface renders (D12, D17). Adapter: reads
 //! the plan, the Runs, the projects and the Budgets under one store lock and calls the pure
-//! `dispatcher_view`, so the picture is consistent.
+//! `dispatcher_view`, so the picture is consistent. The quota views are read once, by the plan.
 
 use axum::extract::State;
 use axum::Json;
@@ -13,7 +13,7 @@ use idlemax_core::Config;
 
 use super::budget::budgets;
 use super::http::ApiFailure;
-use super::{quota_views, AppState};
+use super::AppState;
 use crate::coord::store::{Store, StoreError};
 use crate::dispatch::gather_plan;
 use crate::state::now_ms;
@@ -51,7 +51,8 @@ pub fn gather_view(
     live: &Config,
     now: UnixMs,
 ) -> Result<DispatcherView, StoreError> {
-    let plan = gather_plan(store, cfg, live, now)?.plan;
+    let gathered = gather_plan(store, cfg, live, now)?;
+    let plan = gathered.plan;
     let paused: Vec<_> = store
         .active_jobs()?
         .into_iter()
@@ -65,7 +66,7 @@ pub fn gather_view(
             runs.push(RunLine { run, frozen });
         }
     }
-    let budgets = budgets(store, cfg, live, &quota_views(store, cfg, now)?, now)?;
+    let budgets = budgets(store, cfg, live, &gathered.views, now)?;
     let mut days = Vec::new();
     for b in &budgets {
         let since = b.day_start_ms - DAY_MS * EARLIER_DAYS as i64;

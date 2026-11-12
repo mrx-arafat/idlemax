@@ -4,6 +4,7 @@
 use idlemax_core::dispatch::view::{DispatcherView, WorkerLine};
 use idlemax_core::protocol::ClusterStatus;
 use idlemax_core::types::UnixMs;
+use idlemax_core::worker::run::RunState;
 use serde::Serialize;
 
 use super::toon::Node;
@@ -44,8 +45,19 @@ pub fn block(v: &DispatcherView, now: UnixMs) -> String {
         "{}\n{workers}\nneeds you: {}\nwaiting for review: {}",
         line(v),
         v.needs_you.len(),
-        v.review.len()
+        waiting(v)
     )
+}
+
+/// Runs in `clean` and `needs_you`: the ones the owner is asked to review, and the two
+/// states the review cap counts. A rejected run keeps its branch but waits for nobody.
+fn waiting(v: &DispatcherView) -> u64 {
+    let n = v
+        .review
+        .iter()
+        .filter(|w| matches!(w.state, RunState::Clean | RunState::NeedsYou))
+        .count();
+    n as u64
 }
 
 fn cells(w: &WorkerLine, now: UnixMs) -> Vec<String> {
@@ -88,6 +100,6 @@ pub fn node(v: &DispatcherView, now: UnixMs) -> Node {
         ("devices", Node::Arr(devices)),
         ("workers", Node::Arr(workers)),
         ("needs_you", Node::from(v.needs_you.len() as u64)),
-        ("waiting_for_review", Node::from(v.review.len() as u64)),
+        ("waiting_for_review", Node::from(waiting(v))),
     ])
 }

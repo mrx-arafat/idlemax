@@ -266,6 +266,11 @@ fn status_shows_the_dispatcher_block_with_the_run_labels_only_when_served() {
             reason: "memory 91% over 90%".into(),
             ..DeviceLine::default()
         }],
+        review: vec![WorkerLine {
+            state: RunState::Rejected,
+            label: "rejected".into(),
+            ..WorkerLine::default()
+        }],
         workers: vec![WorkerLine {
             project: "app".into(),
             task: "roadmap:1:fix".into(),

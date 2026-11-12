@@ -14,7 +14,7 @@ use idlemax_core::dispatch::task::{discover, Task, TaskInput};
 use idlemax_core::dispatch::Mode;
 use idlemax_core::protocol::DeviceView;
 use idlemax_core::quota::pass::any_room;
-use idlemax_core::quota::{tier_models, Provider};
+use idlemax_core::quota::{tier_models, Provider, QuotaView};
 use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
 use idlemax_core::Config;
 
@@ -27,6 +27,9 @@ use crate::coord::store::{PassRow, Store, StoreError};
 pub struct Gathered {
     pub plan: Plan,
     pub tasks: Vec<Task>,
+    /// The quota views the plan was built from, so the dispatcher view need not read them
+    /// again under the same lock.
+    pub views: Vec<QuotaView>,
 }
 
 /// Everything the plan and the pass read, from one store lock.
@@ -48,6 +51,7 @@ pub struct Inputs {
     pub pass_active: bool,
     /// Budgets, account offers, the cost table and failed checks (Spec 3).
     pub quota: QuotaSide,
+    pub views: Vec<QuotaView>,
 }
 
 /// `cfg` is the coordinator's start config and gives `[quota]`; `live` is the newest
@@ -99,6 +103,7 @@ pub fn read_inputs(
         newest_result,
         pass_active,
         quota,
+        views,
     })
 }
 
@@ -181,6 +186,7 @@ pub fn gather_plan(
     Ok(Gathered {
         plan,
         tasks: inputs.tasks,
+        views: inputs.views,
     })
 }
 

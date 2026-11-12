@@ -349,8 +349,8 @@ accounts: "0 AI accounts configured ([[quota.accounts]] in config.toml)"
   It uses the scheduler's own checks, so it never disagrees with `idlemax why <job-id>`, and you do not have to run that per job.
 - With `[[quota.accounts]]` configured, an `accounts` table lists each AI account: whether idlemax may spend it now (`spend`), the quota left above the reserve before the limiting window resets (`left`, shown even while spending is held, `-` when that window has no data yet), that window and when it resets.
 - `--fields guard,jobs` adds the raw guard verdict and the job count, `--json` prints the same data as `GET /v1/status` (see [docs/API.md](docs/API.md)), and a coordinator older than this field shows only the running count and no accounts list.
-- A `dispatcher` block follows the devices: the mode and each device's line state with its reason, a table of the workers (`STATE  PROJECT  TASK  MODEL  AGE  SUMMARY`, where the state is the label the dashboard and the TUI show, such as `working`, `checking` or `back in queue`), and the counts `needs you` and `waiting for review`.
-  `--json` adds the whole view as `dispatcher` ([docs/API.md](docs/API.md#the-dispatcher-view)), and a coordinator without the dispatcher leaves the block out.
+- A `dispatcher` block follows the devices: the mode and each device's line state with its reason, a table of the workers (`STATE  PROJECT  TASK  MODEL  AGE  SUMMARY`, where the state is the label the dashboard and the TUI show, such as `working`, `checking` or `back in queue`), and the counts `needs you` and `waiting for review` (finished tasks ready for review or needing you; a rejected task keeps its branch but is not counted).
+  `--json` adds the whole view as `dispatcher` ([docs/API.md](docs/API.md#the-dispatcher-view)); a coordinator without the dispatcher leaves the block out, and a view that fails is one note on stderr while the rest still prints.
 
 The TUI's Devices tab shows the same columns with an "AI quota" panel under them, and each device card on the web dashboard shows slot and RAM meters, the reason and the AI accounts that device may spend.
 

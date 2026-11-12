@@ -16,10 +16,17 @@ use crate::state::now_ms;
 
 /// The cluster status and, from a coordinator that serves it, the dispatcher view.
 pub async fn status(c: &ApiClient, out: &Out, now: UnixMs) -> Result<()> {
-    let s = c.status().await?;
-    let view = match c.dispatcher().await {
+    let (s, view) = tokio::join!(c.status(), c.dispatcher());
+    let s = s?;
+    // Best effort: `status` is what the owner runs to see why things are wrong.
+    let view = match view {
+        Ok(view) => Some(view),
         Err(ClientError::Api { status: 404, .. }) => None,
-        other => Some(other?),
+        Err(e @ ClientError::Api { status: 401, .. }) => return Err(e.into()),
+        Err(e) => {
+            eprintln!("note: the dispatcher view is not available: {e}");
+            None
+        }
     };
     let both = StatusOut {
         status: &s,
