@@ -1,5 +1,6 @@
 use super::*;
-use crate::types::MemoryPressure;
+use crate::dispatch::linux::{linux_numbers, LinuxFacts, LinuxNumbers};
+use crate::types::{DeviceProfile, MemoryPressure};
 
 const GIB: u64 = 1 << 30;
 const MIB: u64 = 1 << 20;
@@ -31,11 +32,14 @@ fn busy_mac(at_ms: UnixMs) -> MetricsSnapshot {
 
 /// The room after a minute of low swap-in, so only the reading under test sets the state.
 fn settled(room: &mut WorkerRoom, m: MetricsSnapshot) -> RoomDecision {
-    room.evaluate(&MetricsSnapshot {
-        at_ms: m.at_ms - 90_000,
-        ..busy_mac(0)
-    });
-    room.evaluate(&m)
+    room.evaluate(
+        &MetricsSnapshot {
+            at_ms: m.at_ms - 90_000,
+            ..busy_mac(0)
+        },
+        None,
+    );
+    room.evaluate(&m, None)
 }
 
 #[test]
@@ -50,11 +54,11 @@ fn a_busy_owner_under_warn_pressure_still_leaves_three_slots() {
 #[test]
 fn swap_in_must_be_low_for_a_minute_before_workers_start() {
     let mut room = laptop();
-    let first = room.evaluate(&busy_mac(1_000));
+    let first = room.evaluate(&busy_mac(1_000), None);
     assert_eq!(first.state, LineState::Hold);
     assert!(first.reason.contains("swap-in"), "{}", first.reason);
     assert_eq!(first.open_slots, 0);
-    assert_eq!(room.evaluate(&busy_mac(61_000)).state, LineState::Run);
+    assert_eq!(room.evaluate(&busy_mac(61_000), None).state, LineState::Run);
 }
 
 #[test]
@@ -106,16 +110,22 @@ fn swap_in_above_low_holds_for_a_minute_and_high_for_a_minute_sheds() {
         swap_in_per_sec: Some(50.0),
         ..busy_mac(130_000)
     };
-    assert_eq!(room.evaluate(&mid).state, LineState::Hold);
-    assert_eq!(room.evaluate(&busy_mac(160_000)).state, LineState::Hold);
-    assert_eq!(room.evaluate(&busy_mac(220_000)).state, LineState::Run);
+    assert_eq!(room.evaluate(&mid, None).state, LineState::Hold);
+    assert_eq!(
+        room.evaluate(&busy_mac(160_000), None).state,
+        LineState::Hold
+    );
+    assert_eq!(
+        room.evaluate(&busy_mac(220_000), None).state,
+        LineState::Run
+    );
 
     let high = |at| MetricsSnapshot {
         swap_in_per_sec: Some(500.0),
         ..busy_mac(at)
     };
-    assert_eq!(room.evaluate(&high(300_000)).state, LineState::Hold);
-    let shed = room.evaluate(&high(360_000));
+    assert_eq!(room.evaluate(&high(300_000), None).state, LineState::Hold);
+    let shed = room.evaluate(&high(360_000), None);
     assert_eq!(shed.state, LineState::Shed, "{}", shed.reason);
 }
 
@@ -153,10 +163,13 @@ fn no_memory_reading_holds_with_no_slots() {
     let d = settled(&mut laptop(), m);
     assert_eq!((d.state, d.open_slots), (LineState::Hold, 0));
     assert!(d.reason.contains("not read"), "{}", d.reason);
-    let unread = laptop().evaluate(&MetricsSnapshot {
-        swap_in_per_sec: None,
-        ..busy_mac(100_000)
-    });
+    let unread = laptop().evaluate(
+        &MetricsSnapshot {
+            swap_in_per_sec: None,
+            ..busy_mac(100_000)
+        },
+        None,
+    );
     assert!(
         unread
             .reason
@@ -164,4 +177,97 @@ fn no_memory_reading_holds_with_no_slots() {
         "{}",
         unread.reason
     );
+}
+
+fn linux_numbers_of(profile: DeviceProfile, total_mib: u64) -> LinuxNumbers {
+    let guard =
+        GuardPolicy::for_profile(profile).server_sized_for(8, total_mib * MIB, &toml::Table::new());
+    linux_numbers(profile, &guard, &DispatcherConfig::default())
+}
+
+/// A Linux sample: no memory used percent, calm pressure, 9 GiB free disk, swap-in 500.
+fn linux_sample(total_mib: u64, available_mib: u64) -> MetricsSnapshot {
+    MetricsSnapshot {
+        at_ms: 100_000,
+        mem_total_bytes: total_mib * MIB,
+        mem_available_bytes: available_mib * MIB,
+        disk_total_bytes: 500 * GIB,
+        disk_free_bytes: 9 * GIB,
+        swap_in_per_sec: Some(500.0),
+        psi_mem_some_avg10: Some(0.0),
+        psi_mem_full_avg10: Some(0.0),
+        ..Default::default()
+    }
+}
+
+fn on_linux(m: &MetricsSnapshot, facts: &LinuxFacts, numbers: &LinuxNumbers) -> RoomDecision {
+    laptop().evaluate(m, Some((facts, numbers)))
+}
+
+fn facts_of(m: &MetricsSnapshot, outside_mib: u64, tracked: u32) -> LinuxFacts {
+    LinuxFacts {
+        mem_total_bytes: m.mem_total_bytes,
+        mem_available_bytes: m.mem_available_bytes,
+        outside_used_bytes: outside_mib * MIB,
+        tracked,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_production_share_sets_the_slots_and_nothing_tracked_is_never_an_emergency() {
+    let n = linux_numbers_of(DeviceProfile::Production, 16384);
+    let m = linux_sample(16384, 8192);
+    let d = on_linux(&m, &facts_of(&m, 3072, 0), &n);
+    assert_eq!((d.state, d.open_slots), (LineState::Run, 1), "{}", d.reason);
+    assert!(d.reason.contains("75% of 4096 MiB"), "{}", d.reason);
+
+    let n = linux_numbers_of(DeviceProfile::Production, 3379);
+    let m = linux_sample(3379, 1200);
+    let idle = on_linux(&m, &facts_of(&m, 0, 0), &n);
+    assert_eq!(idle.state, LineState::Hold, "{}", idle.reason);
+    assert!(
+        idle.reason.contains("nothing of idlemax's is running"),
+        "{}",
+        idle.reason
+    );
+    let busy = on_linux(&m, &facts_of(&m, 0, 1), &n);
+    assert_eq!(busy.state, LineState::Emergency, "{}", busy.reason);
+}
+
+#[test]
+fn workbox_pressure_holds_and_sheds_and_swap_in_is_ignored() {
+    let n = linux_numbers_of(DeviceProfile::Workbox, 16384);
+    let at = |some, full| {
+        let m = MetricsSnapshot {
+            psi_mem_some_avg10: some,
+            psi_mem_full_avg10: full,
+            ..linux_sample(16384, 8192)
+        };
+        on_linux(&m, &facts_of(&m, 0, 1), &n)
+    };
+    assert_eq!(at(Some(9.9), Some(4.9)).state, LineState::Run);
+    assert_eq!(at(Some(10.0), Some(0.0)).state, LineState::Hold);
+    assert_eq!(at(Some(0.0), Some(5.0)).state, LineState::Shed);
+    let unread = at(None, None);
+    assert_eq!(unread.state, LineState::Hold);
+    assert!(unread.reason.contains("psi=1"), "{}", unread.reason);
+}
+
+#[test]
+fn a_linux_reading_that_fails_only_holds() {
+    let n = linux_numbers_of(DeviceProfile::Workbox, 16384);
+    let m = linux_sample(16384, 0);
+    let facts = LinuxFacts {
+        cgroup_limit_bytes: Some(GIB),
+        ..facts_of(&m, 0, 3)
+    };
+    let d = on_linux(&m, &facts, &n);
+    assert_eq!(
+        (d.state, d.open_slots),
+        (LineState::Hold, 0),
+        "{}",
+        d.reason
+    );
+    assert!(d.reason.contains("cgroup"), "{}", d.reason);
 }

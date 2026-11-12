@@ -401,7 +401,9 @@ The agent sends it in every heartbeat as `Heartbeat.room`, and `GET /v1/local/st
 
 The room reads memory used percent, the swap-in rate, free disk, the battery floor and thermal throttling, and never user idle time or the memory pressure level, so it differs from `guard`.
 `open_slots` is 0 unless the state is `run`.
-On Linux, where memory used percent is not read yet, the room is `hold`.
+On Linux the memory percent is of idlemax's budget (all memory but the profile's reserve, capped by a `production` host's share), and `reason` names it as `memory 75% of 4096 MiB used`; `open_slots` counts workers in that budget.
+Memory pressure replaces swap-in there, so a `run` reason reads `pressure some 0.2% full 0%` where macOS reads `swap-in 2 pages/s`, and a hold or shed names `memory pressure some` or `full`.
+A Linux reading that fails gives `hold` with the reading named (for example `memory pressure is not read on this system: boot the kernel with psi=1`), and `MetricsSnapshot.mem_used_pct` stays `null` on Linux.
 An agent that predates the field sends no `room`, and the entry has none.
   It is `null` when that window has no trusted data (no snapshot, stale, or waiting for the first one after a reset).
   The limiting window (`window`, `resets_at_ms`) is the one that blocks the account: a window with no data first, else the blocking window that resets last; with none blocking, the window with the least headroom.

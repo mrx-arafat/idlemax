@@ -17,6 +17,7 @@ mod workers;
 pub use dispatcher::DispatcherConfig;
 pub use edit::{find_setting, set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, MemoryCap, SwapGrowth, AGENT_OVERHEAD_MIB};
+pub(crate) use guard_policy::{SERVER_RAM_RESERVE_MIB, WORKBOX_RAM_RESERVE_MIB};
 pub use limits::{limit_settings, set_limit, LimitError, LimitReply, LimitRequest, OWNER_LIMITS};
 pub use reload::{plan_reload, ReloadReport};
 pub use settings::{list_settings, show_value, Setting};

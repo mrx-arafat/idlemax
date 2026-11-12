@@ -6,8 +6,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use idlemax_core::config::DispatcherConfig;
+use idlemax_core::dispatch::linux::{linux_facts, linux_numbers, LinuxFacts, LinuxNumbers};
 use idlemax_core::dispatch::room::{RoomDecision, RoomPolicy};
 use idlemax_core::reconcile::fail_safe_decision;
+use idlemax_core::types::{Admission, Os};
 use tracing::{info, warn};
 
 use super::bounded::blocking_within;
@@ -69,11 +72,30 @@ impl Agent {
         if &policy != self.worker_room.policy() {
             self.worker_room.set_policy(policy);
         }
-        let room = self.worker_room.evaluate(&self.reading.metrics);
+        let linux = (self.device.os == Os::Linux).then(|| self.linux_inputs(&dispatcher));
+        let room = self
+            .worker_room
+            .evaluate(&self.reading.metrics, linux.as_ref().map(|(f, n)| (f, n)));
         if room.state != self.room.state {
             info!(state = room.state.as_str(), reason = %room.reason, "worker room changed");
         }
         self.room = room;
+    }
+
+    /// The Linux facts and numbers of the fresh sample (D19). Workers run in the agent's
+    /// cgroup only under the headless host of Spec 5 Task 8, so no cgroup is passed yet and
+    /// every tracked job counts as idlemax's own use.
+    fn linux_inputs(&self, dispatcher: &DispatcherConfig) -> (LinuxFacts, LinuxNumbers) {
+        let profile = self.config.agent.profile_or_default(self.device.os);
+        let numbers = linux_numbers(profile, self.guard.policy(), dispatcher);
+        let tracked = self
+            .state
+            .jobs()
+            .filter(|j| j.admission == Admission::Lines)
+            .count();
+        let tracked = u32::try_from(tracked).unwrap_or(u32::MAX);
+        let facts = linux_facts(&self.reading.metrics, None, false, &self.running, tracked);
+        (facts, numbers)
     }
 
     pub(super) async fn on_refresh_device_info(&mut self) {

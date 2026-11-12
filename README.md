@@ -983,6 +983,25 @@ What fences a worker:
 What is not fenced: a worker runs as your user, so credentials on disk or in the keychain (ssh keys, the `gh` login, cloud CLI logins), the idlemax token file and `coord.db` stay readable to a worker that goes looking, and the push block can be undone on purpose.
 Switch on `auto` only after the checks of `docs/WORKER-PROOF.md` passed for the CLI you list in `workers.clis`.
 
+### The worker lines
+
+Each agent sets a line state from every sample: `run` lets a worker start, `hold` starts none, `shed` stops the newest and `emergency` stops them all.
+On macOS memory reads the percent Activity Monitor shows and swap-in must stay low for a minute.
+On Linux memory reads the percent of what idlemax may fill that is in use: the memory free above the reserve, out of all memory but the reserve, capped by the share on a `production` host; memory pressure (PSI) takes the place of swap-in.
+
+| Line | `laptop` | `workbox` | `production` |
+|---|---|---|---|
+| Reserve kept for the system or services (Linux) | 0 | 1024 MiB | 1536 MiB |
+| Share idlemax may fill (Linux) | none | none | the guard's `ram_budget_mib`, a quarter of memory |
+| Hold, shed, emergency at memory used | 90, 95, 98 % | the same | the same, of the share |
+| Hold at memory pressure `some avg10` (Linux) | 5 % | 10 % | 5 % |
+| Shed at memory pressure `full avg10` (Linux) | 1 % | 5 % | 1 % |
+| Free disk for hold, shed, emergency | 4, 2, 1 GiB | the same | the same |
+
+A reading that cannot be taken only holds, and pressure never raises an emergency.
+With nothing of idlemax's running, a Linux memory line above `hold` reads `hold`, since there is nothing to stop.
+Linux needs PSI (`psi=1` on the kernel command line where it is off); without it the room holds.
+
 ## Controls
 
 Every command reads `$IDLEMAX_HOME` (default `~/.idlemax`; set but empty is an error).
@@ -1200,6 +1219,9 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `dispatcher.swap_in_low_pages_per_sec` | `10.0` | swap-in must stay at or under this for a minute before a worker starts |
 | `dispatcher.swap_in_high_pages_per_sec` | `100.0` | swap-in above this for a minute sheds a worker |
 | `dispatcher.worker_mem_mib` | `512` | memory one worker is expected to take; sets how many workers fit under the hold line |
+| `dispatcher.linux_reserve_mib` | the profile's | Linux: memory kept for the system or services, outside what workers may fill |
+| `dispatcher.linux_psi_some_hold_pct` | the profile's | Linux: at this memory pressure `some avg10` no new worker starts |
+| `dispatcher.linux_psi_full_shed_pct` | the profile's | Linux: at this memory pressure `full avg10` idlemax stops its newest worker |
 | `workers.clis` | `[]` | agent CLIs that may run workers, `claude` or `codex`; empty means no worker starts |
 | `workers.reviewers` | `[]` | agent CLIs that may review a high-risk diff, `claude` or `codex` |
 | `workers.review_cap` | `3` | finished tasks per project that may wait for your review before idlemax moves on |

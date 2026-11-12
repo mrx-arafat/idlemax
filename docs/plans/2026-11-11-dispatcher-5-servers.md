@@ -131,7 +131,7 @@ The repository is public: no address, host name or device id of the owner's mach
 ## Progress Tracking
 
 - [x] Task 1: Add the laptop, workbox and production profiles
-- [ ] Task 2: Feed the Linux readings into the worker room
+- [x] Task 2: Feed the Linux readings into the worker room
 - [ ] Task 3: Switch devices on and off on the coordinator
 - [ ] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
 - [ ] Task 5: Read each device's Claude login and check the logins in doctor
@@ -289,15 +289,15 @@ The same three lines then hold on every system, and a reading that cannot be tak
 
 **Definition of Done:**
 
-- [ ] `workbox`, 16384 MiB total: 4096 MiB available gives 80.0, 2560 MiB gives 90.0, and 1024 MiB or less gives 100.0.
-- [ ] `production`, 16384 MiB total, a share of 4096 MiB with 3072 MiB in use, 8192 MiB available: `used_pct` is 75.0, `budget_mib` is 4096, and `evaluate` reads `run` with 1 open slot at `worker_mem_mib` of 512.
-- [ ] `production`, 3379 MiB total with 1200 MiB available: `used_pct` is 100.0, and `evaluate` reads `hold` with nothing tracked and `emergency` with one worker tracked.
-- [ ] A cgroup limit of 2048 MiB with 1024 MiB in use caps a `workbox` at 50.0 while the host has room, 512 MiB of tracked use outside the cgroup raises that to 75.0, and a limit with unknown use is an `Err` that names the cgroup.
-- [ ] `laptop` with a tenth of its memory available gives 90.0.
-- [ ] With the `workbox` numbers `evaluate` holds at `some avg10` 10.0 and sheds at `full avg10` 5.0, stays `run` at 9.9 and 4.9, holds when the sample has no pressure figure, and ignores a swap-in rate of 500 pages per second.
-- [ ] Every test of Spec 1 in `dispatch/room/tests.rs` passes with `None` as the new argument and no changed assertion.
-- [ ] `memory_used` reads a v2 and a v1 fixture directory and takes the use from the ancestor that holds the tightest limit.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::linux && cargo test -p idlemax-core dispatch::room && cargo test -p idlemax-core config && cargo test -p idlemax --bin idlemax agent::cgroup && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `workbox`, 16384 MiB total: 4096 MiB available gives 80.0, 2560 MiB gives 90.0, and 1024 MiB or less gives 100.0.
+- [x] `production`, 16384 MiB total, a share of 4096 MiB with 3072 MiB in use, 8192 MiB available: `used_pct` is 75.0, `budget_mib` is 4096, and `evaluate` reads `run` with 1 open slot at `worker_mem_mib` of 512.
+- [x] `production`, 3379 MiB total with 1200 MiB available: `used_pct` is 100.0, and `evaluate` reads `hold` with nothing tracked and `emergency` with one worker tracked.
+- [x] A cgroup limit of 2048 MiB with 1024 MiB in use caps a `workbox` at 50.0 while the host has room, 512 MiB of tracked use outside the cgroup raises that to 75.0, and a limit with unknown use is an `Err` that names the cgroup.
+- [x] `laptop` with a tenth of its memory available gives 90.0.
+- [x] With the `workbox` numbers `evaluate` holds at `some avg10` 10.0 and sheds at `full avg10` 5.0, stays `run` at 9.9 and 4.9, holds when the sample has no pressure figure, and ignores a swap-in rate of 500 pages per second.
+- [x] Every test of Spec 1 in `dispatch/room/tests.rs` passes with `None` as the new argument and no changed assertion.
+- [x] `memory_used` reads a v2 and a v1 fixture directory and takes the use from the ancestor that holds the tightest limit.
+- [x] Verify: `cargo test -p idlemax-core dispatch::linux && cargo test -p idlemax-core dispatch::room && cargo test -p idlemax-core config && cargo test -p idlemax --bin idlemax agent::cgroup && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 3: Switch devices on and off on the coordinator
 

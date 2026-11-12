@@ -22,6 +22,12 @@ pub struct DispatcherConfig {
     pub swap_in_high_pages_per_sec: f64,
     /// Memory one worker is expected to take; sets the number of open slots.
     pub worker_mem_mib: u64,
+    /// Linux: memory kept for the system or the services; unset takes the profile's value.
+    pub linux_reserve_mib: Option<u64>,
+    /// Linux: memory pressure `some avg10` that holds new workers; unset takes the profile's.
+    pub linux_psi_some_hold_pct: Option<f64>,
+    /// Linux: memory pressure `full avg10` that sheds a worker; unset takes the profile's.
+    pub linux_psi_full_shed_pct: Option<f64>,
 }
 
 impl Default for DispatcherConfig {
@@ -37,6 +43,9 @@ impl Default for DispatcherConfig {
             swap_in_low_pages_per_sec: 10.0,
             swap_in_high_pages_per_sec: 100.0,
             worker_mem_mib: 512,
+            linux_reserve_mib: None,
+            linux_psi_some_hold_pct: None,
+            linux_psi_full_shed_pct: None,
         }
     }
 }
@@ -50,6 +59,13 @@ impl DispatcherConfig {
             ("shed_mem_used_pct", self.shed_mem_used_pct),
             ("emergency_mem_used_pct", self.emergency_mem_used_pct),
         ];
+        let linux = [
+            ("linux_psi_some_hold_pct", self.linux_psi_some_hold_pct),
+            ("linux_psi_full_shed_pct", self.linux_psi_full_shed_pct),
+        ];
+        let pcts = pcts
+            .into_iter()
+            .chain(linux.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))));
         for (key, v) in pcts {
             if !(0.0..=100.0).contains(&v) {
                 return Err(format!("dispatcher.{key}: must be within 0..=100, got {v}"));
@@ -120,6 +136,8 @@ mod tests {
             "worker_mem_mib = 0",
             "shed_disk_free_mib = 9000",
             "swap_in_low_pages_per_sec = 500.0",
+            "linux_psi_some_hold_pct = 101.0",
+            "linux_psi_full_shed_pct = -1.0",
         ] {
             assert!(
                 Config::parse(&format!("[dispatcher]\n{bad}\n")).is_err(),

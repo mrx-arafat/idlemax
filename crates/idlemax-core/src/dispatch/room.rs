@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::linux::{linux_room, pressure_lines, LinuxFacts, LinuxNumbers};
 use crate::config::{DispatcherConfig, GuardPolicy};
 use crate::types::{GuardAction, GuardDecision, MetricsSnapshot, UnixMs};
 
@@ -163,12 +164,26 @@ impl WorkerRoom {
         self.policy = policy;
     }
 
-    /// One decision per sample, computed fresh; call in time order.
-    pub fn evaluate(&mut self, m: &MetricsSnapshot) -> RoomDecision {
+    /// One decision per sample, computed fresh; call in time order. `linux` is `Some` on
+    /// Linux: the memory line reads idlemax's budget and pressure replaces swap-in (D19).
+    pub fn evaluate(
+        &mut self,
+        m: &MetricsSnapshot,
+        linux: Option<(&LinuxFacts, &LinuxNumbers)>,
+    ) -> RoomDecision {
         let mut found = Findings::new();
-        let used = self.check_memory(m, &mut found);
+        let read = match linux {
+            None => self.check_memory(m, &mut found).map(|used| {
+                let total = m.mem_total_bytes as f64 / (1024.0 * 1024.0);
+                (used, total, String::new())
+            }),
+            Some((facts, numbers)) => self.check_linux_memory(facts, numbers, &mut found),
+        };
         self.check_disk(m, &mut found);
-        self.check_swap_in(m, &mut found);
+        match linux {
+            None => self.check_swap_in(m, &mut found),
+            Some((_, numbers)) => found.extend(pressure_lines(m, numbers)),
+        }
         self.check_environment(m, &mut found);
         let state = found
             .iter()
@@ -188,31 +203,41 @@ impl WorkerRoom {
                 at_ms: m.at_ms,
             };
         }
-        let used = used.unwrap_or(100.0);
+        let (used, budget_mib, of) = read.unwrap_or((100.0, 0.0, String::new()));
         RoomDecision {
             state,
-            reason: self.run_reason(m, used),
-            open_slots: self.open_slots(m, used),
+            reason: self.run_reason(m, used, &of, linux.is_some()),
+            open_slots: self.open_slots(used, budget_mib),
             at_ms: m.at_ms,
         }
     }
 
-    fn run_reason(&self, m: &MetricsSnapshot, used: f64) -> String {
-        let swap = m
-            .swap_in_per_sec
-            .map_or_else(|| "unknown".into(), |r| format!("{} pages/s", num(r)));
+    fn run_reason(&self, m: &MetricsSnapshot, used: f64, of: &str, linux: bool) -> String {
+        let pct = |v: Option<f64>| v.map_or_else(|| "unknown".into(), |v| format!("{}%", num(v)));
+        let second = if linux {
+            format!(
+                "pressure some {} full {}",
+                pct(m.psi_mem_some_avg10),
+                pct(m.psi_mem_full_avg10)
+            )
+        } else {
+            let swap = m
+                .swap_in_per_sec
+                .map_or_else(|| "unknown".into(), |r| format!("{} pages/s", num(r)));
+            format!("swap-in {swap}")
+        };
         format!(
-            "run: memory {}% used (hold at {}%), swap-in {swap}, disk {} MiB free",
+            "run: memory {}%{of} used (hold at {}%), {second}, disk {} MiB free",
             num(used),
             num(self.policy.hold_mem_used_pct),
             mib(m.disk_free_bytes)
         )
     }
 
-    /// Whole workers of `worker_mem_mib` between the reading and the hold line (D13).
-    fn open_slots(&self, m: &MetricsSnapshot, used: f64) -> u32 {
-        let total_mib = m.mem_total_bytes as f64 / (1024.0 * 1024.0);
-        let room_mib = (self.policy.hold_mem_used_pct - used).max(0.0) / 100.0 * total_mib;
+    /// Whole workers of `worker_mem_mib` between the reading and the hold line (D13), out of
+    /// `budget_mib`: the installed memory, or idlemax's budget on Linux.
+    fn open_slots(&self, used: f64, budget_mib: f64) -> u32 {
+        let room_mib = (self.policy.hold_mem_used_pct - used).max(0.0) / 100.0 * budget_mib;
         let slots = (room_mib / self.policy.worker_mem_mib.max(1) as f64).floor();
         if slots >= f64::from(u32::MAX) {
             u32::MAX
@@ -221,8 +246,20 @@ impl WorkerRoom {
         }
     }
 
-    fn check_memory(&self, m: &MetricsSnapshot, f: &mut Findings) -> Option<f64> {
+    /// The memory line that `used` crosses, worst first; `of` names the budget on Linux.
+    fn memory_line(&self, used: f64, of: &str) -> Option<(LineState, String)> {
         let p = &self.policy;
+        let lines = [
+            (LineState::Emergency, p.emergency_mem_used_pct, "emergency"),
+            (LineState::Shed, p.shed_mem_used_pct, "shed"),
+            (LineState::Hold, p.hold_mem_used_pct, "hold"),
+        ];
+        let (state, line, name) = lines.into_iter().find(|(_, line, _)| used >= *line)?;
+        let text = format!("memory {}%{of} used ({name} at {}%)", num(used), num(line));
+        Some((state, text))
+    }
+
+    fn check_memory(&self, m: &MetricsSnapshot, f: &mut Findings) -> Option<f64> {
         let Some(used) = m.mem_used_pct.filter(|_| m.mem_total_bytes > 0) else {
             f.push((
                 LineState::Hold,
@@ -230,18 +267,34 @@ impl WorkerRoom {
             ));
             return None;
         };
-        let lines = [
-            (LineState::Emergency, p.emergency_mem_used_pct, "emergency"),
-            (LineState::Shed, p.shed_mem_used_pct, "shed"),
-            (LineState::Hold, p.hold_mem_used_pct, "hold"),
-        ];
-        if let Some((state, line, name)) = lines.into_iter().find(|(_, line, _)| used >= *line) {
-            f.push((
-                state,
-                format!("memory {}% used ({name} at {}%)", num(used), num(line)),
-            ));
-        }
+        f.extend(self.memory_line(used, ""));
         Some(used)
+    }
+
+    /// A reading that fails only holds, and with nothing of idlemax's tracked there is
+    /// nothing to shed, so a line above `hold` reads `hold`.
+    fn check_linux_memory(
+        &self,
+        facts: &LinuxFacts,
+        numbers: &LinuxNumbers,
+        f: &mut Findings,
+    ) -> Option<(f64, f64, String)> {
+        let room = match linux_room(facts, numbers) {
+            Ok(room) => room,
+            Err(why) => {
+                f.push((LineState::Hold, why));
+                return None;
+            }
+        };
+        let of = format!(" of {} MiB", room.budget_mib);
+        if let Some((mut state, mut text)) = self.memory_line(room.used_pct, &of) {
+            if state > LineState::Hold && facts.tracked == 0 {
+                state = LineState::Hold;
+                text.push_str(", nothing of idlemax's is running");
+            }
+            f.push((state, text));
+        }
+        Some((room.used_pct, room.budget_mib as f64, of))
     }
 
     fn check_disk(&self, m: &MetricsSnapshot, f: &mut Findings) {
@@ -337,7 +390,7 @@ fn mib(bytes: u64) -> u64 {
 }
 
 /// 90.0 as "90", 89.94 as "89.9".
-fn num(v: f64) -> String {
+pub(crate) fn num(v: f64) -> String {
     let text = format!("{v:.1}");
     text.strip_suffix(".0").map_or(text.clone(), str::to_string)
 }

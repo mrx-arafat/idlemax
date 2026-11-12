@@ -62,9 +62,9 @@ pub struct GuardPolicy {
 const GIB_MIB: u64 = 1024;
 /// Site reserve target; the legacy budget takes precedence on small hosts.
 const SERVER_CPU_RESERVE: u32 = 1;
-const SERVER_RAM_RESERVE_MIB: u64 = 1536;
+pub(crate) const SERVER_RAM_RESERVE_MIB: u64 = 1536;
 const WORKBOX_CPU_RESERVE: u32 = 1;
-const WORKBOX_RAM_RESERVE_MIB: u64 = 1024;
+pub(crate) const WORKBOX_RAM_RESERVE_MIB: u64 = 1024;
 /// Room for the agent itself in addition to its jobs.
 pub const AGENT_OVERHEAD_MIB: u64 = 128;
 
