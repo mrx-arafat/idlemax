@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod accounts;
 pub mod check;
 pub mod inputs;
+pub mod label;
 pub mod orchestrator;
 pub mod plan;
 pub mod project;
@@ -15,6 +16,7 @@ pub mod prompt;
 pub mod roadmap;
 pub mod room;
 pub mod task;
+pub mod view;
 
 /// What the dispatcher does with its plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]

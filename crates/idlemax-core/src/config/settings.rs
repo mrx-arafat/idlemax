@@ -2,7 +2,7 @@
 //! the file sets it. This is what `idlemax config` shows and what `config set` checks keys
 //! against. Pure.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{Config, ConfigError, GuardPolicy};
@@ -24,7 +24,7 @@ const SECTIONS: [&str; 7] = [
 const SIZED_AT_START: [&str; 2] = ["guard.max_jobs", "guard.ram_budget_mib"];
 
 /// One setting. `value` null means the option or check is off.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Setting {
     pub key: String,
     pub value: Value,

@@ -233,7 +233,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 
 ## Progress Tracking
 
-- [ ] Task 1: Add the state labels and the dispatcher view to the core
+- [x] Task 1: Add the state labels and the dispatcher view to the core
 - [ ] Task 2: Serve the view and show it in `idlemax status`
 - [x] Task 3: Decide who is calling
 - [ ] Task 4: Refuse owner-only calls from a launched process
@@ -303,12 +303,12 @@ Every surface in the later tasks renders this output and computes nothing itself
 
 **Definition of Done:**
 
-- [ ] For each of the ten run states `run_label` and `run_summary` return the text of the table, a frozen `running` run returns `paused`, and a concern with a line break comes back as one line of at most 160 characters.
-- [ ] `dispatcher_view` lists only `starting`, `running`, `checking`, `stopped` and `shed` runs as workers, newest first, each with its label, its summary and the Run's `reason` as `why`.
-- [ ] `needs_you` holds exactly the four kinds named above; a hold, a shed, a worker start and an account whose Budget has the basis `Spent` add nothing to it.
-- [ ] A project with two `clean`, one `needs_you` and one `rejected` run has `waiting` 3.
-- [ ] An account with a Budget and two `AccountDay` rows shows today and two earlier days, newest first, with the earlier days' spendable percent `None`.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::label && cargo test -p idlemax-core dispatch::view && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] For each of the ten run states `run_label` and `run_summary` return the text of the table, a frozen `running` run returns `paused`, and a concern with a line break comes back as one line of at most 160 characters.
+- [x] `dispatcher_view` lists only `starting`, `running`, `checking`, `stopped` and `shed` runs as workers, newest first, each with its label, its summary and the Run's `reason` as `why`.
+- [x] `needs_you` holds exactly the four kinds named above; a hold, a shed, a worker start and an account whose Budget has the basis `Spent` add nothing to it.
+- [x] A project with two `clean`, one `needs_you` and one `rejected` run has `waiting` 3.
+- [x] An account with a Budget and two `AccountDay` rows shows today and two earlier days, newest first, with the earlier days' spendable percent `None`.
+- [x] Verify: `cargo test -p idlemax-core dispatch::label && cargo test -p idlemax-core dispatch::view && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 2: Serve the view and show it in `idlemax status`
 
