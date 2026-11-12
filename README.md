@@ -1137,7 +1137,6 @@ A coordinator without the dispatcher view gets one line saying so, and no key on
 | `t` | on the projects or devices pane, switch the selected project or device (on asks first; a device switched off stops its workers with their state saved) |
 | `e` | on the limits pane, type a new value in the footer: `Enter` saves, the word `default` puts back the default (an empty value sends nothing), `Esc` closes |
 | `a`, `d` | on the rules pane, approve (asks first) or reject the selected proposal |
-| `k`, `M`, `D` | on the review pane, keep, keep and merge, or discard the selected finished task (each asks first and names the branch) |
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
 | `q`, `Esc`, `Ctrl-C` | quit |
 
@@ -1150,7 +1149,7 @@ The page reads `GET /v1/why` once per refresh for all of them and asks for one j
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, pause, resume or remove a schedule, and accept or dismiss advice.
 The Dispatcher card comes first: the mode switch (`off`, `propose`, `auto`, which asks first), each device's line state and reason, `Stop workers` (and `Start` while a worker is stopped by you; a coordinator without the worker stop gets a stop-all instead, which `Resume` lifts), the workers with their label, summary, model and a `why` line, what would launch next and who picked it.
-Beside it are the cards Needs you, Waiting for review (Keep, Merge and Discard per task, each asking first, the same as `idlemax review keep` and `discard`), Budget (today's spend of the day's share per account, then the earlier days), Projects (each device's switch, then each project's; on asks first, off does not), Limits (headed with the device whose `config.toml` it changes: each owner limit with its default, Save and `default`, then every other device's own limits read-only) and Rule proposals (Approve asks first).
+Beside it are the cards Needs you, Waiting for review (read-only: each finished task with its label, summary and branch; keep, merge or discard it with `idlemax review`), Budget (today's spend of the day's share per account, then the earlier days), Projects (each device's switch, then each project's; on asks first, off does not), Limits (headed with the device whose `config.toml` it changes: each owner limit with its default, Save and `default`, then every other device's own limits read-only) and Rule proposals (Approve asks first).
 A coordinator without the dispatcher view shows none of these cards.
 
 **HTTP API.**

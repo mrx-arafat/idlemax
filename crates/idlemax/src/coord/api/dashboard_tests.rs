@@ -38,7 +38,6 @@ const CALLS: &[(&str, &[&str])] = &[
     ),
     ("/v1/quota", &["/v1/quota"]),
     ("/v1/report", &["/v1/report"]),
-    ("/v1/runs/", &["/v1/runs/1/keep", "/v1/runs/1/discard"]),
     ("/v1/schedules", &["/v1/schedules"]),
     (
         "/v1/schedules/",

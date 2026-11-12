@@ -236,38 +236,13 @@ fn without_a_dispatcher_view_no_key_on_the_tab_sends_a_request() {
 }
 
 #[test]
-fn keep_merge_and_discard_of_the_selected_task_ask_first() {
+fn the_review_pane_is_read_only() {
     let mut app = dispatch_app();
     pane(&mut app, "review");
-    for (c, want) in [
-        (
-            'k',
-            Request::KeepRun {
-                run: 9,
-                merge: false,
-            },
-        ),
-        (
-            'M',
-            Request::KeepRun {
-                run: 9,
-                merge: true,
-            },
-        ),
-        ('D', Request::DiscardRun(9)),
-    ] {
+    for c in "kMD".chars() {
         assert_eq!(press(&mut app, c), None, "{c}");
-        let prompt = app
-            .confirm
-            .as_ref()
-            .map(|c| c.prompt.clone())
-            .unwrap_or_default();
-        assert!(prompt.contains("idlemax/fix-sync"), "{prompt}");
-        assert_eq!(press(&mut app, 'y'), Some(want), "{c}");
+        assert!(app.confirm.is_none(), "{c} asked");
     }
-    pane(&mut app, "projects");
-    assert_eq!(press(&mut app, 'k'), None);
-    assert!(app.confirm.is_none());
 }
 
 #[test]

@@ -52,7 +52,7 @@ advice: 1 open
 │ready for review: Fix the login test: checks passed                                                                   │
 │why: first roadmap item; the check is focused                                                                         │
 │claude max sonnet | idlemax/task-3                                                                                    │
-│k keeps, M merges, D discards (each asks first); or idlemax review keep|discard 3                                     │
+│keep or discard: idlemax review keep 3 | idlemax review discard 3                                                     │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -79,4 +79,4 @@ advice: 1 open
 │                                                                                                                      │
 │                                                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume all  v pane  k keep  M merge  D discard  x stop workers  s stop-all  tab/1-7 switch  q quit
+p/r pause/resume all  v pane  m mode  g start  x stop workers  s stop-all  tab/1-7 switch  q quit

@@ -169,7 +169,6 @@ impl App {
             't' => return Some(self.switch_project(now_ms)),
             'e' => self.edit_limit(now_ms),
             'a' | 'd' => return Some(self.decide_rule(c == 'a', now_ms)),
-            'k' | 'M' | 'D' if self.pane == Pane::Review => self.review_run(c, now_ms),
             _ => return None,
         }
         Some(None)
@@ -279,43 +278,6 @@ impl App {
                 now_ms,
             ),
         }
-    }
-
-    /// Keep (`k`), keep and merge (`M`) or discard (`D`) the selected finished task; each
-    /// asks first, naming the branch.
-    fn review_run(&mut self, c: char, now_ms: UnixMs) {
-        let picked = self
-            .selected_row()
-            .and_then(|i| self.view()?.review.get(i))
-            .map(|w| {
-                (
-                    w.run,
-                    w.branch.clone().unwrap_or_else(|| format!("run {}", w.run)),
-                )
-            });
-        let Some((run, branch)) = picked else {
-            self.flash(
-                "k/M/D: select a finished task on the review pane (v)".into(),
-                true,
-                now_ms,
-            );
-            return;
-        };
-        let (prompt, request) = match c {
-            'k' => (
-                format!("Keep {branch}? Its worktree folder is removed; the branch stays."),
-                Request::KeepRun { run, merge: false },
-            ),
-            'M' => (
-                format!("Keep {branch} and merge it into your current branch? Only a clean checkout with no conflict is merged."),
-                Request::KeepRun { run, merge: true },
-            ),
-            _ => (
-                format!("Discard {branch}? The branch and its worktree are deleted."),
-                Request::DiscardRun(run),
-            ),
-        };
-        self.ask(prompt, request);
     }
 
     fn decide_rule(&mut self, approve: bool, now_ms: UnixMs) -> Option<Request> {
