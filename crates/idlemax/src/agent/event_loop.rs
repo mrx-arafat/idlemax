@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use idlemax_core::config::Config;
+use idlemax_core::dispatch::room::{RoomDecision, WorkerRoom};
 use idlemax_core::guard::Guard;
 use idlemax_core::job_run;
 use idlemax_core::protocol::{LocalStatus, RunningJob};
@@ -35,6 +36,7 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tracing::{error, info, warn};
 
+use crate::live_config::LiveConfig;
 use crate::state::now_ms;
 
 use super::api::{LocalControl, ReloadRequest};
@@ -71,6 +73,10 @@ pub struct Wiring {
     /// tell what changed.
     pub paths: Paths,
     pub config: Config,
+    /// The worker room rule; its numbers follow `live` on every sample.
+    pub worker_room: WorkerRoom,
+    /// The newest `config.toml`, for the `[dispatcher]` keys (A2).
+    pub live: Arc<LiveConfig>,
 }
 
 pub struct Agent {
@@ -97,6 +103,10 @@ pub struct Agent {
     outbox: DurableOutbox,
     reading: Reading,
     decision: GuardDecision,
+    worker_room: WorkerRoom,
+    live: Arc<LiveConfig>,
+    /// The worker room of the newest sample.
+    room: RoomDecision,
     running: Vec<RunningJob>,
     /// Where the running jobs work, so the disk reading covers their filesystems.
     job_dirs: Vec<PathBuf>,
@@ -144,6 +154,9 @@ impl Agent {
             outbox: w.outbox,
             reading: Reading::default(),
             decision: GuardDecision::default(),
+            worker_room: w.worker_room,
+            live: w.live,
+            room: RoomDecision::hold("no sample yet", now_ms()),
             running: Vec::new(),
             job_dirs: Vec::new(),
             online: false,
@@ -242,6 +255,7 @@ impl Agent {
             guard: self.decision.clone(),
             metrics: Some(self.reading.metrics.clone()),
             running: self.running.clone(),
+            room: Some(self.room.clone()),
         });
     }
 

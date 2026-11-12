@@ -400,3 +400,23 @@ fn prune_forgets_silent_devices_and_old_finished_jobs_but_keeps_parked_and_sched
         .collect();
     assert_eq!(names, ["here"]);
 }
+
+#[test]
+fn heartbeat_room_round_trips() {
+    use idlemax_core::dispatch::room::{LineState, RoomDecision};
+    use idlemax_core::protocol::Heartbeat;
+    let mut s = Store::open_in_memory().unwrap();
+    let mut hb = Heartbeat::default();
+    hb.device.id = "mac".into();
+    hb.room = Some(RoomDecision {
+        state: LineState::Run,
+        reason: "run: memory 80% used".into(),
+        open_slots: 3,
+        at_ms: T0,
+    });
+    s.record_heartbeat(&hb, T0).unwrap();
+    let devices = s.devices(T0, 90_000).unwrap();
+    assert_eq!(devices[0].room, hb.room);
+    let old: Heartbeat = serde_json::from_str(r#"{"device":{"id":"mac"}}"#).unwrap();
+    assert_eq!(old.room, None);
+}

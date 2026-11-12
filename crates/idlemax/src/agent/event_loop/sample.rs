@@ -3,8 +3,10 @@
 //! Both probe calls are bounded: a probe that hangs makes the verdict fail safe (pause)
 //! instead of stopping the loop.
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use idlemax_core::dispatch::room::{RoomDecision, RoomPolicy};
 use idlemax_core::reconcile::fail_safe_decision;
 use tracing::{info, warn};
 
@@ -25,6 +27,7 @@ impl Agent {
         let mut decision = match read.await {
             Ok(reading) => {
                 self.reading = reading;
+                self.evaluate_room().await;
                 self.guard.evaluate(
                     &self.reading.metrics,
                     &self.running,
@@ -34,7 +37,9 @@ impl Agent {
             }
             Err(e) => {
                 warn!("metrics sample failed: {e}");
-                fail_safe_decision(&format!("metrics sample failed: {e}"), now_ms())
+                let why = format!("metrics sample failed: {e}");
+                self.room = RoomDecision::hold(why.clone(), now_ms());
+                fail_safe_decision(&why, now_ms())
             }
         };
         decision.memory_limit = self.memory_limit.clone();
@@ -44,6 +49,28 @@ impl Agent {
         self.decision = decision;
         self.state.sampled(self.decision.at_ms);
         self.reconcile(&[], &[], &[]).await;
+    }
+
+    /// The worker room of the fresh sample, with the `[dispatcher]` numbers in the file now
+    /// and the guard's battery floor and thermal switch (A2, A17).
+    async fn evaluate_room(&mut self) {
+        let live = Arc::clone(&self.live);
+        let dispatcher = match tokio::task::spawn_blocking(move || live.current()).await {
+            Ok(cfg) => cfg.dispatcher.clone(),
+            Err(e) => {
+                warn!("reading config.toml failed: {e}");
+                self.config.dispatcher.clone()
+            }
+        };
+        let policy = RoomPolicy::new(&dispatcher, self.guard.policy());
+        if &policy != self.worker_room.policy() {
+            self.worker_room.set_policy(policy);
+        }
+        let room = self.worker_room.evaluate(&self.reading.metrics);
+        if room.state != self.room.state {
+            info!(state = room.state.as_str(), reason = %room.reason, "worker room changed");
+        }
+        self.room = room;
     }
 
     pub(super) async fn on_refresh_device_info(&mut self) {

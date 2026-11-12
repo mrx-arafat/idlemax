@@ -10,6 +10,7 @@ mod cmd;
 pub mod disk;
 mod linux;
 mod macos;
+mod macos_vm;
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -33,7 +34,7 @@ pub enum MetricsError {
     Init(#[source] sysinfo::Error),
 }
 
-/// Last pswpin counter and when it was read, for the Linux swap-in rate.
+/// Last swap-in counter (Linux pswpin, macOS Swapins) and when it was read.
 type SwapInMark = Option<(u64, Instant)>;
 
 pub struct Sampler {
@@ -43,6 +44,8 @@ pub struct Sampler {
     prev_pswpin: SwapInMark,
     #[cfg(target_os = "macos")]
     prev_therm: Option<(Option<bool>, Instant)>,
+    #[cfg(target_os = "macos")]
+    prev_swapins: SwapInMark,
 }
 
 impl Sampler {
@@ -59,6 +62,8 @@ impl Sampler {
             prev_pswpin: None,
             #[cfg(target_os = "macos")]
             prev_therm: None,
+            #[cfg(target_os = "macos")]
+            prev_swapins: None,
         })
     }
 
@@ -107,6 +112,8 @@ impl Sampler {
             s.mem_free_pct = p;
         }
         s.memory_pressure = m.vm_pressure_level.and_then(pressure_from_level);
+        let vm = macos_vm::read();
+        macos_vm::apply(s, vm.as_ref(), &mut self.prev_swapins, now);
     }
 
     #[cfg(target_os = "linux")]
@@ -193,12 +200,17 @@ fn apply_linux(
     s.psi_mem_some_avg10 = l.psi_mem.some_avg10;
     s.psi_mem_full_avg10 = l.psi_mem.full_avg10;
     s.psi_io_full_avg10 = l.psi_io.full_avg10;
-    s.swap_in_per_sec = mark.zip(l.pswpin).and_then(|((prev, at), cur)| {
-        let secs = now.saturating_duration_since(at).as_secs_f64();
-        // None on a counter reset or a zero interval.
-        (cur >= prev && secs > 0.0).then(|| (cur - prev) as f64 / secs)
-    });
+    s.swap_in_per_sec = rate_since(*mark, l.pswpin, now);
     *mark = l.pswpin.map(|c| (c, now));
+}
+
+/// Pages per second since the mark; None on the first reading, a counter reset or a zero
+/// interval.
+fn rate_since(mark: SwapInMark, current: Option<u64>, now: Instant) -> Option<f64> {
+    mark.zip(current).and_then(|((prev, at), cur)| {
+        let secs = now.saturating_duration_since(at).as_secs_f64();
+        (cur >= prev && secs > 0.0).then(|| (cur - prev) as f64 / secs)
+    })
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

@@ -208,7 +208,7 @@ target/debug/idlemax init
 - [x] Task 1: Add the dispatcher settings and the worker room rule
 - [x] Task 2: Keep projects in the store and switch them with `idlemax project`
 - [x] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
-- [ ] Task 4: Read memory used and swap-in on macOS and report the room
+- [x] Task 4: Read memory used and swap-in on macOS and report the room
 - [ ] Task 5: Send what each device knows about its repositories
 - [ ] Task 6: Admit the dispatcher's own jobs by the lines
 - [ ] Task 7: Find tasks from the four sources
@@ -553,12 +553,12 @@ The guard for plain jobs gets the same inputs it has today.
 
 **Definition of Done:**
 
-- [ ] `parse_vm_stat` on a sample with page size 16384, 296432 anonymous, 10000 purgeable, 200000 wired and 300000 compressor pages gives `used_bytes` of 12884901888, which is 75.0 percent of 17179869184.
-- [ ] A sample without the `Swapins:` line parses to `None`.
-- [ ] Two samples 30 s apart with `Swapins` of 1000 and 1300 give 10.0 pages per second, and a counter that went down gives `None`.
-- [ ] A heartbeat JSON without `room` still decodes, and the store test `heartbeat_room_round_trips` writes a heartbeat with a `room` through `record_heartbeat` and reads the same value back from `devices`.
+- [x] `parse_vm_stat` on a sample with page size 16384, 296432 anonymous, 10000 purgeable, 200000 wired and 300000 compressor pages gives `used_bytes` of 12884901888, which is 75.0 percent of 17179869184.
+- [x] A sample without the `Swapins:` line parses to `None`.
+- [x] Two samples 30 s apart with `Swapins` of 1000 and 1300 give 10.0 pages per second, and a counter that went down gives `None`.
+- [x] A heartbeat JSON without `room` still decodes, and the store test `heartbeat_room_round_trips` writes a heartbeat with a `room` through `record_heartbeat` and reads the same value back from `devices`.
 - [ ] In a throwaway home on a Mac, `idlemax local status --json` shows `room.state` and `metrics.mem_used_pct`, and `idlemax config set dispatcher.hold_mem_used_pct 1` turns `room.state` into a state other than `run` within one sample, with no restart.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax macos_vm`, `cargo test -p idlemax --bin idlemax heartbeat_room`, `cargo test -p idlemax --test e2e`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax --bin idlemax macos_vm`, `cargo test -p idlemax --bin idlemax heartbeat_room`, `cargo test -p idlemax --test e2e`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 5: Send what each device knows about its repositories
 

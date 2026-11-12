@@ -87,6 +87,16 @@ async fn device_info_refreshes_on_ticker() {
         notify: false,
         paths: paths.clone(),
         config: idlemax_core::config::Config::default(),
+        worker_room: idlemax_core::dispatch::room::WorkerRoom::new(
+            idlemax_core::dispatch::room::RoomPolicy::new(
+                &idlemax_core::config::DispatcherConfig::default(),
+                &idlemax_core::config::GuardPolicy::macos_laptop(),
+            ),
+        ),
+        live: std::sync::Arc::new(crate::live_config::LiveConfig::new(
+            &paths,
+            idlemax_core::config::Config::default(),
+        )),
     };
 
     let agent = Agent::new(wiring);

@@ -83,6 +83,7 @@ impl Agent {
             quota: self.reading.quota.clone(),
             interactive_use: self.reading.interactive_use.clone(),
             local_paused: self.reading.kill_switch || self.state.local_paused(),
+            room: Some(self.room.clone()),
         }
     }
 

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::capacity::{AccountCapacity, Capacity};
+use crate::dispatch::room::RoomDecision;
 use crate::types::{
     ControlAction, ControlScope, CostClass, DeviceId, DeviceInfo, GuardDecision, Job, JobId,
     JobStatus, MetricsSnapshot, QuotaSnapshot, UnixMs,
@@ -42,6 +43,9 @@ pub struct Heartbeat {
     pub interactive_use: Vec<(String, UnixMs)>,
     /// Kill switch file present or a local pause is active.
     pub local_paused: bool,
+    /// The worker room of the newest sample (D14), sent with every heartbeat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<RoomDecision>,
 }
 
 /// Longest device id and host name an agent may report.
@@ -179,6 +183,9 @@ pub struct DeviceView {
     /// the coordinator; absent from one that predates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<Capacity>,
+    /// The worker room of the newest sample (D14), sent with every heartbeat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<RoomDecision>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -258,6 +265,9 @@ pub struct LocalStatus {
     pub guard: GuardDecision,
     pub metrics: Option<MetricsSnapshot>,
     pub running: Vec<RunningJob>,
+    /// The worker room of the newest sample (D14), sent with every heartbeat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<RoomDecision>,
 }
 
 /// Body of every non-2xx response.

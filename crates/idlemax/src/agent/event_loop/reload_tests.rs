@@ -43,6 +43,16 @@ fn agent_at(paths: &Paths) -> Agent {
         notify: false,
         paths: paths.clone(),
         config,
+        worker_room: idlemax_core::dispatch::room::WorkerRoom::new(
+            idlemax_core::dispatch::room::RoomPolicy::new(
+                &idlemax_core::config::DispatcherConfig::default(),
+                &idlemax_core::config::GuardPolicy::macos_laptop(),
+            ),
+        ),
+        live: std::sync::Arc::new(crate::live_config::LiveConfig::new(
+            paths,
+            idlemax_core::config::Config::default(),
+        )),
     })
 }
 

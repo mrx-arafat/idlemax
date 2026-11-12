@@ -26,13 +26,13 @@ struct StoredDevice {
 
 const UPSERT_DEVICE: &str = "
 INSERT INTO devices (id, info, first_seen_ms, last_seen_ms, metrics, guard, running,
-                     interactive_use, local_paused, online)
-VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, 1)
+                     interactive_use, local_paused, online, room)
+VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)
 ON CONFLICT (id) DO UPDATE SET
   info = excluded.info, last_seen_ms = excluded.last_seen_ms, metrics = excluded.metrics,
   guard = excluded.guard, running = excluded.running,
   interactive_use = excluded.interactive_use, local_paused = excluded.local_paused,
-  online = 1";
+  online = 1, room = excluded.room";
 
 // SET expressions read the row before the update, so `samples` is the old count.
 const FOLD_MINUTE: &str = "
@@ -96,6 +96,7 @@ impl Store {
             json_text(&hb.running)?,
             json_text(&hb.interactive_use)?,
             hb.local_paused,
+            hb.room.as_ref().map(json_text).transpose()?,
         ])?;
         fold_minute(&tx, hb, now)?;
         super::report::record_guard(
@@ -153,7 +154,7 @@ impl Store {
         let paused = self.paused_scopes()?;
         let global = paused.contains(&ControlScope::Global);
         let mut stmt = self.conn.prepare_cached(
-            "SELECT info, last_seen_ms, metrics, guard, running, local_paused
+            "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room
              FROM devices ORDER BY id",
         )?;
         let rows = stmt.query_map([], device_from_row)?;
@@ -216,5 +217,6 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
         online: false,
         paused: false,
         capacity: None,
+        room: opt_json_col(r, 6)?,
     })
 }

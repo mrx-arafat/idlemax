@@ -21,8 +21,10 @@ mod uplink;
 
 use std::future::Future;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
+use idlemax_core::dispatch::room::{RoomPolicy, WorkerRoom};
 use idlemax_core::guard::Guard;
 use idlemax_core::protocol::LocalStatus;
 use idlemax_core::types::{DeviceInfo, Os};
@@ -37,6 +39,7 @@ use self::outbox::{DurableOutbox, OUTBOX_CAP};
 use self::probes::Probes;
 use self::ring::{MetricsRing, RingError};
 use self::runner::Runner;
+use crate::live_config::LiveConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
@@ -76,6 +79,8 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
     let (probes, device) = open_probes(&paths, &config).await?;
     let policy = config.guard_policy_for(Os::current(), device.cpu_count, device.mem_total_bytes);
     let guard = Guard::new(policy?);
+    let worker_room = WorkerRoom::new(RoomPolicy::new(&config.dispatcher, guard.policy()));
+    let live = Arc::new(LiveConfig::new(&paths, config.clone()));
     let runner = open_runner(&paths, &device, &config).await?;
     let outbox = DurableOutbox::open(&paths.agent_state_dir(), OUTBOX_CAP, now_ms());
     let shutdown = shutdown_signal()?;
@@ -115,6 +120,8 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), AgentError> {
         notify: config.agent.notify,
         paths: paths.clone(),
         config: config.clone(),
+        worker_room,
+        live,
     });
     agent.run(shutdown, ports.control, ports.reload).await;
     tracing::info!("agent stopped");

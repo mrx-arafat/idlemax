@@ -304,6 +304,18 @@ It is computed from the same snapshot and the same scheduler checks as `why`, so
 - `accounts` has one entry per configured AI account, in the order of `[[quota.accounts]]`, and is `[]` when none is configured.
   `spendable` and `why` say whether idlemax may spend the account this minute and, if not, the first reason (an interactive session, a lease, a window used up, the timing rule).
   `headroom_pct` is a separate question: the percent of quota left to spend above the reserve, in the window that limits the account, whether or not it may be spent now, so a shut account can still show plenty left.
+
+Each entry of `devices` also carries `room`, the worker room of the agent's newest sample: the line state of the dispatcher (`run`, `hold`, `shed` or `emergency`), the reading that set it, and how many workers fit under the hold line.
+The agent sends it in every heartbeat as `Heartbeat.room`, and `GET /v1/local/status` on the agent shows the same value.
+
+```json
+{"room": {"state": "hold", "reason": "hold: memory 91% used (hold at 90%)", "open_slots": 0, "at_ms": 1730000000000}}
+```
+
+The room reads memory used percent, the swap-in rate, free disk, the battery floor and thermal throttling, and never user idle time or the memory pressure level, so it differs from `guard`.
+`open_slots` is 0 unless the state is `run`.
+On Linux, where memory used percent is not read yet, the room is `hold`.
+An agent that predates the field sends no `room`, and the entry has none.
   It is `null` when that window has no trusted data (no snapshot, stale, or waiting for the first one after a reset).
   The limiting window (`window`, `resets_at_ms`) is the one that blocks the account: a window with no data first, else the blocking window that resets last; with none blocking, the window with the least headroom.
   `GET /v1/quota` still has every window in full.
