@@ -133,10 +133,10 @@ The repository is public: no address, host name or device id of the owner's mach
 
 - [x] Task 1: Add the laptop, workbox and production profiles
 - [x] Task 2: Feed the Linux readings into the worker room
-- [ ] Task 3: Switch devices on and off on the coordinator
+- [x] Task 3: Switch devices on and off on the coordinator
 - [ ] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
 - [x] Task 5: Read each device's Claude login and check the logins in doctor
-- [ ] Task 6: Keep one Budget per login and pace a server-only account
+- [x] Task 6: Keep one Budget per login and pace a server-only account
 - [x] Task 7: Run the base checks again when the day's budget is spent
 - [ ] Task 8: Add the headless runner
 - [x] Task 9: Give each device its own credential
@@ -402,7 +402,7 @@ Switching a device off stops its workers with their state saved and ends the dis
 - [x] `dispatcher_view` over an off device with one project on holds the "needs you" entry `device:<id>:off`.
 - [x] The dispatcher tests of Specs 1 to 4 pass with their device switched on and no changed assertion, and `cargo test -p idlemax --test e2e` passes with no device switched on.
 - [x] `docs/API.md` lists both routes, their replies and `DeviceView.enabled`.
-- [ ] Verify: `cargo test -p idlemax-core control::device && cargo test -p idlemax-core worker::control && cargo test -p idlemax-core worker::pace && cargo test -p idlemax-core dispatch::plan && cargo test -p idlemax-core dispatch::orchestrator && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax coord::store::devices && cargo test -p idlemax --bin idlemax coord::api::devices && cargo test -p idlemax --bin idlemax coord::dispatch && cargo test -p idlemax --bin idlemax plan && cargo test -p idlemax --bin idlemax coord::api::pass && cargo test -p idlemax --bin idlemax worker_tests && cargo test -p idlemax --bin idlemax coord::api::budget && cargo test -p idlemax --test plan --test e2e && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax-core control::device && cargo test -p idlemax-core worker::control && cargo test -p idlemax-core worker::pace && cargo test -p idlemax-core dispatch::plan && cargo test -p idlemax-core dispatch::orchestrator && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax coord::store::devices && cargo test -p idlemax --bin idlemax coord::api::devices && cargo test -p idlemax --bin idlemax coord::dispatch && cargo test -p idlemax --bin idlemax plan && cargo test -p idlemax --bin idlemax coord::api::pass && cargo test -p idlemax --bin idlemax worker_tests && cargo test -p idlemax --bin idlemax coord::api::budget && cargo test -p idlemax --test plan --test e2e && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 4: Add idlemax device on and off, the device toggle and the read-only limits
 
@@ -464,7 +464,7 @@ Switching a device off stops its workers with their state saved and ends the dis
 - [ ] The dashboard script calls `/v1/devices/` with the encoded id for both directions, draws the toggle for a view with one device, and the dashboard test still finds one script tag and no HTML sink.
 - [x] `dispatcher_view` over two devices gives the reported limits to the one that is not `limits_device` and an empty list to the one that is.
 - [x] `idlemax skill --check` passes and the skill lists `idlemax device on <id>`.
-- [ ] Verify: `cargo test -p idlemax --test devices && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax tui:: && cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax --test devices && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax tui:: && cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 5: Read each device's Claude login and check the logins in doctor
 
@@ -613,7 +613,7 @@ Tell Spec 3's Budget when an account is used only by servers, so the owner's res
 - [x] For an account listed only by `workbox` devices, the Budget from `budgets` equals the one `budget` gives with an override of 5.0, and for an account a `laptop` lists it equals the one with no override.
 - [x] With `claude-a` closed on one of two devices, the Plan gives that device no pick on `claude-a`, holds a note with the fix, and `launch_due` does not relaunch a `shed` run of that pair.
 - [x] `GET /v1/status` carries `account_problems`, `idlemax quota` prints each with its fix, `dispatcher_view` lists a `SplitName` under `needs_you`, and the README and `docs/API.md` describe the rules and the new setting.
-- [ ] Verify: `cargo test -p idlemax-core quota::identity && cargo test -p idlemax-core quota::config && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax coord::api::budget && cargo test -p idlemax --bin idlemax coord::dispatch && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] Verify: `cargo test -p idlemax-core quota::identity && cargo test -p idlemax-core quota::config && cargo test -p idlemax-core dispatch::view && cargo test -p idlemax --bin idlemax coord::api::budget && cargo test -p idlemax --bin idlemax coord::dispatch && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 7: Run the base checks again when the day's budget is spent
 
