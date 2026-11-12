@@ -228,11 +228,14 @@ idlemax config set quota.codex_standard_model <model>
 On a usage-limit message or HTTP 429, idlemax:
 
 - stops that account's workers with their state saved;
-- **rests** the account until the used-up window resets (basis `resting` in the plan);
+- **rests** the account until the used-up window resets, that is the window that reads 90% or more (basis `resting` in the plan);
+  when no window reads as used up, it rests until the account's shortest window resets, or 5 hours after the hit for a 5-hour window with no reading yet, never until the weekly reset by default;
 - moves waiting tasks to another account;
 - never retries in a loop.
 
 A second limit message while the account rests changes nothing.
+Only a real limit counts: in the JSON result of `claude -p`, a line counts only when it is an error (`is_error`, an `error` field or `"type": "error"`) whose text says so, never because a number in it reads 429.
+idlemax's own dispatcher jobs (the orchestrator pass, a check) never rest an account.
 Old-style AI jobs are blocked on that account until the window that saw the limit resets.
 
 ## Old AI jobs vs dispatcher workers

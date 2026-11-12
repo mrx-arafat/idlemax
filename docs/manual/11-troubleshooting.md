@@ -197,6 +197,8 @@ Common plan lines:
 - `no orchestrator pass: no device has an open worker slot and a ready task`: no project has a ready task yet (set a `check`, or add a roadmap item with a "Done when" line).
 - `base checks do not run on a production device`: that device is `production`; base checks and workers need `workbox` or `laptop`.
 - Ready tasks listed as "not judged by the orchestrator": no Claude account can run the orchestrator pass now.
+- `orchestrator pass 3m ago, 23 picks dropped: account max may not be spent: resting (23)`: the pass ran, but its picks could not be used; the most common reasons come first, with their counts.
+  Here the account is resting after a usage limit; `idlemax quota` says until when.
 
 ### The dashboard asks for the token again
 
