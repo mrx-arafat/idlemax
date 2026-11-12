@@ -9,6 +9,7 @@ use idlemax_core::dispatch::orchestrator::{
 };
 use idlemax_core::dispatch::plan::PassResult;
 use idlemax_core::dispatch::prompt::prompt;
+use idlemax_core::dispatch::proposal::{admit, RuleProposal};
 use idlemax_core::dispatch::task::{digest, Task};
 use idlemax_core::protocol::ControlRequest;
 use idlemax_core::quota::pass::any_room;
@@ -36,11 +37,13 @@ pub fn pass_step(
     record_failed_pass(store, &inputs, now)?;
     let (tasks, accounts) = inputs.offered();
     let quota = inputs.quota.offer();
+    let finished = store.finished_runs()?;
     let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
         models: &inputs.models,
         quota: Some(&quota),
+        finished: &finished,
     };
     let print = pass_fingerprint(store, &inputs, &offer, rules)?;
     match due_now(&inputs, &offer, &print, asked) {
@@ -214,6 +217,7 @@ pub fn ingest_pass(
     store: &mut Store,
     cfg: &Config,
     live: &Config,
+    rules: &str,
     job: JobId,
     output: &str,
     now: UnixMs,
@@ -227,11 +231,13 @@ pub fn ingest_pass(
     let inputs = read_inputs(store, cfg, live, now)?;
     let (tasks, accounts) = inputs.offered();
     let quota = inputs.quota.offer();
+    let finished = store.finished_runs()?;
     let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
         models: &inputs.models,
         quota: Some(&quota),
+        finished: &finished,
     };
     let checked = structured_output(output)
         .map_err(|e| e.to_string())
@@ -251,7 +257,7 @@ pub fn ingest_pass(
     };
     result.seen = row.offered.clone();
     store.finish_pass(row.id, Ok(&result), now)?;
-    record_result(store, &inputs.tasks, &result, job, now)
+    record_result(store, &inputs.tasks, &result, rules, job, now)
 }
 
 /// Sends the tasks the pass judged to "needs you", and logs what it returned.
@@ -259,6 +265,7 @@ fn record_result(
     store: &mut Store,
     tasks: &[Task],
     result: &PassResult,
+    rules: &str,
     job: JobId,
     now: UnixMs,
 ) -> Result<(), StoreError> {
@@ -267,6 +274,9 @@ fn record_result(
             store.judge_task(task, &digest(t), reason, now)?;
         }
     }
+    if let Some(p) = &result.rule_proposal {
+        keep_proposal(store, p, rules, job, now)?;
+    }
     let msg = format!(
         "orchestrator pass: {} picks, {} sent to needs you, {} dropped",
         result.picks.len(),
@@ -274,5 +284,28 @@ fn record_result(
         result.dropped.len()
     );
     store.append_event(EventKind::Control, None, Some(job), &msg, now)?;
+    Ok(())
+}
+
+/// Stores a rule proposal the domain admits; a refused one is dropped with one event.
+fn keep_proposal(
+    store: &mut Store,
+    p: &RuleProposal,
+    rules: &str,
+    job: JobId,
+    now: UnixMs,
+) -> Result<(), StoreError> {
+    let state = store.get_run(p.run)?.map(|r| r.state);
+    match admit(p, state, rules, &store.proposals()?) {
+        Ok(()) => {
+            store.insert_proposal(p, now)?;
+            let msg = format!("rule proposal for run {}: {}", p.run, p.line);
+            store.append_event(EventKind::Control, None, Some(job), &msg, now)?;
+        }
+        Err(why) => {
+            let msg = format!("rule proposal for run {} dropped: {why}", p.run);
+            store.append_event(EventKind::Info, None, Some(job), &msg, now)?;
+        }
+    }
     Ok(())
 }

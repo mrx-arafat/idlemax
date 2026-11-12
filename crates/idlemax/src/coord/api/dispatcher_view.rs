@@ -78,7 +78,7 @@ pub fn gather_view(
         budgets: &budgets,
         days: &days,
         review_cap: live.workers.review_cap,
-        proposals_open: 0,
+        proposals_open: store.open_proposals()?,
     };
     Ok(dispatcher_view(&input, now))
 }
@@ -109,10 +109,11 @@ mod tests {
         assert_eq!(labels, ["working", "checking"]);
         assert_eq!(v.workers[0].why, "first roadmap item; the check is focused");
         let review: Vec<&str> = v.review.iter().map(|w| w.label.as_str()).collect();
-        assert_eq!(review, ["ready for review", "needs you"]);
+        assert_eq!(review, ["ready for review", "needs you", "rejected"]);
         assert_eq!(v.needs_you.len(), 1, "{:?}", v.needs_you);
         assert_eq!(v.needs_you[0].reason, "the item says it needs the owner");
         assert_eq!(v.projects.len(), 2);
         assert_eq!(v.projects[0].waiting, 2);
+        assert_eq!(v.proposals_open, 1);
     }
 }

@@ -235,7 +235,7 @@ pub(crate) fn finish(store: &mut Store, cfg: &Config, envelope: &str, at: UnixMs
         ..Default::default()
     };
     let output = super::super::agents::on_job_update(store, &update, at).unwrap();
-    crate::dispatch::ingest_pass(store, cfg, cfg, job.id, &output.unwrap(), at).unwrap();
+    crate::dispatch::ingest_pass(store, cfg, cfg, "rules", job.id, &output.unwrap(), at).unwrap();
 }
 
 #[test]
@@ -373,4 +373,39 @@ fn a_task_that_failed_its_checks_twice_needs_the_owner() {
         .expect("judged");
     assert_eq!(judged.needs_you.as_deref(), Some("failed its checks twice"));
     assert!(!plan.not_judged.iter().any(|t| t.id == judged.id));
+}
+
+#[test]
+fn a_pass_proposes_a_rule_for_a_rejected_run_and_it_waits_open() {
+    use idlemax_core::dispatch::proposal::ProposalStatus;
+    use idlemax_core::worker::run::{Run, RunLaunch, RunState};
+    let (mut store, cfg, _) = pass_world();
+    let run = Run {
+        device: "mac".into(),
+        project: "app".into(),
+        task: "roadmap:1:old".into(),
+        task_title: "Old task".into(),
+        state: RunState::Rejected,
+        concern: Some("deleted a fixture".into()),
+        start_ms: T0,
+        ..Run::default()
+    };
+    let run = store.insert_run(&run, &RunLaunch::default()).unwrap();
+    crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0, false).unwrap();
+    let pass = store.queued_jobs().unwrap().pop().unwrap();
+    assert!(pass
+        .spec
+        .stdin
+        .unwrap_or_default()
+        .contains("deleted a fixture"));
+
+    let envelope = serde_json::json!({"type": "result", "structured_output": {
+        "picks": [], "needs_you": [],
+        "rule_proposal": {"run": run.id, "line": "Never delete a fixture.",
+                          "reason": "the run deleted one"}}});
+    finish(&mut store, &cfg, &envelope.to_string(), T0 + 2_000);
+    let all = store.proposals().unwrap();
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert_eq!((all[0].run, all[0].status), (run.id, ProposalStatus::Open));
+    assert!(store.finished_runs().unwrap().is_empty());
 }

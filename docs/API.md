@@ -23,7 +23,7 @@ Each write is in one class; a route not listed is token-only, as before.
 |---|---|
 | `Read` | every `GET` |
 | `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/dispatcher/mode` toward `off` |
-| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh` |
+| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject` |
 | token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
 
 For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.
@@ -78,6 +78,9 @@ What the lock does not stop:
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 | POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose" \| "auto"}` | `{"mode", "before", "changed"}` |
 | GET | /v1/dispatcher | | `DispatcherView`, see [The dispatcher view](#the-dispatcher-view) |
+| GET | /v1/proposals | | `[Proposal]`, open ones first, then newest first |
+| POST | /v1/proposals/{id}/approve | | `Proposal`, after its line is appended to `rules.md`; 409 when not open |
+| POST | /v1/proposals/{id}/reject | | `Proposal`; 409 when not open |
 | GET | /v1/plan | | `Plan` |
 | POST | /v1/plan/refresh | | `Plan`, after a dispatcher step that asks for an orchestrator pass |
 | GET | /v1/limits | | `[Setting]`, the limits in a fixed order |
@@ -663,6 +666,18 @@ At most 8 picks, 20 needs-you entries, 300 characters per reason and 20 scope pa
 A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.
 Each `needs_you` task is stored as a judgment that lasts until the task's digest changes.
 The plan uses the newest pass with a result; `picked_by` reads `orchestrator pass <age> ago`.
+
+The pass also sees `finished`: up to five rejected or discarded runs with no proposal yet (run id, project, task title, state and concern), and its answer may carry one optional `"rule_proposal": {"run": 12, "line": "...", "reason": "..."}` (a line of at most 200 characters).
+A proposal for a run not in `finished` is dropped and named in `dropped`; one that stands becomes a rule proposal, below.
+
+### Rule proposals
+
+A `Proposal` is `{"id", "at_ms", "run", "line", "reason", "status", "decided_ms"}`, with `status` `open`, `approved` or `rejected` (`crates/idlemax-core/src/dispatch/proposal.rs`).
+The coordinator keeps a proposal only for a rejected or discarded run, one per run, for a single line without control characters that `rules.md` does not hold and that was never proposed before, and while fewer than 20 are open; a refused one is dropped with one `info` event.
+Approving appends the line as the last line of `rules.md` (as a `- ` item when the file's last line is one), keeps the old file as `rules.md.idlemax.bak`, then marks the row; a line already in the file is not added again.
+It is 409 "rules.md is at its 16 KiB limit: shorten it, then approve" when the line would pass the 16 KiB a pass reads.
+Rejecting changes no file. Deciding is owner-only, a decided proposal is 409 and an unknown id 404.
+Approved rows go 30 days after the decision; the newest 500 rejected rows are kept, so a rejected line is not proposed again.
 
 ## The dispatcher view
 

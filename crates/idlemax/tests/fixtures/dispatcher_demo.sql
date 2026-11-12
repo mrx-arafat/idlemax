@@ -1,8 +1,8 @@
 -- Seed rows for the dispatcher view: the route test, the browser scenarios and the
 -- screenshots of dispatcher Spec 4. One device that went offline two hours ago, two projects
--- (app on, site off), four runs with a job each, and a roadmap item of app that says it needs
--- the owner. Times are relative to the load and every lease expiry lies a day ahead, so no
--- sweep touches a seeded job. Load it into a store that the coordinator created.
+-- (app on, site off), four runs with a job each, a rejected run with an open rule proposal,
+-- and a roadmap item of app that says it needs the owner. Times are relative to the load and
+-- every lease expiry lies a day ahead, so no sweep touches a seeded job. Load it into a store that the coordinator created.
 
 INSERT INTO devices (id, info, first_seen_ms, last_seen_ms) VALUES
   ('mac', '{"id":"mac","hostname":"mac"}',
@@ -55,4 +55,14 @@ INSERT INTO runs (id, device, project, task, task_title, source, branch, provide
    'idlemax/speed-up-build', 'claude', 'max', 'sonnet', 'needs_you', 'needs_you',
    'it changes the release script', 'the build takes 9 minutes', '{}', 4, 1,
    strftime('%s','now') * 1000 - 9000000, strftime('%s','now') * 1000 - 7200000,
-   strftime('%s','now') * 1000 - 7200000);
+   strftime('%s','now') * 1000 - 7200000),
+  (5, 'mac', 'app', 'roadmap:1:tidy-fixtures', 'Tidy the test fixtures', 'roadmap',
+   'idlemax/tidy-fixtures', 'claude', 'max', 'sonnet', 'rejected', 'rejected',
+   'it deleted a fixture other tests use', 'small cleanup', '{}', NULL, 1,
+   strftime('%s','now') * 1000 - 14400000, strftime('%s','now') * 1000 - 12600000,
+   strftime('%s','now') * 1000 - 12600000);
+
+INSERT INTO rule_proposals (id, at_ms, run, line, reason, status) VALUES
+  (1, strftime('%s','now') * 1000 - 12000000, 5,
+   'Never delete a test fixture; add a new one instead.',
+   'run 5 deleted a fixture that other tests use', 'open');

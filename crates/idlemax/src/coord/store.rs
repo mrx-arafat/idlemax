@@ -12,6 +12,7 @@ mod inputs;
 mod jobs;
 mod launches;
 mod projects;
+mod proposals;
 mod quota;
 mod report;
 mod runs;
@@ -138,6 +139,7 @@ pub struct PruneReport {
     pub projects: usize,
     pub runs: usize,
     pub quota_days: usize,
+    pub proposals: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
@@ -277,6 +279,16 @@ impl Store {
             )?,
             quota_days: tx.execute(
                 "DELETE FROM quota_days WHERE day_start_ms < ?1",
+                [history_cutoff],
+            )?,
+            // An approved line lives in rules.md; rejected ones are kept only so the same
+            // line is not proposed again.
+            proposals: tx.execute(
+                "DELETE FROM rule_proposals
+                 WHERE (status = 'approved' AND decided_ms < ?1)
+                    OR (status = 'rejected' AND id NOT IN (
+                      SELECT id FROM rule_proposals WHERE status = 'rejected'
+                      ORDER BY id DESC LIMIT 500))",
                 [history_cutoff],
             )?,
         };

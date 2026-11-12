@@ -10,7 +10,7 @@ use idlemax_core::Paths;
 use crate::state;
 
 /// Longest rules text a pass reads.
-const MAX_RULES_BYTES: usize = 16 * 1024;
+pub const MAX_RULES_BYTES: usize = 16 * 1024;
 
 /// Writes the default rules when the file does not exist yet.
 pub fn ensure(paths: &Paths) -> std::io::Result<()> {

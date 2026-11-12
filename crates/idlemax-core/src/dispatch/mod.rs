@@ -13,6 +13,7 @@ pub mod orchestrator;
 pub mod plan;
 pub mod project;
 pub mod prompt;
+pub mod proposal;
 pub mod roadmap;
 pub mod room;
 pub mod task;

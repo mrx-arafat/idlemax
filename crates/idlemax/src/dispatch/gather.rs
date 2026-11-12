@@ -202,11 +202,13 @@ fn picked_by(inputs: &Inputs) -> String {
     }
     let (tasks, accounts) = inputs.offered();
     let quota = inputs.quota.offer();
+    // Whether a pass is due never depends on the finished runs.
     let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
         models: &inputs.models,
         quota: Some(&quota),
+        finished: &[],
     };
     let due = pass_due(&DueInput {
         now_ms: inputs.now,

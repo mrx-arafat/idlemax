@@ -54,6 +54,7 @@ fn validate_keeps_offered_picks_and_drops_the_rest_by_name() {
         accounts: &accounts,
         models: &models,
         quota: None,
+        finished: &[],
     };
     let output = out(json!([
         pick("a", "max", "sonnet", &["src/a.rs", "tests"]),
@@ -133,6 +134,7 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
         accounts,
         models: &models,
         quota: None,
+        finished: &[],
     };
     let (open, held) = ([device(LineState::Run)], [device(LineState::Hold)]);
     let ok_offer = offer(&usable);
@@ -253,6 +255,7 @@ fn validate_places_each_pick_on_its_tier_and_keeps_one_that_may_fit_later() {
         accounts: &accounts,
         models: &models,
         quota: Some(&quota),
+        finished: &[],
     };
     let output = out(json!([
         pick("fix", "max", "sonnet", &[]),
@@ -287,6 +290,7 @@ fn no_pass_runs_when_no_account_has_room() {
         accounts: &usable,
         models: &models,
         quota: None,
+        finished: &[],
     };
     let open = [device(LineState::Run)];
     let input = DueInput {
@@ -302,4 +306,50 @@ fn no_pass_runs_when_no_account_has_room() {
         room: false,
     };
     assert_eq!(pass_due(&input), Err(NO_ROOM.into()));
+}
+
+#[test]
+fn a_rule_proposal_stands_only_for_a_finished_run_it_was_offered() {
+    use crate::dispatch::proposal::{FinishedRun, RuleProposal};
+    use crate::worker::run::RunState;
+
+    let finished = [FinishedRun {
+        run: 7,
+        project: "app".into(),
+        title: "Fix the login test".into(),
+        state: RunState::Rejected,
+        concern: Some("deleted a fixture".into()),
+    }];
+    let offer = Offer {
+        tasks: &[],
+        accounts: &[],
+        models: &[],
+        finished: &finished,
+        quota: None,
+    };
+    let with = |run: i64| {
+        json!({"picks": [], "needs_you": [],
+               "rule_proposal": {"run": run, "line": "Never delete a fixture.", "reason": "it did"}})
+    };
+    let kept = validate(&with(7), &offer).unwrap();
+    assert_eq!(
+        kept.rule_proposal,
+        Some(RuleProposal {
+            run: 7,
+            line: "Never delete a fixture.".into(),
+            reason: "it did".into(),
+        })
+    );
+    let dropped = validate(&with(8), &offer).unwrap();
+    assert_eq!(dropped.rule_proposal, None);
+    assert!(
+        dropped.dropped.iter().any(|d| d.contains("run 8")),
+        "{:?}",
+        dropped.dropped
+    );
+
+    let mut unknown = with(7);
+    unknown["rule_proposal"]["why"] = json!("x");
+    assert!(validate(&unknown, &offer).is_err());
+    assert!(schema()["properties"].get("rule_proposal").is_some());
 }

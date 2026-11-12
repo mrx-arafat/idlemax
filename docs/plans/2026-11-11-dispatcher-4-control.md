@@ -238,7 +238,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [x] Task 3: Decide who is calling
 - [ ] Task 4: Refuse owner-only calls from a launched process
 - [x] Task 5: Change limits through the API
-- [ ] Task 6: Store, list and approve rule proposals
+- [x] Task 6: Store, list and approve rule proposals
 - [ ] Task 7: Decide and store the three kinds of notice
 - [ ] Task 8: Deliver a notice to the desktop and the inbox
 - [ ] Task 9: Add the dispatcher controls and views to the dashboard
@@ -546,13 +546,13 @@ Nothing reaches `rules.md` without an approval.
 
 **Definition of Done:**
 
-- [ ] `admit` refuses a proposal for a `clean` run, a second proposal for the same run, a two-line text, a line already in `rules.md` and a line that was rejected before.
-- [ ] `validate` accepts an output with `rule_proposal` for a run in `finished`, drops one for an unknown run and names it in `dropped`, and still rejects the whole output for an unknown field.
-- [ ] A coordinator test ingests a fixture envelope that carries a proposal and then finds one open proposal for that run in `GET /v1/proposals`.
-- [ ] Approving an open proposal adds exactly one line to `rules.md` in the temp home, and a second approve of the same id is 409 with the file unchanged.
-- [ ] Rejecting leaves `rules.md` byte for byte as it was.
-- [ ] A store opened at the previous schema version migrates and keeps its rows.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::proposal && cargo test -p idlemax-core dispatch::orchestrator && cargo test -p idlemax --bin idlemax coord::store::proposals && cargo test -p idlemax --bin idlemax coord::api::proposals && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `admit` refuses a proposal for a `clean` run, a second proposal for the same run, a two-line text, a line already in `rules.md` and a line that was rejected before.
+- [x] `validate` accepts an output with `rule_proposal` for a run in `finished`, drops one for an unknown run and names it in `dropped`, and still rejects the whole output for an unknown field.
+- [x] A coordinator test ingests a fixture envelope that carries a proposal and then finds one open proposal for that run in `GET /v1/proposals`.
+- [x] Approving an open proposal adds exactly one line to `rules.md` in the temp home, and a second approve of the same id is 409 with the file unchanged.
+- [x] Rejecting leaves `rules.md` byte for byte as it was.
+- [x] A store opened at the previous schema version migrates and keeps its rows.
+- [x] Verify: `cargo test -p idlemax-core dispatch::proposal && cargo test -p idlemax-core dispatch::orchestrator && cargo test -p idlemax --bin idlemax coord::store::proposals && cargo test -p idlemax --bin idlemax coord::api::proposals && cargo test -p idlemax --bin idlemax plan && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 7: Decide and store the three kinds of notice
 

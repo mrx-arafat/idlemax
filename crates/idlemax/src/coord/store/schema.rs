@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -321,4 +321,18 @@ CREATE TABLE quota_days (
   closed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (account, day_start_ms)
 ) STRICT, WITHOUT ROWID;
+"#;
+
+/// Rule proposals of dispatcher Spec 4 (D18.4): one line for `rules.md` per rejected or
+/// discarded run, kept open until the owner approves or rejects it.
+const V11: &str = r#"
+CREATE TABLE rule_proposals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at_ms INTEGER NOT NULL,
+  run INTEGER NOT NULL UNIQUE,
+  line TEXT NOT NULL UNIQUE,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'approved', 'rejected')),
+  decided_ms INTEGER
+) STRICT;
 "#;

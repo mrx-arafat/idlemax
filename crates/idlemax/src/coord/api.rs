@@ -12,6 +12,7 @@ mod limits;
 mod mode;
 pub(crate) mod plan;
 mod projects;
+mod proposals;
 mod report;
 mod runs;
 mod schedules;
@@ -137,6 +138,9 @@ pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
         .route("/v1/schedules/{id}/resume", post(schedules::resume))
         .route("/v1/dispatcher/mode", post(mode::set))
         .route("/v1/dispatcher", get(dispatcher_view::view))
+        .route("/v1/proposals", get(proposals::list))
+        .route("/v1/proposals/{id}/approve", post(proposals::approve))
+        .route("/v1/proposals/{id}/reject", post(proposals::reject))
         .route("/v1/plan", get(plan::plan))
         .route("/v1/plan/refresh", post(plan::refresh))
         .route("/v1/limits", get(limits::list).post(limits::set))

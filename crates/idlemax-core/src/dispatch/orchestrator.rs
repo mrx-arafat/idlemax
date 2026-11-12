@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use super::accounts::AccountUse;
 use super::plan::{PassPick, PassResult};
 use super::project::relative_path_problem;
+use super::proposal::{FinishedRun, RuleProposal, MAX_LINE_CHARS};
 use super::room::LineState;
 use super::task::Task;
 use super::{fnv64, DispatchError, Mode};
@@ -42,6 +43,8 @@ pub struct Offer<'a> {
     /// The quota side of Spec 3: what each pick must fit. None only where a test checks the
     /// answer's shape alone.
     pub quota: Option<&'a QuotaOffer<'a>>,
+    /// Rejected or discarded runs with no proposal yet: one may get a rule proposal (D18.4).
+    pub finished: &'a [FinishedRun],
 }
 
 /// The accounts with room, the cost table, the live `[quota]` and each task's failed checks.
@@ -219,7 +222,13 @@ pub fn schema() -> Value {
                 "type": "object", "additionalProperties": false,
                 "required": ["task", "reason"],
                 "properties": {"task": {"type": "string"}, "reason": text(MAX_REASON_CHARS)}
-            }}
+            }},
+            "rule_proposal": {
+                "type": "object", "additionalProperties": false,
+                "required": ["run", "line", "reason"],
+                "properties": {"run": {"type": "integer"}, "line": text(MAX_LINE_CHARS),
+                               "reason": text(MAX_REASON_CHARS)}
+            }
         }
     })
 }
@@ -229,6 +238,8 @@ pub fn schema() -> Value {
 struct Output {
     picks: Vec<PassPick>,
     needs_you: Vec<OutNeedsYou>,
+    #[serde(default)]
+    rule_proposal: Option<RuleProposal>,
 }
 
 #[derive(Deserialize)]
@@ -261,6 +272,17 @@ pub fn validate(output: &Value, offer: &Offer<'_>) -> Result<PassResult, Dispatc
     }
     if let Some(q) = offer.quota {
         place(&mut result, offer.tasks, q);
+    }
+    if let Some(r) = out.rule_proposal {
+        if offer.finished.iter().any(|f| f.run == r.run) {
+            result.rule_proposal = Some(r);
+        } else {
+            let why = format!(
+                "rule_proposal for run {}: not an offered finished run",
+                r.run
+            );
+            result.dropped.push(why);
+        }
     }
     Ok(result)
 }

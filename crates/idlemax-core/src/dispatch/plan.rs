@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::accounts::AccountUse;
 use super::inputs::StoredRepo;
 use super::project::ProjectView;
+use super::proposal::RuleProposal;
 use super::room::{LineState, RoomDecision};
 use super::task::Task;
 use super::Mode;
@@ -98,6 +99,9 @@ pub struct PassResult {
     pub dropped: Vec<String>,
     /// Ids of the tasks the pass was offered.
     pub seen: Vec<String>,
+    /// One line proposed for `rules.md` after a rejected or discarded run (D18.4).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule_proposal: Option<RuleProposal>,
 }
 
 pub struct PlanInput<'a> {

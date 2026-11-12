@@ -225,6 +225,8 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
             r#"{"key":"dispatcher.hold_mem_used_pct","value":"85"}"#,
         ),
         ("/v1/plan/refresh", ""),
+        ("/v1/proposals/1/approve", ""),
+        ("/v1/proposals/1/reject", ""),
     ] {
         assert_eq!(home.post_marked(coord, path, body), "403", "{path} {body}");
     }

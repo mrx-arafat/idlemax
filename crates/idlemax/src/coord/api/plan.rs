@@ -54,9 +54,11 @@ pub async fn refresh(State(app): State<AppState>, who: Who) -> Result<Json<Plan>
 /// The answer of a finished orchestrator pass, checked and stored.
 pub async fn ingest_pass(app: &AppState, job: JobId, output: String, now: UnixMs) {
     let live = std::sync::Arc::clone(app.live());
+    let paths = app.paths().clone();
     let done = app
         .with_store(move |store, cfg| {
-            crate::dispatch::ingest_pass(store, cfg, &live.current(), job, &output, now)
+            let rules = crate::dispatch::rules_file::read(&paths);
+            crate::dispatch::ingest_pass(store, cfg, &live.current(), &rules, job, &output, now)
                 .map_err(ApiFailure::from)
         })
         .await;

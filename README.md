@@ -937,6 +937,7 @@ It runs with no tools, no hooks and no MCP servers, only when its inputs changed
 It decides which task, provider and model fill a slot; it cannot decide whether a slot exists, and a pick naming anything it was not offered is dropped.
 A task it sends to "needs you" stays there until the task changes.
 Edit `rules.md` to change how it judges; the hard limits are not in that file.
+After a task you rejected or discarded, a pass may propose one line for `rules.md` with its reason; the line waits for you in `GET /v1/proposals` and the dispatcher view, and only your approval (`POST /v1/proposals/<id>/approve`) appends it to the file, while rejecting leaves the file as it is ([docs/API.md](docs/API.md#rule-proposals)).
 Nothing is ever picked without the orchestrator: a ready task no orchestrator pass has seen is listed under "not judged by the orchestrator" and fills no slot.
 An AI account may be used while its Budget for today is usable (see [AI quota maximizer](#ai-quota-maximizer)); the Budget replaced the earlier simple rule of a 5-hour window under 60 percent and a 10 percent cap.
 
