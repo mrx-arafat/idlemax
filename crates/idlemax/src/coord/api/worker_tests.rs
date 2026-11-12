@@ -170,6 +170,14 @@ fn a_limit_ending_a_worker_turn_rests_the_account_once() {
     let cfg = Config::parse("[[quota.accounts]]\nname = \"max\"\nprovider = \"claude\"\n").unwrap();
     let (mut store, run, job) = store_with_worker(RunState::Starting);
     on_job_update(&mut store, &running_update(&job, 1), T0).unwrap();
+    // A second worker of the same account is still running when the limit arrives.
+    let other = Run {
+        task: "roadmap:1:other".into(),
+        state: RunState::Running,
+        job: None,
+        ..run.clone()
+    };
+    let other = store.insert_run(&other, &RunLaunch::default()).unwrap();
     let limit = finished_update(&job, 2, "usage limit reached");
     deliver(&mut store, &cfg, &limit, T0);
     assert_eq!(store.limit_hits(0).unwrap(), [("max".to_string(), T0)]);
@@ -180,6 +188,11 @@ fn a_limit_ending_a_worker_turn_rests_the_account_once() {
     assert_eq!(
         store.get_run(run.id).unwrap().unwrap().state,
         RunState::Shed
+    );
+    assert_eq!(
+        store.get_run(other.id).unwrap().unwrap().state,
+        RunState::Shed,
+        "the account's other live worker is stopped with its state saved"
     );
     deliver(&mut store, &cfg, &limit, T0 + 1_000);
     assert_eq!(quota_events(&store).len(), 1);

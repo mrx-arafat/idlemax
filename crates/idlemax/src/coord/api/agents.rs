@@ -317,8 +317,12 @@ pub(super) fn on_job_update_with(
         tracing::debug!(job = job.id, device = %update.device, seq = update.seq, "replayed job update ignored");
         return unfinished_ingest(store, &job, update);
     }
-    // MISSING HOOK (Spec 2 Task 9): with a new rest, stop the account's live workers with
-    // their state saved: `dispatch::stop_workers(store, &StopScope::Account(account), now)`.
+    // A new rest stops the account's live workers with their state saved; a replay or a hit
+    // on an account that already rests never gets here with one (Spec 3 Task 9).
+    if let Some(r) = &rest {
+        let scope = ControlScope::Account(r.account.clone());
+        crate::coord::dispatch::stop_workers(store, &scope, "usage limit reached", now)?;
+    }
     let Some(next) = next else {
         tracing::debug!(job = job.id, device = %update.device, "stale job update ignored");
         return Ok(None);

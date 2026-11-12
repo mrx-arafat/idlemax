@@ -638,9 +638,9 @@ The plan uses the newest pass with a result; `picked_by` reads `orchestrator pas
 Any other value is 400 and the file is left as it was.
 
 In `auto` the coordinator's 15-second sweep runs one launch step after lease expiry, reading `[dispatcher]` and `[workers]` fresh, unless the owner's stop is stored.
-It first stops, with their state saved (their Runs `shed`), the live workers of an account at 60 percent of its 5-hour window or at 10 percent of its weekly quota.
+It first stops, with their state saved (their Runs `shed`), the live workers of every account whose Budget has basis `resting` or `five_hour_stop`; a `spent` day stops nothing.
 Then per device it relaunches the oldest `shed` Run that may launch (a `resume` when its session is stored, else a `launch` over its worktree), or else takes the first orchestrator pick that may.
-A launch or relaunch needs the device online and unpaused, the account unpaused and usable, a room of `run` with an open slot, no Run of the device in `starting`, the last worker job of the device at least `workers.settle_secs` old, the CLI in `workers.clis`, and for a relaunch a device that no longer reports the Run's previous job.
+A launch or relaunch needs the device online and unpaused, the account unpaused and allowed by its worker gate (a launch's estimate must fit the Budget's `left_pct`; a relaunch, already counted as committed, needs only a usable Budget), a room of `run` with an open slot, no Run of the device in `starting`, the last worker job of the device at least `workers.settle_secs` old, the CLI in `workers.clis`, and for a relaunch a device that no longer reports the Run's previous job.
 A new pick also needs its task open (no Run except `discarded`, and not two last Runs `rejected` or `discarded`) and its project under `workers.review_cap`, counting `clean`, `needs_you`, `starting`, `running`, `checking`, `shed` and `stopped` Runs.
 The Run and its job, leased to the device with `key` `run-<id>`, are written in one transaction; the job's `command` is the marker `["idlemax-worker", "<cli>"]` and its brief travels in `stdin`.
 A refusal is recorded as a `control` event only when its reason changed for that Run or pick.

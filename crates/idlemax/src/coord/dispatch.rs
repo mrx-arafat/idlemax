@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 
-use idlemax_core::dispatch::accounts::{AccountUse, MEASURING_WEEK_CAP_PCT};
 use idlemax_core::dispatch::plan::{DevicePlan, Pick, PickedBy};
 use idlemax_core::dispatch::task::Task;
 use idlemax_core::dispatch::Mode;
+use idlemax_core::quota::spend::stops_workers;
 use idlemax_core::scheduler::lease_deadline;
 use idlemax_core::types::{ControlScope, EventKind, Job, UnixMs};
 use idlemax_core::worker::brief::brief;
@@ -19,9 +19,9 @@ use idlemax_core::worker::run::{Run, RunLaunch, RunState};
 use idlemax_core::worker::{Baseline, RunId, WorkerAction, WorkerSpec};
 use idlemax_core::Config;
 
-use crate::coord::api::Gates;
+use crate::coord::api::{budgets, quota_views, Gates};
 use crate::coord::store::{Store, StoreError};
-use crate::dispatch::{gather_plan, project_views, spend, Gathered};
+use crate::dispatch::{gather_plan, project_views, Gathered};
 use facts::DeviceFacts;
 use job::{cli_of, job_spec, reviewer, worker_spec};
 
@@ -67,48 +67,27 @@ pub fn launch_due(
         return Ok(());
     }
     let gathered = gather_plan(store, step.cfg, step.live, step.now)?;
-    stop_spent_accounts(store, step, &gathered.plan.accounts)?;
+    stop_closed_accounts(store, step)?;
     for device in &gathered.plan.devices {
         launch_on(store, step, &gathered, device, refusals)?;
     }
     Ok(())
 }
 
-/// Stops, with their state saved, the live workers of an account at 60 percent of its
-/// 5-hour window or at the measuring-week cap; their Runs are `shed` and continue when the
-/// account allows it (A18). The operation Spec 3 calls for rate limits.
-fn stop_spent_accounts(
-    store: &mut Store,
-    step: &LaunchStep<'_>,
-    accounts: &[AccountUse],
-) -> Result<(), StoreError> {
-    let spent = spend::spent_week(store, step.cfg, step.now)?;
-    for a in accounts {
-        let five = a.five_hour_used_pct.unwrap_or(0.0);
-        let week = spent
-            .iter()
-            .find(|(n, _)| *n == a.account)
-            .map_or(0.0, |(_, p)| *p);
-        let why = if five >= FIVE_HOUR_STOP_PCT {
-            format!("{}: 5-hour window {five:.0}% used", a.account)
-        } else if week >= MEASURING_WEEK_CAP_PCT {
-            format!("{}: {week:.1}% of the weekly quota spent", a.account)
-        } else {
-            continue;
-        };
-        stop_workers(
-            store,
-            &ControlScope::Account(a.account.clone()),
-            &why,
-            step.now,
-        )?;
+/// Stops, with their state saved, the live workers of every account whose Budget says so:
+/// resting after a usage limit, or at the 5-hour stop (A18), never for a day that is spent.
+/// Their Runs are `shed`, and the worker gate relaunches them once the Budget is usable
+/// again (Spec 3 Task 9).
+fn stop_closed_accounts(store: &mut Store, step: &LaunchStep<'_>) -> Result<(), StoreError> {
+    let views = quota_views(store, step.cfg, step.now)?;
+    for b in budgets(store, step.cfg, step.live, &views, step.now)? {
+        if stops_workers(b.basis) {
+            let why = format!("{}: {}", b.account, b.why);
+            stop_workers(store, &ControlScope::Account(b.account), &why, step.now)?;
+        }
     }
     Ok(())
 }
-
-/// The 5-hour line of the simple account rule; the Budget's `stops_workers` replaces this
-/// stop site in Spec 3 Task 9.
-const FIVE_HOUR_STOP_PCT: f64 = 60.0;
 
 /// Stops the live workers of `scope` with their state saved: `stopped` for the owner's global
 /// stop, `shed` for an account.

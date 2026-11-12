@@ -828,7 +828,7 @@ On an `agy` or `opencode` account the budget is counted in Runs per day, from `d
 
 **Ban-risk stance.**
 idlemax only launches the unmodified official CLIs (`claude -p`, `codex exec`, `agy -p`) with your own login, on the device where you logged in.
-It never copies credentials between devices, never fans out across devices or accounts, never retries an AI job, and stops spending an account for the rest of the window after any limit message.
+It never copies credentials between devices, never fans out across devices or accounts, never retries an AI job, and stops spending an account for the rest of the window after any limit message; a worker that meets one stops the account's other workers, and they rest the same way.
 That keeps automated use close to ordinary individual use, but consumer terms still restrict automated access, so the risk is reduced, not zero.
 Metered API keys (`provider = "api"`) are the path providers designate for automation.
 
@@ -943,7 +943,7 @@ On each 15-second sweep, per device, it first continues the oldest worker that w
 A task that already has a Run is not launched again until that Run is discarded, and a task whose last two Runs were rejected or discarded never is.
 Each worker gets its own branch `idlemax/<task>` in its own worktree under `$IDLEMAX_HOME/worktrees`, never your checkout, and a pane in the Herdr workspace `idlemax workers`.
 Every launch is an event that names the project, the task, the provider, the model and the reason it was picked.
-When an account passes 60 percent of its 5-hour window or 10 percent of its weekly quota, its workers stop with their state saved and continue by themselves when it allows them again.
+When an account's Budget rests after a usage limit or reaches the 5-hour stop (`quota.five_hour_stop_pct`, 60 by default), its workers stop with their state saved and continue by themselves once the Budget is usable again; a day that is merely spent starts no new worker but lets running ones finish.
 
 What fences a worker:
 

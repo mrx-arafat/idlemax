@@ -9,7 +9,6 @@ pub mod pass;
 mod quota_side;
 pub mod repo;
 pub mod rules_file;
-pub mod spend;
 
 pub use gather::{gather_plan, project_views, Gathered};
 pub use orchestrate::ingest_pass;
