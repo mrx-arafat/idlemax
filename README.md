@@ -784,7 +784,7 @@ System sleep does not consume this runtime budget on macOS or Linux.
 - Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
 **Who may switch idlemax on.**
-A job that idlemax started can stop and pause work, but it cannot resume it, reload the agent's settings, switch the dispatcher out of `off`, add, switch on or change a project, change a limit, or ask for an orchestrator pass, even when it reads the token file.
+A job that idlemax started can stop and pause work, but it cannot resume it, reload the agent's settings, switch the dispatcher out of `off`, add, switch on or change a project, change a limit, ask for an orchestrator pass, start the workers you stopped, or keep, merge or discard a finished task, even when it reads the token file.
 The CLI refuses those commands when its own environment has `IDLEMAX_JOB_ID`, and the coordinator and the agent answer 403 when the calling process, or any process above it, carries the marker of this idlemax home.
 Run them from your own terminal, the dashboard or the TUI.
 The lock stops accidents and a launched process that tries the documented switches; it is not a sandbox.
@@ -1095,6 +1095,7 @@ A coordinator without the dispatcher view gets one line saying so, and no key on
 | `t` | on the projects pane, switch the selected project (on asks first) |
 | `e` | on the limits pane, type a new value in the footer: `Enter` saves, the word `default` puts back the default (an empty value sends nothing), `Esc` closes |
 | `a`, `d` | on the rules pane, approve (asks first) or reject the selected proposal |
+| `k`, `M`, `D` | on the review pane, keep, keep and merge, or discard the selected finished task (each asks first and names the branch) |
 | `y`, `Enter` | confirm a prompt; any other key cancels it |
 | `q`, `Esc`, `Ctrl-C` | quit |
 
@@ -1107,7 +1108,7 @@ The page reads `GET /v1/why` once per refresh for all of them and asks for one j
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, pause, resume or remove a schedule, and accept or dismiss advice.
 The Dispatcher card comes first: the mode switch (`off`, `propose`, `auto`, which asks first), each device's line state and reason, `Stop workers` (and `Start` while a worker is stopped by you; a coordinator without the worker stop gets a stop-all instead, which `Resume` lifts), the workers with their label, summary, model and a `why` line, what would launch next and who picked it.
-Beside it are the cards Needs you, Waiting for review (keep or discard with `idlemax review`), Budget (today's spend of the day's share per account, then the earlier days), Projects (on asks first, off does not), Limits (each owner limit with its default, Save and `default`) and Rule proposals (Approve asks first).
+Beside it are the cards Needs you, Waiting for review (Keep, Merge and Discard per task, each asking first, the same as `idlemax review keep` and `discard`), Budget (today's spend of the day's share per account, then the earlier days), Projects (on asks first, off does not), Limits (each owner limit with its default, Save and `default`) and Rule proposals (Approve asks first).
 A coordinator without the dispatcher view shows none of these cards.
 
 **HTTP API.**
