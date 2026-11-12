@@ -4,7 +4,7 @@
 use axum::extract::State;
 use axum::Json;
 use idlemax_core::control::caller::Access;
-use idlemax_core::control::may_assign;
+use idlemax_core::control::{device_gate, may_assign};
 use idlemax_core::dispatch::inputs::{DispatchInputs, DispatchReply};
 use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::Mode;
@@ -85,7 +85,7 @@ pub async fn dispatch_inputs(
 }
 
 /// Stores the feed and its projects, then lists the device's switched-on projects; none
-/// while the mode is `off` or the device may not take work, so one gate stops every project
+/// while the mode is `off`, the device is switched off or may not take work, so one gate stops every project
 /// action on the device.
 pub(super) fn ingest_feed(
     store: &mut Store,
@@ -99,12 +99,14 @@ pub(super) fn ingest_feed(
     if live.dispatcher.mode == Mode::Off {
         return Ok(DispatchReply::default());
     }
-    let local_paused = store
+    let device = store
         .devices(now, offline_after_ms(cfg))?
         .into_iter()
-        .find(|d| d.info.id == inputs.device)
-        .is_some_and(|d| d.local_paused);
-    if !may_assign(&store.paused_scopes()?, &inputs.device, local_paused) {
+        .find(|d| d.info.id == inputs.device);
+    let Some(device) = device.filter(|d| device_gate(d).is_none()) else {
+        return Ok(DispatchReply::default());
+    };
+    if !may_assign(&store.paused_scopes()?, &inputs.device, device.local_paused) {
         return Ok(DispatchReply::default());
     }
     let projects = store

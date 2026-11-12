@@ -61,6 +61,10 @@ pub struct DevicePlan {
     pub held: Option<String>,
     pub picks: Vec<Pick>,
     pub empty: Option<EmptySlots>,
+    /// Whether the device is switched on for dispatcher work; absent from a coordinator
+    /// that predates the switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -219,6 +223,7 @@ fn device_plan(input: &PlanInput<'_>, dv: &DeviceView, used: &mut BTreeSet<Strin
         held,
         picks,
         empty,
+        enabled: dv.enabled,
     }
 }
 

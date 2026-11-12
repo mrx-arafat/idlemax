@@ -50,9 +50,9 @@ const CALLS: &[(&str, &[&str])] = &[
     ("/v1/workers/stop", &["/v1/workers/stop"]),
 ];
 
-/// Called by the page before their route lands: the device switch of Spec 5. The page copes
-/// with their 404.
-const PENDING: &[&str] = &["/v1/devices/mac/on", "/v1/devices/mac/off"];
+/// Called by the page before their route lands; the page copes with their 404. Empty since
+/// the worker routes (Spec 2) and the device switch (Spec 5) landed.
+const PENDING: &[&str] = &[];
 
 /// The static prefix of every `/v1/` path in the script: up to its first `${`, `?`, quote
 /// or other character no path has.

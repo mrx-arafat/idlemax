@@ -4,7 +4,21 @@
 use serde::{Deserialize, Serialize};
 
 use super::ControlError;
+use crate::dispatch::check::BaseCheck;
 use crate::protocol::DeviceView;
+use crate::types::{is_dispatcher_job, DeviceId, Job, JobId, JobStatus};
+
+/// The reply of `POST /v1/devices/{id}/on` and `/off`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SwitchReply {
+    pub device: DeviceId,
+    pub enabled: bool,
+    pub changed: bool,
+    /// Runs stopped with their state saved.
+    pub runs_stopped: u32,
+    /// Other dispatcher jobs of the device cancelled or killed.
+    pub jobs_stopped: u32,
+}
 
 /// Outcome of planning a device switch change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,11 +74,83 @@ pub fn device_gate(view: &DeviceView) -> Option<String> {
     }
 }
 
+/// The dispatcher's own jobs a switch-off ends on `device`: queued for it or active there.
+/// Worker jobs are left to the Run stop, which saves their state.
+pub fn stop_targets(jobs: &[Job], device: &str) -> Vec<JobId> {
+    jobs.iter()
+        .filter(|j| is_dispatcher_job(&j.spec) && j.spec.worker.is_none())
+        .filter(|j| match j.status {
+            JobStatus::Queued => j.spec.devices.iter().any(|d| d == device),
+            s => s.is_active() && j.device.as_deref() == Some(device),
+        })
+        .map(|j| j.id)
+        .collect()
+}
+
+/// The projects whose base check ended without a result, which a switch-on runs again.
+pub fn checks_to_rerun(checks: &[BaseCheck], projects: &[i64]) -> Vec<i64> {
+    checks
+        .iter()
+        .filter(|c| c.passed.is_none() && projects.contains(&c.project))
+        .map(|c| c.project)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dispatch::check::Phase;
     use crate::protocol::DeviceView;
-    use crate::types::DeviceInfo;
+    use crate::types::{Admission, DeviceInfo, JobSpec};
+
+    fn job(id: JobId, lines: bool, status: JobStatus, on: Option<&str>) -> Job {
+        let mut spec = JobSpec {
+            name: format!("j{id}"),
+            command: vec!["true".into()],
+            devices: vec!["mac".into()],
+            ..JobSpec::default()
+        };
+        if lines {
+            spec.admission = Admission::Lines;
+        }
+        Job {
+            id,
+            spec,
+            status,
+            device: on.map(str::to_string),
+            ..Job::default()
+        }
+    }
+
+    #[test]
+    fn a_switch_off_ends_the_dispatchers_own_jobs_of_that_device_only() {
+        let mut worker = job(6, true, JobStatus::Running, Some("mac"));
+        worker.spec.worker = Some(Default::default());
+        let jobs = [
+            job(1, true, JobStatus::Queued, None),
+            job(2, true, JobStatus::Running, Some("mac")),
+            job(3, false, JobStatus::Running, Some("mac")),
+            job(4, true, JobStatus::Running, Some("box")),
+            job(5, true, JobStatus::Succeeded, Some("mac")),
+            worker,
+        ];
+        assert_eq!(stop_targets(&jobs, "mac"), [1, 2]);
+    }
+
+    #[test]
+    fn a_switch_on_reruns_only_checks_that_ended_without_a_result() {
+        let check = |project, passed| BaseCheck {
+            project,
+            base_commit: "c1".into(),
+            phase: Phase::Check,
+            job: None,
+            passed,
+            detail: None,
+            finished_ms: Some(1),
+        };
+        let checks = [check(1, None), check(2, Some(false)), check(3, None)];
+        assert_eq!(checks_to_rerun(&checks, &[1, 2]), [1]);
+    }
 
     fn view(id: &str, enabled: Option<bool>) -> DeviceView {
         DeviceView {

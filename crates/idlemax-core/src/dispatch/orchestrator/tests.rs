@@ -113,6 +113,7 @@ fn device(state: LineState) -> DeviceView {
             ..Default::default()
         },
         online: true,
+        enabled: Some(true),
         room: Some(RoomDecision {
             state,
             open_slots: 2,
@@ -164,6 +165,15 @@ fn a_pass_is_due_only_when_the_rules_allow_and_something_changed() {
     .is_err());
     assert!(pass_due(&DueInput {
         devices: &held,
+        ..base
+    })
+    .is_err());
+    let off = [DeviceView {
+        enabled: Some(false),
+        ..device(LineState::Run)
+    }];
+    assert!(pass_due(&DueInput {
+        devices: &off,
         ..base
     })
     .is_err());

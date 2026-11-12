@@ -7,6 +7,7 @@ mod budget;
 pub mod caller;
 #[cfg(test)]
 mod dashboard_tests;
+mod devices;
 mod dispatcher_view;
 pub mod http;
 mod jobs;
@@ -146,6 +147,8 @@ pub fn router_with(state: AppState, token: &str, check: CallerCheck) -> Router {
         .route("/v1/plan", get(plan::plan))
         .route("/v1/plan/refresh", post(plan::refresh))
         .route("/v1/limits", get(limits::list).post(limits::set))
+        .route("/v1/devices/{id}/on", post(devices::on))
+        .route("/v1/devices/{id}/off", post(devices::off))
         .route("/v1/projects", get(projects::list).post(projects::add))
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))

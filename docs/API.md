@@ -22,8 +22,8 @@ Each write is in one class; a route not listed is token-only, as before.
 | Access | Calls |
 |---|---|
 | `Read` | every `GET` |
-| `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/dispatcher/mode` toward `off`; `POST /v1/workers/stop` |
-| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject`; `POST /v1/workers/start`; `POST /v1/runs/{id}/keep` and `/discard` |
+| `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/devices/{id}/off`; `POST /v1/dispatcher/mode` toward `off`; `POST /v1/workers/stop` |
+| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/devices/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject`; `POST /v1/workers/start`; `POST /v1/runs/{id}/keep` and `/discard` |
 | token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
 
 For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.
@@ -87,6 +87,8 @@ The coordinator binds only to loopback or private network addresses (such as RFC
 | POST | /v1/plan/refresh | | `Plan`, after a dispatcher step that asks for an orchestrator pass |
 | GET | /v1/limits | | `[Setting]`, the limits in a fixed order |
 | POST | /v1/limits | `{"key": "...", "value": "..." \| null}` | `{"key", "before", "after", "changed", "report"}` |
+| POST | /v1/devices/{id}/on | | `{"device", "enabled", "changed", "runs_stopped", "jobs_stopped"}` |
+| POST | /v1/devices/{id}/off | | `{"device", "enabled", "changed", "runs_stopped", "jobs_stopped"}` |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
 | POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
 | POST | /v1/projects/{id}/on | | `ProjectView` |
@@ -558,6 +560,22 @@ Types live in `crates/idlemax-core/src/quota/budget.rs`.
 | `seed` | the tier's starting value, `quota.seed_small_pct` or `quota.seed_standard_pct` |
 
 Account days are kept 30 days in the coordinator's `quota_days` table with the budget each day had and, once it ended, the weekly rise, what idlemax's Runs took and the owner's own use.
+
+## Device switch (coordinator)
+
+Every device is off for dispatcher work until the owner switches it on, the Mac included; a new device and one forgotten after 30 days of silence come back off.
+`DeviceView.enabled` (in `GET /v1/status`, and as `enabled` on each device of `GET /v1/plan` and `GET /v1/dispatcher`) is `true` or `false`, and absent from a coordinator that predates the switch.
+A heartbeat never changes it; only `POST /v1/devices/{id}/on` and `/off` do, and each change logs one `control` event naming the device.
+
+- The id goes into the path percent-encoded, since it may hold `/` or a space.
+  An id that has never sent a heartbeat is 404 and the error lists the known ids; an id with a control character or over the length limit is 400.
+- `on` is `Owner` and `off` is `Stop` (see "Auth and errors"); neither is held by a pause, the kill switch, the guard or the line state.
+- `changed` is false when the device already had that value.
+- On an off device the Plan gives no pick and names `device <id> is off: idlemax device on <id>` as `held`, no orchestrator pass is placed there, the `dispatch-inputs` reply lists no project, no setup or check job is queued for its projects, and no dispatcher job is leased to it.
+  Plain jobs keep their usual rules.
+- `off` cancels the device's queued dispatcher jobs and kills its active ones (`jobs_stopped`), as `stop_all` on each job, and stores no pause.
+  `runs_stopped` counts the Runs stopped with their state saved; this build reports 0.
+- `on` drops the base check record of each of the device's projects whose check ended without a result, so the check runs again.
 
 ## Advice
 

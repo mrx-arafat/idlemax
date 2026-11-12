@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -355,4 +355,21 @@ CREATE TABLE notice_items (
   last_seen_ms INTEGER NOT NULL
 ) STRICT, WITHOUT ROWID;
 CREATE INDEX notice_items_by_time ON notice_items(at_ms);
+"#;
+
+/// Devices of dispatcher Spec 5: the owner's switch, how the agent proved itself, the limits
+/// it reports, and one credential per device.
+const V13: &str = r#"
+-- The owner's switch per device; off until `idlemax device on` (D19).
+ALTER TABLE devices ADD COLUMN dispatch_on INTEGER NOT NULL DEFAULT 0;
+-- How the device's agent proved itself on its last heartbeat (Spec 5 Task 9); NULL before the first one.
+ALTER TABLE devices ADD COLUMN agent_auth TEXT;
+-- The limits each device reports, as JSON (Spec 5 Task 4); NULL from an agent that predates it.
+ALTER TABLE devices ADD COLUMN limits TEXT;
+-- One credential per device, kept as its SHA-256 digest (Spec 5 Task 9).
+CREATE TABLE device_credentials (
+  device TEXT PRIMARY KEY,
+  digest TEXT NOT NULL UNIQUE,
+  created_ms INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
 "#;

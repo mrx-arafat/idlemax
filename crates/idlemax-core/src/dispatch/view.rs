@@ -163,7 +163,7 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
         .iter()
         .map(|d| DeviceLine {
             id: d.device.clone(),
-            enabled: None,
+            enabled: d.enabled,
             state: d.room.state,
             reason: plain(&d.room.reason),
             open_slots: d.room.open_slots,
@@ -316,7 +316,7 @@ fn needs_you(
 }
 
 /// Devices over the emergency line, then devices switched off while a project on them is on
-/// (A23); the second kind stays empty until Spec 5 sets `enabled`.
+/// (A23).
 fn device_needs(devices: &[DeviceLine], projects: &[ProjectView]) -> Vec<NeedsYouLine> {
     let emergencies = devices
         .iter()

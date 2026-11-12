@@ -111,6 +111,7 @@ async fn plan_lists_a_roadmap_item_as_not_judged_and_launches_nothing() {
         "room": {"state": "run", "reason": "run: memory 70% used", "open_slots": 2, "at_ms": 0}
     });
     post(&http, format!("{coord}/v1/agent/heartbeat"), heartbeat).await;
+    post(&http, format!("{coord}/v1/devices/mac/on"), json!(null)).await;
     let feed = json!({"device": "mac", "herdr": true, "repos": [{
         "path": "/code/app", "name": "app", "default_branch": "main",
         "roadmap": [{"title": "Faster sync", "done_when": "sync takes under 1 s"}]

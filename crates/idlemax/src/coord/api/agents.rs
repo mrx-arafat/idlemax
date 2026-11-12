@@ -5,7 +5,8 @@ use axum::extract::State;
 use axum::Json;
 use idlemax_core::advice::{is_ai_pass, AdvisorInputs};
 use idlemax_core::control::{
-    came_online, is_held, may_assign, paused_accounts, reconcile_heartbeat, transition_event,
+    came_online, device_gate, is_held, may_assign, paused_accounts, reconcile_heartbeat,
+    transition_event,
 };
 use idlemax_core::dispatch::orchestrator::is_pass;
 use idlemax_core::dispatch::room::lines_verdict;
@@ -211,7 +212,8 @@ fn assign_jobs(
 }
 
 /// The dispatcher's own job, admitted by the device's worker lines and not by the guard, so
-/// it leases while the owner works (A16). It does not depend on the guard verdict at all.
+/// it leases while the owner works (A16). It does not depend on the guard verdict at all,
+/// and a device switched off leases none (D19).
 fn lease_lines(
     store: &mut Store,
     cfg: &Config,
@@ -220,6 +222,14 @@ fn lease_lines(
     jobs: &[Job],
     now: UnixMs,
 ) -> Result<Option<Job>, ApiFailure> {
+    let gated = store
+        .devices(now, i64::MAX)?
+        .iter()
+        .find(|d| d.info.id == hb.device.id)
+        .is_none_or(|d| device_gate(d).is_some());
+    if gated {
+        return Ok(None);
+    }
     let lines = lines_verdict(hb.room.as_ref(), now);
     match pick_lines(ctx, &lines, jobs) {
         Some(id) => lease_one(store, cfg, &hb.device.id, id, now),

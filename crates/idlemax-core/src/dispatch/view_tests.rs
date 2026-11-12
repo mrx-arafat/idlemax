@@ -55,6 +55,7 @@ fn plan(state: LineState, needs_you: Vec<Task>) -> Plan {
             held: None,
             picks: Vec::new(),
             empty: None,
+            enabled: None,
         }],
         not_judged: Vec::new(),
         needs_you,
@@ -203,4 +204,14 @@ fn a_budget_shows_today_then_the_earlier_days_newest_first() {
     assert_eq!(line.days[0].spendable_pct, Some(8.0));
     assert_eq!(line.days[1].spent_pct, Some(5.0));
     assert_eq!(line.days[1].spendable_pct, None);
+}
+
+#[test]
+fn a_plan_over_an_off_device_with_a_project_on_needs_you() {
+    let mut off = plan(LineState::Run, Vec::new());
+    off.devices[0].enabled = Some(false);
+    let v = view(&off, &[], &[], &[]);
+    assert_eq!(v.devices[0].enabled, Some(false));
+    let keys: Vec<&str> = v.needs_you.iter().map(|n| n.key.as_str()).collect();
+    assert!(keys.contains(&"device:mac:off"), "{keys:?}");
 }

@@ -26,6 +26,14 @@ pub(crate) fn feed() -> DispatchInputs {
     }
 }
 
+/// The Mac's first heartbeat, with the device switched on for dispatcher work.
+fn mac_on(store: &mut Store) {
+    let mut hb = idlemax_core::protocol::Heartbeat::default();
+    hb.device.id = "mac".into();
+    store.record_heartbeat(&hb, T0).unwrap();
+    store.set_device_dispatch("mac", true, T0).unwrap();
+}
+
 #[tokio::test]
 async fn a_feed_adds_each_repository_once_off_and_marks_owner_activity() {
     let api = Api::start().await;
@@ -50,6 +58,7 @@ async fn a_feed_adds_each_repository_once_off_and_marks_owner_activity() {
 #[test]
 fn owner_activity_fades_and_mode_off_replies_with_no_project() {
     let mut store = Store::open_in_memory().unwrap();
+    mac_on(&mut store);
     let cfg = Config::default();
     ingest_feed(&mut store, &cfg, &cfg, &feed(), T0).unwrap();
     let app = store.list_projects(None).unwrap()[0].project.id;
@@ -87,6 +96,7 @@ fn a_step_queues_one_check_job_in_the_base_checkout() {
     use idlemax_core::dispatch::inputs::Checkout;
     use idlemax_core::dispatch::project::ProjectSettings;
     let mut store = Store::open_in_memory().unwrap();
+    mac_on(&mut store);
     let cfg = Config::default();
     let mut inputs = feed();
     inputs.repos[1].base_commit = Some("c1".into());
@@ -142,6 +152,57 @@ fn a_step_queues_one_check_job_in_the_base_checkout() {
     assert_eq!(job.spec.command, ["make", "check"]);
 }
 
+#[test]
+fn an_off_device_gets_no_project_and_no_check_and_on_runs_the_check_again() {
+    use idlemax_core::dispatch::inputs::Checkout;
+    use idlemax_core::dispatch::project::ProjectSettings;
+    let switch = super::super::devices::switch_device;
+    let mut store = Store::open_in_memory().unwrap();
+    mac_on(&mut store);
+    switch(&mut store, "mac", false, T0).unwrap();
+    let cfg = Config::default();
+    let mut inputs = feed();
+    inputs.repos[1].base_commit = Some("c1".into());
+    inputs.repos[1].checkout = Some(Checkout {
+        path: "/state/checks/2".into(),
+        commit: Some("c1".into()),
+        error: None,
+    });
+    ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+    let lib = store.list_projects(None).unwrap()[1].project.id;
+    store.set_project_enabled(lib, true).unwrap();
+    let settings = ProjectSettings {
+        base_branch: Some("main".into()),
+        check_command: vec!["cargo".into(), "test".into()],
+        ..Default::default()
+    };
+    store.set_project_settings(lib, &settings).unwrap();
+    let step = |store: &mut Store, at| crate::dispatch::step(store, &cfg, &cfg, "", at, false);
+    let queued = |store: &Store| store.queued_jobs().unwrap().len();
+
+    let reply = ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+    assert!(reply.projects.is_empty());
+    step(&mut store, T0).unwrap();
+    assert_eq!(queued(&store), 0);
+
+    switch(&mut store, "mac", true, T0).unwrap();
+    let reply = ingest_feed(&mut store, &cfg, &cfg, &inputs, T0).unwrap();
+    assert_eq!(reply.projects.len(), 1);
+    step(&mut store, T0).unwrap();
+    assert_eq!(queued(&store), 1);
+
+    // Off ends the check without a result; on runs it again.
+    assert_eq!(
+        switch(&mut store, "mac", false, T0).unwrap().jobs_stopped,
+        1
+    );
+    step(&mut store, T0 + 60_000).unwrap();
+    assert_eq!(queued(&store), 0);
+    switch(&mut store, "mac", true, T0).unwrap();
+    step(&mut store, T0 + 120_000).unwrap();
+    assert_eq!(queued(&store), 1);
+}
+
 /// A Claude account at 20 percent of its 5-hour window, a Mac with two open slots and a
 /// switched-on project with two roadmap items; `at` re-sends the heartbeat so the device
 /// stays online on the test clock.
@@ -185,6 +246,7 @@ pub(crate) fn pass_world() -> (Store, Config, impl Fn(&mut Store, UnixMs)) {
     };
     let mut store = Store::open_in_memory().unwrap();
     beat(&mut store, T0);
+    store.set_device_dispatch("mac", true, T0).unwrap();
     let mut inputs = feed();
     inputs.repos.truncate(1);
     inputs.repos[0].working = false;

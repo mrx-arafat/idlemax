@@ -154,7 +154,7 @@ impl Store {
         let paused = self.paused_scopes()?;
         let global = paused.contains(&ControlScope::Global);
         let mut stmt = self.conn.prepare_cached(
-            "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room
+            "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room, dispatch_on
              FROM devices ORDER BY id",
         )?;
         let rows = stmt.query_map([], device_from_row)?;
@@ -165,6 +165,36 @@ impl Store {
             Ok(view)
         })
         .collect()
+    }
+
+    /// Switches dispatcher work on the device on or off and logs the change. Returns the
+    /// value before, or None for a device that never sent a heartbeat.
+    pub fn set_device_dispatch(
+        &mut self,
+        id: &str,
+        on: bool,
+        now: UnixMs,
+    ) -> StoreResult<Option<bool>> {
+        let keep = self.caps.events;
+        let tx = self.conn.transaction()?;
+        let before: Option<bool> = tx
+            .query_row("SELECT dispatch_on FROM devices WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        if before.is_some_and(|b| b != on) {
+            tx.execute(
+                "UPDATE devices SET dispatch_on = ?2 WHERE id = ?1",
+                params![id, on],
+            )?;
+            let state = if on { "on" } else { "off" };
+            let msg = format!("device {id} switched {state} for dispatcher work");
+            let device = id.to_string();
+            let kind = EventKind::Control;
+            super::events::insert_event(&tx, keep, kind, Some(&device), None, &msg, now)?;
+        }
+        tx.commit()?;
+        Ok(before)
     }
 
     /// Newest interactive use per CLI name across all devices, sorted by name.
@@ -218,6 +248,57 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
         paused: false,
         capacity: None,
         room: opt_json_col(r, 6)?,
-        ..Default::default()
+        enabled: Some(r.get(7)?),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use idlemax_core::protocol::Heartbeat;
+    use rusqlite::Connection;
+
+    use super::super::{schema, Store};
+
+    const T0: i64 = 1_800_000_000_000;
+
+    fn beat(s: &mut Store, at: i64) {
+        let mut hb = Heartbeat::default();
+        hb.device.id = "mac".into();
+        s.record_heartbeat(&hb, at).unwrap();
+    }
+
+    fn enabled(s: &Store) -> Option<bool> {
+        s.devices(T0, i64::MAX).unwrap()[0].enabled
+    }
+
+    #[test]
+    fn a_device_starts_off_and_a_heartbeat_keeps_its_switch() {
+        let mut s = Store::open_in_memory().unwrap();
+        beat(&mut s, T0);
+        assert_eq!(enabled(&s), Some(false));
+        assert_eq!(s.set_device_dispatch("mac", true, T0).unwrap(), Some(false));
+        assert_eq!(s.set_device_dispatch("mac", true, T0).unwrap(), Some(true));
+        beat(&mut s, T0 + 1);
+        assert_eq!(enabled(&s), Some(true));
+        assert_eq!(s.set_device_dispatch("nope", true, T0).unwrap(), None);
+    }
+
+    #[test]
+    fn a_device_from_before_the_switch_migrates_off() {
+        let conn = Connection::open_in_memory().unwrap();
+        let before = schema::MIGRATIONS.len() - 1;
+        for sql in &schema::MIGRATIONS[..before] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", before as i64)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO devices (id, info, first_seen_ms, last_seen_ms)
+             VALUES ('mac', '{\"id\":\"mac\"}', ?1, ?1)",
+            [T0],
+        )
+        .unwrap();
+        let s = Store::init(conn, false).unwrap();
+        assert_eq!(enabled(&s), Some(false));
+    }
 }

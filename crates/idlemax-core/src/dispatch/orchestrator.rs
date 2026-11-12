@@ -137,7 +137,7 @@ pub fn fingerprint(parts: &FingerprintParts<'_>) -> String {
     fnv64(&all)
 }
 
-/// Devices that take picks now: online, not held, at `run` with an open slot.
+/// Devices that take picks now: online, switched on, not held, at `run` with an open slot.
 pub fn taking_devices<'a>(
     devices: &'a [DeviceView],
     paused: &[ControlScope],
@@ -146,6 +146,7 @@ pub fn taking_devices<'a>(
         .iter()
         .filter(|d| {
             d.online
+                && crate::control::device_gate(d).is_none()
                 && may_assign(paused, &d.info.id, d.local_paused)
                 && d.room
                     .as_ref()

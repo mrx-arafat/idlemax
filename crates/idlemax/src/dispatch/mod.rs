@@ -40,13 +40,19 @@ pub fn step(
     orchestrate::pass_step(store, cfg, live, rules, now, asked)
 }
 
-/// One step of every switched-on project's base check.
+/// One step of every switched-on project's base check on a switched-on device.
 fn base_checks_step(store: &mut Store, now: UnixMs) -> Result<(), StoreError> {
     let repos = store.dispatch_inputs()?;
     let checks = store.base_checks()?;
+    let open: Vec<String> = store
+        .devices(now, i64::MAX)?
+        .into_iter()
+        .filter(|d| idlemax_core::control::device_gate(d).is_none())
+        .map(|d| d.info.id)
+        .collect();
     for view in store.list_projects(None)? {
         let p = view.project;
-        if !p.enabled {
+        if !p.enabled || !open.contains(&p.device) {
             continue;
         }
         let repo = repos
