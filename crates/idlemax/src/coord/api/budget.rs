@@ -1,13 +1,17 @@
 //! Budget use cases on the coordinator (adapter): gathers the stored readings, Run samples
 //! and account days and calls the pure `idlemax_core::quota` rules. Persists what they decide.
 
-use idlemax_core::quota::cost::{cost_table, expected, run_costs, CostKey};
 use idlemax_core::quota::owner_use::{account_day, closed_slots, AccountDay, DAY_MS};
-use idlemax_core::quota::{tier_of, AccountConfig, QuotaConfig, Tier};
-use idlemax_core::types::{QuotaWindowKind, UnixMs};
+use idlemax_core::quota::AccountConfig;
+use idlemax_core::types::UnixMs;
 use idlemax_core::Config;
 
+use super::quota_views;
 use crate::coord::store::{Store, StoreError};
+
+pub(crate) mod gather;
+
+pub use gather::budgets;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -44,7 +48,11 @@ fn close_weekly_days(
         .filter(|d| d.closed)
         .map(|d| d.day_start_ms)
         .collect();
-    let charges = charges(store, cfg, &account.name, now)?;
+    let charges: Vec<(UnixMs, f64)> = gather::Samples::read(store, cfg, now)?
+        .charges(&account.name, &cfg.quota)
+        .into_iter()
+        .filter_map(|(end, pct)| Some((end?, pct)))
+        .collect();
     for slot in slots.iter().filter(|s| !closed.contains(&s.start_ms)) {
         store.close_day(&account_day(&account.name, slot, &weekly, &charges))?;
     }
@@ -77,40 +85,24 @@ fn close_cap_days(
     Ok(())
 }
 
-/// (end time, percent of the weekly window) of the account's ended Runs: measured where the
-/// cost table measured them, at their estimate otherwise, never at zero.
-pub(super) fn charges(
-    store: &Store,
+/// Writes what each account's Budget says now into today's row, so a closed day keeps the
+/// last budget recorded within its final hour.
+pub fn record_open_days(
+    store: &mut Store,
     cfg: &Config,
-    account: &str,
+    live: &Config,
     now: UnixMs,
-) -> Result<Vec<(UnixMs, f64)>, StoreError> {
-    let retention = i64::from(cfg.coordinator.metrics_retention_days).saturating_mul(DAY_MS);
-    let samples = store.run_samples_since(now.saturating_sub(retention))?;
-    let costs = run_costs(&samples);
-    let table = cost_table(&samples, &costs);
-    let q: &QuotaConfig = &cfg.quota;
-    Ok(samples
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.account == account)
-        .filter_map(|(i, s)| {
-            let end = s.ended_ms?;
-            let measured = costs
-                .iter()
-                .find(|c| c.sample == i && c.window == QuotaWindowKind::Weekly)
-                .and_then(|c| c.pct);
-            let pct = measured.unwrap_or_else(|| {
-                let key = CostKey {
-                    provider: s.provider,
-                    account: s.account.clone(),
-                    model: s.model.clone(),
-                    task_type: s.task_type.clone(),
-                };
-                let tier = tier_of(s.provider, &s.model, q).unwrap_or(Tier::Standard);
-                expected(&table, &key, tier, q).pct
-            });
-            Some((end, pct))
-        })
-        .collect())
+) -> Result<(), StoreError> {
+    let views = quota_views(store, cfg, now)?;
+    for b in budgets(store, cfg, live, &views, now)? {
+        let spendable = Some(b.spendable_pct);
+        store.record_open_day(
+            &b.account,
+            b.day_start_ms,
+            spendable,
+            b.basis.as_str(),
+            &b.why,
+        )?;
+    }
+    Ok(())
 }

@@ -64,7 +64,10 @@ async fn maintain(app: AppState) {
         let slept = last_sweep_ms.is_some_and(|t| now - t > SLEPT_AFTER_MS);
         last_sweep_ms = Some(now);
         match app
-            .with_store(move |store, cfg| sweep_once(store, cfg, prune, slept, now))
+            .with_store({
+                let live = std::sync::Arc::clone(app.live());
+                move |store, cfg| sweep_once(store, cfg, &live.current(), prune, slept, now)
+            })
             .await
         {
             Ok(()) if prune => last_prune_ms = now,
@@ -140,6 +143,7 @@ async fn advise(app: AppState) {
 fn sweep_once(
     store: &mut Store,
     cfg: &Config,
+    live: &Config,
     prune: bool,
     slept: bool,
     now: UnixMs,
@@ -153,6 +157,7 @@ fn sweep_once(
     if prune {
         // Before the prune: the account days need the week of snapshots the prune drops.
         super::api::close_quota_days(store, cfg, now)?;
+        super::api::record_open_days(store, cfg, live, now)?;
         let days = i64::from(cfg.coordinator.metrics_retention_days);
         let report = store.prune(now, days.saturating_mul(DAY_MS))?;
         tracing::debug!(?report, "store pruned");
@@ -330,7 +335,7 @@ mod tests {
         use crate::coord::api::budget_test_world::{claude_cfg, record_week, T0};
         let mut store = Store::open_in_memory().unwrap();
         record_week(&mut store);
-        super::sweep_once(&mut store, &claude_cfg(), true, false, T0).unwrap();
+        super::sweep_once(&mut store, &claude_cfg(), &claude_cfg(), true, false, T0).unwrap();
         assert!(store
             .budget_days("max", 0)
             .unwrap()

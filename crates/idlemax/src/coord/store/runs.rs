@@ -77,8 +77,6 @@ impl Store {
 
 impl Store {
     /// Runs of `account` started at or after `since_ms`, oldest first.
-    // The account's Budget reads it from Spec 3 Task 6 on.
-    #[allow(dead_code)]
     pub fn runs_of_account(&self, account: &str, since_ms: UnixMs) -> StoreResult<Vec<Run>> {
         self.runs_where(
             "account = ?1 AND start_ms >= ?2",

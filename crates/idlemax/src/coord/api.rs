@@ -197,9 +197,9 @@ impl From<ControlError> for ApiFailure {
 }
 
 pub use self::advice::run_refresh;
-pub use self::budget::close_quota_days;
 #[cfg(test)]
 pub(crate) use self::budget::tests as budget_test_world;
+pub use self::budget::{close_quota_days, record_open_days};
 pub(crate) use self::jobs::quota_views;
 
 /// Query `limit`: default 100, at most 1000.

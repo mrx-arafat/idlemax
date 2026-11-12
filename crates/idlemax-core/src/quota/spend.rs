@@ -1,13 +1,18 @@
 //! Domain: the rules that decide when a worker may spend an account, in one place. Pure.
+//! The same ten rows stand in the README's "AI quota maximizer" section.
 //!
-//! | Rule | Old AI job (`cost = ai`, no `worker`) | Worker Run |
+//! | Rule (where it lives) | Old AI job | Worker |
 //! |---|---|---|
-//! | May it start | `quota::rules`: spendable, final third or last day, interactive hold | `gate`: the day's Budget has room for the Run's estimate |
-//! | Cost of one run | fixed `token_class_pct` (3, 8, 20) | `quota::cost`: measured, else the tier's seed |
-//! | One at a time per account | yes (one AI lease, one start per 5 hours) | no (A8) |
-//! | 5-hour line | the window's reserve | `five_hour_stop_pct`: no start, and running workers stop (A18) |
-//! | After a usage limit | `limit_block`: blocked until the window that saw it resets | `limit_rest_until`: rest until the used-up window resets, workers stop (D10.7) |
-//! | agy, OpenCode | fixed windows | a daily cap of Runs (D10.8) |
+//! | The device lists the account (`scheduler/blockers.rs`) | applies | applies: the plan picks only an account the device lists |
+//! | `idlemax pause --account` (`scheduler/blockers.rs`) | applies | applies, basis `paused`; a running worker is frozen in place |
+//! | Usage data is trusted and under 6 hours old (`quota/rules.rs`) | applies | applies to a start, basis `no_data` |
+//! | A usage limit or HTTP 429 was seen (`limit_block`) | applies, unchanged | `limit_rest_until`, basis `resting`; running workers stop |
+//! | Reserve of 40% per 5-hour window, 30% weekly, 15% in the final day | applies | replaced by the surplus, the 5-hour stop (running workers stop too) and the last-day floor |
+//! | Only in the final third of the shortest window or within 24 h of the weekly reset | applies | does not apply: the Budget paces by account day |
+//! | Hold for 30 minutes after interactive use | applies | does not apply; it becomes the preference of `offers` |
+//! | One AI lease per account | applies among old AI jobs | does not apply, in both directions (A8) |
+//! | One AI job per account per 5 hours | applies among old AI jobs | does not apply, and a worker start does not begin the span |
+//! | Headroom for the job's token class (`token_class_pct`) | applies, with the fixed figures | replaced by `gate`: the Run's estimate fits in `left_pct` |
 
 use super::budget::{Budget, BudgetBasis};
 use super::rules::duration;

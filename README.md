@@ -787,15 +787,26 @@ Each AI account lists its windows and the reserve kept for you:
 | `api` | none | manual file |
 
 The weekly reserve drops to 15% in the last 24 h before the reset.
-An AI job runs only when all of these hold:
+An old AI job (`cost = "ai"` with no `worker` section, such as the advisor's pass) and a dispatcher worker follow different rules:
 
-1. The device lists the account in `agent.ai_accounts`.
-2. Every window is below `100 - reserve`, with headroom for the job's `token_class`.
-3. The shortest window is in its final third, or the weekly reset is less than 24 h away.
-4. You have not used that CLI interactively in the last 30 minutes.
-5. No other AI job holds a lease on the account on any device.
-6. No usage limit or HTTP 429 was seen in this window.
-7. The usage data is less than 6 hours old, and no AI job started on the account in the last 5 hours.
+| Rule (where it lives) | Old AI job | Worker |
+|---|---|---|
+| The device lists the account in `agent.ai_accounts` | applies | applies: the plan picks only an account the device lists |
+| `idlemax pause --account` | applies | applies, basis `paused`; a running worker is frozen in place |
+| Usage data is trusted and under 6 hours old | applies | applies to a start, basis `no_data` |
+| A usage limit or HTTP 429 was seen | blocked until the window that saw it resets | rests until the used-up window resets, basis `resting`; running workers stop |
+| Reserve of 40% per 5-hour window, 30% weekly, 15% in the final day | applies | replaced by the surplus, the 5-hour stop at 60% (running workers stop too) and the last-day floor of 15% |
+| Only in the final third of the shortest window or within 24 h of the weekly reset | applies | does not apply: the Budget paces by account day |
+| Hold for 30 minutes after interactive use | applies | does not apply; accounts you are not using are preferred instead |
+| One AI lease per account | applies among old AI jobs | does not apply, in either direction |
+| One AI job per account per 5 hours | applies among old AI jobs | does not apply, and a worker start does not begin the span |
+| Headroom for the job's `token_class` | applies, with the fixed figures 3, 8 and 20% | replaced by: the Run's estimated cost fits in what is left of today's Budget |
+
+The dispatcher's orchestrator pass is an old AI job that skips the headroom row.
+
+A worker's Budget is the account's surplus: what of the weekly window would expire unused at the reset, given your usual daily use (learned from the last 7 account days, with half the week reserved for you until then) and a 10% safety margin, spread over the account days left.
+An account day is a 24-hour slot counted back from the weekly reset.
+`agy` and `opencode` accounts have no usage reading, so they run on `daily_cap_runs`, a fixed number of worker Runs per UTC day that you set in `[[quota.accounts]]`; without it no worker starts on them.
 
 `idlemax quota` shows each window and says why an account is or is not spendable (demo data):
 
