@@ -3,8 +3,8 @@
 //! spec anyone with the token can write, so it gets only what a tool needs to find its home,
 //! its login and its settings. Anything else goes in the spec's own `env`. Pure.
 
-/// Env var every job and every worker pane gets with its own job id; it is also the worker
-/// marker (A12).
+/// Env var every job and every worker pane gets with its own job id; it also marks the
+/// process as launched by idlemax, the worker marker (A12) that `control::caller` checks.
 pub const JOB_ID_ENV: &str = "IDLEMAX_JOB_ID";
 /// Env var every job gets with the random tag of this attempt: the agent finds the job's
 /// processes by it, so it must not be shared with another agent's job of the same id.
