@@ -182,7 +182,9 @@ pub fn build(input: &PlanInput<'_>) -> Plan {
 
 /// Why the device takes nothing whatever its room.
 fn held(input: &PlanInput<'_>, dv: &DeviceView) -> Option<String> {
-    if !dv.online {
+    if let Some(gate) = crate::control::device_gate(dv) {
+        Some(gate)
+    } else if !dv.online {
         Some("offline".into())
     } else if !may_assign(input.paused, &dv.info.id, false) {
         Some("paused by you: idlemax resume".into())

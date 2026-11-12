@@ -15,6 +15,7 @@ fn device(slots: u32) -> DeviceView {
             ..Default::default()
         },
         online: true,
+        enabled: Some(true),
         room: Some(RoomDecision {
             state: LineState::Run,
             reason: "run: memory 70% used".into(),
@@ -256,6 +257,24 @@ fn a_held_device_and_mode_off_pick_nothing() {
     let mut off = World::new().with_pass(&["a"]);
     off.mode = Mode::Off;
     assert!(off.build().devices[0].picks.is_empty());
+
+    let mut off_device = World::new().with_pass(&["a"]);
+    off_device.devices[0].enabled = Some(false);
+    let plan = off_device.build();
+    assert!(plan.devices[0].picks.is_empty());
+    assert_eq!(
+        plan.devices[0].held.as_deref(),
+        Some("device mac is off: idlemax device on mac")
+    );
+
+    let mut unspec_device = World::new().with_pass(&["a"]);
+    unspec_device.devices[0].enabled = None;
+    let plan = unspec_device.build();
+    assert!(plan.devices[0].picks.is_empty());
+    assert_eq!(
+        plan.devices[0].held.as_deref(),
+        Some("device mac is off: idlemax device on mac")
+    );
 }
 
 #[test]

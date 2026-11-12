@@ -218,5 +218,6 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
         paused: false,
         capacity: None,
         room: opt_json_col(r, 6)?,
+        ..Default::default()
     })
 }

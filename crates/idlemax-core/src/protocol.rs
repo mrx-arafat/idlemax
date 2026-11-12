@@ -204,6 +204,9 @@ pub struct DeviceView {
     pub paused: bool,
     /// Paused on the device itself (kill switch file or local control).
     pub local_paused: bool,
+    /// Whether the device is switched on for dispatcher work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// How much of the device's allowance is in use and why it is not using more. Set by
     /// the coordinator; absent from one that predates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

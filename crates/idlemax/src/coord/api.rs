@@ -210,7 +210,9 @@ impl From<FileError> for ApiFailure {
 impl From<ControlError> for ApiFailure {
     fn from(e: ControlError) -> Self {
         match e {
-            ControlError::UnknownJob(_) => ApiFailure::NotFound(e.to_string()),
+            ControlError::UnknownJob(_) | ControlError::UnknownDevice(_) => {
+                ApiFailure::NotFound(e.to_string())
+            }
             ControlError::JobFinished(_) => ApiFailure::Conflict(e.to_string()),
             ControlError::CancelNeedsJob
             | ControlError::NotLocal

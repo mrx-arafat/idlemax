@@ -30,6 +30,8 @@ pub enum ControlError {
     UnknownAccount(String),
     #[error("{0}")]
     InvalidDevice(String),
+    #[error("{0}")]
+    UnknownDevice(String),
     /// Names the refused field.
     #[error("{0} is set by the dispatcher only")]
     DispatcherOnly(&'static str),
@@ -349,6 +351,8 @@ fn finish(job: &Job, status: JobStatus, note: &str, now_ms: UnixMs) -> Job {
 }
 
 pub mod caller;
+pub mod device;
+pub use device::{device_gate, off_reason, plan_switch, Switch};
 mod scope;
 pub use scope::unknown_scope;
 
