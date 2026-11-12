@@ -148,7 +148,7 @@ target/debug/idlemax init
 ## Progress Tracking
 
 - [x] Task 1: Add the Run, its states, the worker job section and the `[workers]` settings to the core
-- [ ] Task 2: Store runs, list them, and take worker jobs out of the old AI rules
+- [x] Task 2: Store runs, list them, and take worker jobs out of the old AI rules
 - [ ] Task 3: End a worker job instead of retrying it, and let its Run follow
 - [ ] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
 - [ ] Task 5: Build the runner seam, the Herdr host and the fenced launch
@@ -256,14 +256,14 @@ The same task takes worker jobs out of the one-AI-lease rule and the one-start-p
 
 **Definition of Done:**
 
-- [ ] A fresh store migrates to the new version, and a store at the version before it with one job row migrates with that row intact and `worker` 0.
-- [ ] Two worker jobs on one account can both be `leased`, a second plain AI job on an account a plain AI job holds still fails with `AccountLeased`, and a plain AI job is leased while a worker job holds the same account.
-- [ ] `pick` returns a queued plain AI job while a worker job is active on its account, and `ai_job_starts` leaves a started worker job out.
-- [ ] `insert_leased_job` with a key that a live job holds returns that job and inserts nothing.
-- [ ] `update_run` changes a run whose stored state matches and returns false, changing nothing, when it does not.
-- [ ] `GET /v1/runs` filters by state and project, and `GET /v1/runs/999` answers 404.
-- [ ] `docs/API.md` lists both routes, the `Run` shape and the ten states.
-- [ ] Verify: `cargo test -p idlemax-core scheduler && cargo test -p idlemax --bin idlemax store::runs && cargo test -p idlemax --bin idlemax api::runs && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A fresh store migrates to the new version, and a store at the version before it with one job row migrates with that row intact and `worker` 0.
+- [x] Two worker jobs on one account can both be `leased`, a second plain AI job on an account a plain AI job holds still fails with `AccountLeased`, and a plain AI job is leased while a worker job holds the same account.
+- [x] `pick` returns a queued plain AI job while a worker job is active on its account, and `ai_job_starts` leaves a started worker job out.
+- [x] `insert_leased_job` with a key that a live job holds returns that job and inserts nothing.
+- [x] `update_run` changes a run whose stored state matches and returns false, changing nothing, when it does not.
+- [x] `GET /v1/runs` filters by state and project, and `GET /v1/runs/999` answers 404.
+- [x] `docs/API.md` lists both routes, the `Run` shape and the ten states.
+- [x] Verify: `cargo test -p idlemax-core scheduler && cargo test -p idlemax --bin idlemax store::runs && cargo test -p idlemax --bin idlemax api::runs && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 3: End a worker job instead of retrying it, and let its Run follow
 

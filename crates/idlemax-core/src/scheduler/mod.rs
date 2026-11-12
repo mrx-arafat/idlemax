@@ -16,6 +16,8 @@ mod retry;
 #[cfg(test)]
 mod tests;
 mod update;
+#[cfg(test)]
+mod worker_tests;
 
 pub use blockers::{
     ai_leased_accounts, blocker, blockers, cost_allowed, device_blockers, job_blockers,

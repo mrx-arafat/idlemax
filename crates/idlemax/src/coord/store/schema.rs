@@ -1,7 +1,7 @@
 //! Store schema migrations (adapter). Append new migrations; never edit applied ones.
 
 /// Index i holds the SQL that moves `PRAGMA user_version` from i to i + 1.
-pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
+pub(super) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9];
 
 const V1: &str = r#"
 CREATE TABLE devices (
@@ -251,4 +251,55 @@ CREATE TABLE task_judgments (
   reason TEXT NOT NULL,
   judged_ms INTEGER NOT NULL
 ) STRICT, WITHOUT ROWID;
+"#;
+
+/// Dispatcher workers: the Run of each worker, the owner's stop, and worker jobs marked so the
+/// one-AI-lease rule leaves them out (A8).
+const V9: &str = r#"
+ALTER TABLE jobs ADD COLUMN worker INTEGER NOT NULL DEFAULT 0;
+DROP INDEX jobs_one_ai_lease;
+-- At most one AI lease per account for plain jobs; worker jobs stand outside the rule.
+CREATE UNIQUE INDEX jobs_one_ai_lease ON jobs(ai_account)
+  WHERE ai_account IS NOT NULL AND status IN ('leased', 'running', 'paused') AND worker = 0;
+-- One worker on one task, from its first launch to the owner's review.
+CREATE TABLE runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device TEXT NOT NULL,
+  project TEXT NOT NULL,
+  task TEXT NOT NULL,
+  task_title TEXT NOT NULL,
+  source TEXT NOT NULL,
+  branch TEXT,
+  worktree TEXT,
+  provider TEXT NOT NULL,
+  account TEXT NOT NULL,
+  model TEXT NOT NULL,
+  session TEXT,
+  state TEXT NOT NULL CHECK (state IN ('starting', 'running', 'checking', 'clean',
+    'needs_you', 'rejected', 'stopped', 'shed', 'kept', 'discarded')),
+  verdict TEXT CHECK (verdict IS NULL OR verdict IN ('clean', 'needs_you', 'rejected')),
+  concern TEXT,
+  reason TEXT NOT NULL,
+  summary TEXT,
+  -- What a relaunch needs: the worker section and the brief, as JSON. Never sent out.
+  launch TEXT NOT NULL,
+  facts TEXT NOT NULL DEFAULT '{}',
+  quota_before TEXT NOT NULL DEFAULT '[]',
+  quota_after TEXT NOT NULL DEFAULT '[]',
+  job INTEGER,
+  launches INTEGER NOT NULL DEFAULT 0,
+  start_tries INTEGER NOT NULL DEFAULT 0,
+  start_ms INTEGER NOT NULL,
+  end_ms INTEGER,
+  updated_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX runs_by_state ON runs(state, device);
+CREATE INDEX runs_by_project ON runs(project, state);
+CREATE INDEX runs_by_account ON runs(account, start_ms);
+-- The owner's stop of every worker: at most one row, kept until the owner's start.
+CREATE TABLE worker_stop (
+  one INTEGER PRIMARY KEY CHECK (one = 1),
+  stopped_ms INTEGER NOT NULL,
+  reason TEXT NOT NULL
+) STRICT;
 "#;

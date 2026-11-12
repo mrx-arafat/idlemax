@@ -110,10 +110,12 @@ pub fn spendable_headroom(quota: &[QuotaView], account: &str) -> f64 {
     })
 }
 
-/// Accounts with an AI job holding a lease anywhere in the cluster.
+/// Accounts with an AI job holding a lease anywhere in the cluster. Worker jobs stand
+/// outside the one-AI-lease rule (A8), so they never hold an account here.
 pub fn ai_leased_accounts(jobs: &[Job]) -> BTreeSet<&str> {
     jobs.iter()
         .filter(|j| j.status.is_active() && j.spec.cost == CostClass::Ai)
+        .filter(|j| j.spec.worker.is_none())
         .filter_map(|j| j.spec.ai_account.as_deref())
         .collect()
 }

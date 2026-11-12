@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::report::CheckFacts;
-use super::RunId;
+use super::{RunId, WorkerSpec};
 use crate::quota::Provider;
 use crate::types::{DeviceId, JobId, QuotaSnapshot, UnixMs};
 
@@ -155,6 +155,15 @@ pub struct Run {
     pub updated_ms: UnixMs,
     pub quota_before: Vec<QuotaSnapshot>,
     pub quota_after: Vec<QuotaSnapshot>,
+}
+
+/// What a relaunch of a Run needs, kept on the coordinator only: the worker section of its
+/// first launch and the brief, which never leave the store except in the worker job.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RunLaunch {
+    pub worker: WorkerSpec,
+    pub brief: String,
 }
 
 #[cfg(test)]

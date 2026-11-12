@@ -55,6 +55,8 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/projects/{id}/on | | `ProjectView` |
 | POST | /v1/projects/{id}/off | | `ProjectView` |
 | POST | /v1/projects/{id}/settings | `ProjectSettings` | `ProjectView` |
+| GET | /v1/runs?state=&project=&limit= | | `[Run]`, newest first |
+| GET | /v1/runs/{id} | | `Run` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
 `POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate`, names an `ai_account` missing from `[[quota.accounts]]` or carries a `worker` section (`worker is set by the dispatcher only`), and 409 when 10000 jobs are already unfinished.
@@ -560,6 +562,39 @@ Types live in `crates/idlemax-core/src/dispatch/project.rs`.
 - An unknown id is 404.
 - Each add, switch and settings change appends one `control` event.
 - These routes are owner actions: a pause, the kill switch, the guard or the line state never holds them.
+
+## Runs
+
+A Run is the record of one dispatcher worker on one task, from its first launch to the owner's review.
+Types live in `crates/idlemax-core/src/worker/run.rs`.
+
+```json
+{"id": 4, "device": "mac", "project": "app", "task": "roadmap:3", "task_title": "3. Faster sync",
+ "source": "roadmap", "branch": "idlemax/roadmap-3-1a2b3c", "worktree": "/Users/me/.idlemax/worktrees/app/roadmap-3-1a2b3c",
+ "provider": "claude", "account": "max", "model": "sonnet", "session": "0b6e...",
+ "state": "running", "verdict": null, "concern": null, "reason": "the oldest ready roadmap item",
+ "summary": null, "facts": {}, "job": 17, "launches": 1, "start_tries": 0,
+ "start_ms": 1762900000000, "end_ms": null, "updated_ms": 1762900060000,
+ "quota_before": [QuotaSnapshot], "quota_after": []}
+```
+
+- `state` is one of ten values, and only these moves happen:
+  `starting` to `running`, `stopped`, `shed` or `needs_you`;
+  `running` to `checking`, `stopped`, `shed` or `needs_you`;
+  `checking` to `clean`, `needs_you`, `rejected`, `stopped` or `shed`;
+  `stopped` (the owner's stop) to `shed` (the owner's start) or `discarded`;
+  `shed` (back in the queue) to `starting` or `discarded`;
+  `clean`, `needs_you` and `rejected` to `kept` or `discarded`;
+  `kept` and `discarded` to nothing.
+- `verdict` is `clean`, `needs_you` or `rejected`, and stays after a keep or a discard; `concern` says why for the last two.
+- `reason` is why the task was picked, `source` is the task's source, `job` is the live or last job of the Run, `launches` counts its jobs and `start_tries` the launches in a row that never reached `running`.
+- `quota_before` and `quota_after` hold the account's readings per window at the first launch and at the end of the last one.
+- `GET /v1/runs` filters by `state` (400 for an unknown one) and `project`, and answers with at most `limit` runs (default 100, at most 1000).
+- `GET /v1/runs/{id}` answers 404 with `run <id> not found` for an unknown id.
+- The brief and the worker section of the first launch are stored with the Run for its relaunches, and no route returns them.
+- A kept or discarded Run is pruned 90 days after it ended.
+
+A worker job is an AI job (`cost = "ai"`) that stands outside the one-AI-lease rule and the one-start-per-5-hours rule in both directions: several worker jobs may hold one account, a worker job never blocks a plain AI job, and a plain one never blocks a worker job.
 
 ## Dispatch inputs
 

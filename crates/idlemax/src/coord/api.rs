@@ -9,6 +9,7 @@ mod mode;
 mod plan;
 mod projects;
 mod report;
+mod runs;
 mod schedules;
 #[cfg(test)]
 mod tests;
@@ -129,6 +130,8 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))
         .route("/v1/projects/{id}/settings", post(projects::settings))
+        .route("/v1/runs", get(runs::list))
+        .route("/v1/runs/{id}", get(runs::get_one))
         .route_layer(middleware::from_fn_with_state(
             BearerToken::new(token),
             http::require_bearer,

@@ -98,11 +98,13 @@ impl Store {
         Ok(())
     }
 
-    /// (account, started_ms) of AI jobs started at or after `since_ms`, oldest first.
+    /// (account, started_ms) of plain AI jobs started at or after `since_ms`, oldest first.
+    /// Worker jobs stand outside the one-start-per-window rule (A8).
     pub fn ai_job_starts(&self, since_ms: UnixMs) -> StoreResult<Vec<(String, UnixMs)>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT ai_account, started_ms FROM jobs
-             WHERE ai_account IS NOT NULL AND started_ms >= ?1 ORDER BY started_ms",
+             WHERE ai_account IS NOT NULL AND worker = 0 AND started_ms >= ?1
+             ORDER BY started_ms",
         )?;
         let rows = stmt.query_map([since_ms], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -142,11 +144,13 @@ impl Store {
         self.get_job(id)
     }
 
-    /// AI accounts with an active lease anywhere in the cluster.
+    /// AI accounts a plain job holds a lease on anywhere in the cluster; worker jobs hold
+    /// none (A8).
     pub fn ai_leased_accounts(&self) -> StoreResult<Vec<String>> {
         let sql = format!(
             "SELECT ai_account FROM jobs
-             WHERE ai_account IS NOT NULL AND status IN {ACTIVE} ORDER BY ai_account"
+             WHERE ai_account IS NOT NULL AND worker = 0 AND status IN {ACTIVE}
+             ORDER BY ai_account"
         );
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map([], |r| r.get(0))?;
@@ -266,15 +270,16 @@ pub(super) fn insert_job(
         });
     }
     conn.execute(
-        "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key)
-             VALUES (?1, ?2, 'queued', ?3, ?4, ?5, ?6)",
+        "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key, worker)
+             VALUES (?1, ?2, 'queued', ?3, ?4, ?5, ?6, ?7)",
         params![
             json_text(spec)?,
             spec.name,
             spec.priority,
             spec.ai_account,
             now,
-            spec.key
+            spec.key,
+            spec.worker.is_some()
         ],
     )?;
     let id = conn.last_insert_rowid();

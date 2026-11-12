@@ -12,6 +12,7 @@ mod jobs;
 mod projects;
 mod quota;
 mod report;
+mod runs;
 mod schedules;
 mod schema;
 #[cfg(test)]
@@ -133,6 +134,7 @@ pub struct PruneReport {
     pub guard_spans: usize,
     pub pause_spans: usize,
     pub projects: usize,
+    pub runs: usize,
 }
 
 /// The coordinator database. One connection, owned by one task or mutex.
@@ -208,8 +210,8 @@ impl Store {
     /// Drops metrics and quota history older than `metrics_retention_ms` (the newest
     /// quota snapshot per account window always stays), plus events, closed advice and devices
     /// silent for 30 days (and applied-update records, guard spans, closed pause spans and projects
-    /// Herdr found that are off and unseen for that long), and finished jobs older
-    /// than 90 days, then returns freed pages to the OS.
+    /// Herdr found that are off and unseen for that long), and finished jobs and kept or
+    /// discarded runs older than 90 days, then returns freed pages to the OS.
     pub fn prune(&mut self, now: UnixMs, metrics_retention_ms: i64) -> StoreResult<PruneReport> {
         let metrics_cutoff = now.saturating_sub(metrics_retention_ms);
         let history_cutoff = now.saturating_sub(HISTORY_RETENTION_MS);
@@ -258,6 +260,10 @@ impl Store {
                 "DELETE FROM projects
                  WHERE enabled = 0 AND source = 'herdr' AND COALESCE(seen_ms, created_ms) < ?1",
                 [history_cutoff],
+            )?,
+            runs: tx.execute(
+                "DELETE FROM runs WHERE state IN ('kept', 'discarded') AND end_ms < ?1",
+                [jobs_cutoff],
             )?,
         };
         tx.execute(
