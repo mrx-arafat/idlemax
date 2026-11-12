@@ -20,6 +20,12 @@ Metered API keys (`provider = "api"`) are the path providers designate for autom
 > [!CAUTION]
 > In a test or dev setup, never configure an AI account or queue an `ai` job: it launches the real CLI and spends real quota.
 
+Before you add any account, `idlemax quota` simply says so (exit 0):
+
+```text
+no AI accounts configured ([[quota.accounts]] in config.toml)
+```
+
 ## Step 1: tell idlemax about your accounts
 
 Accounts live in `config.toml` as `[[quota.accounts]]` tables.
@@ -48,6 +54,15 @@ Then tell each device which accounts it may spend, only where you logged in to t
 ```sh
 idlemax config set agent.ai_accounts claude-max,codex-pro
 ```
+
+Both changes are read only when the agent starts (`config set` says `saved; restart the agent to apply it`), so restart it:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/com.idlemax.agent   # macOS
+systemctl --user restart idlemax-agent                  # Linux, user unit
+```
+
+If you run the agent in a terminal instead, stop it with `Ctrl-C` and start `idlemax agent` again.
 
 | Field | Meaning |
 |---|---|
@@ -95,7 +110,7 @@ What `install` does to your `settings.json` (in `$CLAUDE_CONFIG_DIR`, else `~/.c
 - copies the file to `settings.json.idlemax.bak` before every change;
 - changes only the `statusLine.command` string; every other key, the key order, the indentation and the line endings stay byte for byte;
 - runs your original command unchanged under `sh -c`, so the statusline you see is identical, and ignores capture errors, so the statusline never breaks;
-- with no `statusLine` yet, adds one that runs the capture script alone;
+- with no `statusLine` yet, adds one that runs the capture script alone, and with no `settings.json` at all, creates one (`statusline status` then says "no settings.json yet; `idlemax statusline install` creates one");
 - writes the capture script to `$IDLEMAX_HOME/bin/claude-statusline-capture.sh`, and puts `IDLEMAX_HOME` into the command when it is set.
 
 Running `install` again changes nothing.
@@ -140,12 +155,14 @@ claude-max  5h      34%   40%      26%       in 1h19m   no     another AI job ho
 claude-max  week    41%   30%      29%       in 3d4h    no     another AI job holds this account's lease; an AI job alre...
 codex-pro   week    31%   15%      54%       in 18h59m  yes    weekly window in its final third, resets in 18h 59m
 
-ACCOUNT     BUDGET  SPENT   LEFT    WORKERS  DAY ENDS  WHY
-claude-max  7.3%    2.0%    5.3%    yes      in 5h10m  41% used, the owner's usual use holds 18%, margin 10%: 31% surplus over 4 days
-agy-main    5 runs  3 runs  2 runs  yes      in 9h02m  daily cap: 3 of 5 runs used today
+ACCOUNT     BUDGET  SPENT   LEFT    WORKERS  DAY ENDS   WHY
+claude-max  8.2%    2.0%    6.2%    yes      in 4h00m   41% used, the owner's usual use holds 18%, margin 10%: 31% surplus over 4 days
+codex-pro   54.0%   0.0%    54.0%   yes      in 18h59m  last day before the reset: 31% used, the floor is 15%
 ```
 
 (Demo data.)
+Every account in `[[quota.accounts]]` gets a row in both tables.
+An `agy` or `opencode` account counts its Budget in Runs, for example `agy-main  5 runs  3 runs  2 runs  yes  in 9h02m  daily cap: 3 of 5 runs used today`.
 The first table is per window: used, your reserve, the headroom above it, and whether an old-style AI job may spend it now (`SPEND`, `WHY`).
 The second table is the **Budget** for dispatcher workers today: `SPENT` is what idlemax's Runs that ended today cost, `LEFT` what is still free after the running ones, and `WORKERS` whether a worker may start now.
 
@@ -159,12 +176,15 @@ An **account day** is a 24-hour slot counted back from the weekly reset.
 
 Worked example (the `claude-max` row above):
 
-1. The weekly window is 41% used, with 4 account days to the reset.
+1. The weekly window is 41% used and resets in 3 days 4 hours, so 4 account days are left; today's ends in 4 hours.
 2. Your usual use over those 4 days is learned to be 18%.
 3. The safety margin is 10% (`quota.safety_margin_pct`).
 4. Surplus: 100 - 41 - 18 - 10 = 31% of the week.
-5. idlemax spreads that surplus over the 4 account days left, and today's share is the Budget the row shows, 7.3%.
-   It is worked out again as the week goes, from what is really left.
+5. Today idlemax already spent 2%. It adds that back and spreads the total over the days left: (31 + 2) / 4 = 8.25%, shown as `8.2%`.
+   Adding today's spend back keeps the day's figure steady while it is spent.
+6. `LEFT` is 8.25 - 2 = 6.25%, shown as `6.2%`.
+
+On the last account day the rule changes: idlemax may spend what is left down to the floor (the `codex-pro` row: 100 - 31 - 15 = 54%).
 
 Your usual use is learned from the last 7 account days.
 Until idlemax has a week of your numbers, it reserves `quota.owner_reserve_pct` (50%) of the weekly quota for you.
@@ -174,7 +194,7 @@ Until idlemax has a week of your numbers, it reserves `quota.owner_reserve_pct` 
 | Rule | Setting | Default |
 |---|---|---|
 | The **5-hour stop**: at this share of the 5-hour window no worker starts, and running workers stop with their state saved until the window allows | `quota.five_hour_stop_pct` | 60 |
-| The **last day**: on the day before the reset, idlemax may spend what is left down to this floor | `quota.last_day_floor_pct` | 15 |
+| The **last day**: in the last 24 hours before the reset (the final account day), idlemax may spend what is left down to this floor | `quota.last_day_floor_pct` | 15 |
 | The **measuring week**: in an account's first week of Runs, idlemax spends at most this share of each weekly window | `quota.measuring_week_cap_pct` | 10 |
 | A **server-only** account (only servers list it) holds only this much for you, and its surplus is paced evenly over the days to the reset | `quota.server_only_margin_pct` | 5 |
 
@@ -193,10 +213,11 @@ A Run starts only when its estimated cost fits in what is left of today's Budget
 | Tier | For | Claude model | Setting |
 |---|---|---|---|
 | `small` | task types in `quota.small_task_types` (default `broken_check`) | `haiku` | `quota.claude_small_model` |
-| `standard` | everything else, and every second try | `sonnet` | `quota.claude_standard_model` |
+| `standard` | everything else, and the second try after one failed check | `sonnet` | `quota.claude_standard_model` |
 
-The orchestrator itself always uses Opus.
-Other providers' models ship unset (`quota.codex_small_model`, `quota.codex_standard_model`, `quota.agy_*`, `quota.opencode_*`), and a provider whose tier model is not set gets no worker for that tier:
+A task that fails its checks twice does not get a third try: it goes on "needs you".
+The orchestrator itself always uses Opus, and Opus is refused as a worker model: a Claude tier model that contains `opus` is rejected by `idlemax config set` and at startup.
+Other providers' models ship unset (`config list` shows `off`) (`quota.codex_small_model`, `quota.codex_standard_model`, `quota.agy_*`, `quota.opencode_*`), and a provider whose tier model is not set gets no worker for that tier:
 
 ```sh
 idlemax config set quota.codex_standard_model <model>
@@ -255,20 +276,20 @@ The coordinator checks this from the logins the agents report (`claude auth stat
 | `quota.owner_reserve_pct` | 50.0 | weekly percent reserved for you until idlemax has learned your use | raise it if you are a heavy user in a new setup |
 | `quota.safety_margin_pct` | 10.0 | margin subtracted from the surplus | raise it if you ever ran short |
 | `quota.five_hour_stop_pct` | 60.0 | 5-hour usage at which workers stop | lower it to keep more of each 5-hour window for you |
-| `quota.last_day_floor_pct` | 15.0 | weekly floor on the day before the reset | lower it to spend more of a quiet week |
+| `quota.last_day_floor_pct` | 15.0 | weekly floor in the last 24 hours before the reset | lower it to spend more of a quiet week |
 | `quota.server_only_margin_pct` | 5.0 | weekly percent held for you on an account only servers use | raise it if you sometimes use that login yourself |
 | `quota.measuring_week_cap_pct` | 10.0 | weekly percent idlemax may spend in an account's first week (above 0, at most 100) | keep it low until you trust the numbers |
 | `quota.seed_small_pct` | 3.0 | estimated cost of an unmeasured small Run (weekly %) | rarely |
 | `quota.seed_standard_pct` | 8.0 | estimated cost of an unmeasured standard Run (weekly %) | rarely |
 | `quota.small_task_types` | `["broken_check"]` | task sources that start on the small tier | add `roadmap` if your roadmap items are tiny |
-| `quota.claude_small_model` | `haiku` | Claude small tier model | |
-| `quota.claude_standard_model` | `sonnet` | Claude standard tier model | |
-| `quota.codex_small_model` | unset | Codex small tier model | to let Codex take small tasks |
-| `quota.codex_standard_model` | unset | Codex standard tier model | to let Codex take standard tasks |
-| `quota.agy_small_model` | unset | agy small tier model | |
-| `quota.agy_standard_model` | unset | agy standard tier model | |
-| `quota.opencode_small_model` | unset | OpenCode small tier model | |
-| `quota.opencode_standard_model` | unset | OpenCode standard tier model | |
+| `quota.claude_small_model` | `haiku` | Claude small tier model; a name containing `opus` is refused | |
+| `quota.claude_standard_model` | `sonnet` | Claude standard tier model; a name containing `opus` is refused | |
+| `quota.codex_small_model` | off (unset) | Codex small tier model | to let Codex take small tasks |
+| `quota.codex_standard_model` | off (unset) | Codex standard tier model | to let Codex take standard tasks |
+| `quota.agy_small_model` | off (unset) | agy small tier model | |
+| `quota.agy_standard_model` | off (unset) | agy standard tier model | |
+| `quota.opencode_small_model` | off (unset) | OpenCode small tier model | |
+| `quota.opencode_standard_model` | off (unset) | OpenCode standard tier model | |
 | `[[quota.accounts]]` | none | your accounts (hand edit) | |
 
 Every `quota.*` setting except `quota.accounts` applies at once, with no restart.
@@ -277,5 +298,6 @@ Every `quota.*` setting except `quota.accounts` applies at once, with no restart
 
 The advisor (see [chapter 7](07-dashboard-tui-mcp.md#the-advisor)) can also spend an account on its own pass, through `advisor.ai_account`.
 The orchestrator pass counts under the rule of one AI job per account per 5 hours, so set `advisor.ai_account` to a different account than the one the dispatcher uses.
+`advisor.*` settings are read when the coordinator starts, so restart it after a change (`launchctl kickstart -k gui/$(id -u)/com.idlemax.coord` on macOS, `systemctl --user restart idlemax-coord` on Linux, or the system unit on a server).
 
 Next: [Dashboard, TUI and MCP](07-dashboard-tui-mcp.md)

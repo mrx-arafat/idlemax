@@ -57,7 +57,7 @@ See [the ban-risk stance](06-quota-and-budget.md#read-this-first-the-ban-risk-st
 ### Will it use up the quota I need?
 
 It spends the surplus: what would expire unused at the reset, after your usual daily use and a 10% safety margin.
-Until it has a week of your numbers it keeps half the week for you, and in an account's first week of Runs it spends at most 10%.
+Until it has a week of your numbers it keeps half the week for you, and in an account's first week of Runs it spends at most 10% (`quota.measuring_week_cap_pct`).
 At 60% of a 5-hour window, workers stop.
 
 ### Which agent CLIs can be workers?
@@ -94,7 +94,7 @@ There is no service command or packaging, and the Windows code paths are neither
 ### Is the API documented?
 
 Yes: [docs/API.md](../API.md) has every route, wire format and control rule.
-Every call except `GET /healthz` and `GET /` needs `Authorization: Bearer <token>`:
+Every call except `GET /healthz`, `GET /` and `GET /dashboard.js` (the dashboard page and its script) needs `Authorization: Bearer <token>`:
 
 ```sh
 curl -H "Authorization: Bearer $(cat ~/.idlemax/token)" http://127.0.0.1:7878/v1/status

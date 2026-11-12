@@ -30,7 +30,7 @@
 | **Kill switch** | the file `$IDLEMAX_HOME/PAUSE`, or `stop-all` |
 | **Lease** | a device's claim on a job; it lapses after 120 s without a heartbeat |
 | **Lines** | hold, shed and emergency: the three thresholds workers follow |
-| **Measuring week** | an account's first week of Runs, capped at 10% of each weekly window |
+| **Measuring week** | an account's first week of Runs, capped at `quota.measuring_week_cap_pct` (10%) of each weekly window |
 | **Mode** | the dispatcher's setting: `off`, `propose` or `auto` |
 | **Needs you** | a list of tasks idlemax could not do alone, each with the reason |
 | **Notice** | one of the three things that interrupt you: finished tasks, something needs you, the daily summary |
@@ -44,7 +44,7 @@
 | **Project** | a git repository on a device that idlemax knows; off until you switch it on |
 | **PSI** | Linux pressure stall information: how long tasks waited for memory or I/O |
 | **Reserve** | the part of a quota window kept for you |
-| **Review cap** | at most 3 finished tasks per project may wait for your review |
+| **Review cap** | `workers.review_cap` (3): per project, the tasks waiting for your review plus the Runs in flight may number at most this |
 | **Room** | a device's worker line state, as `idlemax device list` shows it |
 | **rules.md** | the orchestrator's judgment rules, yours to edit |
 | **Run** | the record of one worker on one task, from start to verdict |

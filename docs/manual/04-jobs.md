@@ -13,18 +13,24 @@ For pipes, `&&` or `*` you need a shell yourself: `-- sh -c 'make && make test'`
 
 > [!IMPORTANT]
 > The program (`argv[0]`, here `cargo`) must be in the device's `agent.command_allowlist`, or the job waits forever.
-> `idlemax job add` warns you on stderr when no device allows it:
+> `idlemax job add` warns you when no device allows it.
+> On a terminal the warning goes to stderr:
 >
 > ```text
-> warning: "no device allows \"cargo\" (checked: laptop). On the device that should run it, run `idlemax config set agent.command_allowlist <programs>` (list every program it may run), or the job will wait in the queue."
+> warning: no device allows "cargo" (checked: laptop). On the device that should run it, run `idlemax config set agent.command_allowlist <programs>` (list every program it may run), or the job will wait in the queue.
 > ```
+>
+> When the output is piped, the same text is a quoted `warning:` field on stdout.
+>
+> `idlemax config set agent.command_allowlist` **replaces** the whole list, so name the programs already on it too: `idlemax config set agent.command_allowlist /bin/echo,cargo`.
+> The agent applies it at once, but the coordinator learns the new list only at the next heartbeat (`agent.heartbeat_secs`, 30 s), so `idlemax why` may show the old list for up to half a minute.
 
 ### The flags
 
 | Flag | Meaning | Default |
 |---|---|---|
 | `--name N` | job name | the command's file name |
-| `--cost cpu_light\|cpu_heavy\|io\|ai` | kind of load; `ai` needs `--ai-account` | `cpu_light` |
+| `--cost cpu_light\|cpu_heavy\|io\|ai` | kind of load; `ai` needs `--ai-account`; a `production` device (the Linux default) takes only `cpu_light` and `io` | `cpu_light` |
 | `--device D` | run only on this device (repeat for more) | any device |
 | `--requires X` | a tool the device must have, such as `cargo` (repeatable) | none |
 | `--mem MIB` | memory the job may use | 512 |
@@ -62,7 +68,8 @@ If every device that could take the job refuses its command (allowlist), `--wait
 ## Make retries safe with a key
 
 Scripts and AI agents retry.
-A key stops a retry from queueing a duplicate:
+A key stops a retry from queueing a duplicate.
+This example uses `/bin/sleep`, which must be on the allowlist to run; if it is not, the job stays queued, so cancel it afterwards with `idlemax job cancel <id>`:
 
 ```text
 $ idlemax job add --key pr-42-tests -- /bin/sleep 20 | grep result
@@ -140,6 +147,7 @@ Only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TZ`, `TMPDIR`,
 Then come the spec's `env`, `IDLEMAX_JOB_ID`, and `IDLEMAX_HOME` set to the agent's state folder.
 API keys, tokens and the ssh-agent socket in the agent's environment never reach a job; put what a job needs in its `env`.
 Jobs never get the idlemax token, and `env` keys starting with `LD_` or `DYLD_` are refused.
+`job add` accepts such a spec, but the agent refuses to start it: the job is retried as "could not start" (`start: job refused: env key "LD_X" ...`) until it runs out of attempts and parks, so remove the key.
 
 ### Starter jobs
 
@@ -152,7 +160,12 @@ Jobs never get the idlemax token, and `env` keys starting with `LD_` or `DYLD_` 
 | `repo-health-project-a.toml` | clippy, tests and `npm audit` for one repo, as an inbox report | `cpu_heavy` |
 | `pr-review-drafts-claude.toml`, `pr-review-drafts-codex.toml` | draft reviews of PRs waiting on you; the AI gets the PR text on stdin, no tools, and posts nothing | `ai` |
 
-Their paths (`/path/to/...`) and device id (`my-laptop`) are placeholders; change them before use.
+Their paths (`/path/to/...`) and device id (`my-laptop`) are placeholders; change them before use, and add each script to the allowlist.
+
+> [!WARNING]
+> `index-refresh` and `repo-health` are `cpu_heavy`, and the PR drafts are `ai`.
+> A `production` device (the Linux default) takes only `cpu_light` and `io` jobs, so those wait forever there.
+> Run them on a Mac (`laptop`) or a `workbox`, or change `cost` in your copy.
 
 ## What a job's status means
 

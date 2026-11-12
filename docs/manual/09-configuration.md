@@ -44,7 +44,9 @@ In `config list`, `off` means the setting is unset (the check is off, or the val
 ### What applies at once
 
 - Every `[guard]` key, `agent.command_allowlist`, `agent.notify` and `agent.keep_awake`: applied to the running agent at once.
-- Every `[dispatcher]` key, every `[workers]` key and every `[quota]` setting except `quota.accounts`: each daemon re-reads them when the file's modification time changes, on both the agent and the coordinator.
+- Every `[dispatcher]` key: both daemons re-read them when the file's modification time changes.
+- Every `[workers]` key: the coordinator reads them at every launch step and passes what a device needs in the worker job, so a change applies to the next launch.
+- Every `[quota]` setting except `quota.accounts`: applied at once.
 - Everything else (listen addresses, intervals, the profile, `[[quota.accounts]]`): read at start; restart the process the reply names.
 
 > [!NOTE]

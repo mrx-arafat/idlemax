@@ -20,7 +20,16 @@ These work on every command, before or after it.
 | `-h`, `--help` | print help |
 
 Exit codes: 0 success (including "nothing to do"), 1 runtime error, 2 usage error.
-`idlemax job add --wait` has its own codes ([below](#job-add)).
+Some commands add their own meaning:
+
+| Command | Exit code |
+|---|---|
+| `job add --wait` | 0 succeeded, 1 ended any other way, 2 usage error, 124 timeout ([below](#job-add)) |
+| `setup` | 1 when a step failed, or doctor still finds a failing check after services were installed |
+| `doctor` | 1 when any check fails |
+| `hooks install` | 1 when an agent's file was refused |
+| `skill --check` | 1 when the committed skill differs from the generated one |
+| `mcp` | 2 when stdin is a terminal (it is meant to be started by an agent CLI) |
 
 ## At a glance
 
@@ -115,8 +124,9 @@ Install or remove the background service (LaunchAgent or systemd user unit).
 
 | Flag | On | Meaning |
 |---|---|---|
-| `--bin <PATH>` | install, render | absolute path of the idlemax binary the service runs [default: this binary] |
-| `--dry-run` | install, uninstall | print the file and the commands without writing or running anything |
+| `--bin <PATH>` | install, render | absolute path of the idlemax binary the service runs [install default: this binary; render default: `/usr/local/bin/idlemax`] |
+| `--dry-run` | install | print the file and the commands without writing or running anything |
+| `--dry-run` | uninstall | print the commands without running them or deleting anything |
 | `--cpus <CPUS>` | render | target CPU count; required with `--memory-mib` for off-host rendering |
 | `--memory-mib <MEMORY_MIB>` | render | target total RAM in MiB |
 | `--config <PATH>` | render | target server config; explicit facts otherwise use server defaults |
@@ -375,7 +385,7 @@ Show or change settings in `config.toml` and apply them to the running agent.
 
 | Subcommand | Does |
 |---|---|
-| `config list [--all]` | the settings you changed, or every setting with its default with `--all` (default) |
+| `config list [--all]` | without `--all`, only the settings `config.toml` sets; with `--all`, every setting with its default. `list` is the default subcommand, so plain `idlemax config` is `config list` |
 | `config get <KEY>` | one setting: its value, its default and where the value comes from |
 | `config set <KEY> <VALUE>` | change one setting, save it and apply it to the running agent |
 | `config unset <KEY>` | remove a setting from config.toml so its default applies again |

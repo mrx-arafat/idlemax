@@ -52,7 +52,7 @@ laptop  off         online  run
 ```
 
 ```sh
-idlemax device on laptop     # let the dispatcher use this device
+idlemax device on laptop     # use the DEVICE id `device list` shows (your hostname); "laptop" is only the example
 idlemax device off laptop    # stop its workers (state saved) and dispatcher jobs; plain jobs keep running
 ```
 
@@ -109,6 +109,9 @@ The setup and check commands are argv, never a shell line, and their program mus
 
 When the same project name exists on more than one device, add `--device <id>` to `project on`, `off`, `set` and `list`.
 
+**How paths match.** Off-limits paths, core paths and the scope paths the orchestrator names match the way `.gitignore` reads a pattern: a pattern without `/` (a trailing one aside) matches a name at any depth, one with `/` is anchored at the repository root, `*` and `?` stay within one name, and `**` spans folders.
+A path also covers everything in the folder it names.
+
 ### Switch it on
 
 ```sh
@@ -149,6 +152,16 @@ It costs no quota, and the next day starts with a list of what is broken.
 idlemax plan
 ```
 
+Until the device is on, the plan only says so, with the fix, and shows no slots:
+
+```text
+dispatcher: propose (nothing is launched)
+picked by: no orchestrator pass: no device has an open worker slot and a ready task
+device laptop: held: device laptop is off: idlemax device on laptop
+```
+
+Once the device is on:
+
 ```text
 dispatcher: propose (nothing is launched)
 picked by: no orchestrator pass: no device has an open worker slot and a ready task
@@ -159,7 +172,6 @@ notes:
 ```
 
 The plan lists, per device, the line state and its reason, the open slots, and for each slot the project, task, provider, account and model with the reason for the pick.
-A device that is off says so with the fix (`held: device laptop is off: idlemax device on laptop`).
 
 `idlemax plan --refresh` asks for an orchestrator pass now.
 It is one `claude -p --model opus` job, so it **spends quota**.
@@ -167,7 +179,9 @@ It is one `claude -p --model opus` job, so it **spends quota**.
 ## The orchestrator pass
 
 The orchestrator is one short Claude Opus job.
-It reads a compact summary of the offered tasks, projects and usable accounts, plus the rules in `$IDLEMAX_HOME/rules.md`, and answers with picks: task, account, model, scope paths and a one-sentence reason, plus the tasks it sends to "needs you".
+It reads a compact summary of the offered tasks, projects (with the files each one tracks, at most 200) and usable accounts, plus the rules in `$IDLEMAX_HOME/rules.md`, and answers with picks: task, account, model, scope paths and a one-sentence reason, plus the tasks it sends to "needs you".
+It is told to name scope paths only from the project's files.
+When a named path matches none of them, the scope becomes the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
 
 - It runs with no tools, no hooks and no MCP servers.
 - It runs only when its inputs changed (at most once an hour by itself) or on `idlemax plan --refresh`.
@@ -234,7 +248,9 @@ Every 15 seconds, per device, it first continues the oldest worker that was shed
 - the worker CLI is listed in `workers.clis` (empty by default, so nothing starts until you list one) and the account's Budget is usable;
 - the project has fewer than `workers.review_cap` (3) tasks waiting for your review or in flight.
 
-A task that already has a Run is not launched again until that Run is discarded, and a task whose last two Runs were rejected or discarded never is.
+A task that already has a Run is not launched again until that Run is discarded, except that a single `rejected` Run leaves the task open for one more attempt (see [Model tiers](#model-tiers)).
+A task whose last two Runs were rejected or discarded is never launched again: it needs you.
+A Run you discarded before its worker ever started counts as no try and no spend.
 Every launch is an event that names the project, task, provider, model and the reason it was picked.
 
 ### Model tiers
@@ -289,7 +305,7 @@ The reason names the biggest memory users outside idlemax; idlemax never closes 
 The kill switch, a local pause and `stop-all` still hold and stop workers like any job.
 The numbers per profile are in [Configuration](09-configuration.md#dispatcher).
 
-## Stop and start ▶
+## Stop and start
 
 ```sh
 idlemax stop --reason "need the CPU for a demo"
@@ -343,8 +359,8 @@ idlemax review discard 12 --yes   # no question; needed when no terminal is atta
 
 ### The review cap
 
-At most `workers.review_cap` (3) finished tasks per project may wait for your review.
-Then idlemax moves its workers to another switched-on project, or stops.
+Per project, the finished tasks waiting for your review **plus** the Runs still in flight (starting, running, checking, shed or stopped) may number at most `workers.review_cap` (3).
+At the cap, idlemax moves its workers to another switched-on project, or stops.
 A `rejected` Run does not count toward the cap.
 
 ```sh
@@ -353,11 +369,15 @@ idlemax config set workers.review_cap 5
 
 ## A full first session, start to finish
 
+First add an AI account: a `[[quota.accounts]]` entry and `agent.ai_accounts` on this device, then restart the agent ([chapter 6, step 1](06-quota-and-budget.md#step-1-tell-idlemax-about-your-accounts)).
+Without one, the plan never launches anything.
+
 ```sh
+idlemax device list                 # note your DEVICE id (the hostname); "laptop" below is an example
 idlemax device on laptop
 idlemax project add ~/code/app
 idlemax project set app check -- cargo test -p core
-idlemax config set agent.command_allowlist git,cargo
+idlemax config set agent.command_allowlist git,cargo,claude   # the worker CLI, and every setup and check program, must be allowed too
 idlemax project on app
 idlemax plan                        # propose mode: read what it would do
 idlemax config set workers.clis claude

@@ -9,8 +9,8 @@ Nothing else is installed, and nothing runs in the background until you ask for 
 | You have | Do this |
 |---|---|
 | macOS (Apple Silicon or Intel) | [Option A: the install script](#option-a-the-install-script-quickest) |
-| Linux on x86_64 or arm64 with a recent glibc (Ubuntu, Debian, Fedora...) | [Option A: the install script](#option-a-the-install-script-quickest) |
-| Alpine (musl), an older Linux, or you like building things yourself | [Option B: build from source](#option-b-build-from-source) |
+| Linux on x86_64 or arm64 with the glibc of Ubuntu 24.04 or newer | [Option A: the install script](#option-a-the-install-script-quickest) |
+| Alpine (musl), Ubuntu 22.04 or another older Linux, or you like building things yourself | [Option B: build from source](#option-b-build-from-source) |
 | Windows | Not supported yet: there is no service command, no packaging, and its code paths are neither compiled nor run |
 
 ## First, open a terminal
@@ -81,13 +81,13 @@ curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/ins
 ```
 
 > [!NOTE]
-> Prebuilt Linux binaries need a recent glibc.
-> On an older distribution or on musl (Alpine), use Option B.
+> Prebuilt Linux binaries need the glibc of Ubuntu 24.04 or newer.
+> On Ubuntu 22.04, another older distribution or musl (Alpine), use Option B.
 
 ## Option B: build from source
 
 You build idlemax with Rust's toolchain.
-The project is built with Rust 1.95.
+The project is built with Rust 1.95; use 1.95 or newer.
 It needs no system OpenSSL or SQLite, because both come built in.
 
 ### Step 1: the basic build tools
@@ -180,7 +180,15 @@ Then run it with no arguments:
 idlemax
 ```
 
-Before setup it prints one note with the fix, such as running `idlemax setup`.
+Before setup it says so, with two next steps:
+
+```text
+idlemax: not set up on this device
+help[2]:
+  Run `idlemax setup` to create the config and token and install the service
+  Run `idlemax doctor` to find what is wrong
+```
+
 That is expected: you set it up in the next chapter.
 
 ## Updating later

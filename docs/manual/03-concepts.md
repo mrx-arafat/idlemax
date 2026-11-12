@@ -92,7 +92,7 @@ A profile is a preset of guard numbers for one kind of machine.
 | Profile | For | In short |
 |---|---|---|
 | `laptop` | your own Mac or laptop (default on macOS) | you come first: waits for 10 minutes of idle time, needs AC power and 40% battery, sizes itself to half the CPUs and a quarter of the RAM |
-| `workbox` | a work server with nobody at the keyboard and nothing else to protect | uses all CPUs but one and all RAM but a 1024 MiB reserve |
+| `workbox` | a work server with nobody at the keyboard and nothing else to protect | uses all CPUs but one and all RAM but a 1024 MiB reserve and 128 MiB for the agent (at least 1 job and 512 MiB), one slot per 512 MiB of that budget |
 | `production` | a server that runs real services (default on Linux) | the services come first: a small, capped share; never takes `cpu_heavy` or `ai` jobs |
 
 Pick one with `idlemax setup --profile workbox` (or `idlemax init --profile ...`), or later with `idlemax config set agent.profile workbox`.

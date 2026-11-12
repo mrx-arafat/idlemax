@@ -30,7 +30,7 @@ flowchart TD
 
 | Control | Scope | Needs the network? |
 |---|---|---|
-| `touch $IDLEMAX_HOME/PAUSE` | every job and worker on that device, within seconds | no |
+| `touch $IDLEMAX_HOME/PAUSE` | freezes every running job and worker on that device within seconds, and starts nothing new | no |
 | `idlemax local stop-all` | kill every job on this device and hold new ones | no |
 | `idlemax stop` | every AI worker, state saved, until `idlemax start` | yes |
 | `idlemax stop-all [--device/--account/--job]` | kill running jobs in the scope and hold new ones | yes |
@@ -98,7 +98,7 @@ A job or worker that idlemax started can stop and pause work, but it cannot resu
 The lock stops accidents and a launched process that tries the documented switches.
 **It is not a sandbox.** It does not stop:
 
-- A write to `config.toml` in the state folder: every `[dispatcher]`, `[workers]` and quota key, the mode included, applies at once, because each daemon re-reads those keys when the file changes; every other key applies at the next reload or start.
+- A write to `config.toml` in the state folder: every `[dispatcher]` key, the mode included, and every quota key except `quota.accounts` apply at once, because the daemons re-read them when the file changes; `[workers]` keys apply at the coordinator's next launch step; `[guard]` keys and the other live agent keys apply at the agent's next reload (which `idlemax config set` asks for); every other key, `quota.accounts` included, applies at the next restart.
 - A write to `rules.md`, the database or the token file, or deleting the `PAUSE` file: it is the same OS user.
 - Detaching: one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1.
 - A call to a coordinator on another machine: a caller that is not on the coordinator's host is judged by the token alone.
@@ -107,7 +107,7 @@ The lock stops accidents and a launched process that tries the documented switch
 
 ## Network and tokens
 
-- One bearer token (32 random bytes as hex, file mode 0600) guards every API call except `/healthz` and `/`, and is compared in constant time.
+- One bearer token (32 random bytes as hex, file mode 0600) guards every API call except `/healthz`, `/` and `/dashboard.js` (the dashboard page and its script), and is compared in constant time.
 - **Anyone holding the token can run any allowlisted program with any arguments on your devices.** Treat it like an SSH key, and keep allowlists narrow: allowlisting `sh` or `python3` allows any code.
 - The coordinator's traffic is plain HTTP, so bind it to a private network such as a tailnet, which encrypts it.
 - It answers only to IP addresses, `localhost`, the host of `coordinator.url` and `coordinator.allowed_hosts` (a defence against DNS rebinding).

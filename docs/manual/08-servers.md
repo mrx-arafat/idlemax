@@ -29,7 +29,7 @@ flowchart LR
 
 | Profile | Use it for | What idlemax may use |
 |---|---|---|
-| `workbox` | a work server with no live services and nobody at the keyboard | all CPUs but one, all RAM but a 1024 MiB reserve (at least 1 job and 512 MiB); works around the clock |
+| `workbox` | a work server with no live services and nobody at the keyboard | all CPUs but one, all RAM but a 1024 MiB reserve and 128 MiB for the agent (at least 1 job and 512 MiB), one slot per 512 MiB of that budget; works around the clock |
 | `production` | a server that runs real services | a small capped share: a reserve of one CPU and 1536 MiB for the services plus 128 MiB for the agent, job RAM at most a quarter of the host, `cpu_light` and `io` jobs only, workers always headless, no base checks |
 
 A server idlemax knows nothing about starts as `production`.
@@ -54,7 +54,9 @@ The coordinator speaks plain HTTP, so it must live on a private network that enc
 
 ## Step 2: the coordinator on the server
 
-On Linux, run it as a system service under its own user, from the shipped unit in `packaging/linux/`:
+On Linux, run it as a system service under its own user, from the shipped unit in `packaging/linux/`.
+These commands run on the server, from the root of an idlemax checkout (`git clone https://github.com/mrx-arafat/idlemax && cd idlemax`), with Rust installed as in [chapter 1](01-install.md#option-b-build-from-source).
+If you would rather not build on the server, build elsewhere and copy only the binary to `/tmp/idlemax-linux`, as [ROLLOUT.md section 1](../ROLLOUT.md#1-get-a-linux-binary-onto-the-server-without-starving-the-sites) shows; you still need the checkout's `examples/` and `packaging/` files.
 
 ```sh
 cargo build --release -p idlemax
@@ -65,7 +67,12 @@ sudo install -o idlemax -g idlemax -m 0600 examples/config.server.toml /var/lib/
 sudo -u idlemax env IDLEMAX_HOME=/var/lib/idlemax idlemax init
 ```
 
-Edit `/var/lib/idlemax/config.toml`: set `coordinator.listen` and `coordinator.url` to the tailnet address (`tailscale ip -4`), and `agent.device_id` to the server's name.
+Edit `/var/lib/idlemax/config.toml` (for example `sudo -u idlemax nano /var/lib/idlemax/config.toml`): set `coordinator.listen` and `coordinator.url` to the tailnet address (`tailscale ip -4`), and `agent.device_id` to the server's name.
+
+> [!WARNING]
+> `examples/config.server.toml` is a worked example, not a blank file.
+> It also sets `command_allowlist = ["gh", "git"]`, `advisor.ai_account = "claude-max"` and two `[[quota.accounts]]` entries (`claude-max`, `codex-pro`).
+> Review each one: change the allowlist to what this server should run, and delete the accounts and `advisor.ai_account` unless they are your real account names, kept identical on every device.
 
 ```toml
 [coordinator]
@@ -113,25 +120,59 @@ idlemax service render agent --cpus 4 --memory-mib 4096 --config ./target-config
 - `--bin` picks the target executable.
 - After changing capacity settings, render again and restart the unit.
 
-## Step 3: point every other device at it
+## Step 3: point your own devices at it
 
-A device that already holds the owner token (your Mac):
+This step is for a device of yours that should use the owner token, such as your Mac.
+
+**A fresh device** (no `~/.idlemax` yet):
 
 ```sh
 ssh <server> sudo cat /var/lib/idlemax/token | idlemax setup --role agent --coord-url http://100.64.0.10:7878 --token-stdin
 ```
 
+This needs `sudo` without a password prompt on the server: with no terminal, a password prompt fails with `a terminal is required`.
+If your sudo asks for a password, copy the token in two steps instead:
+
+```sh
+ssh -t <server> 'sudo install -m 0600 -o "$USER" /var/lib/idlemax/token ~/idlemax-token'
+ssh <server> 'cat ~/idlemax-token && rm ~/idlemax-token' | idlemax setup --role agent --coord-url http://100.64.0.10:7878 --token-stdin
+```
+
 Add `--dry-run` first to see every file and command.
 The token travels on stdin, never in argv, and is written with mode 0600.
+
+**A device that already ran `idlemax setup`** (your Mac from chapter 2) has its own `coordinator.url` and token, and setup refuses to replace either:
+
+```text
+config.toml already sets coordinator.url to http://127.0.0.1:7878, not http://100.64.0.10:7878: edit config.toml to change it, or leave out --coord-url
+```
+
+So change them first, then run setup again:
+
+```sh
+idlemax config set coordinator.url http://100.64.0.10:7878
+mv ~/.idlemax/token ~/.idlemax/token.bak
+ssh <server> sudo cat /var/lib/idlemax/token | idlemax setup --role agent --coord-url http://100.64.0.10:7878 --token-stdin
+rm ~/.idlemax/token.bak
+idlemax service uninstall coord     # the old local coordinator is no longer needed
+```
 
 ## Step 4: a credential per server
 
 A server should not hold the owner token.
-Give it its own credential, which opens only the routes an agent uses and speaks only for that device:
+Give it its own credential, which opens only the routes an agent uses and speaks only for that device.
+
+First install idlemax on the server ([chapter 1](01-install.md)).
+A non-interactive `ssh host command` often does not load your shell profile, so `~/.local/bin` or `~/.cargo/bin` may not be on its `PATH`; use the full path, as below.
+
+The credential is for one device id.
+Unless you set `agent.device_id`, a device's id is its short lowercase hostname, so name that (`ssh my-workbox hostname -s`):
 
 ```sh
-idlemax device credential my-workbox --raw | ssh my-workbox idlemax setup --role agent --profile workbox --coord-url http://100.64.0.10:7878 --token-stdin
+idlemax device credential my-workbox --raw | ssh my-workbox '~/.local/bin/idlemax setup --role agent --profile workbox --coord-url http://100.64.0.10:7878 --token-stdin'
 ```
+
+A credential made for another id is refused with HTTP 403: `this credential belongs to device my-workbox and cannot speak for device <host>`.
 
 ```text
 $ idlemax device credential my-workbox
@@ -142,7 +183,7 @@ device my-workbox: credential 62fc...3e63 (shown once; it replaces any older one
 - `idlemax device credential my-workbox --revoke` removes it; that agent is refused from then on.
 - A server set up this way keeps no owner token, so nothing a job finds on it opens an owner route.
 - The dispatcher holds a server until its agent uses its own credential.
-- An agent on the coordinator's own host keeps the owner token only while it reaches the coordinator on `127.0.0.1`; over another address it counts as remote and needs a credential too.
+- An agent on the coordinator's own host may keep the owner token: a caller counts as local when it connects from loopback or from the coordinator's own listen address, so the same host through `100.64.0.10` is local too.
 
 ## Step 5: switch it on for the dispatcher
 
@@ -151,6 +192,7 @@ A device joins with the dispatcher off.
 ```sh
 idlemax device list
 idlemax device on my-workbox
+idlemax project add /home/you/code/app --device my-workbox   # the path on the workbox
 idlemax project on app --device my-workbox
 idlemax device off my-workbox     # stops its workers (state saved) and dispatcher jobs; plain jobs keep running
 ```

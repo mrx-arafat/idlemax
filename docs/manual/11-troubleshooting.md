@@ -22,6 +22,8 @@ warn  coordinator  http://127.0.0.1:7878 is up; the token was not checked
 11 checks: 8 ok, 2 warn, 1 fail
 ```
 
+The number of checks varies: a fresh Linux setup prints 10, and the kill switch check and the agent CLI `login` checks appear only when they apply.
+
 - The checks cover the state folder, the config (unknown keys are named), the token, the coordinator (reachable, accepts the token, same version), the agent, the kill switch and local pause, the allowlist, disk, AI accounts, agent CLI logins, `gh`, and the background service.
 - It is read-only: it never runs `launchctl` or `systemctl` and starts nothing.
 - Exit code 1 when any check fails; a warn alone does not fail.
@@ -66,22 +68,35 @@ This is an error on purpose, so a typo never falls back to your real state.
 ### My job stays `queued`
 
 Run `idlemax why <id>`.
-The usual reasons, with what to do:
+The usual reasons, with what to do.
+Most guard reasons clear by themselves; the setting in the right column is the threshold to change if the device has room to spare.
 
-| Reason starts with | Do this |
-|---|---|
-| `"<program>" is not in <device>'s agent.command_allowlist` | `idlemax config set agent.command_allowlist <every program>` on that device |
-| `user active` | walk away, or lower `guard.user_idle_min_secs` |
-| `on battery` | plug in, or `idlemax config set guard.require_ac_power false` |
-| `battery` | charge it, or lower `guard.min_battery_pct` |
-| `thermal limited` | let the device cool down, or `idlemax config set guard.pause_on_thermal false` |
-| `memory pressure`, `memory free`, `MemAvailable` | wait for memory to recover; the fix names the `[guard]` keys |
-| `disk free` | free some disk; the keys are `guard.disk_free_mib_pause` and `guard.disk_free_mib_kill` |
-| `kill switch file PAUSE present` | delete the `PAUSE` file in that device's state folder |
-| `local pause active` | `idlemax local resume` on that device |
-| `all jobs are paused` | `idlemax resume` |
-| a missing tool from `requires` | install it on the device, or remove it from the spec |
-| AI quota | see `idlemax quota` |
+| Reason starts with | Seen on | Do this |
+|---|---|---|
+| `"<program>" is not in <device>'s agent.command_allowlist` | any | `idlemax config set agent.command_allowlist <every program>` on that device |
+| `user active` | `laptop` | walk away, or lower `guard.user_idle_min_secs` |
+| `user idle time unknown` | any that waits for idle | the device cannot report idle time: `idlemax config set guard.user_idle_min_secs 0` |
+| `on battery` | `laptop` | plug in, or `idlemax config set guard.require_ac_power false` |
+| `power source unknown` | `laptop` | the agent cannot read the power source: `idlemax config set guard.require_ac_power false` if the device is always on mains |
+| `battery` | `laptop` | charge it, or lower `guard.min_battery_pct` |
+| `thermal limited` | any | let the device cool down, or `idlemax config set guard.pause_on_thermal false` |
+| `memory pressure`, `memory free` | `laptop` (macOS) | wait for memory to recover; keys `guard.memory_pressure_*`, `guard.mem_free_pct_*` |
+| `MemAvailable` | `workbox`, `production` | wait for memory to recover; keys `guard.mem_available_mib_pause`, `guard.mem_available_mib_kill` |
+| `swap-in` | `workbox`, `production` | wait for swap-in to settle; key `guard.swap_in_pages_per_sec_pause` (it must stay high for `guard.swap_in_sustain_secs`) |
+| `swap used` | only if you set it | wait for swap to settle; keys `guard.swap_used_mib_pause`, `guard.swap_used_mib_kill` |
+| `swap` (growth) | `laptop` | wait for swap to settle; keys `guard.swap_growth_pause`, `guard.swap_growth_kill` |
+| `PSI memory some` | `workbox`, `production` | wait for pressure to ease; key `guard.psi_mem_some_pause` |
+| `PSI memory full` | `workbox`, `production` | wait for pressure to ease; key `guard.psi_mem_full_kill` |
+| `PSI io full` | `workbox`, `production` | wait for pressure to ease; keys `guard.psi_io_full_pause`, `guard.psi_io_full_kill` |
+| `load per CPU` | `laptop`, `production` | wait for the load outside the jobs to drop; keys `guard.load_per_cpu_pause`, `guard.load_per_cpu_kill` |
+| `load 1m` | only if you set it | wait for the load to drop; keys `guard.load_1m_pause`, `guard.load_1m_kill` |
+| `disk` | any | free disk space; keys `guard.disk_free_mib_pause`, `guard.disk_free_mib_kill` |
+| `kill switch file PAUSE present` | any | delete the `PAUSE` file in that device's state folder |
+| `local pause active` | any | `idlemax local resume` on that device |
+| `all jobs are paused` | any | `idlemax resume` |
+| a missing tool from `requires` | any | install it on the device, or remove it from the spec |
+| AI quota | any | see `idlemax quota` |
+| a cost class the profile does not take | `production` | a `production` device takes only `cpu_light` and `io` jobs; run `cpu_heavy` or `ai` jobs on a `laptop` or `workbox` |
 
 `idlemax job add` also warns you up front when no device allows the command.
 

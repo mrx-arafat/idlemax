@@ -7,7 +7,8 @@ All four call the same coordinator API, so a switch flipped in one shows up in t
 ## The web dashboard
 
 Open `http://127.0.0.1:7878/` (or your coordinator's address).
-It asks for the token once (`cat ~/.idlemax/token`) and keeps it in that browser's local storage until you press **Forget token**.
+It asks for the token once (`cat ~/.idlemax/token`, or `cat "$IDLEMAX_HOME/token"` if you set `IDLEMAX_HOME`) and keeps it in that browser's local storage until you press **Forget token**.
+A wrong token brings you back to the token box with `That token was rejected.`; a token that stops working later (say, after you made a new one) shows `The coordinator rejected this token. Paste the current one.`
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/dashboard-dark.png">
@@ -16,14 +17,14 @@ It asks for the token once (`cat ~/.idlemax/token`) and keeps it in that browser
 </picture>
 
 - It is one self-contained page: no remote scripts, fonts or styles.
-- It refreshes every 5 seconds and follows your system's light or dark theme.
+- It refreshes every 5 seconds while the tab is visible (it pauses while the tab is hidden) and follows your system's light or dark theme.
 - On a phone the jobs table becomes stacked cards.
 
 ### The cards
 
 | Card | What it shows and what you can do |
 |---|---|
-| **Dispatcher** | the mode switch (`off`, `propose`, `auto`; moving it asks first), each device's line state and reason, **Stop workers** (and **Start** while workers are stopped by you), the workers with their label, summary, model and a `why` line, what would launch next and who picked it |
+| **Dispatcher** | the mode switch (`off`, `propose`, `auto`; switching to `auto` asks first, `off` and `propose` apply at once), each device's line state and reason, **Stop workers** (and **Start** while workers are stopped by you), the workers with their label, summary, model and a `why` line, what would launch next and who picked it |
 | **Needs you** | tasks idlemax could not do alone, with the reason |
 | **Waiting for review** | read-only: each task ready for review or needing you, with its label, summary and branch; keep, merge or discard with `idlemax review` |
 | **Budget** | today's spend of the day's share per account, then the earlier days |
@@ -33,12 +34,15 @@ It asks for the token once (`cat ~/.idlemax/token`) and keeps it in that browser
 | **Did it help?** | the same lines as `idlemax report` |
 | **Devices** | guard verdicts and metrics, slot and RAM meters, the reason the device is not doing more, and the AI accounts it may spend |
 | **Jobs** | every job; each waiting job carries a `waiting:` line with its headline reason (`+N more` when there are others); click it for the full list of reasons and fixes |
-| **Schedules, quota, advice, events** | pause, resume or remove a schedule; AI quota per window; accept or dismiss advice; recent events |
+| **Schedules** | pause, resume or remove a schedule |
+| **Advice** | accept or dismiss advice |
+| **AI quota** | AI quota per window |
+| **Events** | recent events |
 
 You can pause, resume, stop-all or cancel per scope from the page.
 A coordinator without the dispatcher shows none of the dispatcher cards.
 
-## The terminal dashboard (TUI) ⌨
+## The terminal dashboard (TUI)
 
 ```sh
 idlemax tui
@@ -49,18 +53,26 @@ It is built for 80x24 and up: long names are cut with an ellipsis and narrow scr
 
 ```text
 idlemax http://127.0.0.1:7878   running   updated 2s ago
-coordinator 0.1.0 | global: running | jobs: 1 running, 1 queued | advice: 1 open
+global: running | paused accounts: claude-work
+jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed | advice: 1 open
  1 Devices │ 2 Jobs │ 3 Quota │ 4 Advice │ 5 Events │ 6 Schedules │ 7 Dispatch
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  DEVICE  STATE   GUARD                  IDLE  CPU  LOAD  MEM FREE  SWAP  DISK    POWER  JOBS     │
-│> laptop  online  run 1                  25m   9%   2.10  41% 5.0G  1.0G  120.0G  ac     1        │
-│  server  online  hold: load 1.70 > 1.5  -     9%   1.70  52% 5.0G  1.0G  120.0G  -      0        │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-p/r pause/resume device laptop  x stop workers  P/R all  s stop-all  tab/1-7 switch  q quit
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  DEVICE               STATE             SLOTS  RAM        WHY                │
+│> laptop               online            1/3    512M/4.5G  starting 1 queued… │
+│  build-server         local-paused      1      512M       held: a local pau… │
+│  old-mini             offline 2d1h ago  -      -          -                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ AI quota ────────────────────────────────────────────────────────────────────┐
+│ claude-work: paused by you, 18% left (5h), resets in 1h35m                   │
+│ codex-personal-with-a-very-long-account-name: not spendable now (no usage    │
+│ data yet), quota left unknown (week)                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume device laptop  x stop workers  s stop-all  q quit
 ```
 
-(Rendered from placeholder data.)
-The footer always lists the keys that work on the current tab.
+(The TUI's own 80x24 test snapshot, with the device names changed.)
+On a wide terminal the tab bar also shows counts (`1 Devices (2) │ 2 Jobs (6) │ ...`), and the Devices table adds `IDLE`, `CPU`, `LOAD`, `MEM FREE`, `SWAP`, `DISK` and `POWER` columns.
+The footer lists the most useful keys that fit: on a narrow screen it drops the less important hints first (at 80x24, `P/R all` and `tab/1-7 switch` go), so the [key table](#every-key) below is the full list.
 
 On the **Jobs** tab, the last column `RESULT / WHY` says why a waiting job waits, and `w` opens the full reasons with the fix for each:
 
@@ -73,6 +85,8 @@ On the **Jobs** tab, the last column `RESULT / WHY` says why a waiting job waits
 │    fix: on laptop, run `idlemax config set agent.command_allowlist <programs>` and list "make" w…│
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Against a coordinator too old to have the dispatcher, the **Dispatch** tab shows only `this coordinator has no dispatcher view; update it to use this tab`, and its keys send nothing.
 
 The **Dispatch** tab shows one pane at a time, and `v` moves to the next: workers, would launch (then the ready tasks the orchestrator did not judge), needs you, review, budget, projects, devices, limits and rules.
 The title carries the dispatcher mode and each device's line state, and the box underneath explains the selected row.

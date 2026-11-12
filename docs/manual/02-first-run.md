@@ -32,6 +32,8 @@ Look before you leap with `--dry-run`, which writes and runs nothing:
 idlemax setup --dry-run --allow /bin/echo
 ```
 
+On a Mac it prints (trimmed):
+
 ```text
 dry run: nothing is written or run
 idlemax setup, role both
@@ -41,6 +43,9 @@ would do      config          coordinator.url http://127.0.0.1:7878, coordinator
 would do      token           a new random token, mode 0600
                               would write: ~/.idlemax/token
                               by hand: idlemax init
+would do      allowlist       agent.command_allowlist = ["/bin/echo"]
+                              would write: ~/.idlemax/config.toml
+                              by hand: idlemax config set agent.command_allowlist '["/bin/echo"]'
 would do      service coord   new, then started
                               ...
 would do      service agent   new, then started
@@ -50,7 +55,17 @@ skipped       statusline      not asked for: add --statusline
 would do      doctor          waits up to 10s for services to connect, then checks the whole setup
                               would run: idlemax doctor
                               by hand: idlemax doctor
+
+dry run only: run the same command without --dry-run to apply it
 ```
+
+On Linux the profile reads `agent.profile production` and the services are systemd user units.
+The `by hand` line changes with your flags: with `--profile` it reads `idlemax init --profile <profile>`, and with `--coord-url` it reads `idlemax init --coord-url <URL>` plus a note about `coordinator.listen`.
+
+> [!NOTE]
+> This is the `table` format, the default on a terminal.
+> When the output goes into a pipe (`| less`, some IDE terminals), idlemax prints the compact `toon` format instead (`role: both`, `steps[7]{step,status,detail,by_hand}:` ...).
+> Add `--format table` to get the layout above anywhere.
 
 Every step says `done`, `already done`, `skipped`, `would do` (in a dry run), `starting` or `FAILED`, and shows the command that does the same by hand.
 
@@ -106,7 +121,12 @@ Steps that are already done say `already done`.
 | `--dry-run` | print every file and command, change nothing |
 
 Exit code 1 means a step failed (or doctor found a failing check after services were installed).
+With `--no-service`, a failing doctor (for example no coordinator answering yet) still exits 0, with `setup is done, but doctor found failing checks`, because nothing is meant to run yet.
 Exit code 2 means flags that cannot work together, and nothing was written.
+
+> [!TIP]
+> **No user systemd?** On WSL, in a container, or over SSH without lingering, the service step fails.
+> Run `idlemax setup --no-service --allow /bin/echo`, then start the two programs yourself as [Doing it by hand](#doing-it-by-hand-optional) shows.
 
 ## Step 3: your first job
 
@@ -137,7 +157,11 @@ On Linux the first log line says `via systemd-run scope` (or `nice/ionice`) inst
 ### "It is just sitting there!"
 
 That is the guard doing its job.
-On a laptop, idlemax waits until you have been away from the keyboard for 10 minutes, and until the laptop is on AC power.
+What it waits for depends on the profile (see [Concepts](03-concepts.md#profiles)):
+
+- On a Mac (profile `laptop`), idlemax waits until you have been away from the keyboard for 10 minutes, and until the laptop is on AC power.
+  The sample below assumes this profile.
+- On Linux the default profile is `production`: there is no idle or AC wait, and a job waits only for load, memory pressure (PSI) or disk.
 After 60 seconds `--wait` gives up with exit code 124, and the job keeps its place in the queue.
 Ask why:
 
@@ -257,12 +281,18 @@ If you change one of those, run `idlemax service install` again; it rewrites the
 <summary>🧪 Try it in a throwaway folder first, with no service at all</summary>
 
 This leaves your real `~/.idlemax` alone and runs both programs in your shell.
+Do it **instead of** Step 2, or keep the ports below: if you already ran `idlemax setup`, your services hold ports 7878 and 7879, so the demo uses 17878 and 17879.
 The demo config relaxes the guard so the job can start while you are at the keyboard.
 
 ```sh
 export IDLEMAX_HOME="$(mktemp -d)"
 cat > "$IDLEMAX_HOME/config.toml" <<'EOF'
+[coordinator]
+listen = "127.0.0.1:17878"
+url = "http://127.0.0.1:17878"
+
 [agent]
+listen = "127.0.0.1:17879"
 sample_secs = 5
 heartbeat_secs = 5
 command_allowlist = ["/bin/echo"]
