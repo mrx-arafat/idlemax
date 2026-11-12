@@ -111,7 +111,8 @@ pub fn under_cap(runs: &[Run], project: &str, cap: u32) -> Option<String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskOpen {
     Open,
-    /// It has a Run in a state other than `discarded`.
+    /// It has a Run in a state other than `discarded`, apart from one `rejected` Run, which
+    /// leaves the task open for a second attempt (Spec 3 Task 10, D10.6).
     Busy,
     /// Its last two Runs ended `rejected` or `discarded`: never launched again.
     Closed,
@@ -124,9 +125,14 @@ pub fn task_open(runs: &[Run], task: &str) -> TaskOpen {
     if mine.len() >= 2 && mine[mine.len() - 2..].iter().all(failed) {
         return TaskOpen::Closed;
     }
-    match mine.iter().any(|r| r.state != RunState::Discarded) {
-        true => TaskOpen::Busy,
-        false => TaskOpen::Open,
+    let held: Vec<&&Run> = mine
+        .iter()
+        .filter(|r| r.state != RunState::Discarded)
+        .collect();
+    match held.as_slice() {
+        [] => TaskOpen::Open,
+        [only] if only.state == RunState::Rejected => TaskOpen::Open,
+        _ => TaskOpen::Busy,
     }
 }
 

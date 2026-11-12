@@ -812,7 +812,7 @@ The orchestrator is offered only accounts with a usable Budget, is told each tas
 - [x] `build` with a pick named in `refused` fills no slot from it and gives the empty slot the reason `<task title>: <refusal text>`; the next pick of the pass fills the slot when it is placed.
 - [x] `pass_due` refuses with `no account has room for one more Run today` when `room` is false.
 - [x] The pass prompt lists each offered task with its `tier`, and its accounts part equals `quota_summary` of the offers.
-- [ ] `task_open` is true for a task whose only Run is `rejected`, false for a task with a `clean` Run, and false for a task with two `rejected` Runs.
+- [x] `task_open` is true for a task whose only Run is `rejected`, false for a task with a `clean` Run, and false for a task with two `rejected` Runs.
 - [x] A coordinator test builds a plan with one pick and its account at the 5-hour stop line: there is no pick in the plan, and the empty slot's reason carries the Budget's `why`.
 - [x] A coordinator test with a task that has two `rejected` Runs shows it, after one `step`, under `needs_you` with `failed its checks twice`, and not among the offered tasks.
 - [ ] Verify: `cargo test -p idlemax-core dispatch`, `cargo test -p idlemax-core worker::pace`, `cargo test -p idlemax-core config`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --bin idlemax coord::dispatch`, `cargo test -p idlemax --test plan`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`

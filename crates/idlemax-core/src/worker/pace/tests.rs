@@ -195,6 +195,15 @@ fn a_task_is_open_until_a_run_holds_it_and_closed_after_two_failures() {
     ];
     assert_eq!(task_open(&rejected, "t"), TaskOpen::Closed);
     assert_eq!(task_open(&[], "t"), TaskOpen::Open);
+
+    // One failed check leaves the task open for a second attempt (Spec 3 Task 10, D10.6).
+    let once = [run(1, "a", "t", RunState::Rejected, 1)];
+    assert_eq!(task_open(&once, "t"), TaskOpen::Open);
+    let then_discarded = [
+        run(1, "a", "t", RunState::Discarded, 1),
+        run(2, "a", "t", RunState::Rejected, 2),
+    ];
+    assert_eq!(task_open(&then_discarded, "t"), TaskOpen::Closed);
 }
 
 fn weekly(pct: f64, at: UnixMs) -> QuotaSnapshot {
