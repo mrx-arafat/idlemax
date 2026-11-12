@@ -151,14 +151,33 @@ impl Store {
     /// Every known device. Online means a heartbeat within `offline_after_ms` of `now`;
     /// paused means a Global or Device control is in effect.
     pub fn devices(&self, now: UnixMs, offline_after_ms: i64) -> StoreResult<Vec<DeviceView>> {
+        self.device_views(None, now, offline_after_ms)
+    }
+
+    /// One device, read alone, as `devices` would show it.
+    pub fn device(
+        &self,
+        id: &str,
+        now: UnixMs,
+        offline_after_ms: i64,
+    ) -> StoreResult<Option<DeviceView>> {
+        Ok(self.device_views(Some(id), now, offline_after_ms)?.pop())
+    }
+
+    fn device_views(
+        &self,
+        only: Option<&str>,
+        now: UnixMs,
+        offline_after_ms: i64,
+    ) -> StoreResult<Vec<DeviceView>> {
         let paused = self.paused_scopes()?;
         let global = paused.contains(&ControlScope::Global);
         let mut stmt = self.conn.prepare_cached(
             "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room, dispatch_on,
                     agent_auth
-             FROM devices ORDER BY id",
+             FROM devices WHERE ?1 IS NULL OR id = ?1 ORDER BY id",
         )?;
-        let rows = stmt.query_map([], device_from_row)?;
+        let rows = stmt.query_map([only], device_from_row)?;
         rows.map(|row| {
             let mut view = row?;
             view.online = device_online(view.last_seen_ms, now, offline_after_ms);

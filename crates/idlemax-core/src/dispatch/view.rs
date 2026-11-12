@@ -340,7 +340,8 @@ fn device_needs(devices: &[DeviceLine], projects: &[ProjectView]) -> Vec<NeedsYo
                 kind: NeedKind::Device,
                 subject: d.id.clone(),
                 reason: format!(
-                    "off, with {on} projects switched on: idlemax device on {}",
+                    "off, with {on} {} switched on: idlemax device on {}",
+                    if on == 1 { "project" } else { "projects" },
                     d.id
                 ),
             })

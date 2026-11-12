@@ -108,6 +108,10 @@ async fn a_switch_off_ends_the_dispatchers_jobs_and_an_off_device_leases_none() 
     assert!(store.paused_scopes().unwrap().is_empty());
 
     let queued = check_job(&mut store);
+    // A second `off` changes nothing and stops nothing.
+    let again = switch_device(&mut store, "mac", false, T0).unwrap();
+    assert_eq!((again.changed, again.jobs_stopped), (false, 0));
+    assert_eq!(status(&store, queued), JobStatus::Queued);
     let api = Api::start_with_store(store, Config::default()).await;
     let res = api.post("/v1/agent/heartbeat", &roomy("mac")).await;
     let reply: HeartbeatReply = res.json().await.unwrap();

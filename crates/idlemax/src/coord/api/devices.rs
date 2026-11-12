@@ -54,7 +54,8 @@ async fn switch(
 }
 
 /// Stores the switch. Off ends the device's own dispatcher jobs; on runs again the base
-/// checks of its projects that ended without a result, so `step` queues them anew.
+/// checks of its projects that ended without a result, so `step` queues them anew. A switch
+/// that changes nothing does nothing else.
 // SHORTCUT: runs_stopped stays 0 until Spec 2's stop_workers lands, then off sheds the
 // device's Runs here with their state saved.
 pub(super) fn switch_device(
@@ -81,7 +82,7 @@ pub(super) fn switch_device(
         for project in checks_to_rerun(&store.base_checks()?, &projects) {
             store.delete_base_check(project)?;
         }
-    } else if !on {
+    } else if !on && changed {
         let mut jobs = store.active_jobs()?;
         jobs.extend(store.queued_jobs()?);
         for job in stop_targets(&jobs, id) {

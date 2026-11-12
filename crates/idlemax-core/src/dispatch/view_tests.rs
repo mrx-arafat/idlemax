@@ -172,7 +172,7 @@ fn needs_you_holds_tasks_resting_accounts_and_emergencies_and_nothing_else() {
     assert_eq!(lines[0].key, "device:mac:off");
     assert_eq!(
         lines[0].reason,
-        "off, with 1 projects switched on: idlemax device on mac"
+        "off, with 1 project switched on: idlemax device on mac"
     );
 
     let calm = view(

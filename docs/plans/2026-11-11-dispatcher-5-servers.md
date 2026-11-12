@@ -381,6 +381,7 @@ Switching a device off stops its workers with their state saved and ends the dis
   The Runs are `shed`, so they continue by themselves once the device is on again and the lines and the Budget allow it; no owner stop row is written, because switching the device back on is the owner's own act.
 - Switching on stores the switch and deletes the `base_checks` row of each of that device's projects whose check ended without a result, with the new `Store::clear_base_check(project)` in `coord/store/dispatch.rs`, so `next_step` sees no record and `step` starts those checks again.
   If Spec 1's merged code already has the delete it uses when a project is switched off, this task calls that one and adds no second method.
+- `DevicePlan` (Spec 1's Plan) gains `enabled: Option<bool>`, copied from `DeviceView.enabled`, so that `dispatcher_view` can fill Spec 4's `DeviceLine.enabled`; Spec 4's view tests and the TUI fixtures expect the field.
 - `POST /v1/workers/stop` with a `device` scope keeps answering 400, now with the text `use POST /v1/devices/<id>/off`: a stop without the switch would be undone by the next sweep, which relaunches `shed` runs.
 - Every device is off after this task, so the tests of Specs 1 to 4 that expect a pick, a pass, a dispatcher job or a launch switch their device on first.
   Pure tests set `enabled: Some(true)` on their `DeviceView` fixtures (`dispatch/plan/tests.rs`, `dispatch/orchestrator/tests.rs`, `dispatch/view.rs`, `worker/pace.rs`).

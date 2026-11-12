@@ -589,6 +589,7 @@ A heartbeat never changes it; only `POST /v1/devices/{id}/on` and `/off` do, and
 - On an off device the Plan gives no pick and names `device <id> is off: idlemax device on <id>` as `held`, no orchestrator pass is placed there, the `dispatch-inputs` reply lists no project, no setup or check job is queued for its projects, and no dispatcher job is leased to it.
   Plain jobs keep their usual rules.
 - `off` cancels the device's queued dispatcher jobs and kills its active ones (`jobs_stopped`), as `stop_all` on each job, and stores no pause.
+  A switch that changes nothing (`changed` false) stops nothing and drops no check.
   `runs_stopped` counts the Runs stopped with their state saved; this build reports 0.
 - A server is held like an off device until its agent proves itself with its own credential: a device whose profile is not `laptop` and whose `DeviceView.agent_auth` is `owner_token_remote`, or not known yet, gets `server <id> has no credential of its own: idlemax device credential <id>` as `held`.
   `agent_auth` is how the agent proved itself on its last heartbeat: `credential`, `owner_token_local` (the owner token from the coordinator's own host) or `owner_token_remote`; it is absent before the first heartbeat.
