@@ -30,18 +30,35 @@ const PROBE_LIMIT: Duration = Duration::from_secs(5);
 /// A Unix socket path longer than this cannot be bound (108 bytes with the terminator).
 const MAX_SOCKET_PATH: usize = 100;
 
-/// Home directories and files a sandboxed worker never sees (A13).
-const HIDDEN_DIRS: [&str; 8] = [
-    ".ssh",
-    ".config/gh",
-    ".gnupg",
-    ".aws",
-    ".docker",
-    ".kube",
-    ".claude",
-    ".codex",
+/// Folders that hold homes; each becomes an empty tmpfs (review finding 3).
+const HOMES: [&str; 4] = ["/home", "/root", "/mnt", "/media"];
+
+/// What of the owner's home a worker may read: toolchains and their caches, and git's own
+/// settings. Never a credential (`~/.cargo/credentials*` stays out: only cargo's subfolders).
+const TOOLCHAINS: [&str; 22] = [
+    ".local/bin",
+    ".local/lib",
+    ".local/share/claude",
+    ".local/share/mise",
+    ".local/share/pnpm",
+    ".cargo/bin",
+    ".cargo/registry",
+    ".cargo/git",
+    ".cargo/config.toml",
+    ".rustup",
+    ".nvm",
+    ".npm-global",
+    ".bun",
+    ".deno",
+    ".pyenv",
+    ".volta",
+    ".asdf",
+    ".sdkman",
+    "go",
+    ".gitconfig",
+    ".config/git",
+    ".config/mise",
 ];
-const HIDDEN_FILES: [&str; 3] = [".git-credentials", ".netrc", ".claude.json"];
 
 /// The proxies of the sandboxed workers that run now, by attempt tag.
 static PROXIES: Mutex<Option<HashMap<u64, Proxy>>> = Mutex::new(None);
@@ -149,8 +166,10 @@ pub fn wrap(
             ("GIT_WORK_TREE".into(), show(folder)),
         ],
         tmp: show(&tmp),
-        hidden_dirs: hidden(home.as_deref(), &HIDDEN_DIRS, Path::is_dir, &plan.root),
-        hidden_files: hidden(home.as_deref(), &HIDDEN_FILES, Path::is_file, Path::new("")),
+        hidden_dirs: hidden_dirs(&plan.root),
+        home: home.as_deref().map(show),
+        visible: visible(home.as_deref(), &git.common, cli),
+        hidden_files: Vec::new(),
         claude,
         proxy_socket: show(&socket),
         relay_port: RELAY_PORT,
@@ -225,23 +244,34 @@ fn read_only(folder: &Path, private: &Path) -> Vec<String> {
     out
 }
 
-/// The `names` under `home` that exist, plus `extra` (the state dir) when it is a folder.
-fn hidden(
-    home: Option<&Path>,
-    names: &[&str],
-    exists: fn(&Path) -> bool,
-    extra: &Path,
-) -> Vec<String> {
-    let mut out: Vec<String> = home
-        .into_iter()
-        .flat_map(|h| names.iter().map(move |n| h.join(n)))
-        .filter(|p| exists(p))
-        .map(|p| show(&p))
+/// Every folder of homes, and the state dir when it lies outside them.
+fn hidden_dirs(root: &Path) -> Vec<String> {
+    let mut out: Vec<String> = HOMES
+        .iter()
+        .map(Path::new)
+        .filter(|p| p.is_dir())
+        .map(show)
         .collect();
-    if extra.is_dir() {
-        out.push(show(extra));
+    if root.is_dir() && !HOMES.iter().any(|h| root.starts_with(h)) {
+        out.push(show(root));
     }
     out
+}
+
+/// The allow-list bound back read-only: the toolchains under `home`, the owner's git objects
+/// (the worker's alternate) and the folder the CLI is installed in.
+fn visible(home: Option<&Path>, common: &Path, cli: WorkerCli) -> Vec<String> {
+    let mut out: Vec<PathBuf> = home
+        .into_iter()
+        .flat_map(|h| TOOLCHAINS.iter().map(move |t| h.join(t)))
+        .filter(|p| p.exists())
+        .collect();
+    out.push(common.join("objects"));
+    let installed = find_on_path(cli.as_str())
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .and_then(|p| p.parent().map(Path::to_path_buf));
+    out.extend(installed.filter(|dir| !out.iter().any(|v| dir.starts_with(v))));
+    out.iter().map(|p| show(p)).collect()
 }
 
 fn socket_path(sandbox: &Path, job: JobId, tag: u64) -> PathBuf {

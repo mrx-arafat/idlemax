@@ -82,7 +82,7 @@ And a finished task is checked by idlemax, not taken on the worker's word: the b
 Where bubblewrap works (`idlemax doctor` shows `ok  sandbox`), each worker runs inside it (`workers.sandbox`, default `auto`):
 
 - it can write only its worktree, the git objects and refs its commits need, and a temp folder; the repository's `.git/config` and `.git/hooks` stay read-only;
-- it cannot see `~/.ssh`, `~/.config/gh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.git-credentials`, `~/.netrc`, the idlemax state folder or your `~/.claude`; Claude gets idlemax's own Claude home with your login only, never your MCP servers or projects;
+- it sees none of your home: every home folder (`/home`, `/root`, `/mnt`, `/media`) is empty inside, its own `$HOME` is a fresh temporary one, and only the toolchains (such as `~/.local/bin`, `~/.cargo/bin`, `~/.rustup`, `~/.nvm`), `~/.gitconfig`, your repository's git objects and the CLI's own install folder come back, read-only; your other repositories, `~/.config`, keys, shell history and the idlemax state folder stay out; Claude gets idlemax's own Claude home with your login only, never your MCP servers or projects;
 - its only network is a proxy that opens port 443 of the model hosts (`workers.sandbox_hosts`);
 - every process of the worker ends with it, a detached one included.
 

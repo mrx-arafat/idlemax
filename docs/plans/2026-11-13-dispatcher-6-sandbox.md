@@ -10,7 +10,7 @@ Type: Feature
 
 ## Summary
 
-**Goal:** A worker that idlemax launches runs inside an OS sandbox by default where one is available, so D6 and D22 hold even when the worker ignores its brief: it can write only its worktree, the git objects and refs its commits need and a temp dir; it can read the project and the toolchains but not `~/.ssh`, `~/.config/gh`, `~/.git-credentials`, `~/.netrc`, the idlemax state dir or `~/.claude` beyond what the CLI needs to authenticate; and it reaches the network only through an allow-list proxy that opens the model API hosts.
+**Goal:** A worker that idlemax launches runs inside an OS sandbox by default where one is available, so D6 and D22 hold even when the worker ignores its brief: it can write only its worktree, its own private git dir and a temp dir; it sees none of the owner's home except an allow-list of toolchains, `~/.gitconfig`, the repository's git objects and its CLI's install folder (read-only), and the CLI's own auth files; and it reaches the network only through an allow-list proxy that opens the model API hosts.
 The soft fences of Spec 2 (the push block, the blanked credential names, the caller check, `--strict-mcp-config`) stay as a second layer.
 
 This plan answers A13 (Q22) as the orchestrator decided it under the owner's delegation on 2026-11-13, and closes the red-team cases 1 (push), 2 (token and owner routes), 4 (files outside the worktree), 5 (code execution through the shared `.git`), 10 (a process left after stop) and 11 (data off the machine) of `~/idlemax-wt/reports/redteam.md` for a sandboxed worker.

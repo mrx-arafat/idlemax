@@ -245,3 +245,26 @@ fn live_finding_4_a_worker_cannot_redirect_idlemaxs_git() {
     );
     assert!(!report.contains("REWROTE"), "{report}");
 }
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_finding_3_the_home_is_an_allow_list() {
+    let Some(w) = world() else { return };
+    let report = run_worker(
+        &w,
+        WorkerCli::Claude,
+        "for f in code/other/secret.txt .config/gcloud/credentials.db .npmrc .bash_history \
+                  .config/opencode/auth.json .ssh/id_ed25519 .idlemax/token code/app/file.txt; do \
+             cat \"$HOME/$f\" >/dev/null 2>&1 && echo \"READ $f\"; done; \
+         ls /root >/dev/null 2>&1 && ls /root | head -1 | sed 's/^/ROOT /'; \
+         echo scratch > \"$HOME/note\" && echo HOME-WRITABLE; \
+         git -c user.name=w -c user.email=w@x commit -q --allow-empty -m ok && echo COMMITTED; true",
+    );
+    assert!(!report.contains("READ "), "{report}");
+    assert!(report.contains("HOME-WRITABLE"), "a temp home: {report}");
+    assert!(report.contains("COMMITTED"), "{report}");
+    assert!(
+        !w.home.join("note").exists(),
+        "the temp home never reaches the owner's"
+    );
+}

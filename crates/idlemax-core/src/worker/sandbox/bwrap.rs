@@ -36,7 +36,13 @@ pub struct Fence {
     pub git_writable: Vec<String>,
     /// A host folder bound at `/tmp`.
     pub tmp: String,
+    /// Folders replaced by an empty tmpfs: every home (`/home`, `/root`, ...) and the state dir.
     pub hidden_dirs: Vec<String>,
+    /// The owner's home, as a fresh writable tmpfs that never reaches the owner's.
+    pub home: Option<String>,
+    /// Bound back read-only over the hidden folders: the toolchains, the CLI's install folder
+    /// and the owner's git objects (review finding 3: an allow-list, not a deny-list).
+    pub visible: Vec<String>,
     pub hidden_files: Vec<String>,
     /// Bound read-only after the writable binds, inside them: what the worker must not change
     /// in a folder it may otherwise write.
@@ -64,8 +70,11 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
         "--tmpfs",
         "/run",
     ]);
-    for dir in &f.hidden_dirs {
+    for dir in f.hidden_dirs.iter().chain(&f.home) {
         a.push(&["--tmpfs", dir]);
+    }
+    for path in &f.visible {
+        a.push(&["--ro-bind", path, path]);
     }
     for file in &f.hidden_files {
         a.push(&["--ro-bind", "/dev/null", file]);
@@ -157,7 +166,9 @@ mod tests {
                 "/code/app/.git/worktrees/t1".into(),
             ],
             tmp: "/s/sandbox/tmp/7-1".into(),
-            hidden_dirs: vec!["/h/.ssh".into(), "/s".into()],
+            hidden_dirs: vec!["/home".into(), "/s".into()],
+            home: Some("/h".into()),
+            visible: vec!["/h/.cargo/bin".into(), "/code/app/.git/objects".into()],
             hidden_files: vec!["/h/.git-credentials".into()],
             read_only: vec!["/s/sandbox/git/3/config".into()],
             env: vec![("GIT_DIR".into(), "/s/sandbox/git/3".into())],
@@ -172,11 +183,13 @@ mod tests {
     }
 
     #[test]
-    fn the_argv_hides_the_secrets_before_it_binds_the_worktree_back() {
+    fn the_argv_hides_every_home_and_binds_back_only_what_is_allowed() {
         let argv = bwrap_args(&fence());
         let line = argv.join(" ");
         let expected = "--ro-bind / / --dev /dev --proc /proc --tmpfs /run \
-            --tmpfs /h/.ssh --tmpfs /s --ro-bind /dev/null /h/.git-credentials \
+            --tmpfs /home --tmpfs /s --tmpfs /h --ro-bind /h/.cargo/bin /h/.cargo/bin \
+            --ro-bind /code/app/.git/objects /code/app/.git/objects \
+            --ro-bind /dev/null /h/.git-credentials \
             --bind /s/worktrees/app/t1 /s/worktrees/app/t1 \
             --bind /code/app/.git/objects /code/app/.git/objects \
             --bind /code/app/.git/refs /code/app/.git/refs \
