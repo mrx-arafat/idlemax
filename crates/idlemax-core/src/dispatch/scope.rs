@@ -4,7 +4,7 @@
 //! named next to `tests/` for a change in `calc/__init__.py`), so it becomes the whole
 //! project, whose off-limits paths the check still holds. Pure.
 
-use crate::worker::checks::in_scope;
+use crate::worker::checks::{in_scope, under};
 
 /// The scope of a whole project: `**` matches every path (gitignore rules).
 pub const WHOLE_PROJECT: &str = "**";
@@ -32,10 +32,19 @@ pub fn drop_broad(paths: &mut Vec<String>) -> Vec<String> {
     broad
 }
 
+/// Top-level folders that hold a project's tests; the one a project has joins every scope.
+const TEST_FOLDERS: [&str; 4] = ["tests", "test", "spec", "__tests__"];
+
 /// The named paths when each matches a tracked file or is a new file in a folder the project
-/// has, plus the files `task_text` names whose folder exists; else None: the scope is
-/// widened. An empty file list means it is unknown, and the named paths stay.
-pub fn narrow_scope(named: &[String], files: &[String], task_text: &str) -> Option<Vec<String>> {
+/// has, plus the files `task_text` names whose folder exists and the project's test folder,
+/// none under `off_limits`; else None: the scope is widened. An empty file list means it is
+/// unknown, and the named paths stay.
+pub fn narrow_scope(
+    named: &[String],
+    files: &[String],
+    task_text: &str,
+    off_limits: &[String],
+) -> Option<Vec<String>> {
     if files.is_empty() {
         return Some(named.to_vec());
     }
@@ -50,10 +59,18 @@ pub fn narrow_scope(named: &[String], files: &[String], task_text: &str) -> Opti
         return None;
     }
     let mut kept = named.to_vec();
+    let allowed = |p: &str| !off_limits.iter().any(|o| under(p, o));
     for p in paths_named(task_text) {
         let covered = kept.iter().any(|k| in_scope(&p, k));
-        if !covered && (files.contains(&p) || folder_exists(&p)) {
+        if !covered && allowed(&p) && (files.contains(&p) || folder_exists(&p)) {
             kept.push(p);
+        }
+    }
+    for dir in TEST_FOLDERS {
+        let probe = format!("{dir}/new_test");
+        let used = files.iter().any(|f| f.starts_with(&format!("{dir}/")));
+        if used && allowed(&probe) && !kept.iter().any(|k| in_scope(&probe, k)) {
+            kept.push(format!("{dir}/"));
         }
     }
     Some(kept)

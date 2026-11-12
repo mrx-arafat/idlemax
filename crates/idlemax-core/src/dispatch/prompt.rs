@@ -7,6 +7,7 @@ use super::accounts::AccountUse;
 use super::inputs::StoredRepo;
 use super::orchestrator::{taking_devices, Offer};
 use super::project::ProjectView;
+use super::task::Task;
 use crate::protocol::DeviceView;
 use crate::quota::pass::quota_summary;
 use crate::quota::{tier_for, TierPick};
@@ -124,7 +125,8 @@ pub fn summary(
                 }
             });
             json!({"id": t.id, "project": t.project, "source": t.source.as_str(),
-                   "title": t.title, "done_check": t.done_check, "tier": tier})
+                   "title": t.title, "detail": detail_of(projects, repos, t),
+                   "done_check": t.done_check, "tier": tier})
         })
         .collect();
     let names: Vec<&str> = offer.tasks.iter().map(|t| t.project.as_str()).collect();
@@ -156,6 +158,17 @@ pub fn summary(
         .collect();
     json!({"devices": devices, "tasks": tasks, "projects": projects, "accounts": accounts,
            "finished": finished})
+}
+
+/// The text a roadmap task's section holds before its done-when line, if any.
+fn detail_of<'a>(projects: &[ProjectView], repos: &'a [StoredRepo], t: &Task) -> Option<&'a str> {
+    let v = projects.iter().find(|v| v.project.id == t.project_id)?;
+    let item = repo_of(repos, v)?
+        .repo
+        .roadmap
+        .iter()
+        .find(|i| i.title == t.title)?;
+    Some(item.detail.as_str()).filter(|d| !d.is_empty())
 }
 
 /// The repository the project's device reports for its folder.

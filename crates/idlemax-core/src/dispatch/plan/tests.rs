@@ -1,6 +1,7 @@
 use super::*;
 use crate::dispatch::inputs::RepoReport;
 use crate::dispatch::project::{Project, ProjectSettings};
+use crate::dispatch::roadmap::RoadmapItem;
 use crate::dispatch::task::TaskSource;
 use crate::types::DeviceInfo;
 
@@ -220,16 +221,61 @@ fn a_new_file_in_an_existing_folder_stays_and_the_file_a_task_names_joins_the_sc
         ["seqs/__init__.py", "tests/*", "seqs/pascal.py"]
     );
     assert_eq!(a.reason, "a is small");
+    // New files whose folders exist stay; the project's test folder joins too.
     assert_eq!(
         b.scope_paths,
-        ["seqs/fib.py", "tests/test_fib.py"],
-        "new files, folders exist"
+        ["seqs/fib.py", "tests/test_fib.py", "tests/"]
     );
     // A new file in a folder the project lacks is still a guess.
     let mut w = World::new().with_pass(&["a"]);
     w.repos[0].repo.files = vec!["seqs/__init__.py".into()];
     w.pass.as_mut().unwrap().picks[0].scope_paths = vec!["other/new.py".into()];
     assert_eq!(w.build().devices[0].picks[0].scope_paths, ["**"]);
+}
+
+#[test]
+fn the_paths_a_roadmap_item_names_and_the_test_folder_join_the_scope_but_never_off_limits() {
+    // Live: "Add pascal triangle" says "Add `seqs/pascal.py` with `row(n)`, with two tests."
+    // under its heading, and the pass named only ["seqs/__init__.py", "tests/*"].
+    let mut w = World::new().with_pass(&["a", "b"]);
+    w.tasks[0].title = "Add pascal triangle".into();
+    w.tasks[0].done_check = Some(
+        "`python3 -m unittest discover -s tests` passes and `row(4)` returns [1, 4, 6, 4, 1]."
+            .into(),
+    );
+    w.tasks[1].title = "Add a key".into();
+    let repo = &mut w.repos[0].repo;
+    repo.files = vec![
+        "seqs/__init__.py".into(),
+        "tests/test_seqs.py".into(),
+        "secrets/old.py".into(),
+    ];
+    repo.roadmap = vec![
+        RoadmapItem {
+            title: "Add pascal triangle".into(),
+            detail: "Add `seqs/pascal.py` with `row(n)`, with two tests.".into(),
+            ..Default::default()
+        },
+        RoadmapItem {
+            title: "Add a key".into(),
+            detail: "Write secrets/key.py.".into(),
+            ..Default::default()
+        },
+    ];
+    let picks = &mut w.pass.as_mut().unwrap().picks;
+    picks[0].scope_paths = vec!["seqs/__init__.py".into(), "tests/*".into()];
+    picks[1].scope_paths = vec!["seqs/__init__.py".into()];
+    let plan = w.build();
+    let (a, b) = (&plan.devices[0].picks[0], &plan.devices[0].picks[1]);
+    assert_eq!(
+        a.scope_paths,
+        ["seqs/__init__.py", "tests/*", "seqs/pascal.py"]
+    );
+    assert_eq!(
+        b.scope_paths,
+        ["seqs/__init__.py", "tests/"],
+        "off-limits secrets/ stays out"
+    );
 }
 
 #[test]

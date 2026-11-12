@@ -126,6 +126,11 @@ impl RepoReport {
                 done_when,
                 MAX_DONE_WHEN_CHARS,
             ))?;
+            problem(name_problem(
+                "roadmap detail",
+                &item.detail,
+                super::roadmap::MAX_DETAIL_CHARS,
+            ))?;
         }
         if self.touched.len() > MAX_TOUCHED {
             return Err(format!("touched has more than {MAX_TOUCHED} paths"));

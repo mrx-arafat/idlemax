@@ -397,20 +397,21 @@ fn real_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> (Vec<String>
         .projects
         .iter()
         .find(|v| v.project.id == task.project_id);
-    let files = project.and_then(|v| {
+    let repo = project.and_then(|v| {
         let p = &v.project;
-        let repo = input
+        input
             .repos
             .iter()
-            .find(|r| r.device == p.device && r.repo.path == p.path);
-        repo.map(|r| r.repo.files.as_slice())
+            .find(|r| r.device == p.device && r.repo.path == p.path)
     });
-    let text = format!(
-        "{} {}",
-        task.title,
-        task.done_check.as_deref().unwrap_or("")
-    );
-    match narrow_scope(&pp.scope_paths, files.unwrap_or_default(), &text) {
+    let files = repo.map_or(&[][..], |r| r.repo.files.as_slice());
+    let detail = repo
+        .and_then(|r| r.repo.roadmap.iter().find(|i| i.title == task.title))
+        .map_or("", |i| i.detail.as_str());
+    let done = task.done_check.as_deref().unwrap_or("");
+    let text = format!("{} {detail} {done}", task.title);
+    let off_limits = project.map_or(&[][..], |v| v.project.settings.off_limits.as_slice());
+    match narrow_scope(&pp.scope_paths, files, &text, off_limits) {
         Some(kept) => (kept, pp.reason.clone()),
         None => (
             vec![WHOLE_PROJECT.into()],

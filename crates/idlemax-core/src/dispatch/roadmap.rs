@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 /// Longest done-when text kept, in characters.
 pub const MAX_DONE_WHEN_CHARS: usize = 600;
+/// Longest detail kept: the item's text before its done-when line, in characters.
+pub const MAX_DETAIL_CHARS: usize = 600;
 
 /// One roadmap item.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -13,6 +15,8 @@ pub struct RoadmapItem {
     pub title: String,
     /// What proves the item done, from its "Done when" line and the lines that continue it.
     pub done_when: String,
+    /// The section's text before its done-when line, such as the files it adds.
+    pub detail: String,
     /// The heading ends with "(done)".
     pub done: bool,
     /// The heading or the section says it needs the owner.
@@ -64,9 +68,19 @@ fn item(title: &str, lines: &[&str]) -> Option<RoadmapItem> {
         let s = s.to_lowercase();
         s.contains("needs the owner") || s.contains("owner's ok")
     };
+    let detail: Vec<&str> = lines[..start]
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let detail = plain(&detail.join(" "))
+        .chars()
+        .take(MAX_DETAIL_CHARS)
+        .collect();
     Some(RoadmapItem {
         title: title.to_string(),
         done_when,
+        detail,
         done: title.to_lowercase().ends_with("(done)"),
         owner: mentions_owner(title) || lines.iter().any(|l| mentions_owner(l)),
     })
@@ -127,6 +141,14 @@ Done when: each view answers it.\n";
         assert!(!items[0].done && !items[0].owner);
         assert!(items[1].done);
         assert_eq!(items[1].done_when, "each view answers it.");
+        assert_eq!(items[0].detail, "- **Why:** it is new.");
+        let pascal = parse_roadmap(
+            "## Add pascal triangle\n\nAdd `seqs/pascal.py` with `row(n)`, with two tests.\n\nDone when: `row(4)` returns [1, 4, 6, 4, 1].\n",
+        );
+        assert_eq!(
+            pascal[0].detail,
+            "Add `seqs/pascal.py` with `row(n)`, with two tests."
+        );
     }
 
     #[test]
