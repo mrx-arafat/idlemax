@@ -133,48 +133,78 @@ pub fn run_costs(samples: &[RunSample]) -> Vec<RunCost> {
     out
 }
 
-/// Costs on one window, by sample index.
+/// One Run of an account in the overlap split of a window.
+struct Share {
+    index: usize,
+    start: UnixMs,
+    /// `UnixMs::MAX` while the Run is still active.
+    end: UnixMs,
+    /// True when the Run's own cost can be measured (`readings`).
+    measured: bool,
+}
+
+/// The Runs of one account with a before reading on the window, and the readings at each
+/// start and valid end, unsorted.
+fn shares_of(
+    samples: &[RunSample],
+    account: &str,
+    window: QuotaWindowKind,
+) -> (Vec<Share>, Vec<(UnixMs, f64)>) {
+    let mut runs = Vec::new();
+    let mut cuts = Vec::new();
+    for (i, s) in samples
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.account == account)
+    {
+        let Some(before) = reading(&s.before, window) else {
+            continue;
+        };
+        let end = s.ended_ms.unwrap_or(UnixMs::MAX);
+        cuts.push((s.started_ms, before.used_pct));
+        let valid = |a: &&QuotaSnapshot| s.ended_ms.is_some_and(|e| a.at_ms >= e);
+        if let Some(a) = reading(&s.after, window).filter(valid) {
+            cuts.push((end, a.used_pct));
+        }
+        let measured = readings(s, window).is_some();
+        runs.push(Share {
+            index: i,
+            start: s.started_ms,
+            end,
+            measured,
+        });
+    }
+    (runs, cuts)
+}
+
+/// Costs on one window, by sample index. Every Run of the account with a before reading on
+/// the window takes its share of a segment it was active in, so an overlapping Run that cannot
+/// be measured (still active, launched twice, no after reading yet) is never charged to the
+/// others; only the measurable Runs get a cost.
 fn window_costs(samples: &[RunSample], window: QuotaWindowKind) -> Vec<Option<f64>> {
     let mut costs: Vec<Option<f64>> = vec![None; samples.len()];
     let mut accounts: Vec<&str> = samples.iter().map(|s| s.account.as_str()).collect();
     accounts.sort_unstable();
     accounts.dedup();
     for account in accounts {
-        // (index, start, end, before, after) of every measurable Run of the account
-        let runs: Vec<(usize, UnixMs, UnixMs, f64, f64)> = samples
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.account == account)
-            .filter_map(|(i, s)| {
-                let (b, a) = readings(s, window)?;
-                Some((i, s.started_ms, s.ended_ms?, b, a))
-            })
-            .collect();
-        let mut cuts: Vec<(UnixMs, f64)> = Vec::new();
-        for &(_, start, end, b, a) in &runs {
-            for (t, v) in [(start, b), (end, a)] {
-                if !cuts.iter().any(|(ct, _)| *ct == t) {
-                    cuts.push((t, v));
-                }
-            }
-        }
+        let (runs, mut cuts) = shares_of(samples, account, window);
         cuts.sort_by_key(|(t, _)| *t);
-        for &(i, ..) in &runs {
-            costs[i] = Some(0.0);
+        cuts.dedup_by_key(|(t, _)| *t);
+        for r in runs.iter().filter(|r| r.measured) {
+            costs[r.index] = Some(0.0);
         }
         for pair in cuts.windows(2) {
             let ((t0, v0), (t1, v1)) = (pair[0], pair[1]);
-            let active: Vec<usize> = runs
+            let active: Vec<&Share> = runs
                 .iter()
-                .filter(|(_, s, e, ..)| *s <= t0 && *e >= t1)
-                .map(|(i, ..)| *i)
+                .filter(|r| r.start <= t0 && r.end >= t1)
                 .collect();
             if active.is_empty() {
                 continue;
             }
             let share = (v1 - v0).max(0.0) / active.len() as f64;
-            for i in active {
-                costs[i] = costs[i].map(|c| c + share);
+            for r in active.iter().filter(|r| r.measured) {
+                costs[r.index] = costs[r.index].map(|c| c + share);
             }
         }
     }

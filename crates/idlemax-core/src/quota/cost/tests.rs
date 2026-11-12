@@ -71,6 +71,15 @@ fn overlapping_runs_split_the_shared_rise() {
 }
 
 #[test]
+fn a_run_still_active_takes_its_share_of_the_rise() {
+    let a = run("roadmap", 0, 10, 40.0, 43.0);
+    let mut b = run("roadmap", 5, 15, 41.0, 0.0);
+    b.ended_ms = None;
+    b.after.clear();
+    assert_eq!(weekly(&run_costs(&[a, b])), [Some(2.0), None]);
+}
+
+#[test]
 fn unmeasurable_runs_have_no_cost_and_their_key_keeps_the_seed() {
     let cfg = QuotaConfig::default();
     let mut stale = run("roadmap", 0, 10, 40.0, 42.0);
