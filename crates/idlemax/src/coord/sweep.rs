@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{interval, interval_at, Instant, MissedTickBehavior};
 
 use super::api::{offline_after_ms, AppState};
+use super::dispatch::{launch_due, LaunchStep, Refusals};
 use super::schedule;
 use super::store::{Store, StoreError};
 use crate::state::now_ms;
@@ -55,6 +56,7 @@ async fn maintain(app: AppState) {
     let mut last_prune_ms = 0;
     // None until the first sweep, so a coordinator start is not taken for a sleep.
     let mut last_sweep_ms: Option<UnixMs> = None;
+    let refusals = std::sync::Arc::new(std::sync::Mutex::new(Refusals::default()));
     loop {
         tick.tick().await;
         let now = now_ms();
@@ -69,7 +71,36 @@ async fn maintain(app: AppState) {
             Ok(()) => {}
             Err(e) => tracing::warn!(error = %e, "coordinator sweep failed"),
         }
+        if let Err(e) = launch(&app, &refusals, now).await {
+            tracing::warn!(error = %e, "worker launch step failed");
+        }
     }
+}
+
+/// The `auto` step after lease expiry: it reads `[dispatcher]` and `[workers]` fresh (A2).
+async fn launch(
+    app: &AppState,
+    refusals: &std::sync::Arc<std::sync::Mutex<Refusals>>,
+    now: UnixMs,
+) -> Result<(), SweepError> {
+    let live = std::sync::Arc::clone(app.live());
+    let paths = app.paths().clone();
+    let refusals = std::sync::Arc::clone(refusals);
+    app.with_store(move |store, cfg| {
+        let rules = crate::dispatch::rules_file::read(&paths);
+        let live = live.current();
+        let step = LaunchStep {
+            cfg,
+            live: &live,
+            rules: &rules,
+            now,
+        };
+        let mut refusals = refusals
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        launch_due(store, &step, &mut refusals).map_err(SweepError::from)
+    })
+    .await
 }
 
 async fn dispatch(app: AppState) {

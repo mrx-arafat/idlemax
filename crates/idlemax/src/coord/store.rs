@@ -9,6 +9,7 @@ mod dispatch;
 mod events;
 mod inputs;
 mod jobs;
+mod launches;
 mod projects;
 mod quota;
 mod report;

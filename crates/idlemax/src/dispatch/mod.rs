@@ -8,8 +8,9 @@ mod orchestrate;
 pub mod pass;
 pub mod repo;
 pub mod rules_file;
+pub mod spend;
 
-pub use gather::{gather_plan, project_views};
+pub use gather::{gather_plan, project_views, Gathered};
 pub use orchestrate::ingest_pass;
 
 use idlemax_core::dispatch::check::{check_job, next_step, BaseCheck, CheckStep, Phase};
@@ -33,7 +34,7 @@ pub fn step(
     now: UnixMs,
     asked: bool,
 ) -> Result<(), StoreError> {
-    if live.dispatcher.mode == Mode::Propose {
+    if live.dispatcher.mode != Mode::Off {
         base_checks_step(store, now)?;
     }
     orchestrate::pass_step(store, cfg, live, rules, now, asked)

@@ -155,7 +155,7 @@ target/debug/idlemax init
 - [x] Task 6: Run one worker job on the agent from lease to exit
 - [x] Task 7: Start, hold, shed and stop workers in the agent tick
 - [x] Task 8: Check a finished task and give it a verdict
-- [ ] Task 9: Launch from the Plan in auto mode, one worker at a time
+- [x] Task 9: Launch from the Plan in auto mode, one worker at a time
 - [ ] Task 10: Add idlemax stop and idlemax start
 - [ ] Task 11: Add idlemax review with keep, merge and discard
 - [ ] Task 12: Needs the owner's OK: prove each CLI and the fences on the Mac, then switch on auto
@@ -646,16 +646,16 @@ The owner can see every launch and its reason.
 
 **Definition of Done:**
 
-- [ ] `Config::parse("[dispatcher]\nmode = \"auto\"\n")` parses, `build` gives picks in `auto`, and `idlemax plan` shows the `auto` mode line.
-- [ ] With mode `auto`, a Plan of two orchestrator picks and a usable account, the first sweep creates one Run in `starting` with the pick's reason and one job `leased` to the device, and the second pick waits until the first run is `running` and `settle_secs` have passed.
-- [ ] Nothing is launched and no job row is created in mode `propose`, for a pick that is not the orchestrator's, with a CLI missing from `workers.clis`, with a room of `hold`, with `open_slots` of 0, while the device or the account is paused, or while the device is offline.
-- [ ] A project with 2 runs waiting and 1 running gets no launch at a cap of 3, and the other project's pick still launches.
-- [ ] A task with a `clean` Run is not launched again, one whose only Run was `discarded` is launched once more, and one with two `rejected` Runs is never launched.
-- [ ] `week_spend` of two runs that overlap on one account, with weekly readings 40, 41, 43 and 44 at their four ends, is 4.0, and an account at 10.0 is not usable.
-- [ ] A running worker of an account at 60 percent of its 5-hour window is stopped and its run becomes `shed`; a `shed` run with a session id is relaunched as a `resume` job before any new task starts, and not while the device still reports its previous job.
-- [ ] A slot refused on ten sweeps for one reason leaves one event.
-- [ ] The README describes auto mode, the fence table and what is not fenced.
-- [ ] Verify: `cargo test -p idlemax-core worker::pace && cargo test -p idlemax-core worker::control && cargo test -p idlemax-core dispatch::plan && cargo test -p idlemax-core dispatch::orchestrator && cargo test -p idlemax --bin idlemax coord::dispatch && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `Config::parse("[dispatcher]\nmode = \"auto\"\n")` parses, `build` gives picks in `auto`, and `idlemax plan` shows the `auto` mode line.
+- [x] With mode `auto`, a Plan of two orchestrator picks and a usable account, the first sweep creates one Run in `starting` with the pick's reason and one job `leased` to the device, and the second pick waits until the first run is `running` and `settle_secs` have passed.
+- [x] Nothing is launched and no job row is created in mode `propose`, for a pick that is not the orchestrator's, with a CLI missing from `workers.clis`, with a room of `hold`, with `open_slots` of 0, while the device or the account is paused, or while the device is offline.
+- [x] A project with 2 runs waiting and 1 running gets no launch at a cap of 3, and the other project's pick still launches.
+- [x] A task with a `clean` Run is not launched again, one whose only Run was `discarded` is launched once more, and one with two `rejected` Runs is never launched.
+- [x] `week_spend` of two runs that overlap on one account, with weekly readings 40, 41, 43 and 44 at their four ends, is 4.0, and an account at 10.0 is not usable.
+- [x] A running worker of an account at 60 percent of its 5-hour window is stopped and its run becomes `shed`; a `shed` run with a session id is relaunched as a `resume` job before any new task starts, and not while the device still reports its previous job.
+- [x] A slot refused on ten sweeps for one reason leaves one event.
+- [x] The README describes auto mode, the fence table and what is not fenced.
+- [x] Verify: `cargo test -p idlemax-core worker::pace && cargo test -p idlemax-core worker::control && cargo test -p idlemax-core dispatch::plan && cargo test -p idlemax-core dispatch::orchestrator && cargo test -p idlemax --bin idlemax coord::dispatch && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 10: Add idlemax stop and idlemax start
 

@@ -25,7 +25,6 @@ use crate::coord::store::{PassRow, Store, StoreError};
 #[derive(Debug, Clone)]
 pub struct Gathered {
     pub plan: Plan,
-    #[expect(dead_code, reason = "Spec 2's launch and Spec 4's view read it")]
     pub tasks: Vec<Task>,
 }
 
@@ -79,7 +78,8 @@ pub fn read_inputs(
         scoped: &scoped,
     });
     let views = quota_views(store, cfg, now)?;
-    let accounts = account_uses(&cfg.quota, &views, &paused_accounts(&paused), &[]);
+    let spent = super::spend::spent_week(store, cfg, now)?;
+    let accounts = account_uses(&cfg.quota, &views, &paused_accounts(&paused), &spent);
     let mut notes = notes(&projects, &repos, &checks, &devices);
     // Discovery goes silent when Herdr is missing or renamed a key; say so (Risks table).
     notes.extend(

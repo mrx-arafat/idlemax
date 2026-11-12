@@ -109,10 +109,10 @@ mod tests {
         assert!(!again.changed);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
 
-        let auto = api
-            .post("/v1/dispatcher/mode", &serde_json::json!({"mode": "auto"}))
+        let unknown = api
+            .post("/v1/dispatcher/mode", &serde_json::json!({"mode": "turbo"}))
             .await;
-        assert_eq!(auto.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
 
         let events: Vec<serde_json::Value> = api

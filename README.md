@@ -854,10 +854,10 @@ You accept or dismiss each one, and nothing runs on the advisor's word alone, ex
 - The dispatcher's orchestrator pass is also an AI job, and the rule of one AI job per account per 5 hours counts it, so on the same account the advisor's own pass waits behind it.
   Set `advisor.ai_account` to a different account than the one the dispatcher uses.
 
-## The dispatcher (plan only)
+## The dispatcher
 
-The dispatcher will put AI coding workers on the leftover tasks of your own projects.
-This build only plans: it never launches a worker.
+The dispatcher puts AI coding workers on the leftover tasks of your own projects.
+It plans in `propose` mode and launches nothing until you switch it to `auto`.
 
 A project is a git repository on a device.
 Every project is off until you switch it on, and idlemax writes nothing into your repositories; its settings live in the coordinator's database.
@@ -873,12 +873,13 @@ idlemax project set app check -- cargo test -p core   # the focused check, as ar
 
 `set` also takes `setup -- <argv>`, `priority <n>`, `off-limits <paths>` and `core-paths <paths>`; no value clears a setting.
 
-The dispatcher has two modes, switched with `idlemax mode`:
+The dispatcher has three modes, switched with `idlemax mode`:
 
 ```sh
-idlemax plan            # which workers it would launch now, on what, and why; it launches nothing
+idlemax plan            # which workers it would launch now, on what, and why
 idlemax mode off        # plan nothing
 idlemax mode propose    # show what it would launch, and launch nothing (the default)
+idlemax mode auto       # launch the planned workers, one at a time
 ```
 `add` sets the base branch to the local branch `origin/HEAD` names, else to the branch checked out now; change it with `project set <name> base <branch>`.
 `--device <id>` picks a device when the same name exists on more than one.
@@ -902,6 +903,35 @@ Nothing is ever picked without the orchestrator: a ready task no orchestrator pa
 An AI account may be used while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota.
 
 It shows up in `git worktree list` of that repository; switching the project off leaves it in place, and `git worktree remove <dir>` removes it.
+
+### Auto mode
+
+In `auto` idlemax launches each orchestrator pick by itself, with no approval per launch (D3).
+On each 15-second sweep, per device, it first continues the oldest worker that was shed, then starts the next pick, and only when:
+
+- the device is online with no pause or kill switch, the account is not paused, and the worker room reads `run` with an open slot;
+- no worker on the device is still starting, and the last launch there is `workers.settle_secs` old (60 s), so memory settles between launches;
+- the worker CLI is listed in `workers.clis` (empty by default, so nothing starts until you list one) and the account is usable;
+- the project has fewer than `workers.review_cap` (3) tasks waiting for your review or in flight.
+
+A task that already has a Run is not launched again until that Run is discarded, and a task whose last two Runs were rejected or discarded never is.
+Each worker gets its own branch `idlemax/<task>` in its own worktree under `$IDLEMAX_HOME/worktrees`, never your checkout, and a pane in the Herdr workspace `idlemax workers`.
+Every launch is an event that names the project, the task, the provider, the model and the reason it was picked.
+When an account passes 60 percent of its 5-hour window or 10 percent of its weekly quota, its workers stop with their state saved and continue by themselves when it allows them again.
+
+What fences a worker:
+
+| Fence | How |
+|---|---|
+| No personal MCP servers | Claude starts with `--strict-mcp-config`; Codex gets `enabled=false` for each configured server |
+| No idlemax token, no credential variables | the pane gets them empty, and a worker whose real environment still holds one is never briefed |
+| No untracked files of yours such as `.env` | a fresh worktree holds tracked files only |
+| No `git push` | every remote gets a dead push address and no credential helper, for the agent and for the setup and check commands |
+| Codex writes and network | Codex's own `workspace-write` sandbox, approval `never` |
+| No pull requests, deploys, databases, messages or spending | the brief and `rules.md` say so, and the credential variables are missing |
+
+What is not fenced: a worker runs as your user, so credentials on disk or in the keychain (ssh keys, the `gh` login, cloud CLI logins), the idlemax token file and `coord.db` stay readable to a worker that goes looking, and the push block can be undone on purpose.
+Switch on `auto` only after the checks of `docs/WORKER-PROOF.md` passed for the CLI you list in `workers.clis`.
 
 ## Controls
 
@@ -1072,7 +1102,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `advisor.enabled` | `true` | run the advisor |
 | `advisor.ai_account` | none | account the AI pass spends; none runs the rules only |
 | `advisor.auto_accept` | `[]` | template names queued without asking |
-| `dispatcher.mode` | `propose` | `off` plans nothing; `propose` shows what the dispatcher would launch and launches nothing |
+| `dispatcher.mode` | `propose` | `off` plans nothing; `propose` shows what the dispatcher would launch and launches nothing; `auto` launches the planned workers |
 | `dispatcher.hold_mem_used_pct` | `90.0` | at this memory used percent no new worker starts |
 | `dispatcher.shed_mem_used_pct` | `95.0` | at this memory used percent idlemax stops its newest worker |
 | `dispatcher.emergency_mem_used_pct` | `98.0` | at this memory used percent every idlemax worker stops |

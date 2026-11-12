@@ -193,7 +193,7 @@ fn device_plan(input: &PlanInput<'_>, dv: &DeviceView, used: &mut BTreeSet<Strin
         .clone()
         .unwrap_or_else(|| RoomDecision::hold("this agent reports no worker room", input.now_ms));
     let held = held(input, dv);
-    let slots = if input.mode == Mode::Propose && held.is_none() && room.state == LineState::Run {
+    let slots = if input.mode != Mode::Off && held.is_none() && room.state == LineState::Run {
         room.open_slots
     } else {
         0

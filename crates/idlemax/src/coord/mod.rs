@@ -2,6 +2,7 @@
 //! runs the background sweeps, and stops cleanly on SIGINT or SIGTERM.
 
 pub mod api;
+mod dispatch;
 mod schedule;
 pub(crate) mod server;
 pub mod store;

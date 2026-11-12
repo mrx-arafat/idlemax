@@ -25,6 +25,8 @@ pub enum Mode {
     /// Shows what it would launch and launches nothing.
     #[default]
     Propose,
+    /// Launches the planned workers itself, one at a time, inside the fence (D3).
+    Auto,
 }
 
 impl Mode {
@@ -32,6 +34,7 @@ impl Mode {
         match self {
             Mode::Off => "off",
             Mode::Propose => "propose",
+            Mode::Auto => "auto",
         }
     }
 }

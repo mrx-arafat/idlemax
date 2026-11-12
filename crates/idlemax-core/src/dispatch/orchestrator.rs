@@ -123,7 +123,7 @@ pub fn taking_devices<'a>(
 
 /// The account and device to use, or the reason no pass is due.
 pub fn pass_due(input: &DueInput<'_>) -> Result<DuePass, String> {
-    if input.mode != Mode::Propose {
+    if input.mode == Mode::Off {
         return Err("the dispatcher is off".into());
     }
     let ready: Vec<&DeviceView> = taking_devices(input.devices, input.paused)

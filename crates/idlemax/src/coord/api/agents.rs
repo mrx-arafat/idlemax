@@ -314,7 +314,18 @@ fn run_after(
     let Some(run) = store.get_run(worker.run)? else {
         return Ok(None);
     };
-    Ok(after_job(&run, job, update, now).map(|next| (next, run.state)))
+    let Some(mut next) = after_job(&run, job, update, now) else {
+        return Ok(None);
+    };
+    // Each launch that ends records the account's readings, for the cost table (D10 item 1).
+    if update.status.is_terminal() {
+        let latest = store.latest_quota()?;
+        next.quota_after = latest
+            .into_iter()
+            .filter(|s| s.account == run.account)
+            .collect();
+    }
+    Ok(Some((next, run.state)))
 }
 
 /// The output of an advisor AI pass stored as succeeded whose advice was never recorded.

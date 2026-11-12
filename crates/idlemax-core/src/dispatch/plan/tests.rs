@@ -181,6 +181,15 @@ fn a_pass_fills_the_slots_in_its_order() {
 }
 
 #[test]
+fn auto_mode_picks_like_propose() {
+    let mut world = World::new().with_pass(&["b", "a"]);
+    world.mode = Mode::Auto;
+    let plan = world.build();
+    assert_eq!(plan.mode, Mode::Auto);
+    assert_eq!(plan.devices[0].picks.len(), 2);
+}
+
+#[test]
 fn a_pick_on_an_account_that_may_not_be_spent_is_not_used() {
     let mut w = World::new().with_pass(&["a"]);
     w.accounts = vec![account(false)];

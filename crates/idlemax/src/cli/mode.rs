@@ -1,4 +1,4 @@
-//! Delivery: `idlemax mode <off|propose>`, the dispatcher's mode switch (A1).
+//! Delivery: `idlemax mode <off|propose|auto>`, the dispatcher's mode switch (A1).
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -9,7 +9,8 @@ use super::{noop, ApiClient, Out};
 
 #[derive(Args, Debug)]
 pub struct ModeArgs {
-    /// off plans nothing; propose shows what the dispatcher would launch and launches nothing
+    /// off plans nothing; propose shows what the dispatcher would launch and launches nothing;
+    /// auto launches the planned workers one at a time
     mode: ModeArg,
 }
 
@@ -17,12 +18,14 @@ pub struct ModeArgs {
 enum ModeArg {
     Off,
     Propose,
+    Auto,
 }
 
 pub async fn run(args: ModeArgs, c: &ApiClient, out: &Out) -> Result<()> {
     let mode = match args.mode {
         ModeArg::Off => Mode::Off,
         ModeArg::Propose => Mode::Propose,
+        ModeArg::Auto => Mode::Auto,
     };
     let reply = c.set_mode(mode).await?;
     let text = if reply.changed {

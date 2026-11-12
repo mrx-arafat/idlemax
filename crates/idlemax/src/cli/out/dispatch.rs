@@ -161,6 +161,10 @@ pub fn mode_hints(mode: Mode) -> Vec<String> {
     match mode {
         Mode::Off => vec![run("idlemax mode propose", "let the dispatcher plan again")],
         Mode::Propose => vec![run("idlemax plan", "see what it would launch and why")],
+        Mode::Auto => vec![
+            run("idlemax plan", "see what it launches and why"),
+            run("idlemax stop", "stop every worker, with its state saved"),
+        ],
     }
 }
 
@@ -170,6 +174,7 @@ pub fn plan_text(plan: &Plan) -> String {
     let mut out = vec![match plan.mode {
         Mode::Off => "dispatcher: off".to_string(),
         Mode::Propose => "dispatcher: propose (nothing is launched)".to_string(),
+        Mode::Auto => "dispatcher: auto (workers are launched)".to_string(),
     }];
     out.push(format!("picked by: {}", plan.picked_by));
     for d in &plan.devices {
@@ -251,4 +256,28 @@ pub fn plan_hints(plan: &Plan) -> Vec<String> {
         ));
     }
     hints
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_plan_says_when_workers_are_launched() {
+        let plan = Plan {
+            at_ms: 0,
+            mode: Mode::Auto,
+            picked_by: "orchestrator pass 1m ago".into(),
+            devices: Vec::new(),
+            not_judged: Vec::new(),
+            needs_you: Vec::new(),
+            accounts: Vec::new(),
+            notes: Vec::new(),
+        };
+        let text = plan_text(&plan);
+        assert!(
+            text.starts_with("dispatcher: auto (workers are launched)"),
+            "{text}"
+        );
+    }
 }

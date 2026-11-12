@@ -127,6 +127,12 @@ mod tests {
     use crate::Config;
 
     #[test]
+    fn auto_mode_parses() {
+        let cfg = crate::config::Config::parse("[dispatcher]\nmode = \"auto\"\n").unwrap();
+        assert_eq!(cfg.dispatcher.mode, Mode::Auto);
+    }
+
+    #[test]
     fn an_empty_file_proposes_with_the_claude_standard_model() {
         let cfg = Config::parse("").unwrap();
         assert_eq!(cfg.dispatcher.mode, Mode::Propose);

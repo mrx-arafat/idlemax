@@ -6,7 +6,7 @@ mod agents;
 pub mod http;
 mod jobs;
 mod mode;
-mod plan;
+pub(crate) mod plan;
 mod projects;
 mod report;
 mod runs;

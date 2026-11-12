@@ -3,8 +3,10 @@
 
 pub mod brief;
 pub mod checks;
+pub mod control;
 pub mod launch;
 pub mod name;
+pub mod pace;
 pub mod report;
 pub mod run;
 

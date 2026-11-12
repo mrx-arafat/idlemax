@@ -47,43 +47,7 @@ impl Store {
 impl Store {
     /// Stores a new Run with what its relaunches need and returns it with its id.
     pub fn insert_run(&mut self, run: &Run, launch: &RunLaunch) -> StoreResult<Run> {
-        self.conn.execute(
-            "INSERT INTO runs (device, project, task, task_title, source, branch, worktree,
-               provider, account, model, session, state, verdict, concern, reason, summary,
-               facts, quota_before, quota_after, job, launches, start_tries, start_ms, end_ms,
-               updated_ms, launch)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-               ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
-            params![
-                run.device,
-                run.project,
-                run.task,
-                run.task_title,
-                run.source,
-                run.branch,
-                run.worktree,
-                enum_text(&run.provider)?,
-                run.account,
-                run.model,
-                run.session,
-                run.state.as_str(),
-                run.verdict.map(|v| v.as_str()),
-                run.concern,
-                run.reason,
-                run.summary,
-                json_text(&run.facts)?,
-                json_text(&run.quota_before)?,
-                json_text(&run.quota_after)?,
-                run.job,
-                run.launches,
-                run.start_tries,
-                run.start_ms,
-                run.end_ms,
-                run.updated_ms,
-                json_text(launch)?,
-            ],
-        )?;
-        let id = self.conn.last_insert_rowid();
+        let id = insert_run(&self.conn, run, launch)?;
         self.get_run(id)?
             .ok_or_else(|| StoreError::Corrupt(format!("run {id}")))
     }
@@ -135,36 +99,90 @@ impl Store {
         expires_ms: UnixMs,
         now: UnixMs,
     ) -> StoreResult<Added> {
-        spec.validate().map_err(StoreError::InvalidSpec)?;
         let live_jobs = self.caps.live_jobs;
         let tx = self.conn.transaction()?;
-        if let Some(key) = &spec.key {
-            if let Some(job) = unfinished_with_key(&tx, key)? {
-                return Ok(Added::Existing(job));
-            }
+        let added = insert_leased(&tx, live_jobs, spec, device, expires_ms, now)?;
+        tx.commit()?;
+        Ok(added)
+    }
+}
+
+/// The write behind `insert_run`: the new Run's id. The caller owns the transaction.
+pub(super) fn insert_run(conn: &Connection, run: &Run, launch: &RunLaunch) -> StoreResult<RunId> {
+    conn.execute(
+        "INSERT INTO runs (device, project, task, task_title, source, branch, worktree,
+               provider, account, model, session, state, verdict, concern, reason, summary,
+               facts, quota_before, quota_after, job, launches, start_tries, start_ms, end_ms,
+               updated_ms, launch)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+               ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+        params![
+            run.device,
+            run.project,
+            run.task,
+            run.task_title,
+            run.source,
+            run.branch,
+            run.worktree,
+            enum_text(&run.provider)?,
+            run.account,
+            run.model,
+            run.session,
+            run.state.as_str(),
+            run.verdict.map(|v| v.as_str()),
+            run.concern,
+            run.reason,
+            run.summary,
+            json_text(&run.facts)?,
+            json_text(&run.quota_before)?,
+            json_text(&run.quota_after)?,
+            run.job,
+            run.launches,
+            run.start_tries,
+            run.start_ms,
+            run.end_ms,
+            run.updated_ms,
+            json_text(launch)?,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// The write behind `insert_leased_job`; the caller owns the transaction.
+pub(super) fn insert_leased(
+    tx: &Connection,
+    live_jobs: i64,
+    spec: &JobSpec,
+    device: &str,
+    expires_ms: UnixMs,
+    now: UnixMs,
+) -> StoreResult<Added> {
+    spec.validate().map_err(StoreError::InvalidSpec)?;
+    if let Some(key) = &spec.key {
+        if let Some(job) = unfinished_with_key(tx, key)? {
+            return Ok(Added::Existing(job));
         }
-        check_live_cap(&tx, live_jobs)?;
-        tx.execute(
-            "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key, device,
+    }
+    check_live_cap(tx, live_jobs)?;
+    tx.execute(
+        "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key, device,
                lease_expires_ms, attempts, worker)
              VALUES (?1, ?2, 'leased', ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)",
-            params![
-                json_text(spec)?,
-                spec.name,
-                spec.priority,
-                spec.ai_account,
-                now,
-                spec.key,
-                device,
-                expires_ms,
-                spec.worker.is_some(),
-            ],
-        )?;
-        let id = tx.last_insert_rowid();
-        let job: Job = get_job(&tx, id)?.ok_or(StoreError::JobNotFound(id))?;
-        tx.commit()?;
-        Ok(Added::New(job))
-    }
+        params![
+            json_text(spec)?,
+            spec.name,
+            spec.priority,
+            spec.ai_account,
+            now,
+            spec.key,
+            device,
+            expires_ms,
+            spec.worker.is_some(),
+        ],
+    )?;
+    let id = tx.last_insert_rowid();
+    let job: Job = get_job(tx, id)?.ok_or(StoreError::JobNotFound(id))?;
+    Ok(Added::New(job))
 }
 
 /// Moves to `stopped` the Run of each worker job a coordinator control (`stop_all`,

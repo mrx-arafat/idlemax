@@ -9,9 +9,9 @@ use super::super::projects::project_views;
 use super::super::tests::Api;
 use super::*;
 
-const T0: i64 = 1_800_000_000_000;
+pub(crate) const T0: i64 = 1_800_000_000_000;
 
-fn feed() -> DispatchInputs {
+pub(crate) fn feed() -> DispatchInputs {
     let repo = |name: &str, working| RepoReport {
         path: format!("/code/{name}"),
         name: name.into(),
@@ -145,7 +145,7 @@ fn a_step_queues_one_check_job_in_the_base_checkout() {
 /// A Claude account at 20 percent of its 5-hour window, a Mac with two open slots and a
 /// switched-on project with two roadmap items; `at` re-sends the heartbeat so the device
 /// stays online on the test clock.
-fn pass_world() -> (Store, Config, impl Fn(&mut Store, UnixMs)) {
+pub(crate) fn pass_world() -> (Store, Config, impl Fn(&mut Store, UnixMs)) {
     use idlemax_core::dispatch::project::ProjectSettings;
     use idlemax_core::dispatch::roadmap::RoadmapItem;
     use idlemax_core::protocol::Heartbeat;
@@ -213,7 +213,7 @@ fn passes(store: &Store) -> usize {
 }
 
 /// Leases the pass job and reports it succeeded with `envelope` as its output.
-fn finish(store: &mut Store, cfg: &Config, envelope: &str, at: UnixMs) {
+pub(crate) fn finish(store: &mut Store, cfg: &Config, envelope: &str, at: UnixMs) {
     use idlemax_core::protocol::JobUpdate;
     use idlemax_core::types::JobStatus;
     let job = store.queued_jobs().unwrap().pop().unwrap();
