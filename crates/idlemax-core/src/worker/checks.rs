@@ -189,11 +189,42 @@ pub fn parse_review(json: &serde_json::Value) -> Option<(ReviewAnswer, Option<St
     Some((a.verdict, a.concern.filter(|c| !c.trim().is_empty())))
 }
 
-/// `path` is `root` or lies under it.
-fn under(path: &str, root: &str) -> bool {
-    let root = root.trim_end_matches('/');
-    !root.is_empty()
-        && (path == root || path.strip_prefix(root).is_some_and(|r| r.starts_with('/')))
+/// `path` matches `pattern` the way `.gitignore` reads it, or lies in a folder that does: a
+/// pattern without `/` (a trailing one aside) matches a name at any depth, one with `/` is
+/// anchored at the repository root, `*` and `?` stay within one name and `**` spans folders.
+fn under(path: &str, pattern: &str) -> bool {
+    let pattern = pattern.trim_end_matches('/');
+    let anchored = pattern.contains('/');
+    let pattern = pattern.trim_start_matches('/');
+    if pattern.is_empty() {
+        return false;
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    match anchored {
+        true => from_root(&pattern.split('/').collect::<Vec<_>>(), &parts),
+        false => parts.iter().any(|p| glob(pattern.as_bytes(), p.as_bytes())),
+    }
+}
+
+/// The pattern's names match the path's first names, so the path is it or lies under it.
+fn from_root(pattern: &[&str], parts: &[&str]) -> bool {
+    match pattern.split_first() {
+        None => true,
+        Some((&"**", rest)) => (0..=parts.len()).any(|i| from_root(rest, &parts[i..])),
+        Some((p, rest)) => parts.split_first().is_some_and(|(name, tail)| {
+            glob(p.as_bytes(), name.as_bytes()) && from_root(rest, tail)
+        }),
+    }
+}
+
+/// One name against one glob with `*` and `?`.
+fn glob(pattern: &[u8], name: &[u8]) -> bool {
+    match pattern.split_first() {
+        None => name.is_empty(),
+        Some((b'*', rest)) => (0..=name.len()).any(|i| glob(rest, &name[i..])),
+        Some((b'?', rest)) => !name.is_empty() && glob(rest, &name[1..]),
+        Some((c, rest)) => name.first() == Some(c) && glob(rest, &name[1..]),
+    }
 }
 
 fn join(items: Vec<String>) -> String {

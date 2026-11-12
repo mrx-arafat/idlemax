@@ -63,6 +63,36 @@ fn scope_findings_flags_off_limits_and_outside_paths() {
 }
 
 #[test]
+fn scope_paths_follow_gitignore_rules() {
+    // The live Run: the orchestrator named ["*.py", "tests"].
+    let scope = strings(&["*.py", "tests"]);
+    let changed = strings(&[
+        "calc/__init__.py",
+        "tests/test_calc.py",
+        "calc/__pycache__/__init__.cpython-313.pyc",
+    ]);
+    let found = scope_findings(&changed, &scope, &[]);
+    assert_eq!(found.outside, ["calc/__pycache__/__init__.cpython-313.pyc"]);
+    // A pattern with a slash is anchored at the root; a plain name matches at any depth.
+    let anchored = strings(&["src/*.rs", "/docs"]);
+    let found = scope_findings(
+        &strings(&[
+            "src/a.rs",
+            "lib/src/a.rs",
+            "src/x/a.rs",
+            "docs/a.md",
+            "x/docs/a.md",
+        ]),
+        &anchored,
+        &strings(&["secret"]),
+    );
+    assert_eq!(found.outside, ["lib/src/a.rs", "src/x/a.rs", "x/docs/a.md"]);
+    assert!(found.off_limits.is_empty());
+    let deep = scope_findings(&strings(&["a/secret/k"]), &[], &strings(&["secret/"]));
+    assert_eq!(deep.off_limits, ["a/secret/k"]);
+}
+
+#[test]
 fn risk_is_high_for_a_big_diff_core_code_or_no_check() {
     let small = diff(&["src/sync.rs"], 5);
     let core = strings(&["crates/core"]);
