@@ -221,6 +221,30 @@ pub async fn github(report: &mut Report, cfg: &Config) {
     });
 }
 
+/// Whether workers on this device run inside the OS sandbox (A13): the real bwrap probe on
+/// Linux; elsewhere there is no sandbox yet, which `workers.sandbox` then judges.
+pub async fn sandbox(report: &mut Report, cfg: &Config) {
+    use idlemax_core::worker::sandbox::{doctor_check, Probe};
+    let found = match Os::current() {
+        Os::Linux => tokio::task::spawn_blocking(crate::agent::worker::sandbox_probe)
+            .await
+            .unwrap_or_else(|e| Err(e.to_string())),
+        _ => Err("the macOS sandbox is not built yet (Spec 6 Task 7)".into()),
+    };
+    let probe = match found {
+        Ok(_) => Probe::Usable,
+        Err(why) => Probe::Unusable(why),
+    };
+    let profile = cfg.agent.profile_or_default(Os::current());
+    let workers_on = !cfg.workers.clis.is_empty();
+    report.push(doctor_check(
+        cfg.workers.sandbox,
+        Some(profile),
+        &probe,
+        workers_on,
+    ));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

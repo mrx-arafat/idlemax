@@ -23,7 +23,6 @@ use proxy::Proxy;
 /// The relay's port inside the sandbox's own network namespace, so it never meets another.
 const RELAY_PORT: u16 = 3128;
 /// How long the probe may take.
-#[cfg_attr(test, allow(dead_code))]
 const PROBE_LIMIT: Duration = Duration::from_secs(5);
 /// A Unix socket path longer than this cannot be bound (108 bytes with the terminator).
 const MAX_SOCKET_PATH: usize = 100;
@@ -70,7 +69,6 @@ pub struct Wrapped {
 }
 
 /// The bwrap that may run workers here, or why none can.
-#[cfg_attr(test, allow(dead_code))] // A test build never runs bwrap; doctor uses it next.
 pub fn probe() -> Result<PathBuf, String> {
     let bwrap = find_on_path("bwrap").ok_or("bwrap is not installed")?;
     let args = ["--ro-bind", "/", "/", "--unshare-net", "--unshare-pid"];
@@ -92,7 +90,6 @@ pub fn probe() -> Result<PathBuf, String> {
     }
 }
 
-#[cfg_attr(test, allow(dead_code))]
 fn wait_limited(mut child: std::process::Child) -> Result<std::process::Output, String> {
     let started = Instant::now();
     while child.try_wait().map_err(|e| e.to_string())?.is_none() {

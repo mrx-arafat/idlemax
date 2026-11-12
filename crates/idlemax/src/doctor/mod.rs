@@ -36,6 +36,7 @@ pub async fn run(coord_url: Option<String>) -> Report {
     host::disk(&mut report, &config, paths.as_ref()).await;
     ai::accounts(&mut report, &config, paths.as_ref()).await;
     logins::check(&mut report, &config).await;
+    host::sandbox(&mut report, &config).await;
     host::github(&mut report, &config).await;
     service::check(&mut report, &units);
     report

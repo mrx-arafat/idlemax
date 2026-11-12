@@ -16,6 +16,7 @@ pub mod host;
 pub mod procs;
 mod sandbox;
 
+pub use sandbox::probe as sandbox_probe;
 pub use sandbox::relay::run as sandbox_relay;
 mod record;
 mod review;

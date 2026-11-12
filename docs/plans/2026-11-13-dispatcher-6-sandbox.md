@@ -122,7 +122,7 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 - [x] Task 2: Build the bwrap arguments and the sandbox's Claude home
 - [x] Task 3: Serve the allow-list proxy and the in-sandbox relay
 - [x] Task 4: Wrap the agent CLI in both hosts and check it took
-- [ ] Task 5: Report the sandbox in doctor
+- [x] Task 5: Report the sandbox in doctor
 - [ ] Task 6: Document the sandbox
 - [ ] Task 7: Needs a Mac: the Seatbelt profile
 - [ ] Task 8: Needs the owner's OK: prove the sandbox with bwrap installed
@@ -247,15 +247,15 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 **Key Decisions / Notes:**
 
-- `ok` when the probe passes; `warn` in `auto` when it fails (workers run with the soft fences only), with the fix `sudo apt install bubblewrap` (or the probe's own message when bwrap is installed but cannot make a namespace); `fail` in `required` or on production; `ok` with "off" when the owner switched it off. On macOS the check reports `sandbox-exec` once Task 7 lands, and until then says the Mac sandbox is not built yet.
+- `ok` when the probe passes; `warn` in `auto` when it fails (workers run with the soft fences only), with the fix `sudo apt install bubblewrap` (or the probe's own message when bwrap is installed but cannot make a namespace); `fail` in `required` or on production; `ok` with "off" when the owner switched it off; `ok` with the probe's finding when `workers.clis` is empty, since no worker starts there. On macOS the check reports `sandbox-exec` once Task 7 lands, and until then says the Mac sandbox is not built yet.
 
 **Definition of Done:**
 
-- [ ] With a fake probe the check is `ok`, `warn` and `fail` in the three cases above.
+- [x] With a fake probe the check is `ok`, `warn` and `fail` in the three cases above.
 
 **Verify:**
 
-- [ ] `cargo test -p idlemax --bin idlemax doctor`
+- [x] `cargo test -p idlemax --bin idlemax doctor`
 
 ### Task 6: Document the sandbox
 

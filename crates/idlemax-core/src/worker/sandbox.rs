@@ -7,6 +7,7 @@ pub mod claude_home;
 use serde::{Deserialize, Serialize};
 
 use super::WorkerCli;
+use crate::doctor::Check;
 use crate::types::DeviceProfile;
 
 /// `workers.sandbox`.
@@ -56,6 +57,42 @@ pub fn decide(
             "the worker sandbox is required and cannot be used: {why}; install bubblewrap, \
              or set workers.sandbox to auto"
         )),
+    }
+}
+
+/// The doctor check: workers run sandboxed, run with the soft fences only (`warn`), or cannot
+/// start because the sandbox is required (`fail`); `off` is the owner's choice and `ok`. With
+/// no worker CLI configured (`workers.clis`) no worker starts here, so it only informs.
+pub fn doctor_check(
+    setting: SandboxSetting,
+    profile: Option<DeviceProfile>,
+    probe: &Probe,
+    workers_on: bool,
+) -> Check {
+    const ID: &str = "sandbox";
+    if !workers_on {
+        let state = match probe {
+            Probe::Usable => "bubblewrap is usable".to_string(),
+            Probe::Unusable(why) => why.clone(),
+        };
+        return Check::ok(
+            ID,
+            format!("no worker CLI is configured (workers.clis); {state}"),
+        );
+    }
+    const FIX: &str =
+        "install bubblewrap (sudo apt install bubblewrap), then run idlemax doctor again";
+    match decide(setting, profile, probe) {
+        SandboxUse::Wrap => Check::ok(
+            ID,
+            "workers run inside bubblewrap with the allow-list proxy",
+        ),
+        SandboxUse::Bare(_) if setting == SandboxSetting::Off => Check::ok(
+            ID,
+            "off (workers.sandbox): workers run with the soft fences only",
+        ),
+        SandboxUse::Bare(note) => Check::warn(ID, format!("workers run with {note}"), FIX),
+        SandboxUse::Refuse(why) => Check::fail(ID, format!("no worker can start: {why}"), FIX),
     }
 }
 
@@ -112,6 +149,27 @@ mod tests {
         ));
         assert!(
             matches!(decide(SandboxSetting::Off, laptop, &Probe::Usable), SandboxUse::Bare(n) if n.contains("workers.sandbox"))
+        );
+    }
+
+    #[test]
+    fn doctor_says_ok_warn_or_fail_for_the_sandbox() {
+        use crate::doctor::Level;
+        let gone = Probe::Unusable(NO_BWRAP.into());
+        let level = |s, p, probe| doctor_check(s, p, probe, true).level;
+        assert_eq!(level(SandboxSetting::Auto, None, &Probe::Usable), Level::Ok);
+        let warn = doctor_check(SandboxSetting::Auto, None, &gone, true);
+        assert_eq!(warn.level, Level::Warn);
+        assert!(warn.detail.contains(NO_BWRAP), "{}", warn.detail);
+        assert_eq!(level(SandboxSetting::Required, None, &gone), Level::Fail);
+        let production = Some(DeviceProfile::Production);
+        assert_eq!(level(SandboxSetting::Auto, production, &gone), Level::Fail);
+        assert_eq!(level(SandboxSetting::Off, None, &gone), Level::Ok);
+        let idle = doctor_check(SandboxSetting::Required, production, &gone, false);
+        assert_eq!(
+            idle.level,
+            Level::Ok,
+            "no worker CLI: nothing can be refused"
         );
     }
 
