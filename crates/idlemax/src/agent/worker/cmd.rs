@@ -87,11 +87,6 @@ impl OsCommands {
     pub fn with_options(wrapper: Wrapper, mem_mb: u64) -> Self {
         Self { wrapper, mem_mb }
     }
-
-    #[allow(dead_code)]
-    pub fn with_wrapper(wrapper: Wrapper) -> Self {
-        Self::with_options(wrapper, idlemax_core::types::DEFAULT_MEM_MB)
-    }
 }
 
 fn build_command(cmd: &Cmd, wrapper: &Wrapper, mem_mb: u64) -> std::process::Command {
@@ -276,7 +271,6 @@ impl FakeCommands {
         self.responses.lock().unwrap().push_back(Err(err));
     }
 
-    #[allow(dead_code)]
     pub fn set_fallback<F>(&self, f: F)
     where
         F: Fn(&Cmd) -> Result<Output, CmdError> + Send + Sync + 'static,
