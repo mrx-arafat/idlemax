@@ -17,6 +17,7 @@ pub mod prompt;
 pub mod proposal;
 pub mod roadmap;
 pub mod room;
+pub mod scope;
 pub mod task;
 pub mod view;
 

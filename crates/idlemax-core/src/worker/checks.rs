@@ -192,7 +192,7 @@ pub fn parse_review(json: &serde_json::Value) -> Option<(ReviewAnswer, Option<St
 /// `path` matches `pattern` the way `.gitignore` reads it, or lies in a folder that does: a
 /// pattern without `/` (a trailing one aside) matches a name at any depth, one with `/` is
 /// anchored at the repository root, `*` and `?` stay within one name and `**` spans folders.
-fn under(path: &str, pattern: &str) -> bool {
+pub fn under(path: &str, pattern: &str) -> bool {
     let pattern = pattern.trim_end_matches('/');
     let anchored = pattern.contains('/');
     let pattern = pattern.trim_start_matches('/');

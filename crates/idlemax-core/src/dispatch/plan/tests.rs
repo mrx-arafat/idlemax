@@ -185,6 +185,25 @@ fn a_pass_fills_the_slots_in_its_order() {
 }
 
 #[test]
+fn a_scope_naming_a_file_the_project_lacks_becomes_the_whole_project() {
+    // The live pass named ["demo.py", "tests/"] in a project without demo.py.
+    let mut w = World::new().with_pass(&["a", "b"]);
+    w.repos[0].repo.files = vec!["calc/__init__.py".into(), "tests/test_calc.py".into()];
+    let picks = &mut w.pass.as_mut().unwrap().picks;
+    picks[0].scope_paths = vec!["demo.py".into(), "tests/".into()];
+    picks[1].scope_paths = vec!["*.py".into(), "tests/".into()];
+    let plan = w.build();
+    let (a, b) = (&plan.devices[0].picks[0], &plan.devices[0].picks[1]);
+    assert_eq!(a.scope_paths, ["**"]);
+    assert_eq!(
+        a.reason,
+        "a is small (scope widened: the named paths did not exist)"
+    );
+    assert_eq!(b.scope_paths, ["*.py", "tests/"]);
+    assert_eq!(b.reason, "b is small");
+}
+
+#[test]
 fn auto_mode_picks_like_propose() {
     let mut world = World::new().with_pass(&["b", "a"]);
     world.mode = Mode::Auto;

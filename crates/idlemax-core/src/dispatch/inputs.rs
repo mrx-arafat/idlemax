@@ -13,6 +13,8 @@ use crate::types::{DeviceId, UnixMs};
 pub const MAX_REPOS: usize = 64;
 pub const MAX_ROADMAP_ITEMS: usize = 50;
 pub const MAX_TOUCHED: usize = 200;
+/// Tracked files a project reports at most, so a pass names real scope paths.
+pub const MAX_FILES: usize = 200;
 pub const MAX_TITLE_CHARS: usize = 200;
 const MAX_REF_CHARS: usize = 256;
 
@@ -47,6 +49,10 @@ pub struct RepoReport {
     pub touched: Vec<String>,
     /// More than `MAX_TOUCHED` paths changed; the list is cut.
     pub touched_clipped: bool,
+    /// The files tracked at the base commit, at most `MAX_FILES`.
+    pub files: Vec<String>,
+    /// How many tracked files the list left out.
+    pub files_cut: usize,
     pub checkout: Option<Checkout>,
 }
 
@@ -121,6 +127,12 @@ impl RepoReport {
         }
         for path in &self.touched {
             problem(name_problem("touched path", path, MAX_PATH_CHARS))?;
+        }
+        if self.files.len() > MAX_FILES {
+            return Err(format!("files has more than {MAX_FILES} paths"));
+        }
+        for path in &self.files {
+            problem(name_problem("file path", path, MAX_PATH_CHARS))?;
         }
         if let Some(c) = &self.checkout {
             problem(name_problem("checkout path", &c.path, MAX_PATH_CHARS))?;

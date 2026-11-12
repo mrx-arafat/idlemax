@@ -7,7 +7,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use idlemax_core::dispatch::inputs::{
-    Checkout, DispatchInputs, DispatchReply, RepoReport, MAX_REPOS, MAX_ROADMAP_ITEMS, MAX_TOUCHED,
+    Checkout, DispatchInputs, DispatchReply, RepoReport, MAX_FILES, MAX_REPOS, MAX_ROADMAP_ITEMS,
+    MAX_TOUCHED,
 };
 use idlemax_core::dispatch::project::{default_name, Project};
 use idlemax_core::dispatch::roadmap::parse_roadmap;
@@ -101,7 +102,8 @@ async fn read_repo(root: &str, working: bool) -> RepoReport {
     }
 }
 
-/// The base commit, roadmap and the owner's changed files of a switched-on project.
+/// The base commit, tracked files, roadmap and the owner's changed files of a switched-on
+/// project.
 async fn fill_project(report: &mut RepoReport, p: &Project) {
     let dir = PathBuf::from(&p.path);
     let base = p
@@ -119,6 +121,14 @@ async fn fill_project(report: &mut RepoReport, p: &Project) {
         }
         None => "HEAD".to_string(),
     };
+    let mut files: Vec<String> = repo::tracked_files(&dir, &rev)
+        .await
+        .into_iter()
+        .filter(|f| plain(f))
+        .collect();
+    report.files_cut = files.len().saturating_sub(MAX_FILES);
+    files.truncate(MAX_FILES);
+    report.files = files;
     if let Some(text) = repo::roadmap_text(&dir, &rev).await {
         let mut items = parse_roadmap(&text);
         items.truncate(MAX_ROADMAP_ITEMS);
@@ -231,6 +241,14 @@ mod tests {
         assert_eq!(on_r.touched, ["dirty.rs"]);
         assert!(on_r.base_commit.is_some());
         assert!(busy_r.roadmap.is_empty() && busy_r.touched.is_empty());
+        // The tracked files at the base commit, so a pass names real scope paths.
+        assert!(
+            on_r.files.contains(&"ROADMAP.md".to_string()),
+            "{:?}",
+            on_r.files
+        );
+        assert!(!on_r.files.contains(&"dirty.rs".to_string()));
+        assert!(busy_r.files.is_empty());
     }
 
     #[tokio::test]

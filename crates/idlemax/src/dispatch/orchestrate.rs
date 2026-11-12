@@ -53,6 +53,7 @@ pub fn pass_step(
                 &inputs.devices,
                 &inputs.paused,
                 &inputs.projects,
+                &inputs.repos,
                 &offer,
             );
             queue_pass(store, &due, text, &print, &tasks, now)

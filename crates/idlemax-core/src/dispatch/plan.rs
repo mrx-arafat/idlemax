@@ -13,6 +13,7 @@ use super::inputs::StoredRepo;
 use super::project::ProjectView;
 use super::proposal::RuleProposal;
 use super::room::{LineState, RoomDecision};
+use super::scope::{narrow_scope, SCOPE_WIDENED, WHOLE_PROJECT};
 use super::task::Task;
 use super::Mode;
 use crate::control::may_assign;
@@ -321,6 +322,7 @@ fn check_pick(
         ));
     }
     let avoid = owner_rule(input, offered, task)?;
+    let (scope_paths, reason) = real_scope(input, task, pp);
     Ok(Pick {
         project: task.project.clone(),
         task: task.id.clone(),
@@ -328,9 +330,9 @@ fn check_pick(
         provider: account.provider,
         account: account.account.clone(),
         model: pp.model.clone(),
-        reason: pp.reason.clone(),
+        reason,
         by: PickedBy::Orchestrator,
-        scope_paths: pp.scope_paths.clone(),
+        scope_paths,
         avoid_paths: avoid,
         held: None,
     })
@@ -385,6 +387,31 @@ fn owner_rule(
     }
     avoid.extend(repo.map(|r| r.repo.touched.clone()).unwrap_or_default());
     Ok(avoid)
+}
+
+/// The pick's scope paths that name a tracked file of its project, and its reason; with none
+/// left the scope is the whole project and the reason says so (an unknown file list keeps
+/// the scope as named).
+fn real_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> (Vec<String>, String) {
+    let project = input
+        .projects
+        .iter()
+        .find(|v| v.project.id == task.project_id);
+    let files = project.and_then(|v| {
+        let p = &v.project;
+        let repo = input
+            .repos
+            .iter()
+            .find(|r| r.device == p.device && r.repo.path == p.path);
+        repo.map(|r| r.repo.files.as_slice())
+    });
+    match narrow_scope(&pp.scope_paths, files.unwrap_or_default()) {
+        Some(kept) => (kept, pp.reason.clone()),
+        None => (
+            vec![WHOLE_PROJECT.into()],
+            format!("{} ({SCOPE_WIDENED})", pp.reason),
+        ),
+    }
 }
 
 fn provider_name(p: Provider) -> String {

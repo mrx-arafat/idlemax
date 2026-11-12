@@ -177,6 +177,19 @@ pub async fn roadmap_text(root: &Path, rev: &str) -> Option<String> {
     None
 }
 
+/// The files tracked at `rev`, from `git ls-tree -r --name-only -z`.
+pub async fn tracked_files(root: &Path, rev: &str) -> Vec<String> {
+    git(root, &["ls-tree", "-r", "--name-only", "-z", rev])
+        .await
+        .map(|out| {
+            out.split('\0')
+                .filter(|p| !p.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The paths changed in the working tree, from `git status --porcelain=v1 -z`.
 pub async fn touched(root: &Path) -> Vec<String> {
     git(root, &["status", "--porcelain=v1", "-z"])
