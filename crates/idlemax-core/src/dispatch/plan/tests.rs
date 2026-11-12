@@ -334,6 +334,24 @@ fn only_owner_written_task_text_adds_scope_and_never_a_dot_folder_or_ci_path() {
 }
 
 #[test]
+fn a_new_top_level_file_with_an_extension_is_a_new_file() {
+    let mut w = World::new().with_pass(&["a", "b"]);
+    w.repos[0].repo.files = vec!["src/a.rs".into()];
+    let picks = &mut w.pass.as_mut().unwrap().picks;
+    picks[0].scope_paths = vec!["pascal.py".into()];
+    picks[1].scope_paths = vec!["src/a.rs".into(), "NOTES".into(), ".envrc".into()];
+    let plan = w.build();
+    let (a, b) = (&plan.devices[0].picks[0], &plan.devices[0].picks[1]);
+    assert_eq!(a.scope_paths, ["pascal.py"]);
+    assert_eq!(a.reason, "a is small");
+    assert_eq!(
+        b.scope_paths,
+        ["src/a.rs"],
+        "no extension or a dot file is no new file"
+    );
+}
+
+#[test]
 fn auto_mode_picks_like_propose() {
     let mut world = World::new().with_pass(&["b", "a"]);
     world.mode = Mode::Auto;

@@ -188,7 +188,7 @@ It reads a compact summary of the offered tasks, projects (with the files each o
 It also sees the start of the project's `AGENTS.md` (else `CLAUDE.md`), up to 2,000 characters, as the project's conventions.
 It is told to build scope paths from the project's files, adding every file the task names and the new files the conventions call for.
 
-- A named path that matches no file is kept as a new file when its folder exists, so a task can create `seqs/pascal.py` next to the other files in `seqs/`.
+- A named path that matches no file is kept as a new file when its folder exists, so a task can create `seqs/pascal.py` next to the other files in `seqs/`. A new top-level file counts too when its name has an extension, such as `pascal.py` (not a dot file such as `.envrc`).
 - A file the task's title, roadmap detail or done check names joins the scope when its folder exists.
   A roadmap item's detail is its section's text before the "Done when" line, at most 600 characters, so write `Add seqs/pascal.py ...` there and the file is in scope.
 - The project's top-level test folder (`tests`, `test`, `spec` or `__tests__`) joins every scope, never a path under an off-limits path.

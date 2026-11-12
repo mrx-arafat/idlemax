@@ -99,9 +99,10 @@ pub fn narrow_scope(
             dropped: Vec::new(),
         });
     }
-    let folder_exists = |p: &str| {
-        p.rsplit_once('/')
-            .is_some_and(|(dir, _)| files.iter().any(|f| f.starts_with(&format!("{dir}/"))))
+    // A new file in a folder the project has, or at the root with an extension (`pascal.py`).
+    let folder_exists = |p: &str| match p.rsplit_once('/') {
+        Some((dir, _)) => files.iter().any(|f| f.starts_with(&format!("{dir}/"))),
+        None => p.contains('.') && !p.starts_with('.'),
     };
     let unknown = |n: &str| !listed.complete && relative_path_problem(n).is_ok() && !too_broad(n);
     let real = |n: &String| {
