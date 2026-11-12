@@ -188,7 +188,9 @@ It also sees the start of the project's `AGENTS.md` (else `CLAUDE.md`), up to 2,
 It is told to build scope paths from the project's files, adding every file the task names and the new files the conventions call for.
 
 - A named path that matches no file is kept as a new file when its folder exists, so a task can create `seqs/pascal.py` next to the other files in `seqs/`.
-- A file the task's title or done check names joins the scope when its folder exists.
+- A file the task's title, roadmap detail or done check names joins the scope when its folder exists.
+  A roadmap item's detail is its section's text before the "Done when" line, at most 600 characters, so write `Add seqs/pascal.py ...` there and the file is in scope.
+- The project's top-level test folder (`tests`, `test`, `spec` or `__tests__`) joins every scope, never a path under an off-limits path.
 - A named path that matches no file and sits in no existing folder widens the scope to the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
 - When the device reported no file list for the project (an older agent, for example), the named scope paths are kept as given and never widened.
 
