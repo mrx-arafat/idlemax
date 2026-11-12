@@ -230,6 +230,32 @@ pub fn rate_limited(cost: CostClass, output: &str) -> bool {
 }
 
 pub(crate) fn line_rate_limited(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('{') {
+        if let Ok(serde_json::Value::Object(o)) = serde_json::from_str(trimmed) {
+            return json_limited(&o);
+        }
+    }
+    text_limited(line)
+}
+
+/// A JSON line, such as the result of `claude -p`, says a limit only when it is an error
+/// (`is_error`, an `error` field or `"type": "error"`), and only in its error text: its
+/// numbers (429 thinking tokens) and its answer (a pick about a rate limiter) never count.
+fn json_limited(o: &serde_json::Map<String, serde_json::Value>) -> bool {
+    let failed = o.get("is_error").and_then(serde_json::Value::as_bool) == Some(true)
+        || o.contains_key("error")
+        || o.get("type").and_then(serde_json::Value::as_str) == Some("error");
+    let text = ["result", "error", "message"]
+        .iter()
+        .filter_map(|k| o.get(*k))
+        .map(|v| v.as_str().map_or_else(|| v.to_string(), String::from))
+        .collect::<Vec<_>>()
+        .join("\n");
+    failed && text.lines().any(text_limited)
+}
+
+fn text_limited(line: &str) -> bool {
     let l = line.to_ascii_lowercase();
     LIMIT_PHRASES.iter().any(|p| l.contains(p))
         || (has_number(&l, "429") && HTTP_CONTEXT.iter().any(|w| l.contains(w)))

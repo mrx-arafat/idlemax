@@ -12,7 +12,7 @@ use idlemax_core::protocol::{
     name_problem, Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply, MAX_DEVICE_ID_CHARS,
 };
 use idlemax_core::scheduler::apply_update;
-use idlemax_core::types::{ControlScope, EventKind, Job, JobStatus, UnixMs};
+use idlemax_core::types::{is_dispatcher_job, ControlScope, EventKind, Job, JobStatus, UnixMs};
 use idlemax_core::worker::run::{after_job, Run, RunState};
 use idlemax_core::Config;
 use serde_json::{json, Value};
@@ -189,7 +189,10 @@ pub(super) fn on_job_update_with(
         .spec
         .ai_account
         .as_deref()
-        .filter(|_| update.rate_limited && job.spec.worker.is_none());
+        // A dispatcher job (the orchestrator pass, a check) never rests its account: its
+        // output is no limit signal for the workers (A9).
+        .filter(|_| update.rate_limited && job.spec.worker.is_none())
+        .filter(|_| !is_dispatcher_job(&job.spec));
     let mut events = Vec::new();
     if let Some(account) = old_hit {
         events.push(NewEvent {

@@ -18,7 +18,7 @@ use super::budget::{Budget, BudgetBasis};
 use super::rules::duration;
 use super::{window_minutes, AccountConfig, QuotaView, WindowState};
 use crate::quota::owner_use::utc_day_slot;
-use crate::types::UnixMs;
+use crate::types::{QuotaWindowKind, UnixMs};
 
 #[cfg(test)]
 mod tests;
@@ -71,7 +71,10 @@ pub fn offers(budgets: &[Budget]) -> Vec<&Budget> {
     idle.into_iter().chain(busy).collect()
 }
 
-/// Until when a limit hit at `hit_ms` rests the account; None when it rests no longer.
+/// Until when a limit hit at `hit_ms` rests the account; None when it rests no longer. The
+/// limit is in the windows a reading shows used up, and they rest it until their reset;
+/// with none used up it is the shortest window the account has (the 5-hour one for Claude,
+/// even before it has a reading), never the weekly one by default.
 pub fn limit_rest_until(
     account: &AccountConfig,
     windows: &[QuotaView],
@@ -81,42 +84,35 @@ pub fn limit_rest_until(
     if account.daily_cap_runs.is_some() {
         return Some(utc_day_slot(hit_ms).end_ms).filter(|u| *u > now_ms);
     }
-    let len = |v: &QuotaView| {
-        v.window
-            .map_or(0, |w| i64::from(window_minutes(w)) * MINUTE_MS)
+    let len = |k: QuotaWindowKind| i64::from(window_minutes(k)) * MINUTE_MS;
+    // The window's reset when the hit falls inside its current cycle.
+    let reset_of = |v: &QuotaView| {
+        let r = v.resets_at_ms?;
+        let k = v.window?;
+        (hit_ms > r - len(k) && hit_ms <= r).then_some(r)
     };
-    let known: Vec<&QuotaView> = windows
+    let used_up = windows
         .iter()
-        .filter(|v| v.resets_at_ms.is_some())
-        .collect();
-    let until = if known.is_empty() {
-        let shortest = windows.iter().map(len).filter(|l| *l > 0).min();
-        hit_ms + shortest.unwrap_or(NO_WINDOW_REST_MINUTES * MINUTE_MS)
-    } else {
-        let running: Vec<&QuotaView> = known
-            .into_iter()
-            .filter(|v| {
-                v.resets_at_ms
-                    .is_some_and(|r| hit_ms > r - len(v) && hit_ms <= r)
-            })
-            .collect();
-        let used_up: Vec<&QuotaView> = running
-            .iter()
-            .copied()
-            .filter(|v| v.state == WindowState::Active)
-            .filter(|v| v.used_pct.is_some_and(|u| u >= LIMIT_USED_UP_PCT))
-            .collect();
-        let chosen = if used_up.is_empty() {
-            running
-                .iter()
-                .copied()
-                .min_by_key(|v| len(v))
-                .into_iter()
-                .collect()
-        } else {
-            used_up
-        };
-        chosen.iter().filter_map(|v| v.resets_at_ms).max()?
+        .filter(|v| v.state == WindowState::Active)
+        .filter(|v| v.used_pct.is_some_and(|u| u >= LIMIT_USED_UP_PCT))
+        .filter_map(reset_of)
+        .max();
+    let until = match used_up {
+        Some(r) => r,
+        None => {
+            let kinds = account.effective_windows().into_iter().map(|c| c.kind);
+            let shortest = kinds
+                .chain(windows.iter().filter_map(|v| v.window))
+                .min_by_key(|k| window_minutes(*k));
+            match shortest {
+                Some(k) => windows
+                    .iter()
+                    .filter(|v| v.window == Some(k))
+                    .find_map(reset_of)
+                    .unwrap_or(hit_ms + len(k)),
+                None => hit_ms + NO_WINDOW_REST_MINUTES * MINUTE_MS,
+            }
+        }
     };
     (until > now_ms).then_some(until)
 }

@@ -99,6 +99,13 @@ fn a_limit_rests_the_account_until_the_used_up_window_resets() {
         limit_rest_until(&claude, &[], NOW, NOW),
         Some(NOW + 300 * 60_000)
     );
+    // Live: only a weekly reading at 51% (the 5-hour window had not started). A limit with no
+    // window used up is the 5-hour one, so the rest ends 5 hours on, not at the weekly reset.
+    let half_week = [week(51.0, 80 * HOUR)];
+    assert_eq!(
+        limit_rest_until(&claude, &half_week, NOW, NOW),
+        Some(NOW + 5 * HOUR)
+    );
     let old_hit = NOW + 30 * HOUR - 7 * 24 * HOUR - HOUR; // before the weekly cycle began
     assert_eq!(limit_rest_until(&claude, &full_five, old_hit, NOW), None);
     assert_eq!(

@@ -178,4 +178,13 @@ fn a_worker_end_text_is_a_limit_by_either_phrase_list_or_an_http_429() {
     use crate::types::CostClass;
     assert!(!rate_limited(CostClass::Ai, "session limit"));
     assert!(rate_limited(CostClass::Ai, "usage limit"));
+
+    // The live false hit: a `claude -p` result line with "is_error":false and 429 thinking
+    // tokens; and a pick reason that only mentions a rate limiter.
+    let ok = r#"{"type":"result","subtype":"success","is_error":false,"result":"done","usage":{"output_tokens_details":{"thinking_tokens":429}},"structured_output":{"picks":[{"reason":"fix the rate limit middleware"}]}}"#;
+    assert!(!rate_limited(CostClass::Ai, ok));
+    let hit = r#"{"type":"result","subtype":"success","is_error":true,"result":"Claude AI usage limit reached|1794520000"}"#;
+    assert!(rate_limited(CostClass::Ai, hit));
+    let api = r#"{"type":"result","is_error":true,"result":"API Error: 429 {\"type\":\"rate_limit_error\"}"}"#;
+    assert!(rate_limited(CostClass::Ai, api));
 }

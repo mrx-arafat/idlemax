@@ -1212,3 +1212,30 @@ async fn a_heartbeat_gets_each_notice_once_and_only_when_it_asks() {
     assert!(beat(Some(stored.id)).await.is_empty());
     assert!(beat(None).await.is_empty());
 }
+
+#[test]
+fn the_orchestrator_pass_never_rests_its_account() {
+    const T0: i64 = 1_800_000_000_000;
+    let mut store = Store::open_in_memory().unwrap();
+    let spec = JobSpec {
+        name: "dispatch-orchestrator-pass".into(),
+        command: vec!["claude".into()],
+        cost: CostClass::Ai,
+        ai_account: Some("max".into()),
+        admission: idlemax_core::types::Admission::Lines,
+        ..JobSpec::default()
+    };
+    let job = store.insert_job(&spec, T0).unwrap();
+    store.lease_job(job.id, "mac", T0 + 600_000, T0).unwrap();
+    let update = JobUpdate {
+        seq: 1,
+        id: job.id,
+        device: "mac".into(),
+        status: JobStatus::Succeeded,
+        rate_limited: true,
+        at_ms: T0 + 1_000,
+        ..JobUpdate::default()
+    };
+    on_job_update(&mut store, &update, T0 + 2_000).unwrap();
+    assert_eq!(store.limit_hits(0).unwrap(), vec![]);
+}
