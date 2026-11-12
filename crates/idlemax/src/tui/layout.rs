@@ -224,3 +224,26 @@ fn shrink(keep: &[usize], natural: &[usize], flex: &[usize], avail: usize) -> Ve
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::app::Tab;
+
+    /// The tab line as the widget draws it: one space of padding each side, one divider.
+    fn drawn(titles: &[String]) -> usize {
+        titles.iter().map(|t| text_width(t) + 2).sum::<usize>() + titles.len() - 1
+    }
+
+    #[test]
+    fn seven_tab_titles_fit_80_cells_and_keep_their_counts_at_120() {
+        let tabs: Vec<(&str, usize)> = Tab::ALL.iter().map(|t| (t.title(), 99)).collect();
+        let narrow = tab_titles(&tabs, 80);
+        assert_eq!(narrow.len(), 7);
+        assert!(drawn(&narrow) <= 80, "{narrow:?}");
+        assert_eq!(narrow[6], "7 Dispatch");
+        let wide = tab_titles(&tabs, 120);
+        assert!(drawn(&wide) <= 120, "{wide:?}");
+        assert_eq!(wide[6], "7 Dispatch (99)");
+    }
+}

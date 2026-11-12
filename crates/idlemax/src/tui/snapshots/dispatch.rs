@@ -1,5 +1,6 @@
 //! Tests: the Dispatch tab's screens: every pane, the stop question, the limit input, a
-//! read-only limit row and a refusal from the caller lock.
+//! read-only limit row and a refusal from the caller lock, at 80x24, and the workers and
+//! review panes at 120x40.
 
 use ratatui::crossterm::event::KeyCode;
 use serde_json::{json, Value};
@@ -98,4 +99,21 @@ the dashboard or the TUI";
     app.apply(Update::Failed(refusal.into()), NOW);
     shot("a refusal from the caller lock", &mut app);
     check("dispatch-80x24", &out);
+}
+
+#[test]
+fn the_workers_and_review_panes_fit_120x40() {
+    let mut out = String::new();
+    let mut app = app_with(dispatch(), Tab::Dispatch);
+    for _ in 0..8 {
+        let title = app.pane.title();
+        if matches!(title, "workers" | "review") {
+            out.push_str(&format!(
+                "##### {title} 120x40\n{}\n",
+                screen(&mut app, 120, 40)
+            ));
+        }
+        press(&mut app, 'v');
+    }
+    check("dispatch-120x40", &out);
 }

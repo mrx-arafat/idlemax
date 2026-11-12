@@ -1,0 +1,82 @@
+##### workers 120x40
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work | jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed
+advice: 1 open
+ 1 Devices (3) │ 2 Jobs (6) │ 3 Quota (3) │ 4 Advice (2) │ 5 Events (4) │ 6 Schedules (3) │ 7 Dispatch (2)
+┌ 1/8 workers | mode propose | mac run ────────────────────────────────────────────────────────────────────────────────┐
+│  STATE           PROJECT  TASK              MODEL   AGE        SUMMARY                                               │
+│> working         app      roadmap:1:task-1  sonnet  31m ago    Add dark mode on claude sonnet                        │
+│  stopped by you  app      roadmap:1:task-2  sonnet  1h00m ago  Speed up the build, saved at turn 4                   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ details ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│working: Add dark mode on claude sonnet                                                                               │
+│why: first roadmap item; the check is focused                                                                         │
+│claude max sonnet | idlemax/task-1                                                                                    │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume all  v pane  m mode  g start  x stop workers  s stop-all  tab/1-7 switch  q quit
+##### review 120x40
+idlemax http://127.0.0.1:7878   running   updated 2s ago
+global: running | paused accounts: claude-work | jobs: 1 running, 1 paused, 1 queued, 1 parked, 1 failed
+advice: 1 open
+ 1 Devices (3) │ 2 Jobs (6) │ 3 Quota (3) │ 4 Advice (2) │ 5 Events (4) │ 6 Schedules (3) │ 7 Dispatch (2)
+┌ 4/8 review | mode propose | mac run ─────────────────────────────────────────────────────────────────────────────────┐
+│  STATE             PROJECT  TASK              MODEL   AGE        SUMMARY                                             │
+│> ready for review  app      roadmap:1:task-3  sonnet  2h00m ago  Fix the login test: checks passed                   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ details ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ready for review: Fix the login test: checks passed                                                                   │
+│why: first roadmap item; the check is focused                                                                         │
+│claude max sonnet | idlemax/task-3                                                                                    │
+│k keeps, M merges, D discards (each asks first); or idlemax review keep|discard 3                                     │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+p/r pause/resume all  v pane  k keep  M merge  D discard  x stop workers  s stop-all  tab/1-7 switch  q quit
