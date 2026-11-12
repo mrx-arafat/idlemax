@@ -197,7 +197,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 |------|--------|-----------------|
 | 1 | Click the toggle of the project that is off, then confirm | The toggle shows on and a toast names the project |
 | 2 | Click the same toggle again | It shows off with no dialog |
-| 3 | Read the device area | No device toggle is shown, because the device's `enabled` is not set before Spec 5 |
+| 3 | Read the device area | A toggle for each device whose `enabled` is set, showing its switch (`mac` on, as the fixture stores it); before Spec 5 sets `enabled` no device toggle is shown |
 
 ### TS-004: Change a limit
 **Priority:** High

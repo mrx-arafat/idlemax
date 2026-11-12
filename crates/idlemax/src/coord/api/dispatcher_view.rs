@@ -117,7 +117,6 @@ mod tests {
     async fn the_view_needs_the_token_and_shows_the_seeded_runs_and_projects() {
         let mut store = Store::open_in_memory().unwrap();
         store.load_sql(DEMO).unwrap();
-        store.set_device_dispatch("mac", true, 0).unwrap();
         let api = Api::start_with_store(store, Config::default()).await;
         assert_eq!(
             api.get_anon("/v1/dispatcher").await.status(),

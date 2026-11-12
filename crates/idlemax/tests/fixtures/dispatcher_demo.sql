@@ -1,13 +1,14 @@
 -- Seed rows for the dispatcher view: the route test, the browser scenarios and the
--- screenshots of dispatcher Spec 4. One device that went offline two hours ago, two projects
+-- screenshots of dispatcher Spec 4. One device that went offline two hours ago and that the
+-- owner switched on for the dispatcher (every device starts off, Spec 5), two projects
 -- (app on, site off), four runs with a job each, a rejected run with an open rule proposal,
 -- and a roadmap item of app that says it needs the owner. Times are relative to the load and
 -- every lease expiry lies a day ahead, so no sweep touches a seeded job. Load it into a store
 -- that the coordinator created.
 
-INSERT INTO devices (id, info, first_seen_ms, last_seen_ms) VALUES
+INSERT INTO devices (id, info, first_seen_ms, last_seen_ms, dispatch_on) VALUES
   ('mac', '{"id":"mac","hostname":"mac"}',
-   strftime('%s','now') * 1000 - 86400000, strftime('%s','now') * 1000 - 7200000);
+   strftime('%s','now') * 1000 - 86400000, strftime('%s','now') * 1000 - 7200000, 1);
 
 INSERT INTO projects (id, device, name, path, enabled, settings, source, created_ms) VALUES
   (1, 'mac', 'app', '/srv/app', 1,
