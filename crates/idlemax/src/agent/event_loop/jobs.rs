@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use idlemax_core::dispatch::room::lines_verdict;
 use idlemax_core::protocol::AgentCommand;
 use idlemax_core::reconcile::{AgentAction, TickInput};
 use idlemax_core::types::{ControlAction, Job};
@@ -51,6 +52,7 @@ impl Agent {
             local_controls: local,
             assign,
             shutting_down: self.stopping,
+            lines: &lines_verdict(Some(&self.room), self.room.at_ms),
         };
         let actions = self.state.plan(&input);
         if actions.is_empty() {

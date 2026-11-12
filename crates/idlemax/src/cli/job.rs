@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
 use idlemax_core::job_draft::{DraftError, JobDraft};
-use idlemax_core::types::{CostClass, Job, JobSpec, JobStatus};
+use idlemax_core::types::{is_dispatcher_job, CostClass, Job, JobSpec, JobStatus};
 use idlemax_core::Paths;
 
 use super::out::{hints, printable, views};
@@ -227,15 +227,24 @@ pub(super) fn parse_file_spec(text: &str, origin: &str) -> Result<JobSpec> {
         #[serde(rename = "every")]
         _every: Option<toml::Value>,
     }
-    toml::from_str::<FileSpec>(text)
+    let spec = toml::from_str::<FileSpec>(text)
         .map(|file| file.spec)
-        .map_err(|e| {
+        .map_err(|e| -> anyhow::Error {
             CliError::usage(
                 format!("parsing {origin}: {e}"),
                 "fix the spec key or value; memory is `mem_mb`, runtime is `max_runtime_secs`",
             )
             .into()
-        })
+        })?;
+    // The key is known since the field exists, so it is refused here by name.
+    if is_dispatcher_job(&spec) {
+        return Err(CliError::usage(
+            format!("{origin}: admission is set by the dispatcher only; remove the key"),
+            "remove `admission` from the spec file",
+        )
+        .into());
+    }
+    Ok(spec)
 }
 
 /// Says the coordinator has the job and what to run next. Stdout carries it unless the

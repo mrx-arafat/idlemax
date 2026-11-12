@@ -448,3 +448,107 @@ fn a_result_that_arrives_after_the_lease_expired_counts_if_the_job_has_not_run_a
         assert_eq!(got, want, "{name}");
     }
 }
+
+fn dispatcher(id: JobId) -> Job {
+    let mut j = job(id, 0, CostClass::CpuHeavy, 512);
+    j.spec.admission = crate::types::Admission::Lines;
+    j
+}
+
+fn lines(slots: u32) -> GuardDecision {
+    let room = crate::dispatch::room::RoomDecision {
+        state: crate::dispatch::room::LineState::Run,
+        open_slots: slots,
+        ..Default::default()
+    };
+    crate::dispatch::room::lines_verdict(Some(&room), 1_000)
+}
+
+#[test]
+fn pick_never_leases_a_dispatcher_job_and_ignores_it_for_plain_ones() {
+    let device = DeviceInfo {
+        id: "mac".into(),
+        ..Default::default()
+    };
+    let guard = GuardDecision {
+        action: GuardAction::Run {
+            slots: 2,
+            mem_mib: 1024,
+        },
+        ..Default::default()
+    };
+    let ctx = SchedContext {
+        now_ms: 1_000,
+        device: &device,
+        guard: &guard,
+        running: &[],
+        quota: &[],
+        paused: false,
+        paused_accounts: &[],
+    };
+    let plain = vec![
+        job(1, 0, CostClass::CpuLight, 512),
+        job(2, 0, CostClass::Io, 512),
+    ];
+    let mut mixed = plain.clone();
+    mixed.push(dispatcher(3));
+    mixed.push(active(dispatcher(4), JobStatus::Leased, "mac"));
+    assert_eq!(pick(&ctx, &mixed), pick(&ctx, &plain));
+    assert_eq!(pick(&ctx, &mixed), [1, 2]);
+}
+
+#[test]
+fn pick_lines_follows_the_room_not_the_owner() {
+    let device = DeviceInfo {
+        id: "mac".into(),
+        ai_accounts: vec!["claude-max".into()],
+        ..Default::default()
+    };
+    let guard = GuardDecision {
+        action: GuardAction::Pause,
+        user_active: true,
+        ..Default::default()
+    };
+    let ctx = SchedContext {
+        now_ms: 1_000,
+        device: &device,
+        guard: &guard,
+        running: &[],
+        quota: &[],
+        paused: false,
+        paused_accounts: &[],
+    };
+    let queued = vec![job(1, 9, CostClass::CpuLight, 64), dispatcher(2)];
+    assert_eq!(pick_lines(&ctx, &lines(1), &queued), Some(2));
+    assert_eq!(pick_lines(&ctx, &lines(0), &queued), None);
+    let hold = crate::dispatch::room::lines_verdict(None, 1_000);
+    assert_eq!(pick_lines(&ctx, &hold, &queued), None);
+    let paused = SchedContext {
+        paused: true,
+        ..ctx
+    };
+    assert_eq!(pick_lines(&paused, &lines(1), &queued), None);
+    let mut busy = queued.clone();
+    busy.push(active(dispatcher(3), JobStatus::Leased, "mac"));
+    assert_eq!(pick_lines(&ctx, &lines(1), &busy), None);
+
+    // The account rule, not quota headroom, admits a dispatcher AI job; a pause still holds it.
+    let mut pass = dispatcher(5);
+    pass.spec.cost = CostClass::Ai;
+    pass.spec.ai_account = Some("claude-max".into());
+    let quota = spendable(false);
+    let ctx = SchedContext {
+        quota: &quota,
+        ..ctx
+    };
+    assert_eq!(
+        pick_lines(&ctx, &lines(1), std::slice::from_ref(&pass)),
+        Some(5)
+    );
+    let accounts = ["claude-max".to_string()];
+    let ctx = SchedContext {
+        paused_accounts: &accounts,
+        ..ctx
+    };
+    assert_eq!(pick_lines(&ctx, &lines(1), &[pass]), None);
+}

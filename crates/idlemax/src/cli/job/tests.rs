@@ -35,6 +35,15 @@ fn file_specs_reject_misspelled_resource_limits() {
 }
 
 #[test]
+fn admission_is_refused_in_a_spec_file() {
+    let text = "name = 'x'\ncommand = ['/bin/echo']\nadmission = 'lines'\n";
+    let err = parse_file_spec(text, "spec.toml").unwrap_err();
+    let error = err.downcast_ref::<CliError>().expect("usage error");
+    assert_eq!(error.code, 2);
+    assert!(error.what.contains("dispatcher only"), "{error}");
+}
+
+#[test]
 fn flags_a_spec_file_and_stdin_are_three_ways_to_say_the_same_thing() {
     let flags = parse(&[
         "--name",

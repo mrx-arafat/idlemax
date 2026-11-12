@@ -70,8 +70,19 @@ fn input<'a>(guard: &'a GuardDecision) -> TickInput<'a> {
         local_controls: &[],
         assign: &[],
         shutting_down: false,
+        lines: &NO_ROOM,
     }
 }
+
+/// The lines of an agent that reports no worker room: dispatcher jobs hold.
+static NO_ROOM: GuardDecision = GuardDecision {
+    memory_limit: None,
+    action: GuardAction::Hold,
+    resource_action: GuardAction::Hold,
+    user_active: false,
+    reasons: Vec::new(),
+    at_ms: 0,
+};
 
 /// Plans one tick and applies every action as successful at `now_ms`.
 fn tick(state: &mut AgentState, input: &TickInput<'_>, now_ms: UnixMs) -> Vec<AgentAction> {
@@ -297,4 +308,61 @@ fn updates_carry_the_attempt_they_belong_to() {
     assert_eq!((refused.status, refused.attempt), (JobStatus::Failed, 2));
     // The agent could not start it, which says nothing about the job.
     assert!(refused.retryable);
+}
+
+fn dispatcher(id: JobId) -> Job {
+    let mut j = job(id, 512, ActivePolicy::Continue);
+    j.spec.admission = crate::types::Admission::Lines;
+    j
+}
+
+fn lines(state: crate::dispatch::room::LineState, slots: u32) -> GuardDecision {
+    let room = crate::dispatch::room::RoomDecision {
+        state,
+        reason: format!("{}: test", state.as_str()),
+        open_slots: slots,
+        at_ms: 100,
+    };
+    crate::dispatch::room::lines_verdict(Some(&room), 100)
+}
+
+#[test]
+fn dispatcher_jobs_follow_the_lines_while_plain_jobs_follow_the_guard() {
+    use crate::dispatch::room::LineState;
+    let owner_typing = verdict(GuardAction::Pause, true, GuardAction::Pause);
+    let run = lines(LineState::Run, 2);
+    let mut state = AgentState::default();
+    let actions = tick(
+        &mut state,
+        &TickInput {
+            assign: &[job(1, 64, ActivePolicy::Pause), dispatcher(2)],
+            lines: &run,
+            ..input(&owner_typing)
+        },
+        100,
+    );
+    assert!(matches!(&actions[0], AgentAction::Return { id: 1, .. }));
+    assert!(matches!(&actions[1], AgentAction::Start(j) if j.id == 2));
+
+    let paused = state.plan(&TickInput {
+        kill_switch: true,
+        assign: &[dispatcher(3)],
+        lines: &run,
+        ..input(&owner_typing)
+    });
+    assert!(paused.contains(&AgentAction::Pause(2)));
+    assert!(matches!(
+        paused.last(),
+        Some(AgentAction::Return { id: 3, .. })
+    ));
+
+    let shed = lines(LineState::Shed, 0);
+    let killed = state.plan(&TickInput {
+        lines: &shed,
+        ..input(&owner_typing)
+    });
+    assert!(matches!(
+        &killed[0],
+        AgentAction::Kill { id: 2, order } if order.retryable && order.reason.starts_with("lines:")
+    ));
 }

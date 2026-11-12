@@ -163,6 +163,13 @@ A device is offline after `coordinator.offline_after_secs` (default 90 s) withou
 A heartbeat is refused with 400 when the device id (128 characters), host name (253) or a capability or AI account entry (128 characters, 64 entries) has a control character or is over its limit.
 The coordinator keeps at most 256 devices: a heartbeat from a new one over that is 409, and a device silent for 30 days is forgotten.
 
+`JobSpec.admission` is `guard` (the default, and absent on the wire) or `lines`.
+Only the coordinator sets `lines`, on the dispatcher's own jobs (its orchestrator pass, a project's setup and check commands): `POST /v1/jobs`, schedules and advice accept refuse it with 400, and `idlemax job add` refuses it in a spec file.
+A dispatcher job is admitted by the device's worker room (`devices[].room`) instead of the guard: it leases and starts while the room is `run` with an open slot, whatever user idle time or the memory pressure level say, holds on `hold`, and is killed (retryable) on `shed` or `emergency`.
+At most one dispatcher job is leased or running per device, it uses none of the guard's slots or RAM budget, and it skips only the quota-headroom check, because the dispatcher admits its account when it queues the job.
+A pause, the kill switch, `stop_all`, the command allowlist, retry backoff and the one-AI-lease rule apply to it as to any job.
+An agent that predates the field treats it as a plain job.
+
 ### Limits and retention
 
 The store is bounded so one token holder cannot grow it without limit:

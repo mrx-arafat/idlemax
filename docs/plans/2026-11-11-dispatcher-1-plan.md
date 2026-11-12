@@ -210,7 +210,7 @@ target/debug/idlemax init
 - [x] Task 3: Switch the mode with `idlemax mode` and read dispatcher settings live
 - [x] Task 4: Read memory used and swap-in on macOS and report the room
 - [x] Task 5: Send what each device knows about its repositories
-- [ ] Task 6: Admit the dispatcher's own jobs by the lines
+- [x] Task 6: Admit the dispatcher's own jobs by the lines
 - [ ] Task 7: Find tasks from the four sources
 - [ ] Task 8: Build the plan and show it with `idlemax plan`
 - [ ] Task 9: Run the orchestrator pass
@@ -748,13 +748,13 @@ Plain jobs keep the guard, and no operator path can ask for the new admission.
 
 **Definition of Done:**
 
-- [ ] `pick` never returns a dispatcher job, and its result for a queue of plain jobs is the same with and without such a job in the queue.
-- [ ] `pick_lines` returns the job when the guard verdict is `Pause` with `user_active` true and the room is `run` with one open slot; it returns `None` when the room is `hold`, when the room is `run` with no open slot, when the device is paused, and when another dispatcher job is leased to the device.
-- [ ] A dispatcher AI job on an account whose `QuotaView.spendable` is false is still picked, and one whose account is paused is not.
-- [ ] In the agent tick, with the guard at `Pause` and the lines at `run`, a dispatcher lease starts and a plain lease is returned; with the kill switch on, neither starts and a running dispatcher job is paused; with the lines at `shed`, the running one is killed with `retryable` true.
-- [ ] `admit_job` refuses a spec with `admission = "lines"`, the coordinator test `admission_lines_is_refused_from_the_api` gets 400 from `POST /v1/jobs` with it, and the CLI test `admission_is_refused_in_a_spec_file` gets the usage error from `parse_file_spec` for a TOML file with `admission = "lines"`.
-- [ ] `explain` for a queued dispatcher job on a device whose room is `hold` gives a reason that starts with `lines:`.
-- [ ] Verify: `cargo test -p idlemax-core scheduler`, `cargo test -p idlemax-core reconcile`, `cargo test -p idlemax-core explain`, `cargo test -p idlemax-core capacity`, `cargo test -p idlemax-core control`, `cargo test -p idlemax --bin idlemax admission`, `cargo test -p idlemax --test e2e`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `pick` never returns a dispatcher job, and its result for a queue of plain jobs is the same with and without such a job in the queue.
+- [x] `pick_lines` returns the job when the guard verdict is `Pause` with `user_active` true and the room is `run` with one open slot; it returns `None` when the room is `hold`, when the room is `run` with no open slot, when the device is paused, and when another dispatcher job is leased to the device.
+- [x] A dispatcher AI job on an account whose `QuotaView.spendable` is false is still picked, and one whose account is paused is not.
+- [x] In the agent tick, with the guard at `Pause` and the lines at `run`, a dispatcher lease starts and a plain lease is returned; with the kill switch on, neither starts and a running dispatcher job is paused; with the lines at `shed`, the running one is killed with `retryable` true.
+- [x] `admit_job` refuses a spec with `admission = "lines"`, the coordinator test `admission_lines_is_refused_from_the_api` gets 400 from `POST /v1/jobs` with it, and the CLI test `admission_is_refused_in_a_spec_file` gets the usage error from `parse_file_spec` for a TOML file with `admission = "lines"`.
+- [x] `explain` for a queued dispatcher job on a device whose room is `hold` gives a reason that starts with `lines:`.
+- [x] Verify: `cargo test -p idlemax-core scheduler`, `cargo test -p idlemax-core reconcile`, `cargo test -p idlemax-core explain`, `cargo test -p idlemax-core capacity`, `cargo test -p idlemax-core control`, `cargo test -p idlemax --bin idlemax admission`, `cargo test -p idlemax --test e2e`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 7: Find tasks from the four sources
 

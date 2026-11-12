@@ -683,6 +683,8 @@ After a pause or kill, jobs resume only after 2 clear samples.
 The profile defaults to `macos_laptop` on macOS and `linux_server` elsewhere.
 A server never takes `cpu_heavy` or `ai` jobs.
 Each job sets `on_user_active`: `pause` (default), `continue` (only machine-health checks apply) or `kill`.
+The dispatcher's own jobs (its orchestrator pass and a project's setup and check commands) follow the worker lines instead of the idle-user and memory-pressure rules, so they can run while you work.
+The kill switch, every pause and `stop-all` still stop them, and no job you add can ask for that admission.
 
 **How heavy is it?**
 Measured over 10 minutes on one Apple Silicon Mac, idle, with no jobs: the coordinator and the agent each used about 0% CPU and 16 to 18 MB of memory (mean RSS; peaks of about 20 and 22 MB).

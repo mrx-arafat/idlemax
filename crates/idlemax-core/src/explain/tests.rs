@@ -566,3 +566,21 @@ fn the_headline_is_what_holds_everywhere_else_the_reason_of_the_device_closest_t
     // Nothing holds a job that is ready.
     assert_eq!(headline(&World::new(queued(4))), (None, 0));
 }
+
+#[test]
+fn a_dispatcher_job_is_explained_by_the_lines_not_the_guard() {
+    use crate::dispatch::room::{LineState, RoomDecision};
+    let mut job = queued(1);
+    job.spec.admission = crate::types::Admission::Lines;
+    let mut w = World::new(job);
+    w.devices[0].room = Some(RoomDecision {
+        state: LineState::Hold,
+        reason: "hold: memory 91% used (hold at 90%)".into(),
+        open_slots: 0,
+        at_ms: NOW,
+    });
+    let e = w.explain();
+    let guard = find(&e.devices[0].reasons, ReasonKind::Guard);
+    assert!(guard.message.starts_with("lines:"), "{guard:?}");
+    assert!(guard.fix.is_some(), "{guard:?}");
+}

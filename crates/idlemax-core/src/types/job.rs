@@ -16,6 +16,29 @@ pub enum ActivePolicy {
     Kill,
 }
 
+/// How a job is admitted to start on a device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Admission {
+    /// The guard decides: idle user, memory pressure, slots and RAM budget.
+    #[default]
+    Guard,
+    /// The dispatcher's own jobs: the worker lines of D14 decide (A16). Only the
+    /// coordinator sets it.
+    Lines,
+}
+
+impl Admission {
+    pub fn is_guard(&self) -> bool {
+        *self == Admission::Guard
+    }
+}
+
+/// True for a job the dispatcher created: its orchestrator pass, setup and check jobs.
+pub fn is_dispatcher_job(spec: &JobSpec) -> bool {
+    spec.admission == Admission::Lines
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CostClass {
@@ -68,6 +91,10 @@ pub struct JobSpec {
     pub token_class: Option<TokenClass>,
     pub on_user_active: ActivePolicy,
     pub max_attempts: u32,
+    /// Absent on the wire for a plain job, so an agent that predates it treats every job as
+    /// a plain one, which is the safe side.
+    #[serde(skip_serializing_if = "Admission::is_guard")]
+    pub admission: Admission,
 }
 
 impl Default for JobSpec {
@@ -89,6 +116,7 @@ impl Default for JobSpec {
             token_class: None,
             on_user_active: ActivePolicy::default(),
             max_attempts: DEFAULT_MAX_ATTEMPTS,
+            admission: Admission::Guard,
         }
     }
 }

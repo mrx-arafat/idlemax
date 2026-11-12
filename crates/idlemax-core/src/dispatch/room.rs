@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::{DispatcherConfig, GuardPolicy};
-use crate::types::{MetricsSnapshot, UnixMs};
+use crate::types::{GuardAction, GuardDecision, MetricsSnapshot, UnixMs};
 
 #[cfg(test)]
 mod tests;
@@ -61,6 +61,42 @@ impl RoomDecision {
             open_slots: 0,
             at_ms,
         }
+    }
+}
+
+/// The room in the guard's words, for the dispatcher's own jobs (A16): `run` with an open slot
+/// allows one job; `run` without one and `hold` start nothing; `shed` and `emergency` kill.
+/// No room is `hold`.
+pub fn lines_verdict(room: Option<&RoomDecision>, at_ms: UnixMs) -> GuardDecision {
+    let (action, reason) = match room {
+        None => (
+            GuardAction::Hold,
+            "hold: this agent reports no worker room".to_string(),
+        ),
+        Some(r) => {
+            let action = match r.state {
+                LineState::Run if r.open_slots > 0 => GuardAction::Run {
+                    slots: 1,
+                    mem_mib: u64::MAX,
+                },
+                LineState::Run | LineState::Hold => GuardAction::Hold,
+                LineState::Shed | LineState::Emergency => GuardAction::Kill,
+            };
+            let reason = if r.state == LineState::Run && r.open_slots == 0 {
+                format!("hold: no open worker slot ({})", r.reason)
+            } else {
+                r.reason.clone()
+            };
+            (action, reason)
+        }
+    };
+    GuardDecision {
+        memory_limit: None,
+        action,
+        resource_action: action,
+        user_active: false,
+        reasons: vec![format!("lines: {reason}")],
+        at_ms,
     }
 }
 

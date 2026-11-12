@@ -1125,3 +1125,16 @@ fn which_node() -> Result<std::path::PathBuf, ()> {
         .find(|p| p.is_file())
         .ok_or(())
 }
+
+#[tokio::test]
+async fn admission_lines_is_refused_from_the_api() {
+    let api = Api::start().await;
+    let spec = json!({"name": "sneaky", "command": ["/bin/echo"], "admission": "lines"});
+    let res = api.post("/v1/jobs", &spec).await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert!(
+        body["error"].as_str().unwrap().contains("dispatcher only"),
+        "{body}"
+    );
+}

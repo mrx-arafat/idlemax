@@ -18,12 +18,12 @@ mod starts;
 pub use journal::{encode_ack, encode_update, replay, Replayed};
 pub use outbox::Outbox;
 
-use self::starts::{guard_reason, start_blocker};
+use self::starts::{hard_blocker, verdict_reason};
 
 use crate::protocol::{AgentCommand, JobUpdate};
 use crate::types::{
-    ActivePolicy, ControlAction, DeviceId, GuardAction, GuardDecision, Job, JobId, JobStatus,
-    UnixMs,
+    ActivePolicy, Admission, ControlAction, DeviceId, GuardAction, GuardDecision, Job, JobId,
+    JobStatus, UnixMs,
 };
 
 /// Why a job is held paused. It runs only while no hold is set.
@@ -49,6 +49,7 @@ pub struct TrackedJob {
     pub name: String,
     pub mem_mb: u64,
     pub on_user_active: ActivePolicy,
+    pub admission: Admission,
     pub started_ms: UnixMs,
     /// SIGSTOPped right now.
     pub paused: bool,
@@ -129,6 +130,9 @@ pub struct TickInput<'a> {
     /// The agent is exiting: kill everything, start nothing. Not an owner stop, so the
     /// coordinator retries the jobs after a restart.
     pub shutting_down: bool,
+    /// The worker lines in the guard's words (`lines_verdict`): dispatcher jobs follow
+    /// these instead of the guard (A16).
+    pub lines: &'a GuardDecision,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -174,11 +178,15 @@ impl AgentState {
         let local = input.kill_switch || self.local_paused;
         for job in self.jobs.values_mut() {
             job.holds.local = local;
-            match job_verdict(input.guard, job.on_user_active) {
+            let (action, why) = match job.admission {
+                Admission::Guard => (job_verdict(input.guard, job.on_user_active), input.guard),
+                Admission::Lines => (input.lines.action, input.lines),
+            };
+            match action {
                 GuardAction::Kill => {
                     kills
                         .entry(job.id)
-                        .or_insert_with(|| KillOrder::retryable(guard_reason(input.guard)));
+                        .or_insert_with(|| KillOrder::retryable(verdict_reason(why)));
                 }
                 GuardAction::Pause => job.holds.guard = true,
                 GuardAction::Run { .. } => job.holds.guard = false,
@@ -195,8 +203,8 @@ impl AgentState {
                 actions.push(AgentAction::Resume(job.id));
             }
         }
-        let blocked = start_blocker(input, local, stop_all);
-        actions.extend(self.plan_starts(input, blocked));
+        let hard = hard_blocker(input, local, stop_all);
+        actions.extend(self.plan_starts(input, hard));
         actions
     }
 
@@ -306,6 +314,7 @@ fn tracked(job: &Job, now_ms: UnixMs) -> TrackedJob {
         name: job.spec.name.clone(),
         mem_mb: job.spec.mem_mb,
         on_user_active: job.spec.on_user_active,
+        admission: job.spec.admission,
         started_ms: now_ms,
         paused: false,
         holds: Holds::default(),

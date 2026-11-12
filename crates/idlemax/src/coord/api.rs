@@ -171,7 +171,8 @@ impl From<ControlError> for ApiFailure {
             | ControlError::NotLocal
             | ControlError::InvalidJob(_)
             | ControlError::InvalidDevice(_)
-            | ControlError::UnknownAccount(_) => ApiFailure::BadRequest(e.to_string()),
+            | ControlError::UnknownAccount(_)
+            | ControlError::DispatcherOnly => ApiFailure::BadRequest(e.to_string()),
         }
     }
 }

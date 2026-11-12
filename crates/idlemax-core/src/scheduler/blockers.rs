@@ -175,7 +175,8 @@ pub fn job_blockers_in(
     }
     let headroom_pct = spendable_headroom(quota, account);
     let needs_pct = token_class_pct(job.spec.token_class);
-    if headroom_pct < needs_pct {
+    // The dispatcher admits its own account by the account rule when it queues the job.
+    if headroom_pct < needs_pct && !crate::types::is_dispatcher_job(&job.spec) {
         out.push(Blocker::QuotaShort {
             account: owned(),
             headroom_pct,

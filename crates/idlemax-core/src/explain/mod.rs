@@ -12,12 +12,13 @@ mod tests;
 use serde::{Deserialize, Serialize};
 
 use crate::control::{may_assign, paused_accounts};
+use crate::dispatch::room::lines_verdict;
 use crate::protocol::DeviceView;
 use crate::quota::QuotaView;
 use crate::scheduler::{self, SchedContext};
 use crate::types::{
-    ControlScope, DeviceId, DeviceInfo, GuardAction, GuardDecision, Job, JobId, JobSpec, JobStatus,
-    UnixMs,
+    is_dispatcher_job, ControlScope, DeviceId, DeviceInfo, GuardAction, GuardDecision, Job, JobId,
+    JobSpec, JobStatus, UnixMs,
 };
 
 pub(crate) use self::reasons::ineligible_causes;
@@ -223,7 +224,12 @@ fn explain_device(
         .filter_map(|b| blocker_reason(b, input, Some(&dv.info)))
         .collect();
     if dv.online {
-        let guard = guard_now(dv, visible);
+        let lines = is_dispatcher_job(&job.spec);
+        let guard = if lines {
+            lines_verdict(dv.room.as_ref(), input.now_ms)
+        } else {
+            guard_now(dv, visible)
+        };
         let ctx = SchedContext {
             now_ms: input.now_ms,
             device: &dv.info,
@@ -235,7 +241,10 @@ fn explain_device(
         };
         reasons.extend(online_reasons(input, visible, dv, &ctx));
         if reasons.is_empty() && !job_wide {
-            reasons.extend(reasons::queue_order(job, &scheduler::pick(&ctx, visible)));
+            reasons.extend(reasons::queue_order(
+                job,
+                &reasons::picked(&ctx, visible, lines),
+            ));
         }
     } else {
         reasons.insert(0, reasons::offline(dv, input.now_ms));

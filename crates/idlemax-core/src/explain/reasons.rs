@@ -4,7 +4,7 @@ use super::guard_text;
 use super::{ExplainInput, Reason, ReasonKind};
 use crate::control::in_scope;
 use crate::protocol::DeviceView;
-use crate::scheduler::Blocker;
+use crate::scheduler::{Blocker, SchedContext};
 use crate::types::{
     ControlScope, CostClass, DeviceInfo, DeviceProfile, GuardAction, GuardDecision, Job, JobId,
     UnixMs,
@@ -331,6 +331,17 @@ pub(super) fn ram_budget(need_mib: u64, left_mib: u64) -> Reason {
 }
 
 /// Eligible on this device, yet the scheduler would start `picked` first.
+/// What the scheduler would lease to the device now: the lines pick for a dispatcher job.
+pub(super) fn picked(ctx: &SchedContext<'_>, visible: &[Job], lines: bool) -> Vec<JobId> {
+    if lines {
+        crate::scheduler::pick_lines(ctx, ctx.guard, visible)
+            .into_iter()
+            .collect()
+    } else {
+        crate::scheduler::pick(ctx, visible)
+    }
+}
+
 pub(super) fn queue_order(job: &Job, picked: &[JobId]) -> Option<Reason> {
     if picked.contains(&job.id) {
         return None;

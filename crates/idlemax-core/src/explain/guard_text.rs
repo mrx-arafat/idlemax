@@ -233,6 +233,9 @@ fn split(raw: &str) -> (Option<&str>, &str) {
 }
 
 pub(super) fn reason(raw: &str) -> Reason {
+    if raw.starts_with("lines:") {
+        return lines_reason(raw);
+    }
     let (level, detail) = split(raw);
     let known = TABLE.iter().find(|(prefix, ..)| detail.starts_with(prefix));
     let kind = known.map_or(ReasonKind::Guard, |(_, kind, _)| *kind);
@@ -245,6 +248,14 @@ pub(super) fn reason(raw: &str) -> Reason {
         Some((.., fix)) => reason.fix(fix.text(level)),
         None => reason,
     }
+}
+
+/// A dispatcher job waits on the worker lines of D14, not on the guard.
+fn lines_reason(raw: &str) -> Reason {
+    Reason::new(ReasonKind::Guard, raw).fix(
+        "the dispatcher's worker lines hold it; `idlemax local status` shows the room, and the \
+         lines are the dispatcher.*_mem_used_pct and dispatcher.*_disk_free_mib settings",
+    )
 }
 
 /// A device marked locally paused whose guard verdict does not say so.

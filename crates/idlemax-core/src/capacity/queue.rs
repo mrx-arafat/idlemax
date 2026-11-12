@@ -10,7 +10,7 @@ use crate::explain::ineligible_causes;
 use crate::scheduler::{
     ai_leased_accounts, device_blockers, job_blockers_in, pick, Blocker, SchedContext,
 };
-use crate::types::{Job, JobStatus};
+use crate::types::{is_dispatcher_job, Job, JobStatus};
 
 /// What the device may still start.
 pub(super) struct Room {
@@ -56,7 +56,7 @@ impl<'a> Queue<'a> {
         let jobs = input
             .jobs
             .iter()
-            .filter(|j| j.status == JobStatus::Queued)
+            .filter(|j| j.status == JobStatus::Queued && !is_dispatcher_job(&j.spec))
             .map(|job| {
                 let wait =
                     job_blockers_in(input.now_ms, input.quota, &paused_accounts, &leased, job);

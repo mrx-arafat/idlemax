@@ -22,6 +22,6 @@ pub use blockers::{
     job_blockers_in, spendable_headroom, token_class_pct, Blocker, SchedContext,
 };
 pub use lease::{expire_leases, lease_deadline};
-pub use pick::{pick, start_budget};
+pub use pick::{pick, pick_lines, start_budget};
 pub use retry::{backoff_ms, retry_or_park, BACKOFF_BASE_MS, BACKOFF_MAX_MS};
 pub use update::apply_update;

@@ -7,11 +7,12 @@ use idlemax_core::advice::{is_ai_pass, AdvisorInputs};
 use idlemax_core::control::{
     came_online, is_held, may_assign, paused_accounts, reconcile_heartbeat, transition_event,
 };
+use idlemax_core::dispatch::room::lines_verdict;
 use idlemax_core::protocol::{
     name_problem, Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply, MAX_DEVICE_ID_CHARS,
 };
-use idlemax_core::scheduler::{apply_update, lease_deadline, pick, SchedContext};
-use idlemax_core::types::{ControlScope, EventKind, Job, JobStatus, UnixMs};
+use idlemax_core::scheduler::{apply_update, lease_deadline, pick, pick_lines, SchedContext};
+use idlemax_core::types::{ControlScope, EventKind, Job, JobId, JobStatus, UnixMs};
 use idlemax_core::Config;
 use serde_json::{json, Value};
 
@@ -190,26 +191,52 @@ fn assign_jobs(
         }
     }
     for id in pick(&ctx, &jobs) {
-        match store.lease_job(
-            id,
-            device,
-            lease_deadline(cfg.coordinator.lease_secs, now),
-            now,
-        ) {
-            Ok(Some(job)) => {
-                let msg = format!(
-                    "{} leased to {device} (attempt {})",
-                    job.spec.name, job.attempts
-                );
-                store.append_event(EventKind::JobLeased, Some(device), Some(id), &msg, now)?;
-                leased.push(job);
-            }
-            // No longer queued, or its account got leased meanwhile: skip, next heartbeat retries.
-            Ok(None) | Err(StoreError::AccountLeased(_)) => {}
-            Err(e) => return Err(e.into()),
-        }
+        leased.extend(lease_one(store, cfg, device, id, now)?);
     }
+    leased.extend(lease_lines(store, cfg, &ctx, hb, &jobs, now)?);
     Ok((leased, queued_work))
+}
+
+/// The dispatcher's own job, admitted by the device's worker lines and not by the guard, so
+/// it leases while the owner works (A16). It does not depend on the guard verdict at all.
+fn lease_lines(
+    store: &mut Store,
+    cfg: &Config,
+    ctx: &SchedContext<'_>,
+    hb: &Heartbeat,
+    jobs: &[Job],
+    now: UnixMs,
+) -> Result<Option<Job>, ApiFailure> {
+    let lines = lines_verdict(hb.room.as_ref(), now);
+    match pick_lines(ctx, &lines, jobs) {
+        Some(id) => lease_one(store, cfg, &hb.device.id, id, now),
+        None => Ok(None),
+    }
+}
+
+/// Leases one picked job and logs it; None when it is no longer queued or its account got
+/// leased meanwhile, and the next heartbeat retries.
+fn lease_one(
+    store: &mut Store,
+    cfg: &Config,
+    device: &str,
+    id: JobId,
+    now: UnixMs,
+) -> Result<Option<Job>, ApiFailure> {
+    let deadline = lease_deadline(cfg.coordinator.lease_secs, now);
+    match store.lease_job(id, device, deadline, now) {
+        Ok(Some(job)) => {
+            let msg = format!(
+                "{} leased to {device} (attempt {})",
+                job.spec.name, job.attempts
+            );
+            let dev = device.to_string();
+            store.append_event(EventKind::JobLeased, Some(&dev), Some(id), &msg, now)?;
+            Ok(Some(job))
+        }
+        Ok(None) | Err(StoreError::AccountLeased(_)) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Applies an agent's job update once per (device, seq): the job state, the transition

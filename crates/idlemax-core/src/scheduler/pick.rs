@@ -6,7 +6,9 @@ use std::collections::BTreeSet;
 use super::blockers::{
     ai_leased_accounts, device_blockers, job_blockers_in, token_class_pct, SchedContext,
 };
-use crate::types::{CostClass, GuardAction, Job, JobId, JobStatus};
+use crate::types::{
+    is_dispatcher_job, CostClass, GuardAction, GuardDecision, Job, JobId, JobStatus,
+};
 
 /// Slots and MiB left after jobs leased to this device that the agent has not started yet.
 /// None unless the guard lets new jobs start.
@@ -15,7 +17,8 @@ pub fn start_budget(ctx: &SchedContext<'_>, jobs: &[Job]) -> Option<(u32, u64)> 
         return None;
     };
     let pending = jobs.iter().filter(|j| {
-        j.status == JobStatus::Leased
+        !is_dispatcher_job(&j.spec)
+            && j.status == JobStatus::Leased
             && j.device.as_deref() == Some(ctx.device.id.as_str())
             && !ctx.running.iter().any(|r| r.id == j.id)
     });
@@ -36,6 +39,7 @@ pub fn pick(ctx: &SchedContext<'_>, jobs: &[Job]) -> Vec<JobId> {
         .iter()
         .filter(|j| {
             j.status == JobStatus::Queued
+                && !is_dispatcher_job(&j.spec)
                 && !ctx.running.iter().any(|r| r.id == j.id)
                 && job_blockers_in(ctx.now_ms, ctx.quota, ctx.paused_accounts, &leased, j)
                     .is_empty()
@@ -62,6 +66,39 @@ pub fn pick(ctx: &SchedContext<'_>, jobs: &[Job]) -> Vec<JobId> {
         picked.push(job.id);
     }
     picked
+}
+
+/// The one dispatcher job to lease to this device now, or None. One at a time per device, so
+/// a pass, a setup and a check never add up beyond the slot the room showed.
+pub fn pick_lines(ctx: &SchedContext<'_>, lines: &GuardDecision, jobs: &[Job]) -> Option<JobId> {
+    if ctx.paused || !lines.action.may_start() {
+        return None;
+    }
+    let device = ctx.device.id.as_str();
+    let active = jobs.iter().any(|j| {
+        is_dispatcher_job(&j.spec)
+            && matches!(
+                j.status,
+                JobStatus::Leased | JobStatus::Running | JobStatus::Paused
+            )
+            && j.device.as_deref() == Some(device)
+    });
+    if active {
+        return None;
+    }
+    let leased = ai_leased_accounts(jobs);
+    let mut cands: Vec<&Job> = jobs
+        .iter()
+        .filter(|j| {
+            j.status == JobStatus::Queued
+                && is_dispatcher_job(&j.spec)
+                && job_blockers_in(ctx.now_ms, ctx.quota, ctx.paused_accounts, &leased, j)
+                    .is_empty()
+                && device_blockers(ctx.device, j).is_empty()
+        })
+        .collect();
+    cands.sort_by(|a, b| start_order(a, b));
+    cands.first().map(|j| j.id)
 }
 
 /// Priority first, then the largest AI job that fits, then oldest.
