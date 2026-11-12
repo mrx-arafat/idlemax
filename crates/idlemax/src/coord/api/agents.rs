@@ -7,6 +7,7 @@ use idlemax_core::advice::{is_ai_pass, AdvisorInputs};
 use idlemax_core::control::{
     came_online, is_held, may_assign, paused_accounts, reconcile_heartbeat, transition_event,
 };
+use idlemax_core::dispatch::orchestrator::is_pass;
 use idlemax_core::dispatch::room::lines_verdict;
 use idlemax_core::protocol::{
     name_problem, Heartbeat, HeartbeatReply, JobUpdate, JobUpdateReply, MAX_DEVICE_ID_CHARS,
@@ -48,10 +49,16 @@ pub async fn job_update(
     let now = now_ms();
     let (seq, job_id) = (update.seq, update.id);
     let ai_output = app
-        .with_store(move |store, _| on_job_update(store, &update, now))
+        .with_store(move |store, _| {
+            let output = on_job_update(store, &update, now)?;
+            let pass = store.get_job(job_id)?.is_some_and(|j| is_pass(&j.spec));
+            Ok::<_, ApiFailure>(output.map(|o| (o, pass)))
+        })
         .await?;
-    if let Some(output) = ai_output {
-        advice::ingest_ai_output(&app, job_id, output, now).await;
+    match ai_output {
+        Some((output, true)) => super::plan::ingest_pass(&app, job_id, output, now).await,
+        Some((output, false)) => advice::ingest_ai_output(&app, job_id, output, now).await,
+        None => {}
     }
     Ok(Json(JobUpdateReply {
         acked_seq: (seq != 0).then_some(seq),
@@ -283,7 +290,7 @@ pub(super) fn on_job_update(
         tracing::debug!(job = job.id, device = %update.device, "stale job update ignored");
         return Ok(None);
     };
-    let ai_done = next.status == JobStatus::Succeeded && is_ai_pass(&job.spec);
+    let ai_done = next.status == JobStatus::Succeeded && ingests(&job.spec);
     Ok(update.output_tail.clone().filter(|_| ai_done))
 }
 
@@ -295,12 +302,25 @@ fn unfinished_ingest(
 ) -> Result<Option<String>, ApiFailure> {
     let ai_done = job.status == JobStatus::Succeeded
         && update.status == JobStatus::Succeeded
-        && is_ai_pass(&job.spec);
+        && ingests(&job.spec);
     let output = update.output_tail.clone().filter(|_| ai_done);
-    if output.is_some() && store.job_has_event(job.id, EventKind::Advice)? {
+    let ingested = if is_pass(&job.spec) {
+        // A pass is ingested once its row has a result or an error.
+        store
+            .pass_for_job(job.id)?
+            .is_none_or(|r| r.result.is_some() || r.error.is_some())
+    } else {
+        store.job_has_event(job.id, EventKind::Advice)?
+    };
+    if output.is_some() && ingested {
         return Ok(None);
     }
     Ok(output)
+}
+
+/// A job whose output the coordinator reads: the advisor's AI pass or the orchestrator pass.
+fn ingests(spec: &idlemax_core::types::JobSpec) -> bool {
+    is_ai_pass(spec) || is_pass(spec)
 }
 
 /// One event per stored status change.

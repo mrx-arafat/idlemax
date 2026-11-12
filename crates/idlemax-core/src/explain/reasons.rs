@@ -331,6 +331,23 @@ pub(super) fn ram_budget(need_mib: u64, left_mib: u64) -> Reason {
 }
 
 /// Eligible on this device, yet the scheduler would start `picked` first.
+/// The verdict that admits the job here: the worker lines for a dispatcher job (A16), else
+/// the guard. True for the lines.
+pub(super) fn device_guard(
+    input: &ExplainInput<'_>,
+    dv: &DeviceView,
+    visible: &[Job],
+) -> (bool, GuardDecision) {
+    if crate::types::is_dispatcher_job(&input.job.spec) {
+        (
+            true,
+            crate::dispatch::room::lines_verdict(dv.room.as_ref(), input.now_ms),
+        )
+    } else {
+        (false, super::guard_now(dv, visible))
+    }
+}
+
 /// What the scheduler would lease to the device now: the lines pick for a dispatcher job.
 pub(super) fn picked(ctx: &SchedContext<'_>, visible: &[Job], lines: bool) -> Vec<JobId> {
     if lines {

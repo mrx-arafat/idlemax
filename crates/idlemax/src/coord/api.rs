@@ -122,6 +122,7 @@ pub fn router(state: AppState, token: &str) -> Router {
         .route("/v1/schedules/{id}/resume", post(schedules::resume))
         .route("/v1/dispatcher/mode", post(mode::set))
         .route("/v1/plan", get(plan::plan))
+        .route("/v1/plan/refresh", post(plan::refresh))
         .route("/v1/projects", get(projects::list).post(projects::add))
         .route("/v1/projects/{id}/on", post(projects::on))
         .route("/v1/projects/{id}/off", post(projects::off))

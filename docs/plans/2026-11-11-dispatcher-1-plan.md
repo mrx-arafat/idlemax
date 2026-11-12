@@ -213,7 +213,7 @@ target/debug/idlemax init
 - [x] Task 6: Admit the dispatcher's own jobs by the lines
 - [x] Task 7: Find tasks from the four sources
 - [x] Task 8: Build the plan and show it with `idlemax plan`
-- [ ] Task 9: Run the orchestrator pass
+- [x] Task 9: Run the orchestrator pass
 - [ ] Task 10: Needs the owner's OK: install this build on the Mac
 - [ ] Task 11: Needs the owner's OK: install the statusline capture and configure the accounts
 - [ ] Task 12: Needs the owner's OK: run one supervised orchestrator pass
@@ -1104,15 +1104,15 @@ In `off` mode the plan says so and holds no pick; in `propose` mode it shows wha
 
 **Definition of Done:**
 
-- [ ] `validate` accepts one pick for an offered task, account and model with two relative scope paths; drops a pick with an unknown task, one with an account that was not offered, one with a model of another provider and one with the scope path `../x`, and names each in `dropped`; and rejects the whole output for an extra field `command` and for 9 picks.
-- [ ] A task listed under both `picks` and `needs_you` ends up only under `needs_you`.
-- [ ] `fingerprint` is equal for the same parts in a different order, differs after one more task, one changed line of rules or one changed task digest, and is equal whether a task is ready or carries a stored judgment of the same digest.
-- [ ] `pass_due` refuses in mode `off`, with a room at `hold`, with no usable `claude` account, while a pass job is active, and within an hour of the last pass with a new fingerprint; with the pass asked for, the last case is `Ok`.
-- [ ] The pass job's argv holds `--model`, `opus`, `--tools`, `""` and `--strict-mcp-config`, its prompt is in `stdin` and not in argv, and its spec has `admission` of `lines`.
-- [ ] `rules_file::ensure` creates the file with the default text, and a second call leaves an edited file byte for byte.
-- [ ] A coordinator test with a fixture account at 20 percent of its 5-hour window queues exactly one pass in two `step` calls, ingests a fixture envelope with one valid pick and one task under `needs_you`, and `GET /v1/plan` then shows that pick with its scope paths and the other task under `needs_you`; after the picked task's project is switched off, the pick is gone.
-- [ ] After that ingest, two more `step` calls, each more than an hour later by the test clock, queue no pass, and the judged task has no pick and is not in `not_judged`; after the judged task's title changes, its judgment row is deleted and the next `step` queues one pass.
-- [ ] Verify: `cargo test -p idlemax-core dispatch::orchestrator`, `cargo test -p idlemax-core dispatch::prompt`, `cargo test -p idlemax --bin idlemax dispatch::pass`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --bin idlemax rules_file`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `validate` accepts one pick for an offered task, account and model with two relative scope paths; drops a pick with an unknown task, one with an account that was not offered, one with a model of another provider and one with the scope path `../x`, and names each in `dropped`; and rejects the whole output for an extra field `command` and for 9 picks.
+- [x] A task listed under both `picks` and `needs_you` ends up only under `needs_you`.
+- [x] `fingerprint` is equal for the same parts in a different order, differs after one more task, one changed line of rules or one changed task digest, and is equal whether a task is ready or carries a stored judgment of the same digest.
+- [x] `pass_due` refuses in mode `off`, with a room at `hold`, with no usable `claude` account, while a pass job is active, and within an hour of the last pass with a new fingerprint; with the pass asked for, the last case is `Ok`.
+- [x] The pass job's argv holds `--model`, `opus`, `--tools`, `""` and `--strict-mcp-config`, its prompt is in `stdin` and not in argv, and its spec has `admission` of `lines`.
+- [x] `rules_file::ensure` creates the file with the default text, and a second call leaves an edited file byte for byte.
+- [x] A coordinator test with a fixture account at 20 percent of its 5-hour window queues exactly one pass in two `step` calls, ingests a fixture envelope with one valid pick and one task under `needs_you`, and `GET /v1/plan` then shows that pick with its scope paths and the other task under `needs_you`; after the picked task's project is switched off, the pick is gone.
+- [x] After that ingest, two more `step` calls, each more than an hour later by the test clock, queue no pass, and the judged task has no pick and is not in `not_judged`; after the judged task's title changes, its judgment row is deleted and the next `step` queues one pass.
+- [x] Verify: `cargo test -p idlemax-core dispatch::orchestrator`, `cargo test -p idlemax-core dispatch::prompt`, `cargo test -p idlemax --bin idlemax dispatch::pass`, `cargo test -p idlemax --bin idlemax plan`, `cargo test -p idlemax --bin idlemax rules_file`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 10: Needs the owner's OK: install this build on the Mac
 

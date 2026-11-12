@@ -232,6 +232,13 @@ pub fn plan_node(plan: &Plan) -> Result<Node, serde_json::Error> {
     Node::of(plan)
 }
 
+pub fn refresh_hint() -> String {
+    run(
+        "idlemax plan",
+        "see the picks once the orchestrator pass has finished",
+    )
+}
+
 pub fn plan_hints(plan: &Plan) -> Vec<String> {
     if plan.mode == Mode::Off {
         return vec![run("idlemax mode propose", "let the dispatcher plan again")];

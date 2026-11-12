@@ -49,6 +49,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
 | POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose"}` | `{"mode", "before", "changed"}` |
 | GET | /v1/plan | | `Plan` |
+| POST | /v1/plan/refresh | | `Plan`, after a dispatcher step that asks for an orchestrator pass |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
 | POST | /v1/projects | `NewProject` | `ProjectView`, 201 when new and 200 when known |
 | POST | /v1/projects/{id}/on | | `ProjectView` |
@@ -497,6 +498,26 @@ Types live in `crates/idlemax-core/src/dispatch/plan.rs`.
 - `needs_you` lists the tasks that need the owner, each with its reason in `needs_you`.
 - `accounts` applies the simple rule: an account is usable while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota, with a fresh weekly reading and no usage limit in the current window; agy and API accounts have no reading and are not usable.
 - `notes` holds per-project lines, such as a focused check that has not run on the base commit yet and why.
+
+### The orchestrator pass
+
+The coordinator's dispatcher step (every minute, and on `POST /v1/plan/refresh`) queues one `dispatch-orchestrator-pass` job when a pass is due: the mode is `propose`, a device takes picks and has a ready task, a usable Claude account is listed on such a device with `claude` installed, no pass job is active, and, unless the pass was asked for, its inputs changed since the newest pass and that pass was queued at least an hour ago.
+The inputs are the devices that take picks, every ready task and every task a stored judgment holds (by id and a digest of source, title and done check), the usable accounts, the models and the text of `rules.md`.
+A queued pass that stops being due for any other reason is cancelled with that reason.
+
+The job runs `claude -p --model opus --settings {"disableAllHooks":true} --strict-mcp-config --output-format json --json-schema <schema> --no-session-persistence --tools ""` with the prompt on stdin, on the chosen account and device, admitted by the worker lines.
+Its answer must be:
+
+```json
+{"picks": [{"task": "roadmap:3:faster-sync", "account": "claude-max", "model": "sonnet",
+            "reason": "small, and its done check is a command", "scope_paths": ["src/sync.rs"]}],
+ "needs_you": [{"task": "roadmap:3:dark-mode", "reason": "the item needs a design decision"}]}
+```
+
+At most 8 picks, 20 needs-you entries, 300 characters per reason and 20 scope paths of at most 300 characters per pick; a shape error, an unknown field or a length over a limit rejects the whole answer.
+A pick whose task, account or model was not offered, a scope path that is absolute or holds `..`, a task picked twice and a task also under `needs_you` (needs-you wins) are dropped one by one and counted in `picked_by`.
+Each `needs_you` task is stored as a judgment that lasts until the task's digest changes.
+The plan uses the newest pass with a result; `picked_by` reads `orchestrator pass <age> ago`.
 
 ## Dispatcher mode
 

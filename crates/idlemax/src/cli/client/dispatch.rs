@@ -46,4 +46,9 @@ impl ApiClient {
     pub async fn plan(&self) -> Result<Plan> {
         self.get("/v1/plan").await
     }
+
+    /// Runs the dispatcher step with a pass asked for, then returns the plan.
+    pub async fn refresh_plan(&self) -> Result<Plan> {
+        self.post("/v1/plan/refresh", None::<&()>).await
+    }
 }

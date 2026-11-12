@@ -840,6 +840,8 @@ You accept or dismiss each one, and nothing runs on the advisor's word alone, ex
 - Suggested jobs can only name templates in `$IDLEMAX_HOME/jobs/`.
   To add one, write a spec to `$IDLEMAX_HOME/jobs/<name>.toml` on the coordinator, allowlist its `argv[0]` on the devices that should run it, and queue it with `idlemax job add` or let the advisor suggest it.
   The advisor queues a template without asking only if its name is in `advisor.auto_accept`.
+- The dispatcher's orchestrator pass is also an AI job, and the rule of one AI job per account per 5 hours counts it, so on the same account the advisor's own pass waits behind it.
+  Set `advisor.ai_account` to a different account than the one the dispatcher uses.
 
 ## The dispatcher (plan only)
 
@@ -879,6 +881,11 @@ A task without a base branch or without a check that proves it done, a roadmap i
 
 To learn whether the check fails, the agent keeps a detached checkout of the base commit at `$IDLEMAX_HOME/checks/<project id>`, never your own folder, and the coordinator runs the project's setup and check commands there as dispatcher jobs named `dispatch-setup:<project>` and `dispatch-check:<project>`.
 The checkout is made or moved only while the worker room is `run` and no pause or kill switch is set, with repository hooks off.
+The orchestrator is one short `claude -p --model opus` job that reads a compact summary of the offered tasks, projects and usable accounts plus the rules in `$IDLEMAX_HOME/rules.md`, and answers with picks: task, account, model, scope paths and a one-sentence reason, and the tasks it sends to "needs you".
+It runs with no tools, no hooks and no MCP servers, only when its inputs changed (at most once an hour by itself) or on `idlemax plan --refresh`, and only on a Claude account the simple rule below allows.
+It decides which task, provider and model fill a slot; it cannot decide whether a slot exists, and a pick naming anything it was not offered is dropped.
+A task it sends to "needs you" stays there until the task changes.
+Edit `rules.md` to change how it judges; the hard limits are not in that file.
 Nothing is ever picked without the orchestrator: a ready task no orchestrator pass has seen is listed under "not judged by the orchestrator" and fills no slot.
 An AI account may be used while its 5-hour window is under 60 percent used and idlemax has spent under 10 percent of its weekly quota.
 
@@ -1075,6 +1082,8 @@ Environment: `IDLEMAX_HOME` (state dir), `IDLEMAX_TOKEN` (overrides the token fi
 | `config.toml`, `token` | config and the 0600 API token |
 | `coord.db` | coordinator SQLite database, mode 0600: jobs, devices, quota ledger, advice and schedules |
 | `PAUSE` | kill switch file |
+| `rules.md` | the dispatcher orchestrator's judgment rules; written once with defaults, yours to edit, read on every pass |
+| `checks/<project id>` | the dispatcher's detached checkout of a project's base commit, where its focused check runs |
 | `jobs/*.toml` | job templates the advisor may suggest |
 | `logs/jobs/<id>.log` | job output |
 | `inbox/<date>-<id>-<name>.md` | one note per finished job |

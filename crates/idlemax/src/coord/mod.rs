@@ -47,6 +47,9 @@ pub async fn run(paths: Paths, config: Config) -> Result<(), CoordError> {
     let addr = listen_addr(&config.coordinator.listen)?;
     let token = state::load_token(&paths)?;
     state::ensure_dirs(&paths)?;
+    if let Err(e) = crate::dispatch::rules_file::ensure(&paths) {
+        tracing::warn!(error = %e, "cannot write rules.md; passes use the default rules");
+    }
     let db = paths.db_file();
     let store = tokio::task::spawn_blocking(move || Store::open(&db)).await??;
     let shutdown = shutdown_signal()?;

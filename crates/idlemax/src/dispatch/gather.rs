@@ -4,40 +4,69 @@
 use idlemax_core::advice::{merge_inputs, SessionMeta};
 use idlemax_core::control::paused_accounts;
 use idlemax_core::dispatch::accounts::account_uses;
+use idlemax_core::dispatch::accounts::AccountUse;
 use idlemax_core::dispatch::check::BaseCheck;
 use idlemax_core::dispatch::inputs::StoredRepo;
-use idlemax_core::dispatch::plan::{build, Plan, PlanInput};
+use idlemax_core::dispatch::orchestrator::{is_pass, pass_due, DueInput, Offer};
+use idlemax_core::dispatch::plan::{build, offered, PassResult, Plan, PlanInput};
 use idlemax_core::dispatch::project::{owner_active, ProjectView, MAX_PROJECTS_PER_DEVICE};
 use idlemax_core::dispatch::room::LineState;
 use idlemax_core::dispatch::task::{discover, Task, TaskInput};
+use idlemax_core::dispatch::Mode;
 use idlemax_core::protocol::DeviceView;
-use idlemax_core::types::{DeviceId, UnixMs};
+use idlemax_core::quota::Provider;
+use idlemax_core::types::{ControlScope, DeviceId, UnixMs};
 use idlemax_core::Config;
 
 use crate::coord::api::{offline_after_ms, quota_views};
-use crate::coord::store::{Store, StoreError};
+use crate::coord::store::{PassRow, Store, StoreError};
 
 /// The Plan and every task `discover` returned.
 #[derive(Debug, Clone)]
 pub struct Gathered {
     pub plan: Plan,
-    #[expect(dead_code, reason = "the orchestrator pass reads it next")]
+    #[expect(dead_code, reason = "Spec 2's launch and Spec 4's view read it")]
     pub tasks: Vec<Task>,
+}
+
+/// Everything the plan and the pass read, from one store lock.
+pub struct Inputs {
+    pub now: UnixMs,
+    pub mode: Mode,
+    pub devices: Vec<DeviceView>,
+    pub paused: Vec<ControlScope>,
+    pub projects: Vec<ProjectView>,
+    pub repos: Vec<StoredRepo>,
+    pub tasks: Vec<Task>,
+    pub accounts: Vec<AccountUse>,
+    pub models: Vec<(Provider, String)>,
+    pub notes: Vec<String>,
+    /// The newest pass row, and the newest one with a result.
+    pub newest: Option<PassRow>,
+    pub newest_result: Option<PassRow>,
+    /// A pass job is queued, leased, running or paused.
+    pub pass_active: bool,
 }
 
 /// `cfg` is the coordinator's start config and gives `[quota]`; `live` is the newest
 /// `config.toml` and gives `[dispatcher]`, so a mode change needs no restart.
-pub fn gather_plan(
+pub fn read_inputs(
     store: &Store,
     cfg: &Config,
     live: &Config,
     now: UnixMs,
-) -> Result<Gathered, StoreError> {
+) -> Result<Inputs, StoreError> {
     let devices = store.devices(now, offline_after_ms(cfg))?;
     let paused = store.paused_scopes()?;
     let projects = project_views(store, None, now)?;
     let repos = store.dispatch_inputs()?;
     let checks = store.base_checks()?;
+    let newest_result = store.newest_pass(true)?;
+    let scoped: Vec<(String, Vec<String>)> = newest_result
+        .iter()
+        .flat_map(|r| r.result.iter().flat_map(|p| p.picks.iter()))
+        .map(|p| (p.task.clone(), p.scope_paths.clone()))
+        .collect();
     let (github, _) = merge_inputs(&store.advisor_inputs()?, now);
     let tasks = discover(&TaskInput {
         now_ms: now,
@@ -46,27 +75,137 @@ pub fn gather_plan(
         checks: &checks,
         issues: &github.assigned_issues,
         sessions: &sessions(store)?,
-        judgments: &[],
-        scoped: &[],
+        judgments: &store.judgments()?,
+        scoped: &scoped,
     });
     let views = quota_views(store, cfg, now)?;
     let accounts = account_uses(&cfg.quota, &views, &paused_accounts(&paused), &[]);
     let notes = notes(&projects, &repos, &checks, &devices);
-    let plan = build(&PlanInput {
-        now_ms: now,
+    let pass_active = store.active_jobs()?.iter().any(|j| is_pass(&j.spec))
+        || store.queued_jobs()?.iter().any(|j| is_pass(&j.spec));
+    Ok(Inputs {
+        now,
         mode: live.dispatcher.mode,
-        devices: &devices,
-        paused: &paused,
-        projects: &projects,
-        repos: &repos,
+        devices,
+        paused,
+        projects,
+        repos,
+        tasks,
+        accounts,
+        models: live.dispatcher.models(),
+        notes,
+        newest: store.newest_pass(false)?,
+        newest_result,
+        pass_active,
+    })
+}
+
+impl Inputs {
+    pub fn plan_input<'a>(
+        &'a self,
+        pass: Option<&'a PassResult>,
+        picked_by: &'a str,
+    ) -> PlanInput<'a> {
+        PlanInput {
+            now_ms: self.now,
+            mode: self.mode,
+            devices: &self.devices,
+            paused: &self.paused,
+            projects: &self.projects,
+            repos: &self.repos,
+            tasks: &self.tasks,
+            accounts: &self.accounts,
+            models: &self.models,
+            pass,
+            picked_by,
+            notes: &self.notes,
+        }
+    }
+
+    /// What a pass is offered: the ready tasks of every device, in plan order, the usable
+    /// accounts and the models.
+    pub fn offered(&self) -> (Vec<&Task>, Vec<AccountUse>) {
+        let input = self.plan_input(None, "");
+        let mut tasks: Vec<&Task> = Vec::new();
+        for d in &self.devices {
+            for t in offered(&input, &d.info.id) {
+                if !tasks.iter().any(|x| x.id == t.id) {
+                    tasks.push(t);
+                }
+            }
+        }
+        let usable = self.accounts.iter().filter(|a| a.usable).cloned().collect();
+        (tasks, usable)
+    }
+}
+
+/// The plan: the picks of the newest pass with a result, or why there is none.
+pub fn gather_plan(
+    store: &Store,
+    cfg: &Config,
+    live: &Config,
+    now: UnixMs,
+) -> Result<Gathered, StoreError> {
+    let inputs = read_inputs(store, cfg, live, now)?;
+    let pass = inputs
+        .newest_result
+        .as_ref()
+        .and_then(|r| r.result.as_ref());
+    let picked_by = picked_by(&inputs);
+    let plan = build(&inputs.plan_input(pass, &picked_by));
+    Ok(Gathered {
+        plan,
+        tasks: inputs.tasks,
+    })
+}
+
+/// "orchestrator pass 12m ago", or why no pass has a result.
+fn picked_by(inputs: &Inputs) -> String {
+    if let Some(row) = &inputs.newest_result {
+        let mut text = format!("orchestrator pass {} ago", age(inputs.now - row.queued_ms));
+        let dropped = row.result.as_ref().map_or(0, |r| r.dropped.len());
+        if dropped > 0 {
+            text.push_str(&format!(", {dropped} picks dropped"));
+        }
+        return text;
+    }
+    if inputs.pass_active {
+        return "no orchestrator pass yet: one is queued or running".into();
+    }
+    if let Some(error) = inputs.newest.as_ref().and_then(|r| r.error.clone()) {
+        return format!("no orchestrator pass: the last pass failed: {error}");
+    }
+    let (tasks, accounts) = inputs.offered();
+    let offer = Offer {
         tasks: &tasks,
         accounts: &accounts,
-        models: &live.dispatcher.models(),
-        pass: None,
-        picked_by: "no orchestrator pass yet",
-        notes: &notes,
+        models: &inputs.models,
+    };
+    let due = pass_due(&DueInput {
+        now_ms: inputs.now,
+        mode: inputs.mode,
+        asked: true,
+        devices: &inputs.devices,
+        paused: &inputs.paused,
+        offer: &offer,
+        fingerprint: "",
+        newest: None,
+        pass_active: false,
     });
-    Ok(Gathered { plan, tasks })
+    match due {
+        Ok(_) => "no orchestrator pass yet: one is due".into(),
+        Err(why) => format!("no orchestrator pass: {why}"),
+    }
+}
+
+/// "42m", "3h 5m", "2d 4h".
+fn age(ms: i64) -> String {
+    let mins = ms.max(0) / 60_000;
+    match (mins / 1440, mins % 1440 / 60, mins % 60) {
+        (0, 0, m) => format!("{m}m"),
+        (0, h, m) => format!("{h}h {m}m"),
+        (d, h, _) => format!("{d}d {h}h"),
+    }
 }
 
 /// Every project, with `owner_active` filled from the feed and the session metadata.

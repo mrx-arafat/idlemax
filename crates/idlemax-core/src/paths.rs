@@ -89,6 +89,11 @@ impl Paths {
         self.root.join("agent")
     }
 
+    /// The orchestrator's judgment rules, which the owner edits (D18.2).
+    pub fn rules_file(&self) -> PathBuf {
+        self.root.join("rules.md")
+    }
+
     /// The dispatcher's base checkouts, one per project: `checks/<project id>`.
     pub fn checks_dir(&self) -> PathBuf {
         self.root.join("checks")

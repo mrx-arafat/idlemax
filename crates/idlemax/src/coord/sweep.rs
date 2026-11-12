@@ -71,10 +71,13 @@ async fn dispatch(app: AppState) {
         tick.tick().await;
         let _serial = app.dispatch_lock().lock().await;
         let live = std::sync::Arc::clone(app.live());
+        let paths = app.paths().clone();
         let now = now_ms();
         let done = app
-            .with_store(move |store, _| {
-                crate::dispatch::step(store, &live.current(), now).map_err(SweepError::from)
+            .with_store(move |store, cfg| {
+                let rules = crate::dispatch::rules_file::read(&paths);
+                crate::dispatch::step(store, cfg, &live.current(), &rules, now, false)
+                    .map_err(SweepError::from)
             })
             .await;
         if let Err(e) = done {

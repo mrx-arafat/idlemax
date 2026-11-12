@@ -1,13 +1,16 @@
 //! Dispatcher rows (adapter): the newest dispatch inputs per device and each project's base
-//! check. Pass rows and task judgments join here in a later step. The domain decides; this file persists.
+//! check, the orchestrator passes and the tasks the orchestrator sent to "needs you". The domain decides; this file persists.
 
 use idlemax_core::dispatch::check::BaseCheck;
 use idlemax_core::dispatch::inputs::{DispatchInputs, StoredRepo};
-use idlemax_core::types::UnixMs;
-use rusqlite::params;
+use idlemax_core::dispatch::plan::PassResult;
+use idlemax_core::dispatch::task::Judgment;
+use idlemax_core::types::{JobId, UnixMs};
+use rusqlite::{params, OptionalExtension};
 
 use super::{
-    enum_col, enum_text, json_col, json_text, Store, StoreError, StoreResult, HISTORY_RETENTION_MS,
+    enum_col, enum_text, json_col, json_text, opt_json_col, Store, StoreError, StoreResult,
+    HISTORY_RETENTION_MS,
 };
 
 /// Largest dispatch-inputs document kept per device (a real one is a few KiB).
@@ -110,4 +113,126 @@ impl Store {
             .execute("DELETE FROM base_checks WHERE project = ?1", [project])?;
         Ok(())
     }
+
+    /// Records a queued pass: what it was offered and the inputs' fingerprint.
+    pub fn insert_pass(
+        &mut self,
+        job: JobId,
+        account: &str,
+        fingerprint: &str,
+        offered: &[String],
+        now: UnixMs,
+    ) -> StoreResult<i64> {
+        self.conn.execute(
+            "INSERT INTO orchestrator_passes (job, account, fingerprint, offered, queued_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![job, account, fingerprint, json_text(&offered)?, now],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// The newest pass row, or the newest one that has a result.
+    pub fn newest_pass(&self, with_result: bool) -> StoreResult<Option<PassRow>> {
+        let filter = if with_result {
+            "WHERE result IS NOT NULL"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT {PASS_COLUMNS} FROM orchestrator_passes {filter} ORDER BY id DESC LIMIT 1"
+        );
+        Ok(self.conn.query_row(&sql, [], pass_from_row).optional()?)
+    }
+
+    pub fn pass_for_job(&self, job: JobId) -> StoreResult<Option<PassRow>> {
+        let sql = format!("SELECT {PASS_COLUMNS} FROM orchestrator_passes WHERE job = ?1");
+        Ok(self.conn.query_row(&sql, [job], pass_from_row).optional()?)
+    }
+
+    /// Stores the checked result, or why the pass gave none.
+    pub fn finish_pass(
+        &mut self,
+        id: i64,
+        outcome: Result<&PassResult, &str>,
+        now: UnixMs,
+    ) -> StoreResult<()> {
+        let (result, error) = match outcome {
+            Ok(r) => (Some(json_text(r)?), None),
+            Err(e) => (None, Some(e.chars().take(500).collect::<String>())),
+        };
+        self.conn.execute(
+            "UPDATE orchestrator_passes SET finished_ms = ?2, result = ?3, error = ?4 WHERE id = ?1",
+            params![id, now, result, error],
+        )?;
+        Ok(())
+    }
+
+    /// Sends a task to "needs you" until it changes (A20).
+    pub fn judge_task(
+        &mut self,
+        task: &str,
+        digest: &str,
+        reason: &str,
+        now: UnixMs,
+    ) -> StoreResult<()> {
+        self.conn.execute(
+            "INSERT INTO task_judgments (task, digest, reason, judged_ms) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (task) DO UPDATE SET
+               digest = excluded.digest, reason = excluded.reason, judged_ms = excluded.judged_ms",
+            params![task, digest, reason, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn judgments(&self) -> StoreResult<Vec<Judgment>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT task, digest, reason FROM task_judgments ORDER BY task")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Judgment {
+                task: r.get(0)?,
+                digest: r.get(1)?,
+                reason: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn delete_judgment(&mut self, task: &str) -> StoreResult<()> {
+        self.conn
+            .execute("DELETE FROM task_judgments WHERE task = ?1", [task])?;
+        Ok(())
+    }
+}
+
+/// One orchestrator pass as stored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PassRow {
+    pub id: i64,
+    pub job: JobId,
+    pub account: String,
+    pub fingerprint: String,
+    /// Ids of the tasks the pass was offered.
+    pub offered: Vec<String>,
+    pub queued_ms: UnixMs,
+    pub finished_ms: Option<UnixMs>,
+    pub result: Option<PassResult>,
+    pub error: Option<String>,
+}
+
+const PASS_COLUMNS: &str =
+    "id, job, account, fingerprint, offered, queued_ms, finished_ms, result, error";
+
+fn pass_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PassRow> {
+    Ok(PassRow {
+        id: r.get(0)?,
+        job: r.get(1)?,
+        account: r.get(2)?,
+        fingerprint: r.get(3)?,
+        offered: json_col(r, 4)?,
+        queued_ms: r.get(5)?,
+        finished_ms: r.get(6)?,
+        result: opt_json_col(r, 7)?,
+        error: r.get(8)?,
+    })
 }

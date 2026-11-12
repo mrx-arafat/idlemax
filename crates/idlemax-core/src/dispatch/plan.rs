@@ -78,6 +78,7 @@ pub struct Plan {
 
 /// One pick as the orchestrator returned it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PassPick {
     pub task: String,
     pub account: String,
@@ -267,17 +268,7 @@ fn check_pick(
     pp: &PassPick,
 ) -> Result<Pick, String> {
     let title = &task.title;
-    let account = input
-        .accounts
-        .iter()
-        .find(|a| a.account == pp.account)
-        .ok_or_else(|| format!("{title}: account {} is not configured", pp.account))?;
-    if !account.usable {
-        return Err(format!(
-            "{title}: account {} may not be spent: {}",
-            account.account, account.why
-        ));
-    }
+    let account = usable_account(input, title, &pp.account)?;
     let info = &dv.info;
     if !info.ai_accounts.contains(&account.account) {
         return Err(format!(
@@ -309,6 +300,26 @@ fn check_pick(
         scope_paths: pp.scope_paths.clone(),
         avoid_paths: avoid,
     })
+}
+
+/// The account of a pick, when the simple rule lets it be spent.
+fn usable_account<'a>(
+    input: &PlanInput<'a>,
+    title: &str,
+    name: &str,
+) -> Result<&'a AccountUse, String> {
+    let account = input
+        .accounts
+        .iter()
+        .find(|a| a.account == name)
+        .ok_or_else(|| format!("{title}: account {name} is not configured"))?;
+    if !account.usable {
+        return Err(format!(
+            "{title}: account {name} may not be spent: {}",
+            account.why
+        ));
+    }
+    Ok(account)
 }
 
 /// D5 as a fixed rule: a task in a project the owner is active in is used only when no

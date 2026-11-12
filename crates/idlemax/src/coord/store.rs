@@ -18,6 +18,7 @@ mod schema;
 mod tests;
 mod updates;
 
+pub use dispatch::PassRow;
 pub use jobs::Added;
 pub use updates::{NewEvent, UpdateWrites};
 
