@@ -193,6 +193,9 @@ The reply's `assign` holds newly leased jobs to start now.
 The additive `queued_work` boolean reports whether this device has eligible queued work with only the user-idle requirement treated as met.
 It uses the same scheduler as assignment, preserving resource budgets, pause controls, device restrictions, command allowlists, retry backoff and quota checks.
 An older agent ignores it; an older coordinator omits it, which newer agents treat as `false`.
+The agent sends `notices_after`, the id of the newest notice it delivered (0 for none), on every heartbeat, and the reply's `notices` holds up to 20 notices with a larger id, oldest first and none older than 24 hours, so a new device gets no old backlog.
+A `Notice` is `{"id", "at_ms", "kind", "title", "body"}` with `kind` `task_finished`, `needs_you` or `daily_summary` (`crates/idlemax-core/src/notify/notice.rs`); the agent writes each as an inbox note, shows one desktop notification per reply when `agent.notify` is true, and stores the newest id in `agent/notices.cursor`.
+A heartbeat without the field gets no notices, and an older coordinator sends none.
 The opt-in macOS `agent.keep_awake = "ac"` uses this signal while waiting for user idle, or holds for running work, only on known AC power with a clear resource guard.
 `Heartbeat`, `LocalStatus`, `DeviceView` and `DeviceExplanation` have an optional `keep_awake` string for the actual assertion state, separate from guard reasons and blockers.
 The guard verdict in `Heartbeat`, `LocalStatus` and `DeviceView` may carry optional `memory_limit` metadata: `{configured_mib, effective_mib, cgroup_max_bytes}` when Linux clamps RAM to its effective v1/v2 ancestor cap minus 128 MiB of agent overhead.

@@ -278,6 +278,20 @@ fn job_logs_and_inbox_notes_are_private() {
     assert_eq!(mode(&paths.inbox_dir()), 0o700, "inbox");
 }
 
+/// A worker job's note is the coordinator's notice, so it writes no job note of its own.
+#[test]
+fn a_worker_job_leaves_no_inbox_note() {
+    let home = tempfile::tempdir().unwrap();
+    let mut r = runner(home.path(), &["sh"]);
+    let mut worker = job(74, &["sh", "-c", "echo done"], 64);
+    worker.spec.worker = Some(idlemax_core::worker::WorkerSpec::default());
+    r.start(&worker).unwrap();
+    let update = wait_ended(&mut r, STARVED);
+    assert_eq!(update.output_path, None);
+    let inbox = Paths::new(home.path()).inbox_dir();
+    assert_eq!(std::fs::read_dir(inbox).map_or(0, |d| d.count()), 0);
+}
+
 /// `pid state command` of every process in group `pgid`, from `ps`. The state is that of the
 /// process's threads: the status the kernel sets when SIGSTOP is sent says "stopped" before a
 /// starved process has acted on it.

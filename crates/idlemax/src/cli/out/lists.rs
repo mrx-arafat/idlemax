@@ -327,7 +327,10 @@ pub fn inbox(entries: &[InboxEntry], extra: &[String]) -> Result<Node, CliError>
     let table = INBOX.table(entries, extra, |e| {
         vec![
             ("time", Node::str(&e.time)),
-            ("job", Node::Int(e.job_id)),
+            (
+                "job",
+                e.job_id.map_or_else(|| Node::str(e.reference()), Node::Int),
+            ),
             ("name", Node::str(&e.name)),
             ("result", Node::str(&e.result)),
         ]

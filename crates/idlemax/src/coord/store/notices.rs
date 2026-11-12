@@ -107,7 +107,6 @@ impl Store {
     }
 
     /// Notices with an id above `after` and no older than `since`, oldest first.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn notices_after(&self, after: i64, since: UnixMs, limit: u32) -> StoreResult<Vec<Notice>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, at_ms, kind, title, body FROM notices

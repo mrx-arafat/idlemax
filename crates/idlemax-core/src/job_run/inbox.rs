@@ -1,9 +1,11 @@
-//! Domain: inbox note for a finished job (file name and markdown body). Pure.
+//! Domain: inbox notes for a finished job and for a notice (file name and markdown body),
+//! and the parse of either for listings. Pure.
 
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 
 use crate::job_run::Outcome;
+use crate::notify::notice::Notice;
 use crate::types::{Job, JobId, UnixMs};
 
 /// Output lines shown in a note.
@@ -35,6 +37,26 @@ pub fn file_name(id: JobId, name: &str, finished_ms: UnixMs, utc_offset_secs: i3
         |t| t.format("%Y-%m-%d").to_string(),
     );
     format!("{date}-{id}-{}.md", slug(name))
+}
+
+/// `<local date>-n<id>-<kind>.md`.
+pub fn notice_file_name(n: &Notice, utc_offset_secs: i32) -> String {
+    let date = local(n.at_ms, utc_offset_secs).map_or_else(
+        || "undated".to_string(),
+        |t| t.format("%Y-%m-%d").to_string(),
+    );
+    format!("{date}-n{}-{}.md", n.id, n.kind.as_str())
+}
+
+pub fn render_notice(n: &Notice, utc_offset_secs: i32) -> String {
+    format!(
+        "# {}\n\n- Notice: {} ({})\n- At: {}\n\n{}\n",
+        n.title,
+        n.id,
+        n.kind.as_str(),
+        stamp(n.at_ms, utc_offset_secs),
+        n.body
+    )
 }
 
 pub fn render(r: &RunReport<'_>) -> String {
@@ -143,7 +165,12 @@ fn duration(ms: i64) -> String {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InboxEntry {
     pub time: String,
-    pub job_id: JobId,
+    /// Set for a job note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<JobId>,
+    /// Set for a notice note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<i64>,
     pub name: String,
     pub result: String,
     pub file_name: String,
@@ -151,8 +178,45 @@ pub struct InboxEntry {
     pub finished_ms: Option<UnixMs>,
 }
 
+impl InboxEntry {
+    /// How `idlemax inbox show` names the note: the job id, or `n<id>` for a notice.
+    pub fn reference(&self) -> String {
+        match (self.job_id, self.notice) {
+            (Some(job), _) => job.to_string(),
+            (None, Some(n)) => format!("n{n}"),
+            (None, None) => "-".into(),
+        }
+    }
+}
+
 /// Parses an inbox note's markdown body and filename into an [`InboxEntry`].
 pub fn parse_note(file_name: &str, content: &str) -> Option<InboxEntry> {
+    parse_notice(file_name, content).or_else(|| parse_job_note(file_name, content))
+}
+
+/// A note with a `- Notice: <id> (<kind>)` line: the title is the notice's own.
+fn parse_notice(file_name: &str, content: &str) -> Option<InboxEntry> {
+    let line = |prefix: &str| {
+        content
+            .lines()
+            .find_map(|l| l.trim().strip_prefix(prefix).map(str::trim))
+    };
+    let (id, kind) = line("- Notice: ")?.split_once(' ')?;
+    let time = line("- At: ").unwrap_or("unknown").to_string();
+    Some(InboxEntry {
+        finished_ms: DateTime::parse_from_str(&time, "%Y-%m-%d %H:%M:%S %:z")
+            .ok()
+            .map(|dt| dt.timestamp_millis()),
+        time,
+        job_id: None,
+        notice: Some(id.parse().ok()?),
+        name: line("# ").unwrap_or_default().to_string(),
+        result: kind.trim_matches(|c| c == '(' || c == ')').to_string(),
+        file_name: file_name.to_string(),
+    })
+}
+
+fn parse_job_note(file_name: &str, content: &str) -> Option<InboxEntry> {
     let mut title_name = None;
     let mut title_status = None;
     let mut job_id = None;
@@ -227,7 +291,8 @@ pub fn parse_note(file_name: &str, content: &str) -> Option<InboxEntry> {
 
     Some(InboxEntry {
         time,
-        job_id,
+        job_id: Some(job_id),
+        notice: None,
         name,
         result,
         file_name: file_name.to_string(),
@@ -263,6 +328,7 @@ pub fn sort_entries(entries: &mut [InboxEntry]) {
             .cmp(&a.finished_ms)
             .then_with(|| b.time.cmp(&a.time))
             .then_with(|| b.job_id.cmp(&a.job_id))
+            .then_with(|| b.notice.cmp(&a.notice))
     });
 }
 
@@ -305,7 +371,7 @@ mod tests {
         let fname = file_name(job.id, &job.spec.name, report.finished_ms, 0);
         let entry = parse_note(&fname, &rendered).expect("parse note");
 
-        assert_eq!(entry.job_id, 42);
+        assert_eq!(entry.job_id, Some(42));
         assert_eq!(entry.name, "echo test");
         assert_eq!(entry.result, "succeeded");
         assert_eq!(entry.file_name, fname);
@@ -316,7 +382,7 @@ mod tests {
     fn parse_failed_with_error() {
         let note = "# compile: failed\n\n- Job: 7 (attempt 2)\n- Exit code: 1\n- Error: out of memory\n- Finished: 2026-11-08 10:00:00 +00:00\n";
         let entry = parse_note("2026-11-08-7-compile.md", note).expect("parse note");
-        assert_eq!(entry.job_id, 7);
+        assert_eq!(entry.job_id, Some(7));
         assert_eq!(entry.name, "compile");
         assert_eq!(entry.result, "failed: out of memory");
         assert_eq!(entry.time, "2026-11-08 10:00:00 +00:00");
@@ -327,7 +393,8 @@ mod tests {
         let mut entries = vec![
             InboxEntry {
                 time: "2026-11-08 09:00:00 +00:00".into(),
-                job_id: 1,
+                job_id: Some(1),
+                notice: None,
                 name: "first".into(),
                 result: "succeeded".into(),
                 file_name: "f1.md".into(),
@@ -335,7 +402,8 @@ mod tests {
             },
             InboxEntry {
                 time: "2026-11-08 11:00:00 +00:00".into(),
-                job_id: 3,
+                job_id: Some(3),
+                notice: None,
                 name: "third".into(),
                 result: "succeeded".into(),
                 file_name: "f3.md".into(),
@@ -343,7 +411,8 @@ mod tests {
             },
             InboxEntry {
                 time: "2026-11-08 10:00:00 +00:00".into(),
-                job_id: 2,
+                job_id: Some(2),
+                notice: None,
                 name: "second".into(),
                 result: "succeeded".into(),
                 file_name: "f2.md".into(),
@@ -351,8 +420,51 @@ mod tests {
             },
         ];
         sort_entries(&mut entries);
-        assert_eq!(entries[0].job_id, 3);
-        assert_eq!(entries[1].job_id, 2);
-        assert_eq!(entries[2].job_id, 1);
+        assert_eq!(entries[0].job_id, Some(3));
+        assert_eq!(entries[1].job_id, Some(2));
+        assert_eq!(entries[2].job_id, Some(1));
+    }
+
+    #[test]
+    fn a_notice_note_renders_and_parses_back_and_a_job_note_keeps_its_keys() {
+        use crate::notify::notice::{Notice, NoticeKind};
+        let n = Notice {
+            id: 12,
+            at_ms: 1_800_000_000_000,
+            kind: NoticeKind::TaskFinished,
+            title: "idlemax: app".into(),
+            body: "Fix the login test: checks passed - ready for review".into(),
+        };
+        let name = notice_file_name(&n, 0);
+        assert_eq!(name, "2027-01-15-n12-task_finished.md");
+        let text = render_notice(&n, 0);
+        assert!(text.ends_with("ready for review\n"), "{text}");
+        let entry = parse_note(&name, &text).unwrap();
+        assert_eq!((entry.notice, entry.job_id), (Some(12), None));
+        assert_eq!(entry.name, "idlemax: app");
+        assert_eq!(entry.result, "task_finished");
+        assert_eq!(entry.finished_ms, Some(n.at_ms));
+
+        let note =
+            "# compile: failed\n\n- Job: 7 (attempt 2)\n- Finished: 2026-11-08 10:00:00 +00:00\n";
+        let job = parse_note("2026-11-08-7-compile.md", note).unwrap();
+        let keys: Vec<String> = serde_json::to_value(&job)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "file_name",
+                "finished_ms",
+                "job_id",
+                "name",
+                "result",
+                "time"
+            ]
+        );
     }
 }

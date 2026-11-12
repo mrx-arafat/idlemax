@@ -1,20 +1,13 @@
-//! Adapter: sends desktop notifications on macOS via osascript.
+//! Adapter: shows a desktop notification on macOS via osascript; other systems get the inbox
+//! note only.
 
-use idlemax_core::notify;
-use idlemax_core::types::JobStatus;
+use idlemax_core::notify::Notification;
 use tracing::warn;
 
-/// Sends a desktop notification for a finished job if running on macOS.
-pub fn notify_job_finish(
-    name: &str,
-    status: JobStatus,
-    exit_code: Option<i32>,
-    error: Option<&str>,
-) {
+pub fn show(notif: &Notification) {
     if !cfg!(target_os = "macos") {
         return;
     }
-    let notif = notify::job_finish_notification(name, status, exit_code, error);
     match std::process::Command::new("osascript")
         .args([
             "-e",

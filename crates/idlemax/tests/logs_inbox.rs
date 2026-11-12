@@ -239,6 +239,38 @@ fn inbox_fixture_list_and_show() {
     // Show nonexistent note fails
     let out_none = env.run(&["inbox", "show", "999"]);
     assert!(!out_none.status.success());
+
+    // A notice note lists beside the job note, newest first, and shows as n<id>.
+    use idlemax_core::notify::notice::{Notice, NoticeKind};
+    let notice = Notice {
+        id: 1,
+        at_ms: 1730000060000,
+        kind: NoticeKind::TaskFinished,
+        title: "idlemax: app".into(),
+        body: "Fix the login test: checks passed - ready for review".into(),
+    };
+    let name = inbox::notice_file_name(&notice, 0);
+    fs::write(
+        env.paths.inbox_dir().join(name),
+        inbox::render_notice(&notice, 0),
+    )
+    .unwrap();
+    let both = env.run(&["inbox", "list", "--json"]);
+    let arr: Vec<serde_json::Value> = serde_json::from_slice(&both.stdout).unwrap();
+    assert_eq!(
+        (arr[0]["notice"].clone(), arr[1]["job_id"].clone()),
+        (1.into(), 21.into())
+    );
+    assert_eq!(arr[1], json_val[0], "a job note's JSON is unchanged");
+    let table =
+        String::from_utf8_lossy(&env.run(&["--format", "table", "inbox"]).stdout).into_owned();
+    assert!(table.contains("n1"), "{table}");
+    let shown = env.run(&["inbox", "show", "n1"]);
+    assert!(String::from_utf8_lossy(&shown.stdout).contains("ready for review"));
+    let bad = env.run(&["inbox", "show", "x1"]);
+    assert_eq!(bad.status.code(), Some(2));
+    let said = [bad.stdout, bad.stderr].concat();
+    assert!(String::from_utf8_lossy(&said).contains("job id such as 42 or a notice such as n7"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

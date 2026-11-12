@@ -240,7 +240,7 @@ No AI account is configured, so no Budget exists in these scenarios.
 - [x] Task 5: Change limits through the API
 - [x] Task 6: Store, list and approve rule proposals
 - [x] Task 7: Decide and store the three kinds of notice
-- [ ] Task 8: Deliver a notice to the desktop and the inbox
+- [x] Task 8: Deliver a notice to the desktop and the inbox
 - [ ] Task 9: Add the dispatcher controls and views to the dashboard
 - [ ] Task 10: Add the Dispatch tab to the TUI
 - [ ] Task 11: Add `idlemax mcp`
@@ -649,13 +649,13 @@ The per-job desktop notification goes away, so only the three kinds interrupt.
 
 **Definition of Done:**
 
-- [ ] A heartbeat with `notices_after: 0` gets the stored notice once; the next heartbeat with its id gets none; a heartbeat without the field gets none.
-- [ ] After `deliver` with `agent.notify` false, the temp home's inbox holds one note for the notice, the cursor file holds its id, no notification was shown, and delivering the same notice again leaves one note.
-- [ ] With `agent.notify` true, a reply with one notice asks `show` once with the notice's title, and a reply with three asks it once with `idlemax: 3 notices`.
-- [ ] A finished plain job and a stopped worker job both leave `show` uncalled in `reap_with`, and the worker job leaves no job note.
-- [ ] `idlemax inbox` lists a job note and a notice note together, newest first, and `idlemax inbox show n1` prints the notice note.
-- [ ] `idlemax inbox --json` for a job note has the same keys as before this task.
-- [ ] Verify: `cargo test -p idlemax-core job_run::inbox && cargo test -p idlemax-core notify && cargo test -p idlemax --bin idlemax agent::notices && cargo test -p idlemax --test logs_inbox && cargo test -p idlemax --bin idlemax coord::api && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A heartbeat with `notices_after: 0` gets the stored notice once; the next heartbeat with its id gets none; a heartbeat without the field gets none.
+- [x] After `deliver` with `agent.notify` false, the temp home's inbox holds one note for the notice, the cursor file holds its id, no notification was shown, and delivering the same notice again leaves one note.
+- [x] With `agent.notify` true, a reply with one notice asks `show` once with the notice's title, and a reply with three asks it once with `idlemax: 3 notices`.
+- [x] A finished plain job and a stopped worker job both leave `show` uncalled in `reap_with`, and the worker job leaves no job note.
+- [x] `idlemax inbox` lists a job note and a notice note together, newest first, and `idlemax inbox show n1` prints the notice note.
+- [x] `idlemax inbox --json` for a job note has the same keys as before this task.
+- [x] Verify: `cargo test -p idlemax-core job_run::inbox && cargo test -p idlemax-core notify && cargo test -p idlemax --bin idlemax agent::notices && cargo test -p idlemax --test logs_inbox && cargo test -p idlemax --bin idlemax coord::api && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 9: Add the dispatcher controls and views to the dashboard
 

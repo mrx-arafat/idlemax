@@ -26,6 +26,9 @@ use super::{advice, AppState};
 use crate::coord::store::{NewEvent, Store, StoreError, UpdateWrites};
 use crate::state::now_ms;
 
+const MAX_NOTICES: u32 = 20;
+const NOTICE_MAX_AGE_MS: i64 = 86_400_000;
+
 /// `POST /v1/agent/heartbeat`.
 pub async fn heartbeat(
     State(app): State<AppState>,
@@ -124,10 +127,16 @@ pub(super) fn on_heartbeat(
         }
     }
     let (assign, queued_work) = assign_jobs(store, cfg, hb, &paused, now)?;
+    // At most 20, none older than a day, so a new device gets no old backlog.
+    let notices = match hb.notices_after {
+        Some(after) => store.notices_after(after, now - NOTICE_MAX_AGE_MS, MAX_NOTICES)?,
+        None => Vec::new(),
+    };
     Ok(HeartbeatReply {
         assign,
         commands: plan.commands,
         queued_work,
+        notices,
     })
 }
 

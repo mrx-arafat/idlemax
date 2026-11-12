@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::capacity::{AccountCapacity, Capacity};
 use crate::dispatch::room::RoomDecision;
+use crate::notify::notice::Notice;
 use crate::types::{
     ControlAction, ControlScope, CostClass, DeviceId, DeviceInfo, GuardDecision, Job, JobId,
     JobStatus, MetricsSnapshot, QuotaSnapshot, UnixMs,
@@ -46,6 +47,9 @@ pub struct Heartbeat {
     /// The worker room of the newest sample (D14), sent with every heartbeat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room: Option<RoomDecision>,
+    /// The id of the newest notice this device delivered, 0 for none (D17, A22).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notices_after: Option<i64>,
 }
 
 /// Longest device id and host name an agent may report.
@@ -121,6 +125,9 @@ pub struct HeartbeatReply {
     /// Eligible queued work with user-idle treated as met; all other checks still apply.
     #[serde(default)]
     pub queued_work: bool,
+    /// Notices after the heartbeat's `notices_after`, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<Notice>,
 }
 
 /// POST /v1/agent/job-update, on every status change of a leased job.

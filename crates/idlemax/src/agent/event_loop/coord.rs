@@ -49,6 +49,22 @@ impl Agent {
             self.reading.kill_switch = present;
         }
         self.reconcile(&reply.commands, &[], &reply.assign).await;
+        if !reply.notices.is_empty() {
+            let (paths, notify) = (self.paths.clone(), self.notify);
+            let notices = reply.notices;
+            let done = tokio::task::spawn_blocking(move || {
+                crate::agent::notices::deliver(
+                    &paths,
+                    &notices,
+                    notify,
+                    &crate::agent::notify::show,
+                );
+            })
+            .await;
+            if let Err(e) = done {
+                warn!(error = %e, "notice delivery failed");
+            }
+        }
     }
 
     /// A heartbeat trip when one is due, else a flush when online with updates waiting.
@@ -109,6 +125,7 @@ impl Agent {
             interactive_use: self.reading.interactive_use.clone(),
             local_paused: self.reading.kill_switch || self.state.local_paused(),
             room: Some(self.room.clone()),
+            notices_after: Some(crate::agent::notices::cursor(&self.paths)),
         }
     }
 

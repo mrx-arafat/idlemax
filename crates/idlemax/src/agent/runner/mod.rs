@@ -6,6 +6,7 @@
 mod daemon_tests;
 mod error;
 mod finish;
+pub(crate) use finish::write_private;
 mod launch;
 pub(super) mod os;
 mod pidfile;

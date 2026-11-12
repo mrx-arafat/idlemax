@@ -444,7 +444,9 @@ idlemax inbox show 1       # the note: start and finish, run time, exit code, th
 
 `logs` reads `$IDLEMAX_HOME/logs/jobs/<id>.log` on this device.
 If the job ran elsewhere it says so (`job 12 ran on server; run this there`).
-Set `agent.notify = true` for a macOS notification with the job name and outcome when a job finishes.
+Three things interrupt you, and nothing else does: finished tasks (dispatcher workers that finished as ready for review or needing you, and plain jobs that succeeded, failed, were killed or parked, gathered so tasks that finish within 10 minutes of each other share one message), something that needs you (a task, an account out of quota past today, a device over the emergency line), and one summary of the day after 09:00.
+Each arrives on every device as an inbox note, `<date>-n<id>-<kind>.md`, listed by `idlemax inbox` with `n<id>` in the JOB column and printed by `idlemax inbox show n<id>`.
+Set `agent.notify = true` to also get a macOS notification for each; a worker's job writes no job note of its own, because its notice is the note.
 
 ## Use it from an AI agent
 
@@ -1000,7 +1002,7 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax doctor` | check this device's setup, with the fix for every problem; exit 1 on a failed check |
 | `idlemax why <id>` | every reason a job is not running, with the fix for each |
 | `idlemax logs <id> [--tail N] [-f]` | print a job's output from this device |
-| `idlemax inbox [list \| show <id>]` | finished-job notes from this device (default `list`) |
+| `idlemax inbox [list \| show <id \| n<id>>]` | finished-job notes and notices on this device (default `list`) |
 | `idlemax pause [--device D \| --account A \| --job N] [--reason TEXT]` | pause the whole cluster or one scope |
 | `idlemax resume [same flags]` | lift exactly that pause; resuming the cluster does not clear device, account or job pauses |
 | `idlemax stop-all [same flags]` | kill the scope's running jobs and hold new ones until you resume; a worker it stops keeps its state and continues only after `idlemax start` |
@@ -1144,7 +1146,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `agent.sample_secs`, `agent.heartbeat_secs` | `30`, `30` | guard sample and heartbeat intervals |
 | `agent.dispatch_inputs_secs` | `60` | how often the agent sends the paths of its git repositories, owner activity, roadmap items and the owner's changed files of switched-on projects to the coordinator; `0` sends nothing |
 | `agent.advisor_inputs_secs` | `900` | how often the agent sends its `gh` summary and session metadata to the advisor; `0` sends nothing |
-| `agent.notify` | `false` | post a macOS notification with the job name and outcome when a job finishes; ignored on other systems |
+| `agent.notify` | `false` | post a macOS notification for each notice (finished tasks, something that needs you, the daily summary); the inbox note is written either way, and other systems get only the note |
 | `agent.keep_awake` | `off` | `ac` prevents idle system sleep on macOS while eligible queued or running work exists on AC power; applies live |
 | `agent.ai_accounts` | `[]` | AI accounts this device may spend |
 | `agent.command_allowlist` | `[]` | exact `argv[0]` values a job may run; bare names resolve on the agent's PATH; empty denies all |

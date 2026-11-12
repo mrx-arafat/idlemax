@@ -9,6 +9,7 @@ mod dispatch_feed;
 mod event_loop;
 mod keep_awake;
 pub mod metrics;
+mod notices;
 pub mod notify;
 mod outbox;
 mod probes;

@@ -155,19 +155,11 @@ impl Agent {
             return;
         };
         self.refill_due |= !updates.is_empty();
+        // A finished job is a line of the coordinator's `task_finished` notice, not a
+        // notification of its own.
         for u in updates {
-            let name = self.state.job_name(u.id).map(str::to_string);
             let u = self.state.finished(u);
             info!(job = u.id, status = %u.status, exit_code = ?u.exit_code, error = ?u.error, "job ended");
-            if self.notify {
-                let name = name.as_deref().unwrap_or("job");
-                crate::agent::notify::notify_job_finish(
-                    name,
-                    u.status,
-                    u.exit_code,
-                    u.error.as_deref(),
-                );
-            }
             self.outbox.push(u);
         }
     }

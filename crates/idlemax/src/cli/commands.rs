@@ -121,10 +121,11 @@ pub(super) enum JobCmd {
 pub enum InboxCmd {
     /// List notes in the inbox (default)
     List,
-    /// Print the note markdown for a job
+    /// Print the note markdown for a job or a notice
     Show {
-        /// Job ID
-        id: JobId,
+        /// Job ID, or n<id> for a notice
+        #[arg(value_parser = super::inbox::parse_note_ref)]
+        id: super::inbox::NoteRef,
     },
 }
 

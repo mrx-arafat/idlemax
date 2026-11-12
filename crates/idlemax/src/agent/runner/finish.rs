@@ -52,7 +52,12 @@ pub fn finish(
         output: &output,
         utc_offset_secs: chrono::Local::now().offset().local_minus_utc(),
     };
-    let output_path = write_note(paths, &report);
+    // A worker's finished task is told by the coordinator's notice, not a job note.
+    let output_path = if ended.job.spec.worker.is_some() {
+        None
+    } else {
+        write_note(paths, &report)
+    };
     JobUpdate {
         // Stamped by the agent outbox.
         seq: 0,
@@ -105,7 +110,7 @@ fn append_footer(path: &Path, outcome: &Outcome) {
 }
 
 /// Writes `bytes` to a new or emptied file that only its owner can read.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut file = crate::state::private_file()
         .write(true)

@@ -1166,3 +1166,31 @@ async fn admission_lines_is_refused_from_the_api() {
         "{body}"
     );
 }
+
+#[tokio::test]
+async fn a_heartbeat_gets_each_notice_once_and_only_when_it_asks() {
+    use idlemax_core::notify::notice::{Draft, NoticeKind};
+    let mut store = Store::open_in_memory().unwrap();
+    let draft = Draft {
+        kind: NoticeKind::TaskFinished,
+        title: "idlemax: app".into(),
+        body: "Fix it: checks passed - ready for review".into(),
+        keys: vec!["run:1".into()],
+    };
+    let stored = store.insert_notice(&draft, now_ms()).unwrap();
+    let api = Api::start_with_store(store, Config::default()).await;
+    let beat = |after: Option<i64>| {
+        let mut hb = mac_heartbeat(Vec::new());
+        hb.notices_after = after;
+        let api = &api;
+        async move {
+            let res = api.post("/v1/agent/heartbeat", &hb).await;
+            res.json::<HeartbeatReply>().await.unwrap().notices
+        }
+    };
+    let first = beat(Some(0)).await;
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].title, "idlemax: app");
+    assert!(beat(Some(stored.id)).await.is_empty());
+    assert!(beat(None).await.is_empty());
+}
