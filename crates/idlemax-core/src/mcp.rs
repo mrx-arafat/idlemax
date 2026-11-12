@@ -60,11 +60,15 @@ pub fn handle(line: &str) -> Step {
             Ok(tool) => Step::Call { id, tool },
             Err(why) => Step::Reply(error(&id, INVALID_PARAMS, &why)),
         },
-        other => Step::Reply(error(
-            &id,
-            METHOD_NOT_FOUND,
-            &format!("unknown method {other}"),
-        )),
+        other => {
+            // The name is echoed, so a huge one is cut.
+            let name: String = other.chars().take(64).collect();
+            Step::Reply(error(
+                &id,
+                METHOD_NOT_FOUND,
+                &format!("unknown method {name}"),
+            ))
+        }
     }
 }
 
@@ -214,6 +218,9 @@ mod tests {
         assert_eq!(reply("not json")["id"], Value::Null);
         let unknown = reply(r#"{"jsonrpc":"2.0","id":3,"method":"resources/list"}"#);
         assert_eq!(unknown["error"]["code"], METHOD_NOT_FOUND);
+        let huge = json!({"jsonrpc": "2.0", "id": 4, "method": "m".repeat(100_000)});
+        let echoed = reply(&huge.to_string())["error"]["message"].to_string();
+        assert!(echoed.len() < 100, "{}", echoed.len());
     }
 
     #[test]

@@ -111,17 +111,14 @@ async fn switch(c: &ApiClient, name: &str, on: bool) -> Result<String> {
     ))
 }
 
+/// The message and the next step the CLI would print for the same failure.
 fn explain(e: anyhow::Error) -> String {
-    let e = match e.downcast_ref::<ClientError>() {
-        Some(ClientError::Unreachable { url, .. }) => unreachable(Peer::Coordinator, url).into(),
-        _ => e,
+    let c = match e.downcast_ref::<ClientError>() {
+        Some(ClientError::Unreachable { url, .. }) => unreachable(Peer::Coordinator, url),
+        _ => CliError::from_error(&e),
     };
-    match e.downcast_ref::<CliError>() {
-        Some(CliError {
-            what,
-            help: Some(help),
-            ..
-        }) => format!("{what}\nnext: {help}"),
-        _ => e.to_string(),
+    match c.help {
+        Some(help) => format!("{}\nnext: {help}", c.what),
+        None => c.what,
     }
 }

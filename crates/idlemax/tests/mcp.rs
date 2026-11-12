@@ -168,3 +168,48 @@ fn a_launched_server_refuses_on_switches_and_one_without_a_token_says_setup() {
     let (failed, said) = text(&replies[2]);
     assert!(failed && said.contains("idlemax setup"), "{said}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_tool_says_the_next_step_the_cli_would() {
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum::{Json, Router};
+    use std::os::unix::fs::PermissionsExt;
+
+    let lock = "this call comes from a job or worker that idlemax started (pid 9)";
+    let router = Router::new()
+        .route(
+            "/v1/projects",
+            get(|| async {
+                Json(json!([{"id": 1, "name": "app", "device": "mac", "path": "/srv/app"}]))
+            }),
+        )
+        .route(
+            "/v1/projects/1/on",
+            post(move || async move { (StatusCode::FORBIDDEN, Json(json!({"error": lock}))) }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, router).await;
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let token = state.join("token");
+    std::fs::write(&token, "testtoken-0123456789abcdef-0123456789\n").unwrap();
+    std::fs::set_permissions(&token, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let mut cmd = idlemax(dir.path());
+    cmd.args(["--coord", &url]);
+    let replies = tokio::task::spawn_blocking(move || {
+        session(cmd, &[call(1, "project_on", json!({"name": "app"}))])
+    })
+    .await
+    .unwrap();
+    let (failed, said) = text(&replies[0]);
+    assert!(failed, "{said}");
+    assert!(
+        said.contains(lock) && said.contains("next: ask the owner"),
+        "{said}"
+    );
+}
