@@ -141,20 +141,13 @@ fn account_budget(
         .collect();
     let slot = slot_of(a, &windows, now);
     let charges = shared.samples.charges(&a.name, q);
-    let ended_in = |from: UnixMs, to: UnixMs| -> f64 {
-        charges
-            .iter()
-            .filter(|(end, _)| end.is_some_and(|e| e > from && e <= to))
-            .map(|(_, pct)| pct)
-            .sum()
-    };
+    let ended_in = |from, to| ended_between(&charges, from, to);
     let committed: f64 = charges
         .iter()
         .filter(|(end, _)| end.is_none())
         .map(|(_, p)| p)
         .sum();
     let cycle_start = slot.end_ms + i64::from(slot.days_left.saturating_sub(1)) * DAY_MS - WEEK_MS;
-    let cli = a.provider.cli();
     let costs = tier_costs(a.provider, &a.name, &shared.samples.table, q);
     Ok(budget(&BudgetInput {
         now_ms: now,
@@ -174,14 +167,28 @@ fn account_budget(
             .find(|(n, _)| *n == a.name)
             .map(|(_, t)| *t),
         paused: shared.paused.contains(&a.name),
-        last_owner_use_ms: shared
-            .interactive
-            .iter()
-            .filter(|(c, _)| Some(c.as_str()) == cli)
-            .map(|(_, t)| *t)
-            .max(),
+        last_owner_use_ms: last_use(&shared.interactive, a),
         costs: &costs,
     }))
+}
+
+/// What the Runs that ended in (from, to] cost.
+fn ended_between(charges: &[(Option<UnixMs>, f64)], from: UnixMs, to: UnixMs) -> f64 {
+    charges
+        .iter()
+        .filter(|(end, _)| end.is_some_and(|e| e > from && e <= to))
+        .map(|(_, pct)| pct)
+        .sum()
+}
+
+/// The owner's newest use of the account's provider CLI.
+fn last_use(interactive: &[(String, UnixMs)], a: &AccountConfig) -> Option<UnixMs> {
+    let cli = a.provider.cli()?;
+    interactive
+        .iter()
+        .filter(|(c, _)| c == cli)
+        .map(|(_, t)| *t)
+        .max()
 }
 
 // SHORTCUT: the measuring week is read from the Run records here, because Spec 2's
