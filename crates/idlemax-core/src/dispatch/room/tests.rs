@@ -153,4 +153,15 @@ fn no_memory_reading_holds_with_no_slots() {
     let d = settled(&mut laptop(), m);
     assert_eq!((d.state, d.open_slots), (LineState::Hold, 0));
     assert!(d.reason.contains("not read"), "{}", d.reason);
+    let unread = laptop().evaluate(&MetricsSnapshot {
+        swap_in_per_sec: None,
+        ..busy_mac(100_000)
+    });
+    assert!(
+        unread
+            .reason
+            .ends_with("hold: swap-in is not read on this system"),
+        "{}",
+        unread.reason
+    );
 }

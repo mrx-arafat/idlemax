@@ -304,7 +304,9 @@ impl WorkerRoom {
             }
         }
         let low_for_a_minute = self.low_since.is_some_and(|s| now - s >= SWAP_IN_WINDOW_MS);
-        if !low_for_a_minute {
+        if m.swap_in_per_sec.is_none() {
+            f.push((LineState::Hold, "swap-in is not read on this system".into()));
+        } else if !low_for_a_minute {
             let low = num(p.swap_in_low_pages_per_sec);
             f.push((
                 LineState::Hold,
