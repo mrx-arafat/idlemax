@@ -788,7 +788,7 @@ A `starting`, `running` or `checking` run whose job a pause holds is labelled `p
 `off` plans nothing; `propose` shows what the dispatcher would launch and launches nothing; `auto` launches the planned workers.
 Any other value is 400 and the file is left as it was.
 
-In `auto` the coordinator's 15-second sweep runs one launch step after lease expiry, reading `[dispatcher]` and `[workers]` fresh, unless the owner's stop is stored.
+In `auto` the coordinator runs one launch step every `workers.settle_secs` (at least 1 s, at most 15 s), on its own clock apart from the 15-second sweep, reading `[dispatcher]` and `[workers]` fresh, unless the owner's stop is stored; so with a short settle a new worker can follow as soon as the last one is running and has settled.
 It first stops, with their state saved (their Runs `shed`), the live workers of every account whose Budget has basis `resting` or `five_hour_stop`; a `spent` day stops nothing.
 Then per device it relaunches the oldest `shed` Run that may launch (a `resume` when its session is stored, else a `launch` over its worktree), or else takes the first orchestrator pick that may.
 A launch or relaunch needs the device online and unpaused, the account unpaused and allowed by its worker gate (a launch's estimate must fit the Budget's `left_pct`; a relaunch, already counted as committed, needs only a usable Budget), a room of `run` with an open slot, no Run of the device in `starting`, the last worker job of the device at least `workers.settle_secs` old, the CLI in `workers.clis`, and for a relaunch a device that no longer reports the Run's previous job.

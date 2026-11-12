@@ -1,6 +1,7 @@
 //! Coordinator background sweeps (adapter): lease expiry, offline devices and due schedules
-//! every 15 s, store pruning hourly, the dispatcher step every minute, advisor refresh every
-//! 15 min. Loops log failures and continue.
+//! every 15 s, the worker launch step once per `workers.settle_secs`, store pruning hourly,
+//! the dispatcher step every minute, advisor refresh every 15 min. Loops log failures and
+//! continue.
 
 use std::time::Duration;
 
@@ -42,6 +43,7 @@ pub fn spawn(app: AppState) -> Vec<JoinHandle<()>> {
     // The dispatcher has its own switch (`dispatcher.mode`), so it never hangs on the advisor's.
     let mut tasks = vec![
         tokio::spawn(maintain(app.clone())),
+        tokio::spawn(launcher(app.clone())),
         tokio::spawn(dispatch(app.clone())),
     ];
     if app.config().advisor.enabled {
@@ -56,7 +58,6 @@ async fn maintain(app: AppState) {
     let mut last_prune_ms = 0;
     // None until the first sweep, so a coordinator start is not taken for a sleep.
     let mut last_sweep_ms: Option<UnixMs> = None;
-    let refusals = std::sync::Arc::new(std::sync::Mutex::new(Refusals::default()));
     loop {
         tick.tick().await;
         let now = now_ms();
@@ -74,10 +75,24 @@ async fn maintain(app: AppState) {
             Ok(()) => {}
             Err(e) => tracing::warn!(error = %e, "coordinator sweep failed"),
         }
-        if let Err(e) = launch(&app, &refusals, now).await {
+    }
+}
+
+/// The `auto` step on its own clock: once per `workers.settle_secs` (read live), so workers
+/// are added one at a time as fast as memory may settle (D13), not one per 15 s sweep.
+async fn launcher(app: AppState) {
+    let refusals = std::sync::Arc::new(std::sync::Mutex::new(Refusals::default()));
+    loop {
+        if let Err(e) = launch(&app, &refusals, now_ms()).await {
             tracing::warn!(error = %e, "worker launch step failed");
         }
+        tokio::time::sleep(launch_pause(app.live().current().workers.settle_secs)).await;
     }
+}
+
+/// The launcher's pause: `settle_secs`, at least 1 s and at most one sweep.
+fn launch_pause(settle_secs: u64) -> Duration {
+    Duration::from_secs(settle_secs.clamp(1, SWEEP_EVERY.as_secs()))
 }
 
 /// The `auto` step after lease expiry: it reads `[dispatcher]` and `[workers]` fresh (A2).
@@ -217,6 +232,15 @@ fn mark_offline(store: &mut Store, cfg: &Config, now: UnixMs) -> Result<(), Stor
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_launcher_steps_once_per_settle_between_one_second_and_one_sweep() {
+        use super::{launch_pause, SWEEP_EVERY};
+        use std::time::Duration;
+        assert_eq!(launch_pause(5), Duration::from_secs(5));
+        assert_eq!(launch_pause(0), Duration::from_secs(1));
+        assert_eq!(launch_pause(600), SWEEP_EVERY);
+    }
     use idlemax_core::protocol::Heartbeat;
     use idlemax_core::types::{DeviceInfo, EventKind};
 
