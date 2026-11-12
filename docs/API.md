@@ -22,8 +22,8 @@ Each write is in one class; a route not listed is token-only, as before.
 | Access | Calls |
 |---|---|
 | `Read` | every `GET` |
-| `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/dispatcher/mode` toward `off` |
-| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject` |
+| `Stop` | `pause`, `stop_all` and `cancel` on `POST /v1/control` and `POST /v1/local/control`; `POST /v1/projects/{id}/off`; `POST /v1/dispatcher/mode` toward `off`; `POST /v1/workers/stop` |
+| `Owner` | `resume` on both control routes; `POST /v1/local/reload`; `POST /v1/dispatcher/mode` toward any other mode; `POST /v1/projects`; `POST /v1/projects/{id}/on`; `POST /v1/projects/{id}/settings`; `POST /v1/limits`; `POST /v1/plan/refresh`; `POST /v1/proposals/{id}/approve` and `/reject`; `POST /v1/workers/start`; `POST /v1/runs/{id}/keep` and `/discard` |
 | token only | the writes under `/v1/jobs`, `/v1/schedules` and `/v1/advice`, and the `/v1/agent/*` routes |
 
 For an `Owner` call from this host the server finds the calling process (Linux: `/proc/net/tcp{,6}` and the `fd` links under `/proc`; macOS: `lsof`) and walks up to 64 of its parents.

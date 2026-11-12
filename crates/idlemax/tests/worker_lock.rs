@@ -227,6 +227,9 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
         ("/v1/plan/refresh", ""),
         ("/v1/proposals/1/approve", ""),
         ("/v1/proposals/1/reject", ""),
+        ("/v1/workers/start", ""),
+        ("/v1/runs/1/keep", r#"{"merge":false}"#),
+        ("/v1/runs/1/discard", ""),
     ] {
         assert_eq!(home.post_marked(coord, path, body), "403", "{path} {body}");
     }
@@ -236,6 +239,8 @@ fn owner_only_routes_are_403_from_a_launched_process_and_stop_routes_are_not() {
     );
     let stop = r#"{"action":"stop_all","scope":{"type":"global"}}"#;
     assert_eq!(home.post_marked(coord, "/v1/control", stop), "200");
+    let workers = r#"{"scope":{"type":"global"},"reason":"from a job"}"#;
+    assert_eq!(home.post_marked(coord, "/v1/workers/stop", workers), "200");
     assert_eq!(
         home.post_marked(coord, "/v1/projects/999999/off", "{}"),
         "404"
@@ -273,6 +278,12 @@ fn the_cli_refuses_owner_commands_from_a_marked_environment_before_any_call() {
         (&["--coord", &closed, "resume"][..], Some("")),
         (&["config", "set", "agent.notify", "true"][..], None),
         (&["--coord", &closed, "plan", "--refresh"][..], None),
+        (&["--coord", &closed, "start"][..], None),
+        (&["--coord", &closed, "review", "keep", "1"][..], None),
+        (
+            &["--coord", &closed, "review", "discard", "1", "--yes"][..],
+            None,
+        ),
     ] {
         let out = run(args, token);
         assert_eq!(out.status.code(), Some(1), "{args:?}: {}", text(&out));

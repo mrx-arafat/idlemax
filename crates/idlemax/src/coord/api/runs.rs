@@ -6,6 +6,7 @@ use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use idlemax_core::control::caller::Access;
 use idlemax_core::scheduler::lease_deadline;
 use idlemax_core::types::{ActivePolicy, ControlScope, CostClass, EventKind, Job, JobSpec};
 use idlemax_core::worker::control::{
@@ -16,6 +17,7 @@ use idlemax_core::worker::RunId;
 use idlemax_core::worker::{WorkerAction, WorkerSpec};
 use serde::Deserialize;
 
+use super::caller::Who;
 use super::http::{ApiFailure, JsonBody};
 use super::{page_limit, AppState};
 use crate::coord::dispatch::stop_workers;
@@ -72,8 +74,10 @@ pub async fn get_one(
 /// so no line, guard or pause holds it (A10).
 pub async fn stop(
     State(app): State<AppState>,
+    who: Who,
     JsonBody(req): JsonBody<StopRequest>,
 ) -> Result<Json<StopReply>, ApiFailure> {
+    who.ensure(Access::Stop).await?;
     let now = now_ms();
     let reply = app
         .with_store(move |store, _| {
@@ -106,7 +110,9 @@ pub async fn stop(
 /// `POST /v1/workers/start`: lifts the owner's stop and puts every stopped Run back in the
 /// queue, which the launch step drains one at a time (D11). The reply names every pause
 /// still in force.
-pub async fn start(State(app): State<AppState>) -> Result<Json<StartReply>, ApiFailure> {
+pub async fn start(State(app): State<AppState>, who: Who) -> Result<Json<StartReply>, ApiFailure> {
+    // It lifts the owner's stop, so a launched job can never call it (A14).
+    who.ensure(Access::Owner).await?;
     let now = now_ms();
     let reply = app
         .with_store(move |store, _| {
@@ -133,9 +139,11 @@ pub struct KeepRequest {
 /// the Run's device. 404 for an unknown Run, 409 for one with a live job or not finished.
 pub async fn keep(
     state: State<AppState>,
+    who: Who,
     path: Result<Path<RunId>, PathRejection>,
     JsonBody(req): JsonBody<KeepRequest>,
 ) -> Result<(StatusCode, Json<Job>), ApiFailure> {
+    who.ensure(Access::Owner).await?;
     let action = if req.merge {
         WorkerAction::KeepMerge
     } else {
@@ -147,8 +155,10 @@ pub async fn keep(
 /// `POST /v1/runs/{id}/discard`: a discard job leased to the Run's device.
 pub async fn discard(
     state: State<AppState>,
+    who: Who,
     path: Result<Path<RunId>, PathRejection>,
 ) -> Result<(StatusCode, Json<Job>), ApiFailure> {
+    who.ensure(Access::Owner).await?;
     review(state, path, WorkerAction::Discard).await
 }
 
