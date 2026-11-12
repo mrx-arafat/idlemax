@@ -51,11 +51,19 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "idlemax plan",
-        "see which workers the dispatcher would launch now and why; it launches nothing",
+        "see which workers the dispatcher would launch now and why",
     ),
     (
-        "idlemax mode <off|propose>",
-        "switch the dispatcher off, or to propose, where it only shows what it would launch",
+        "idlemax mode <off|propose|auto>",
+        "switch the dispatcher off, to propose, where it only shows what it would launch, or to auto, where it launches workers",
+    ),
+    (
+        "idlemax stop",
+        "stop every AI worker with its state saved; nothing launches until idlemax start",
+    ),
+    (
+        "idlemax start",
+        "let the stopped workers continue their sessions",
     ),
     (
         "idlemax pause",

@@ -28,6 +28,7 @@ mod setup;
 mod skill;
 mod statusline;
 pub mod why;
+mod workers;
 
 use std::io::IsTerminal;
 use std::process::ExitCode;

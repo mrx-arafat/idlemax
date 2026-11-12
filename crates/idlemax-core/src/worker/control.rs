@@ -3,8 +3,39 @@
 //! 5-hour line, the cap, a rate limit) moves that account's live Runs to `shed`, so they
 //! continue by themselves when the account allows it (A18). Pure.
 
+use serde::{Deserialize, Serialize};
+
 use super::run::{Run, RunState};
+use super::RunId;
 use crate::types::{ControlScope, UnixMs};
+
+/// `POST /v1/workers/stop`: `global` is the owner's stop, `account` the stop Spec 3 asks
+/// for; `device` and `job` are refused until Spec 5.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StopRequest {
+    pub scope: ControlScope,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StopReply {
+    /// The Runs this stop moved.
+    pub workers: Vec<RunId>,
+    /// The owner's stop is stored: nothing launches until `idlemax start`.
+    pub stop_in_force: bool,
+}
+
+/// `POST /v1/workers/start`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StartReply {
+    /// The stopped Runs put back in the queue.
+    pub workers: Vec<RunId>,
+    /// Pauses still in force; nothing is launched into a paused scope.
+    pub paused: Vec<ControlScope>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StopError {

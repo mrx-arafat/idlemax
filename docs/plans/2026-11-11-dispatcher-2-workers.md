@@ -156,7 +156,7 @@ target/debug/idlemax init
 - [x] Task 7: Start, hold, shed and stop workers in the agent tick
 - [x] Task 8: Check a finished task and give it a verdict
 - [x] Task 9: Launch from the Plan in auto mode, one worker at a time
-- [ ] Task 10: Add idlemax stop and idlemax start
+- [x] Task 10: Add idlemax stop and idlemax start
 - [ ] Task 11: Add idlemax review with keep, merge and discard
 - [ ] Task 12: Needs the owner's OK: prove each CLI and the fences on the Mac, then switch on auto
 
@@ -699,13 +699,13 @@ Both sit beside the existing `pause`, `resume`, `stop-all` and the `PAUSE` file,
 
 **Definition of Done:**
 
-- [ ] A global stop with two running workers leaves both runs `stopped`, both jobs `killed` and the stop row stored; a store opened again on the same file still holds the row and `launch_due` launches nothing.
-- [ ] A start removes the row and moves both runs to `shed`; a run stopped by `stop-all` stays `stopped` until a start.
-- [ ] An account stop moves only that account's runs, to `shed`, and stores no row; a `device` scope answers 400.
-- [ ] A global stop sent while a global pause is in force still stops both runs.
-- [ ] Against a coordinator in a temp home with no runs, `idlemax stop --json` and `idlemax start --json` exit 0 and report zero workers, and the test asserts the home is not the real one as `tests/e2e.rs:75` does.
-- [ ] The README "Controls" section and `docs/API.md` "Control semantics" say how `stop` and `start` differ from `pause`, `resume`, `stop-all` and `PAUSE`.
-- [ ] Verify: `cargo test -p idlemax-core worker::control && cargo test -p idlemax --bin idlemax api::runs && cargo test -p idlemax --test workers && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A global stop with two running workers leaves both runs `stopped`, both jobs `killed` and the stop row stored; a store opened again on the same file still holds the row and `launch_due` launches nothing.
+- [x] A start removes the row and moves both runs to `shed`; a run stopped by `stop-all` stays `stopped` until a start.
+- [x] An account stop moves only that account's runs, to `shed`, and stores no row; a `device` scope answers 400.
+- [x] A global stop sent while a global pause is in force still stops both runs.
+- [x] Against a coordinator in a temp home with no runs, `idlemax stop --json` and `idlemax start --json` exit 0 and report zero workers, and the test asserts the home is not the real one as `tests/e2e.rs:75` does.
+- [x] The README "Controls" section and `docs/API.md` "Control semantics" say how `stop` and `start` differ from `pause`, `resume`, `stop-all` and `PAUSE`.
+- [x] Verify: `cargo test -p idlemax-core worker::control && cargo test -p idlemax --bin idlemax api::runs && cargo test -p idlemax --test workers && cargo test -p idlemax --test skill && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 11: Add idlemax review with keep, merge and discard
 

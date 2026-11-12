@@ -959,8 +959,11 @@ Output flags work on every command: `--format table|toon|json` (`--json` is `--f
 | `idlemax inbox [list \| show <id>]` | finished-job notes from this device (default `list`) |
 | `idlemax pause [--device D \| --account A \| --job N] [--reason TEXT]` | pause the whole cluster or one scope |
 | `idlemax resume [same flags]` | lift exactly that pause; resuming the cluster does not clear device, account or job pauses |
-| `idlemax stop-all [same flags]` | kill the scope's running jobs and hold new ones until you resume |
+| `idlemax stop-all [same flags]` | kill the scope's running jobs and hold new ones until you resume; a worker it stops keeps its state and continues only after `idlemax start` |
+| `idlemax stop [--reason TEXT]` | stop every AI worker within seconds with its state saved; nothing launches, also after a reboot, until `idlemax start` |
+| `idlemax start` | let the workers `stop` stopped continue their sessions, one at a time, after memory and quota are checked again; it names any pause still in force |
 | `idlemax quota` | windows, reserve, headroom, and why each account is or is not spendable |
+| `idlemax mode off\|propose\|auto` | what the dispatcher does with its plan, see [Auto mode](#auto-mode) |
 | `idlemax events [--limit N]` | recent events (default limit 50) |
 | `idlemax advise [list \| accept <id> \| dismiss <id> \| refresh]` | advisor recommendations (default `list`) |
 | `idlemax service install \| uninstall \| status [agent\|coord]` | run the agent (or the coordinator) as a background service, see [Keep it running](#keep-it-running); `--dry-run` previews `install` and `uninstall` |

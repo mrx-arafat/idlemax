@@ -320,3 +320,16 @@ fn a_slot_refused_on_ten_sweeps_for_one_reason_leaves_one_event() {
         .count();
     assert_eq!(refused, 1);
 }
+
+#[test]
+fn nothing_is_launched_while_the_owners_stop_is_stored() {
+    let (mut store, cfg, live) = world();
+    store.owner_stop(&[], "night", T0).unwrap();
+    let now = T0 + 10_000;
+    beat(&mut store, now, 20.0, LineState::Run, &[]);
+    sweep(&mut store, &cfg, &live, &mut Refusals::default(), now);
+    assert!(runs(&store).is_empty());
+    store.owner_start(&[]).unwrap();
+    sweep(&mut store, &cfg, &live, &mut Refusals::default(), now);
+    assert_eq!(runs(&store).len(), 1);
+}

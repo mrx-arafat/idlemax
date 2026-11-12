@@ -1,15 +1,22 @@
-//! Run routes (adapter): read the Runs of the dispatcher's workers. The `launch` column, which
-//! holds the brief, is never read here, so it never leaves the store.
+//! Run routes (adapter): read the Runs of the dispatcher's workers, and the owner's stop and
+//! start of every worker. The `launch` column, which holds the brief, is never read here, so
+//! it never leaves the store.
 
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::Json;
+use idlemax_core::types::{ControlScope, EventKind};
+use idlemax_core::worker::control::{
+    plan_start, plan_stop, StartReply, StopError, StopReply, StopRequest,
+};
 use idlemax_core::worker::run::{Run, RunState};
 use idlemax_core::worker::RunId;
 use serde::Deserialize;
 
-use super::http::ApiFailure;
+use super::http::{ApiFailure, JsonBody};
 use super::{page_limit, AppState};
+use crate::coord::dispatch::stop_workers;
+use crate::state::now_ms;
 
 #[derive(Debug, Deserialize)]
 pub struct RunsQuery {
@@ -54,64 +61,64 @@ pub async fn get_one(
     Ok(Json(run))
 }
 
-#[cfg(test)]
-mod tests {
-    use idlemax_core::worker::run::RunLaunch;
-    use idlemax_core::Config;
-    use reqwest::StatusCode;
-
-    use super::super::tests::Api;
-    use super::*;
-    use crate::coord::store::Store;
-
-    fn run(project: &str, state: RunState) -> Run {
-        Run {
-            device: "mac".into(),
-            project: project.into(),
-            task: "roadmap:1".into(),
-            account: "max".into(),
-            reason: "ready".into(),
-            state,
-            start_ms: 1,
-            ..Default::default()
-        }
-    }
-
-    #[tokio::test]
-    async fn runs_are_filtered_by_state_and_project_and_an_unknown_id_is_404() {
-        let mut store = Store::open_in_memory().unwrap();
-        let launch = RunLaunch {
-            brief: "secret brief".into(),
-            ..Default::default()
-        };
-        for (project, state) in [
-            ("a", RunState::Starting),
-            ("b", RunState::Starting),
-            ("a", RunState::Clean),
-        ] {
-            store.insert_run(&run(project, state), &launch).unwrap();
-        }
-        let api = Api::start_with_store(store, Config::default()).await;
-        let get = |path: &'static str| api.get_as(path, "localhost");
-
-        let res = get("/v1/runs?state=starting&project=a").await;
-        let text = res.text().await.unwrap();
-        assert!(!text.contains("secret brief"), "{text}");
-        let runs: Vec<Run> = serde_json::from_str(&text).unwrap();
-        assert_eq!(runs.len(), 1);
-        assert_eq!((runs[0].id, runs[0].project.as_str()), (1, "a"));
-        let all: Vec<Run> = get("/v1/runs").await.json().await.unwrap();
-        assert_eq!(all.iter().map(|r| r.id).collect::<Vec<_>>(), [3, 2, 1]);
-        assert_eq!(
-            get("/v1/runs?state=bogus").await.status(),
-            StatusCode::BAD_REQUEST
-        );
-
-        let one: Run = get("/v1/runs/2").await.json().await.unwrap();
-        assert_eq!(one.project, "b");
-        let res = get("/v1/runs/999").await;
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
-        let body: serde_json::Value = res.json().await.unwrap();
-        assert_eq!(body["error"], "run 999 not found");
-    }
+/// `POST /v1/workers/stop`: the owner's global stop, or an account's. It is one store write,
+/// so no line, guard or pause holds it (A10).
+pub async fn stop(
+    State(app): State<AppState>,
+    JsonBody(req): JsonBody<StopRequest>,
+) -> Result<Json<StopReply>, ApiFailure> {
+    let now = now_ms();
+    let reply = app
+        .with_store(move |store, _| {
+            let why = req
+                .reason
+                .clone()
+                .unwrap_or_else(|| "stopped by you".into());
+            let done = match &req.scope {
+                ControlScope::Global => {
+                    let runs = store.list_runs(None, None, 0)?;
+                    let moved = plan_stop(&runs, &req.scope, now).map_err(bad)?;
+                    let done = store.owner_stop(&moved, &why, now)?;
+                    let msg = format!("workers stopped ({} live): {why}", done.len());
+                    store.append_event(EventKind::Control, None, None, &msg, now)?;
+                    done
+                }
+                ControlScope::Account(_) => stop_workers(store, &req.scope, &why, now)?,
+                ControlScope::Device(_) => return Err(bad(StopError::Scope("device"))),
+                ControlScope::Job(_) => return Err(bad(StopError::Scope("job"))),
+            };
+            Ok::<_, ApiFailure>(StopReply {
+                workers: done.iter().map(|r| r.id).collect(),
+                stop_in_force: store.worker_stop()?.is_some(),
+            })
+        })
+        .await?;
+    Ok(Json(reply))
 }
+
+/// `POST /v1/workers/start`: lifts the owner's stop and puts every stopped Run back in the
+/// queue, which the launch step drains one at a time (D11). The reply names every pause
+/// still in force.
+pub async fn start(State(app): State<AppState>) -> Result<Json<StartReply>, ApiFailure> {
+    let now = now_ms();
+    let reply = app
+        .with_store(move |store, _| {
+            let runs = store.list_runs(None, None, 0)?;
+            let done = store.owner_start(&plan_start(&runs, now))?;
+            let msg = format!("workers started: {} go back in the queue", done.len());
+            store.append_event(EventKind::Control, None, None, &msg, now)?;
+            Ok::<_, ApiFailure>(StartReply {
+                workers: done.iter().map(|r| r.id).collect(),
+                paused: store.paused_scopes()?,
+            })
+        })
+        .await?;
+    Ok(Json(reply))
+}
+
+fn bad(e: StopError) -> ApiFailure {
+    ApiFailure::BadRequest(e.to_string())
+}
+
+#[cfg(test)]
+mod tests;

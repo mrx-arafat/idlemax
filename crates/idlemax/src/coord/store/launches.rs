@@ -92,23 +92,40 @@ impl Store {
         now: UnixMs,
     ) -> StoreResult<Vec<Run>> {
         let tx = self.conn.transaction()?;
+        let done = stop_in(&tx, moved, why, now)?;
+        tx.commit()?;
+        Ok(done)
+    }
+
+    /// The owner's stop (D11): the stop row, the Runs `stopped` and their jobs `killed`, in
+    /// one transaction, so it survives a reboot and nothing launches while it is stored.
+    pub fn owner_stop(
+        &mut self,
+        moved: &[(Run, RunState)],
+        reason: &str,
+        now: UnixMs,
+    ) -> StoreResult<Vec<Run>> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO worker_stop (one, stopped_ms, reason) VALUES (1, ?1, ?2)
+             ON CONFLICT (one) DO UPDATE SET stopped_ms = excluded.stopped_ms,
+               reason = excluded.reason",
+            params![now, reason],
+        )?;
+        let done = stop_in(&tx, moved, reason, now)?;
+        tx.commit()?;
+        Ok(done)
+    }
+
+    /// The owner's start: the stop row goes and the stopped Runs go back in the queue.
+    pub fn owner_start(&mut self, moved: &[(Run, RunState)]) -> StoreResult<Vec<Run>> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM worker_stop", [])?;
         let mut done = Vec::new();
         for (run, expect) in moved {
-            if !update_run(&tx, run, *expect)? {
-                continue;
+            if update_run(&tx, run, *expect)? {
+                done.push(run.clone());
             }
-            let live = match run.job {
-                Some(id) => get_job(&tx, id)?.filter(|j| !j.status.is_terminal()),
-                None => None,
-            };
-            if let Some(mut job) = live {
-                job.status = JobStatus::Killed;
-                job.finished_ms = Some(now);
-                job.lease_expires_ms = None;
-                job.last_error = Some(why.to_string());
-                update_jobs(&tx, std::slice::from_ref(&job))?;
-            }
-            done.push(run.clone());
         }
         tx.commit()?;
         Ok(done)
@@ -158,6 +175,34 @@ impl Store {
             |r| r.get(0),
         )?)
     }
+}
+
+/// The writes behind `stop_runs`; the caller owns the transaction.
+fn stop_in(
+    tx: &rusqlite::Connection,
+    moved: &[(Run, RunState)],
+    why: &str,
+    now: UnixMs,
+) -> StoreResult<Vec<Run>> {
+    let mut done = Vec::new();
+    for (run, expect) in moved {
+        if !update_run(tx, run, *expect)? {
+            continue;
+        }
+        let live = match run.job {
+            Some(id) => get_job(tx, id)?.filter(|j| !j.status.is_terminal()),
+            None => None,
+        };
+        if let Some(mut job) = live {
+            job.status = JobStatus::Killed;
+            job.finished_ms = Some(now);
+            job.lease_expires_ms = None;
+            job.last_error = Some(why.to_string());
+            update_jobs(tx, std::slice::from_ref(&job))?;
+        }
+        done.push(run.clone());
+    }
+    Ok(done)
 }
 
 /// A worker job's key is its Run's, so a live one means the Run already has a job.

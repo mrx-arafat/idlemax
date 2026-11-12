@@ -9,8 +9,8 @@ use super::commands::{AdviseCmd, Cmd, InboxCmd, JobCmd};
 use super::init_cmd::run_init;
 use super::{
     config_cmd, handlers, home, hooks, inbox, job, logs, mode, out, plan, print, project, report,
-    rows, schedule, service, setup, skill, statusline, ApiClient, Cli, CliError, ClientError,
-    ExitWith, Out, Peer,
+    rows, schedule, service, setup, skill, statusline, workers, ApiClient, Cli, CliError,
+    ClientError, ExitWith, Out, Peer,
 };
 use crate::state::{self, now_ms};
 
@@ -153,6 +153,8 @@ async fn dispatch(cmd: Cmd, c: &ApiClient, out: &Out, now: i64, zone: rows::Zone
         Cmd::Project(cmd) => project::run(cmd, c, out).await,
         Cmd::Mode(args) => mode::run(args, c, out).await,
         Cmd::Plan(args) => plan::run(args, c, out).await,
+        Cmd::Stop(args) => workers::stop(args, c, out).await,
+        Cmd::Start => workers::start(c, out).await,
         Cmd::Pause(t) => handlers::control(c, t.request(ControlAction::Pause), out).await,
         Cmd::Resume(t) => handlers::control(c, t.request(ControlAction::Resume), out).await,
         Cmd::StopAll(t) => handlers::control(c, t.request(ControlAction::StopAll), out).await,

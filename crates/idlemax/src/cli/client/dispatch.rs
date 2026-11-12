@@ -3,6 +3,7 @@
 use idlemax_core::dispatch::plan::Plan;
 use idlemax_core::dispatch::project::{NewProject, ProjectSettings, ProjectView};
 use idlemax_core::dispatch::{Mode, ModeReply, ModeRequest};
+use idlemax_core::worker::control::{StartReply, StopReply, StopRequest};
 
 use super::{ApiClient, Result};
 
@@ -39,6 +40,16 @@ impl ApiClient {
     pub async fn set_mode(&self, mode: Mode) -> Result<ModeReply> {
         self.post("/v1/dispatcher/mode", Some(&ModeRequest { mode }))
             .await
+    }
+}
+
+impl ApiClient {
+    pub async fn stop_workers(&self, req: &StopRequest) -> Result<StopReply> {
+        self.post("/v1/workers/stop", Some(req)).await
+    }
+
+    pub async fn start_workers(&self) -> Result<StartReply> {
+        self.post("/v1/workers/start", None::<&()>).await
     }
 }
 

@@ -47,7 +47,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | DELETE | /v1/schedules/{id} | | `ScheduleView` as it was before removal |
 | POST | /v1/schedules/{id}/pause | | `ScheduleView` |
 | POST | /v1/schedules/{id}/resume | | `ScheduleView` |
-| POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose"}` | `{"mode", "before", "changed"}` |
+| POST | /v1/dispatcher/mode | `{"mode": "off" \| "propose" \| "auto"}` | `{"mode", "before", "changed"}` |
 | GET | /v1/plan | | `Plan` |
 | POST | /v1/plan/refresh | | `Plan`, after a dispatcher step that asks for an orchestrator pass |
 | GET | /v1/projects?device= | | `[ProjectView]`, by device then name |
@@ -57,6 +57,8 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/projects/{id}/settings | `ProjectSettings` | `ProjectView` |
 | GET | /v1/runs?state=&project=&limit= | | `[Run]`, newest first |
 | GET | /v1/runs/{id} | | `Run` |
+| POST | /v1/workers/stop | `{"scope", "reason"}` | `{"workers", "stop_in_force"}` |
+| POST | /v1/workers/start | | `{"workers", "paused"}` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
 `POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate`, names an `ai_account` missing from `[[quota.accounts]]` or carries a `worker` section (`worker is set by the dispatcher only`), and 409 when 10000 jobs are already unfinished.
@@ -425,6 +427,17 @@ A device older than this field needs no change: the coordinator reads the verdic
   `resume` is never refused this way, so a flag under any name can always be removed.
 - `cancel` needs `job` scope (400 otherwise).
   A queued or active job becomes `cancelled` (active ones get `kill_job`); a finished job is 409.
+
+Stopping and starting workers:
+
+- `POST /v1/workers/stop` takes `{"scope": ControlScope, "reason": "..."}` and answers `{"workers": [run ids], "stop_in_force": bool}`.
+  `global` is the owner's stop: it stores the stop row, moves every Run in `starting`, `running` or `checking` to `stopped` and marks its job `killed`, in one transaction; the agents hear `kill_job` on their next heartbeat (at most 5 s away while a worker runs) and stop each worker with its state saved.
+  The row survives a restart, and the launch step starts nothing while it exists.
+  `account` stops that account's live workers the same way but moves their Runs to `shed`, stores no row, and they continue by themselves when the account allows it; `device` and `job` are 400.
+  It works whatever the line state, the guard or a pause says.
+- `POST /v1/workers/start` deletes the row, moves every `stopped` Run to `shed`, the queue the launch step drains one at a time after checking the line state and the account again, and answers `{"workers": [run ids], "paused": [ControlScope]}` with every pause still in force.
+  Nothing else moves a Run out of `stopped`, so an owner's stop is never continued by itself.
+- How they differ from the rest: `pause` and the `PAUSE` file freeze workers in place and start none, `resume` only lifts a pause, and `stop_all` (coordinator or local) stops the workers in scope with their state saved (Runs `stopped`), after which `start` continues them once the pause `stop_all` left is lifted.
 
 Worker jobs (with a `worker` section) on the agent:
 

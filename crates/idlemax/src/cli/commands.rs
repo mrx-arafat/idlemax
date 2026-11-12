@@ -7,7 +7,7 @@ use idlemax_core::types::{ControlAction, ControlScope, JobId, JobStatus};
 
 use super::{
     config_cmd, hooks, init_cmd, job, mode, plan, project, report, schedule, service, setup, skill,
-    statusline,
+    statusline, workers,
 };
 
 #[derive(Subcommand, Debug)]
@@ -40,10 +40,15 @@ pub(super) enum Cmd {
     /// The projects the dispatcher may work in; every one is off until you switch it on
     #[command(subcommand)]
     Project(project::ProjectCmd),
-    /// Switch the dispatcher off, or to propose, where it only shows what it would launch
+    /// Switch the dispatcher off, to propose, where it only shows what it would launch, or to
+    /// auto, where it launches the planned workers
     Mode(mode::ModeArgs),
-    /// See which workers the dispatcher would launch now and why; it launches nothing
+    /// See which workers the dispatcher would launch now and why
     Plan(plan::PlanArgs),
+    /// Stop every AI worker with its state saved; nothing launches until `idlemax start`
+    Stop(workers::StopArgs),
+    /// Let the workers `idlemax stop` stopped continue their sessions
+    Start,
     /// Pause jobs everywhere, or on one device, account or job
     Pause(Target),
     /// Resume paused jobs
