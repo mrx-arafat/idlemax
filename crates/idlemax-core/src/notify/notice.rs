@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, FixedOffset, NaiveTime, TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
 
 use crate::advice::ai::is_ai_pass;
-use crate::dispatch::label::{run_label, run_summary, RunLine};
+use crate::dispatch::label::{one_line, run_label, run_summary, RunLine};
 use crate::dispatch::view::NeedsYouLine;
 use crate::notify::job_result_label;
 use crate::types::{Job, JobSpec, JobStatus, UnixMs};
@@ -77,7 +77,11 @@ pub fn run_item(run: &Run) -> Option<Item> {
         run: run.clone(),
         frozen: false,
     };
-    let done = run.summary.clone().unwrap_or_else(|| run_summary(&line));
+    // One line per item: a batch body and a desktop notification have no room for more.
+    let done = run
+        .summary
+        .as_deref()
+        .map_or_else(|| run_summary(&line), one_line);
     Some(Item {
         key: format!("run:{}", run.id),
         at_ms: run.end_ms.unwrap_or(run.updated_ms),

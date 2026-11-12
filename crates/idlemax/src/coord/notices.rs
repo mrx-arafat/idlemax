@@ -8,22 +8,23 @@ use idlemax_core::notify::notice::{
 };
 use idlemax_core::quota::owner_use::DAY_MS;
 use idlemax_core::types::UnixMs;
-use idlemax_core::worker::run::RunState;
 use idlemax_core::Config;
 
 use super::api::gather_view;
 use super::store::{Store, StoreError};
 
-pub fn sweep(
-    store: &mut Store,
-    cfg: &Config,
-    live: &Config,
-    now: UnixMs,
-    utc_offset_secs: i32,
-) -> Result<(), StoreError> {
-    finished(store, now)?;
-    needs(store, cfg, live, now)?;
-    daily(store, live, now, utc_offset_secs)
+/// Runs the three steps; each logs its own failure, so a failing view (the whole plan,
+/// every 15 s) never holds back finished tasks or the daily summary.
+pub fn sweep(store: &mut Store, cfg: &Config, live: &Config, now: UnixMs, utc_offset_secs: i32) {
+    if let Err(e) = finished(store, now) {
+        tracing::warn!(error = %e, "finished-task notices failed");
+    }
+    if let Err(e) = needs(store, cfg, live, now) {
+        tracing::warn!(error = %e, "needs-you notices failed");
+    }
+    if let Err(e) = daily(store, live, now, utc_offset_secs) {
+        tracing::warn!(error = %e, "daily summary failed");
+    }
 }
 
 fn finished(store: &mut Store, now: UnixMs) -> Result<(), StoreError> {
@@ -88,19 +89,17 @@ fn daily(store: &mut Store, live: &Config, now: UnixMs, offset: i32) -> Result<(
             ));
         }
     }
-    let mut waiting = 0;
-    for state in [RunState::Clean, RunState::NeedsYou] {
-        waiting += store.list_runs(Some(state), None, 0)?.len();
-    }
     let facts = DayFacts {
         tasks_done: store.tasks_done_between(start, end)?,
         accounts,
-        waiting: u32::try_from(waiting).unwrap_or(u32::MAX),
+        waiting: store.waiting_runs()?,
     };
-    if let Some(draft) = daily_summary(&facts, now, offset) {
-        store.insert_notice(&draft, now)?;
+    // The day is checked once: an empty day sends nothing later either, and the facts are
+    // not read again every 15 s until midnight.
+    match daily_summary(&facts, now, offset) {
+        Some(draft) => store.insert_notice(&draft, now).map(|_| ()),
+        None => store.cover_key(&key, now),
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -108,7 +107,7 @@ mod tests {
     use idlemax_core::dispatch::room::{LineState, RoomDecision};
     use idlemax_core::notify::notice::NoticeKind;
     use idlemax_core::protocol::Heartbeat;
-    use idlemax_core::worker::run::{Run, RunLaunch, Verdict};
+    use idlemax_core::worker::run::{Run, RunLaunch, RunState, Verdict};
 
     use super::*;
 
@@ -144,12 +143,23 @@ mod tests {
             ..Run::default()
         };
         store.insert_run(&run, &RunLaunch::default()).unwrap();
-        // UTC 23:00 or so: no daily summary in this test.
-        let sweep_at = |store: &mut Store, at| sweep(store, &cfg, &cfg, at, 0).unwrap();
+        // A plain job a minute later shares the run's message.
+        store
+            .load_sql(&format!(
+                "INSERT INTO jobs (id, spec, name, status, priority, created_ms, finished_ms)
+             VALUES (50, '{{\"name\":\"backup\",\"command\":[\"true\"]}}', 'backup',
+               'succeeded', 0, {T0}, {})",
+                T0 + MIN
+            ))
+            .unwrap();
+        // T0 is 08:00 UTC: no daily summary before the needs-you part of this test.
+        let sweep_at = |store: &mut Store, at| sweep(store, &cfg, &cfg, at, 0);
         beat(&mut store, LineState::Run, T0);
         sweep_at(&mut store, T0 + 11 * MIN);
         sweep_at(&mut store, T0 + 12 * MIN);
         assert_eq!(kinds(&store), [NoticeKind::TaskFinished]);
+        let told = store.notices_after(0, 0, 0).unwrap();
+        assert_eq!(told[0].title, "idlemax: 2 tasks finished");
 
         let mut at = T0 + 20 * MIN;
         beat(&mut store, LineState::Emergency, at);
@@ -169,5 +179,39 @@ mod tests {
                 .count();
             assert_eq!(needs, back, "gone {gone} minutes");
         }
+    }
+
+    #[test]
+    fn the_daily_summary_goes_once_after_nine_local_and_an_empty_day_stays_quiet() {
+        let cfg = Config::default();
+        // T0 is 08:00 UTC, so 09:00 at UTC+1.
+        let offset = 3600;
+        let clean = Run {
+            project: "app".into(),
+            state: RunState::Clean,
+            verdict: Some(Verdict::Clean),
+            end_ms: Some(T0 - 60 * MIN),
+            updated_ms: T0 - 60 * MIN,
+            ..Run::default()
+        };
+        let mut store = Store::open_in_memory().unwrap();
+        store.insert_run(&clean, &RunLaunch::default()).unwrap();
+        let daily = |store: &Store| {
+            kinds(store)
+                .into_iter()
+                .filter(|k| *k == NoticeKind::DailySummary)
+                .count()
+        };
+        sweep(&mut store, &cfg, &cfg, T0 - MIN, offset);
+        assert_eq!(daily(&store), 0);
+        sweep(&mut store, &cfg, &cfg, T0, offset);
+        sweep(&mut store, &cfg, &cfg, T0 + MIN, offset);
+        assert_eq!(daily(&store), 1);
+
+        let mut empty = Store::open_in_memory().unwrap();
+        sweep(&mut empty, &cfg, &cfg, T0, offset);
+        empty.insert_run(&clean, &RunLaunch::default()).unwrap();
+        sweep(&mut empty, &cfg, &cfg, T0 + 300 * MIN, offset);
+        assert_eq!(daily(&empty), 0);
     }
 }

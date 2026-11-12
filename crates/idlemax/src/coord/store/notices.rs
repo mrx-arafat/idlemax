@@ -57,6 +57,25 @@ impl Store {
         )?)
     }
 
+    /// Runs that wait for the owner's review: `clean` and `needs_you`.
+    pub fn waiting_runs(&self) -> StoreResult<u32> {
+        Ok(self.conn.query_row(
+            "SELECT count(*) FROM runs WHERE state IN ('clean', 'needs_you')",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Covers a key with no notice, such as a day whose summary had nothing to say.
+    pub fn cover_key(&mut self, key: &str, now: UnixMs) -> StoreResult<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO notice_items (key, notice, at_ms, last_seen_ms)
+             VALUES (?1, 0, ?2, ?2)",
+            params![key, now],
+        )?;
+        Ok(())
+    }
+
     /// Stores the notice and covers its keys, in one transaction.
     pub fn insert_notice(&mut self, d: &Draft, now: UnixMs) -> StoreResult<Notice> {
         let tx = self.conn.transaction()?;
@@ -122,5 +141,40 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use idlemax_core::notify::notice::{Draft, NoticeKind};
+
+    use super::*;
+
+    const DAY: UnixMs = 86_400_000;
+    const T0: UnixMs = 1_800_000_000_000;
+
+    fn draft(kind: NoticeKind, key: &str) -> Draft {
+        Draft {
+            kind,
+            title: "t".into(),
+            body: "b".into(),
+            keys: vec![key.into()],
+        }
+    }
+
+    #[test]
+    fn prune_keeps_a_key_still_seen_and_drops_old_ones_and_their_notices() {
+        let mut s = Store::open_in_memory().unwrap();
+        s.insert_notice(&draft(NoticeKind::NeedsYou, "device:mac:emergency"), T0)
+            .unwrap();
+        s.insert_notice(&draft(NoticeKind::TaskFinished, "run:1"), T0)
+            .unwrap();
+        let now = T0 + 31 * DAY;
+        s.refresh_needs(&["device:mac:emergency".into()], now, now - DAY)
+            .unwrap();
+        s.prune(now, DAY).unwrap();
+        assert!(s.is_covered("device:mac:emergency").unwrap());
+        assert!(!s.is_covered("run:1").unwrap());
+        assert!(s.notices_after(0, 0, 0).unwrap().is_empty());
     }
 }

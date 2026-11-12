@@ -45,6 +45,10 @@ fn only_finished_tasks_and_plain_jobs_are_items() {
     let item = run_item(&run(6, RunState::Clean, clean, T0)).unwrap();
     assert_eq!(item.key, "run:6");
     assert_eq!(item.text, "task 6: checks passed - ready for review");
+    let mut summed = run(7, RunState::Clean, clean, T0);
+    summed.summary = Some("fixed the test\nand a typo".into());
+    let item = run_item(&summed).unwrap();
+    assert_eq!(item.text, "fixed the test and a typo - ready for review");
 
     let mut worker = job("worker:app:1", JobStatus::Killed, T0);
     worker.spec.worker = Some(WorkerSpec::default());

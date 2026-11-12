@@ -156,9 +156,7 @@ fn sweep_once(
     }
     // Nor must a notice problem.
     let offset = chrono::Local::now().offset().local_minus_utc();
-    if let Err(e) = super::notices::sweep(store, cfg, live, now, offset) {
-        tracing::warn!(error = %e, "notice sweep failed");
-    }
+    super::notices::sweep(store, cfg, live, now, offset);
     if prune {
         // Before the prune: the account days need the week of snapshots the prune drops.
         super::api::close_quota_days(store, cfg, now)?;

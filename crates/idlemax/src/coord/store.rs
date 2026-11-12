@@ -300,7 +300,8 @@ impl Store {
             )?,
         };
         tx.execute(
-            "DELETE FROM notice_items WHERE at_ms < ?1",
+            // By when the key was last seen: a condition that lasts a month stays covered.
+            "DELETE FROM notice_items WHERE last_seen_ms < ?1",
             [history_cutoff],
         )?;
         tx.execute(
