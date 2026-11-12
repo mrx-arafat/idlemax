@@ -6,6 +6,7 @@ pub mod budget;
 mod config;
 pub mod cost;
 pub mod owner_use;
+pub mod pass;
 mod rules;
 pub mod spend;
 pub mod surplus;

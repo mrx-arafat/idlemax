@@ -120,7 +120,7 @@ The tasks use these names of Specs 1 and 2, with the paths those specs give:
 - [x] Task 5: Compute the surplus, the daily Budget and the worker rules
 - [ ] Task 6: Gather the Budget on the coordinator and gate every worker start
 - [ ] Task 7: Leave idlemax's own worker sessions out of the owner's use
-- [ ] Task 8: Offer accounts and check picks in pure code
+- [x] Task 8: Offer accounts and check picks in pure code
 - [ ] Task 9: Stop an account's workers at the 5-hour line and after a rate limit
 - [ ] Task 10: Hold Spec 1's plan and orchestrator pass to the Budget and the tier
 - [ ] Task 11: Show the Budget in `idlemax quota` and `GET /v1/quota`
@@ -686,16 +686,16 @@ Nothing calls these functions yet; Task 10 wires them into Spec 1.
 
 **Definition of Done:**
 
-- [ ] A `broken_check` task with 0 failed checks is placed on the small model; when the orchestrator named the standard model it is still placed on the small model with `model_changed` true; with 1 failed check it is placed on the standard model; with 2 it is refused with `NeedsYou`.
-- [ ] Two picks estimated at 4.0 each on an account with `left_pct` 6.0 give one placed pick and one `OverBudget`.
-- [ ] A pick on an account that is not among the offers is refused with `AccountNotOffered`, and a pick on a provider whose tier model key is unset is refused with `ModelNotSet` naming the key.
-- [ ] With a Codex account the owner is not using at `left_pct` 1.0 and a Claude account the owner is using at 12, a pick estimated at 3.0 on Claude is placed; with Codex at 10 the same pick is refused with `OwnerActive` naming the Codex account.
-- [ ] Two picks, the first on the account in use and the second on the free account, where the second uses up the free account's room, are both placed.
-- [ ] `is_final` is true for `AccountNotOffered`, `ModelNotSet` and `NeedsYou` and false for `OverBudget` and `OwnerActive`.
-- [ ] `account_offers` leaves out an agy account while `workers.clis` is `["claude"]`.
-- [ ] `any_room` is false for no offers and for one offer whose `left_pct` is below its cheapest tier's estimate.
-- [ ] `quota_summary` of 40 offers is under 4096 bytes, lists 8 accounts and says 32 more exist.
-- [ ] Verify: `cargo test -p idlemax-core quota::pass`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A `broken_check` task with 0 failed checks is placed on the small model; when the orchestrator named the standard model it is still placed on the small model with `model_changed` true; with 1 failed check it is placed on the standard model; with 2 it is refused with `NeedsYou`.
+- [x] Two picks estimated at 4.0 each on an account with `left_pct` 6.0 give one placed pick and one `OverBudget`.
+- [x] A pick on an account that is not among the offers is refused with `AccountNotOffered`, and a pick on a provider whose tier model key is unset is refused with `ModelNotSet` naming the key.
+- [x] With a Codex account the owner is not using at `left_pct` 1.0 and a Claude account the owner is using at 12, a pick estimated at 3.0 on Claude is placed; with Codex at 10 the same pick is refused with `OwnerActive` naming the Codex account.
+- [x] Two picks, the first on the account in use and the second on the free account, where the second uses up the free account's room, are both placed.
+- [x] `is_final` is true for `AccountNotOffered`, `ModelNotSet` and `NeedsYou` and false for `OverBudget` and `OwnerActive`.
+- [x] `account_offers` leaves out an agy account while `workers.clis` is `["claude"]`.
+- [x] `any_room` is false for no offers and for one offer whose `left_pct` is below its cheapest tier's estimate.
+- [x] `quota_summary` of 40 offers is under 4096 bytes, lists 8 accounts and says 32 more exist.
+- [x] Verify: `cargo test -p idlemax-core quota::pass`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 9: Stop an account's workers at the 5-hour line and after a rate limit
 
