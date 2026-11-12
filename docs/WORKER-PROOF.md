@@ -74,6 +74,22 @@ The sample task adds one line to `file.txt` and commits it.
 | Tokens | As for Claude | Figures | |
 | Installed service | As for Claude | Same results | |
 
+## Headless Claude
+
+The headless host (dispatcher Spec 5 Task 8) runs the worker with no Herdr: `claude -p` as a child of the agent, its output in the job log.
+Run these on a server in the throwaway setup above, with `workers.host headless`; Task 12 of Spec 5 fills the results.
+
+| Step | Command | Expected | Result |
+|---|---|---|---|
+| A start | Launch one worker on the sample task | The worker job runs with no pane; `herdr` is never called | |
+| The log | `idlemax logs <job> --follow` on that device | The worker's output appears and the command returns at the footer when the worker exits | |
+| A working commit | Let the turn finish | One commit on `idlemax/<task>` | |
+| Push is refused | In the worker's worktree, `git push origin HEAD` | Fails on `idlemax-no-push://origin`; the bare remote has no new ref | |
+| No MCP helper process | `ps` of the worker's process tree | No process of the owner's personal MCP servers | |
+| Stop | `idlemax stop` | Every process of the worker's group is gone within 10 s, uncommitted edits stay in the worktree | |
+| Continued session | `idlemax start` | The worker starts again with `--resume <session>` and the same session id | |
+| An agent restart | Restart the agent in the middle of a turn | The worker is not taken back; its job ends `killed` and retryable, no process with its tag is left, and the Run continues with `--resume` | |
+
 ## Reviewers
 
 | Reviewer | Command | Expected | Result |

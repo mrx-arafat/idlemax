@@ -225,6 +225,7 @@ impl WorkerHost for HerdrHost {
             session: None,
             shell_pid: None,
             foreground: Vec::new(),
+            exit_code: None,
         };
         match self.verified(handle) {
             Ok(Some(_)) => {}
@@ -239,6 +240,7 @@ impl WorkerHost for HerdrHost {
             session: row.and_then(|r| r.session),
             shell_pid: info.shell_pid,
             foreground: info.foreground,
+            exit_code: None,
         })
     }
 
@@ -278,6 +280,11 @@ impl WorkerHost for HerdrHost {
         let tail = last_lines(&text, 40);
         let skip = tail.chars().count().saturating_sub(MAX_END_TEXT_CHARS);
         Some(tail.chars().skip(skip).collect())
+    }
+
+    fn is_available(&self) -> bool {
+        self.parsed(&["workspace", "list"], "workspaces", parse::workspaces)
+            .is_ok()
     }
 }
 

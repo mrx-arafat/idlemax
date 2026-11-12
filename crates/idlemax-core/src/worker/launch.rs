@@ -4,8 +4,9 @@
 
 use super::checks::REVIEW_SCHEMA;
 use super::WorkerCli;
+use crate::config::WorkerHostChoice;
 use crate::job_run::{JOB_ID_ENV, JOB_TAG_ENV};
-use crate::types::JobId;
+use crate::types::{DeviceProfile, JobId};
 use crate::TOKEN_ENV;
 
 /// Variables a pane always gets empty, besides the names a first probe found (D22, A14).
@@ -77,6 +78,60 @@ pub fn agent_args(
             cli: "agy",
             missing: "no proven flag that leaves out the owner's MCP servers",
         }),
+    }
+}
+
+/// The arguments of a headless worker start or resume.
+/// Claude starts lean with `-p` and its model/permissions flags; Codex reports Unsupported
+/// naming the session id (Open Question 4).
+pub fn headless_args(
+    cli: WorkerCli,
+    model: &str,
+    session: Session<'_>,
+) -> Result<Vec<String>, LaunchError> {
+    let owned = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    match cli {
+        WorkerCli::Claude => {
+            let mut args = owned(&["-p", "--model", model, "--strict-mcp-config"]);
+            args.extend(owned(&["--permission-mode", "bypassPermissions"]));
+            args.extend(match session {
+                Session::New(id) => owned(&["--session-id", id]),
+                Session::Resume(id) => owned(&["--resume", id]),
+            });
+            Ok(args)
+        }
+        WorkerCli::Codex => Err(LaunchError::Unsupported {
+            cli: "codex",
+            missing: "how `codex exec` reports the session id of a new run is not recorded",
+        }),
+        WorkerCli::Opencode | WorkerCli::Agy => Err(LaunchError::Unsupported {
+            cli: cli.as_str(),
+            missing: "only Claude has a proven way to name and continue a print-mode session",
+        }),
+    }
+}
+
+/// Chooses which host runs a worker launch (Spec 5 Task 8): a production device always gets
+/// the headless host (A23), because a pane runs outside the agent's cgroup; `headless` and
+/// `herdr` are taken as set; `auto` takes Herdr when it answers and the headless host else.
+pub fn pick_host(
+    setting: WorkerHostChoice,
+    profile: Option<DeviceProfile>,
+    herdr_answers: bool,
+) -> WorkerHostChoice {
+    if matches!(profile, Some(DeviceProfile::Production)) {
+        return WorkerHostChoice::Headless;
+    }
+    match setting {
+        WorkerHostChoice::Headless => WorkerHostChoice::Headless,
+        WorkerHostChoice::Herdr => WorkerHostChoice::Herdr,
+        WorkerHostChoice::Auto => {
+            if herdr_answers {
+                WorkerHostChoice::Herdr
+            } else {
+                WorkerHostChoice::Headless
+            }
+        }
     }
 }
 
@@ -383,5 +438,75 @@ mod tests {
         assert!(has("GIT_CONFIG_KEY_1", "remote.origin.pushurl"));
         assert!(has("GIT_CONFIG_VALUE_1", "idlemax-no-push://origin"));
         assert!(env_problems(&env).is_empty());
+    }
+
+    #[test]
+    fn headless_args_matches_claude_start_and_resume_and_refuses_codex() {
+        let first = headless_args(WorkerCli::Claude, "sonnet", Session::New("u-1")).unwrap();
+        assert_eq!(
+            first,
+            strings(&[
+                "-p",
+                "--model",
+                "sonnet",
+                "--strict-mcp-config",
+                "--permission-mode",
+                "bypassPermissions",
+                "--session-id",
+                "u-1"
+            ])
+        );
+        let resumed = headless_args(WorkerCli::Claude, "sonnet", Session::Resume("u-1")).unwrap();
+        assert_eq!(
+            resumed,
+            strings(&[
+                "-p",
+                "--model",
+                "sonnet",
+                "--strict-mcp-config",
+                "--permission-mode",
+                "bypassPermissions",
+                "--resume",
+                "u-1"
+            ])
+        );
+        let codex = headless_args(WorkerCli::Codex, "gpt", Session::New("s-1")).unwrap_err();
+        assert!(codex.to_string().starts_with("codex"), "{codex}");
+        assert!(codex.to_string().contains("session id"), "{codex}");
+        assert!(headless_args(WorkerCli::Agy, "m", Session::New("s-1")).is_err());
+    }
+
+    #[test]
+    fn pick_host_rules_for_production_auto_and_explicit_choices() {
+        for choice in [
+            WorkerHostChoice::Auto,
+            WorkerHostChoice::Herdr,
+            WorkerHostChoice::Headless,
+        ] {
+            assert_eq!(
+                pick_host(choice, Some(DeviceProfile::Production), true),
+                WorkerHostChoice::Headless
+            );
+            assert_eq!(
+                pick_host(choice, Some(DeviceProfile::Production), false),
+                WorkerHostChoice::Headless
+            );
+        }
+        assert_eq!(
+            pick_host(WorkerHostChoice::Auto, None, false),
+            WorkerHostChoice::Headless
+        );
+        assert_eq!(
+            pick_host(WorkerHostChoice::Auto, None, true),
+            WorkerHostChoice::Herdr
+        );
+        assert_eq!(
+            pick_host(WorkerHostChoice::Headless, None, true),
+            WorkerHostChoice::Headless
+        );
+        assert_eq!(
+            pick_host(WorkerHostChoice::Herdr, None, false),
+            WorkerHostChoice::Herdr
+        );
     }
 }

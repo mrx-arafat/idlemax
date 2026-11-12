@@ -25,6 +25,8 @@ fn launch() -> Launch {
         env: vec![("IDLEMAX_JOB_ID".into(), "7".into())],
         cli: WorkerCli::Claude,
         args: vec!["--model".into(), "sonnet".into()],
+        job: 7,
+        attempt: 1,
     }
 }
 

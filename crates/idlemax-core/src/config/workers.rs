@@ -6,6 +6,26 @@ use serde::{Deserialize, Serialize};
 /// The CLIs a worker or reviewer may use for now (A21).
 const KNOWN_CLIS: [&str; 2] = ["claude", "codex"];
 
+/// Which host a worker launch runs in: Herdr pane or headless process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkerHostChoice {
+    #[default]
+    Auto,
+    Herdr,
+    Headless,
+}
+
+impl WorkerHostChoice {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Herdr => "herdr",
+            Self::Headless => "headless",
+        }
+    }
+}
+
 /// Worker settings. The numbers are starting values (A25).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -14,6 +34,8 @@ pub struct WorkersConfig {
     pub clis: Vec<String>,
     /// Agent CLIs that may review a high-risk diff.
     pub reviewers: Vec<String>,
+    /// Which host a worker launch uses (`auto`, `herdr`, `headless`).
+    pub host: WorkerHostChoice,
     /// Finished tasks per project that may wait for the owner's review (D9).
     pub review_cap: u32,
     /// Seconds between two launches on one device (D13).
@@ -33,6 +55,7 @@ impl Default for WorkersConfig {
         Self {
             clis: Vec::new(),
             reviewers: Vec::new(),
+            host: WorkerHostChoice::Auto,
             review_cap: 3,
             settle_secs: 60,
             max_runtime_secs: 3600,
@@ -104,5 +127,20 @@ mod tests {
         let new = Config::parse("[workers]\nreview_cap = 2\n").unwrap();
         let report = plan_reload(&old, &new).unwrap();
         assert_eq!(report.applied, ["workers.review_cap"]);
+    }
+
+    #[test]
+    fn herdr_host_is_refused_on_production_profile() {
+        let err = Config::parse("[agent]\nprofile = \"production\"\n[workers]\nhost = \"herdr\"\n")
+            .unwrap_err();
+        assert!(err.to_string().starts_with("workers.host"), "{err}");
+    }
+
+    #[test]
+    fn workers_host_key_applies_without_restart() {
+        let old = Config::parse("").unwrap();
+        let new = Config::parse("[workers]\nhost = \"headless\"\n").unwrap();
+        let report = plan_reload(&old, &new).unwrap();
+        assert_eq!(report.applied, ["workers.host"]);
     }
 }

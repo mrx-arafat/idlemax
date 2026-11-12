@@ -30,6 +30,8 @@ pub(super) fn start_checked(
             env: pane_env(ctx.job.id, ctx.tag, remotes, &blank),
             cli: ctx.worker.cli,
             args: args.to_vec(),
+            job: ctx.job.id,
+            attempt: ctx.job.attempts,
         };
         let handle = ctx
             .host

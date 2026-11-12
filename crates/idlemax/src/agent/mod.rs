@@ -30,7 +30,7 @@ use std::time::Duration;
 use idlemax_core::dispatch::room::{RoomPolicy, WorkerRoom};
 use idlemax_core::guard::Guard;
 use idlemax_core::protocol::LocalStatus;
-use idlemax_core::types::{DeviceInfo, Os};
+use idlemax_core::types::{DeviceInfo, DeviceProfile, Os};
 use idlemax_core::{Config, ConfigError, Paths, VERSION};
 
 use crate::state::{self, now_ms, StateError};
@@ -171,6 +171,12 @@ async fn open_runner(
 // more or a device has less.
 const WORKER_COMMAND_MEM_MIB: u64 = 4096;
 
+/// `workers.host` and the device profile, which `pick_host` reads for each worker start.
+fn host_policy(config: &Config) -> (idlemax_core::config::WorkerHostChoice, DeviceProfile) {
+    let profile = config.agent.profile_or_default(Os::current());
+    (config.workers.host, profile)
+}
+
 /// The worker manager, after it took back what a previous agent left. None when the process
 /// table cannot be read: then no worker can be watched or stopped, so none starts.
 async fn open_workers(
@@ -180,6 +186,7 @@ async fn open_workers(
 ) -> Result<Option<(WorkerLink, Vec<idlemax_core::protocol::JobUpdate>)>, AgentError> {
     let (paths, id) = (paths.clone(), device.id.clone());
     let allowlist = config.agent.command_allowlist.clone();
+    let (setting, profile) = host_policy(config);
     let open = move || {
         let procs: Arc<Mutex<dyn worker::procs::Procs>> =
             Arc::new(Mutex::new(worker::procs::OsProcs::new()?));
@@ -187,7 +194,14 @@ async fn open_workers(
             worker::cmd::OsCommands::with_options(runner::detect_wrapper(), WORKER_COMMAND_MEM_MIB),
         );
         let host = Arc::new(worker::herdr::HerdrHost::new(Arc::clone(&commands)));
-        let workers = worker::Workers::new(host, commands, Arc::clone(&procs), paths, id);
+        #[cfg(unix)]
+        let headless = Arc::new(worker::headless::HeadlessHost::new(paths.clone()));
+        let mut workers = worker::Workers::new(host, commands, Arc::clone(&procs), paths, id);
+        #[cfg(unix)]
+        {
+            workers = workers.with_headless(headless);
+        }
+        workers.set_host_policy(setting, Some(profile));
         Some(WorkerLink::spawn(workers, procs, allowlist))
     };
     Ok(tokio::task::spawn_blocking(open).await?)

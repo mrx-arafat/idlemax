@@ -1249,6 +1249,7 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `workers.reviewers` | `[]` | agent CLIs that may review a high-risk diff, `claude` or `codex` |
 | `workers.review_cap` | `3` | finished tasks per project that may wait for your review before idlemax moves on |
 | `workers.settle_secs` | `60` | seconds between two worker launches on one device, so memory can settle |
+| `workers.host` | `auto` | where a worker runs: `herdr` (a pane), `headless` (a child of the agent, its output in the job log that `idlemax logs <job>` prints) or `auto` (Herdr when it answers, else headless); a production device is always headless, so `herdr` there is refused |
 | `workers.max_runtime_secs` | `3600` | awake seconds one worker launch may run before it is stopped |
 | `workers.blocked_secs` | `120` | seconds a worker may wait for input before it is stopped |
 | `workers.review_diff_lines` | `300` | a diff of more added plus removed lines gets an independent review |

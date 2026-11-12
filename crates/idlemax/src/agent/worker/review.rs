@@ -17,6 +17,7 @@ use idlemax_core::worker::report::WorkerPhase;
 use idlemax_core::worker::{WorkerAction, WorkerSpec};
 
 use super::cmd::{Cmd, Commands};
+use super::host::HostKind;
 use super::steps::brief_path;
 use super::steps::Progress;
 use super::worktree::{delete_branch, remove_worktree};
@@ -221,9 +222,12 @@ impl Workers {
         std::thread::spawn(move || {
             let _ = tx.send(review(commands.as_ref(), &dir, &spec));
         });
+        // A review starts no agent, so its host is never asked.
         let tracked = Tracked {
             job,
             worker,
+            host: Arc::clone(&self.host),
+            kind: HostKind::Herdr,
             tag: new_tag(0, now_ms),
             clock: RunClock::start(now_ms, awake_ms),
             paused: false,

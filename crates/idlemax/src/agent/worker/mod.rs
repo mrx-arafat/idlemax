@@ -4,9 +4,12 @@
 //! Pause, resume and kill reach it as messages, the same decisions the runner gets.
 
 mod check;
+mod choose;
 pub mod cmd;
 mod end;
 mod finish;
+#[cfg(unix)]
+pub mod headless;
 pub mod herdr;
 pub mod host;
 pub mod procs;
@@ -24,9 +27,10 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::job_run::{allows_program, RunClock};
 use idlemax_core::protocol::JobUpdate;
-use idlemax_core::types::{DeviceId, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
+use idlemax_core::types::{DeviceId, DeviceProfile, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
 use idlemax_core::worker::report::{CheckFacts, WorkerPhase, WorkerReport};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 use idlemax_core::Paths;
@@ -35,7 +39,7 @@ use crate::agent::runner::os::Sig;
 use cmd::Commands;
 use end::End;
 pub use end::Msg;
-use host::WorkerHost;
+use host::{HostKind, WorkerHost};
 use procs::{Member, Procs};
 use steps::{brief_line, LaunchCtx, Outcome, Progress};
 
@@ -79,6 +83,9 @@ enum Phase {
 struct Tracked {
     job: Job,
     worker: WorkerSpec,
+    /// The host that started this worker; its stop, its kill and its recovery go there.
+    host: Arc<dyn WorkerHost>,
+    kind: HostKind,
     tag: u64,
     clock: RunClock,
     paused: bool,
@@ -91,7 +98,13 @@ struct Tracked {
 }
 
 pub struct Workers {
+    /// The Herdr host.
     host: Arc<dyn WorkerHost>,
+    /// The headless host; None where the system has none (not Unix).
+    headless: Option<Arc<dyn WorkerHost>>,
+    /// `workers.host`, and the device profile that decides it for a production device (A23).
+    host_setting: WorkerHostChoice,
+    profile: Option<DeviceProfile>,
     commands: Arc<dyn Commands>,
     procs: Arc<Mutex<dyn Procs>>,
     paths: Paths,
@@ -119,6 +132,9 @@ impl Workers {
         let background = cfg!(target_os = "macos").then(|| "/usr/sbin/taskpolicy".to_string());
         Self {
             host,
+            headless: None,
+            host_setting: WorkerHostChoice::default(),
+            profile: None,
             commands,
             procs,
             paths,
@@ -175,11 +191,15 @@ impl Workers {
             },
             _ => None,
         };
+        let (kind, host, note) = match self.choose_host() {
+            Ok(chosen) => chosen,
+            Err(why) => return vec![self.refusal(&job, &why, now_ms)],
+        };
         let tag = new_tag(job.id, now_ms);
         let cancel = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
         let rx = steps::spawn(LaunchCtx {
-            host: Arc::clone(&self.host),
+            host: Arc::clone(&host),
             commands: Arc::clone(&self.commands),
             procs: Arc::clone(&self.procs),
             worktrees_dir: self.paths.worktrees_dir(),
@@ -196,6 +216,8 @@ impl Workers {
         let tracked = Tracked {
             job,
             worker,
+            host,
+            kind,
             tag,
             clock: RunClock::start(now_ms, awake_ms),
             paused: false,
@@ -213,7 +235,8 @@ impl Workers {
             },
             saved: None,
         };
-        let update = self.update(&tracked, JobStatus::Running, WorkerPhase::Preparing, now_ms);
+        let mut update = self.update(&tracked, JobStatus::Running, WorkerPhase::Preparing, now_ms);
+        update.error = note;
         self.tracked.insert(tracked.job.id, tracked);
         vec![update]
     }

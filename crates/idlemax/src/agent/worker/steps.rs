@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use idlemax_core::types::{Job, JobId, UnixMs};
-use idlemax_core::worker::launch::{agent_args, mcp_server_names, pane_env, Session};
+use idlemax_core::worker::launch::{
+    agent_args, headless_args, mcp_server_names, pane_env, Session,
+};
 use idlemax_core::worker::{WorkerAction, WorkerCli, WorkerSpec};
 
 use super::cmd::{Cmd, Commands};
@@ -284,6 +286,14 @@ pub fn brief_path(folder: &Path) -> PathBuf {
 
 fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
     let w = &ctx.worker;
+    let session = ctx.session.as_deref().unwrap_or_default();
+    let session = match w.action {
+        WorkerAction::Resume => Session::Resume(session),
+        _ => Session::New(session),
+    };
+    if ctx.host.is_headless() {
+        return headless_args(w.cli, &w.model, session).map_err(|e| Stop::Failed(e.to_string()));
+    }
     let common = git(ctx, folder, &["rev-parse", "--git-common-dir"])?;
     let common = folder.join(common.trim()).display().to_string();
     let servers = match w.cli {
@@ -291,11 +301,6 @@ fn args_for(ctx: &LaunchCtx, folder: &Path) -> Result<Vec<String>, Stop> {
         WorkerCli::Codex => mcp_server_names(&run_ok(ctx, "codex", &["mcp", "list"], None)?)
             .map_err(|e| Stop::Failed(e.to_string()))?,
         _ => Vec::new(),
-    };
-    let session = ctx.session.as_deref().unwrap_or_default();
-    let session = match w.action {
-        WorkerAction::Resume => Session::Resume(session),
-        _ => Session::New(session),
     };
     agent_args(w.cli, &w.model, session, &common, &servers).map_err(|e| Stop::Failed(e.to_string()))
 }

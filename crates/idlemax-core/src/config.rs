@@ -21,7 +21,7 @@ pub(crate) use guard_policy::{SERVER_RAM_RESERVE_MIB, WORKBOX_RAM_RESERVE_MIB};
 pub use limits::{limit_settings, set_limit, LimitError, LimitReply, LimitRequest, OWNER_LIMITS};
 pub use reload::{plan_reload, ReloadReport};
 pub use settings::{list_settings, show_value, Setting};
-pub use workers::WorkersConfig;
+pub use workers::{WorkerHostChoice, WorkersConfig};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ConfigError {
@@ -178,6 +178,15 @@ impl Config {
         self.quota.validate()?;
         self.dispatcher.validate().map_err(ConfigError::Guard)?;
         self.workers.validate().map_err(ConfigError::Guard)?;
+        if self.workers.host == WorkerHostChoice::Herdr
+            && self.agent.profile == Some(DeviceProfile::Production)
+        {
+            return Err(ConfigError::Guard(
+                "workers.host: 'herdr' does nothing on a production device, whose workers always \
+                 run headless; set workers.host to 'auto' or 'headless', or change agent.profile"
+                    .into(),
+            ));
+        }
         Ok(())
     }
 

@@ -4,13 +4,14 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use idlemax_core::job_run::RunClock;
 use idlemax_core::protocol::JobUpdate;
 use idlemax_core::types::{Job, JobId, JobStatus, UnixMs};
 use serde::{Deserialize, Serialize};
 
-use super::host::Handle;
+use super::host::{Handle, HostKind};
 use super::procs::Member;
 use super::steps::Progress;
 use super::{Phase, Tracked, Workers};
@@ -23,6 +24,9 @@ struct Record {
     tag: u64,
     started_ms: UnixMs,
     briefed: bool,
+    /// The host that started the worker; a record without it is a Herdr one.
+    #[serde(default)]
+    host: HostKind,
     session: Option<String>,
     branch: Option<String>,
     folder: Option<PathBuf>,
@@ -79,7 +83,9 @@ impl Workers {
     /// Takes back the workers a previous agent left. One whose pane is still listed with the
     /// saved label and workspace, and whose shell is the same process, is watched again; any
     /// other has its pane closed when it matches, its tagged leftovers killed, and its job
-    /// reported `killed` and retryable.
+    /// reported `killed` and retryable. A headless worker is a child of the agent that ended
+    /// with it, so it is never taken back: what its tag still finds is killed and its Run
+    /// continues with `--resume`.
     pub fn recover(&mut self, now_ms: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
         let Ok(entries) = std::fs::read_dir(self.records_dir()) else {
             return Vec::new();
@@ -107,6 +113,9 @@ impl Workers {
         let (Some(handle), Some(shell)) = (handle_of(r), r.shell) else {
             return false;
         };
+        if r.host == HostKind::Headless {
+            return false;
+        }
         let pane_ok = r.briefed && self.host.matches(&handle).unwrap_or(false);
         let shell_ok = shell.1.is_some()
             && self
@@ -122,6 +131,8 @@ impl Workers {
         };
         let tracked = Tracked {
             worker,
+            host: Arc::clone(&self.host),
+            kind: HostKind::Herdr,
             tag: r.tag,
             // The awake time before the restart is not known, so the runtime cap restarts.
             clock: RunClock::start(r.started_ms, awake_ms),
@@ -160,9 +171,13 @@ impl Workers {
     }
 
     fn lost(&self, r: Record, now_ms: UnixMs) -> JobUpdate {
-        if let Some(handle) = handle_of(&r) {
+        let host = match r.host {
+            HostKind::Herdr => Some(&self.host),
+            HostKind::Headless => self.headless.as_ref(),
+        };
+        if let (Some(host), Some(handle)) = (host, handle_of(&r)) {
             // `stop` closes the pane only while its label and workspace still match.
-            let _ = self.host.stop(&handle);
+            let _ = host.stop(&handle);
         }
         if let Ok(mut procs) = self.procs.lock() {
             let left = procs.alive(&r.members, r.tag, r.started_ms);
@@ -190,6 +205,7 @@ fn record_of(t: &Tracked) -> Record {
         tag: t.tag,
         started_ms: t.clock.started_ms(),
         briefed: !matches!(t.phase, Phase::Launching { .. } | Phase::Held),
+        host: t.kind,
         session: t.progress.session.clone(),
         branch: t.progress.branch.clone(),
         folder: t.progress.folder.clone(),
@@ -223,4 +239,38 @@ fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
         .truncate(true)
         .open(path)?
         .write_all(text.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_without_a_host_is_a_herdr_one_and_a_headless_one_round_trips() {
+        let mut record = Record {
+            job: Job::default(),
+            tag: 1,
+            started_ms: 2,
+            briefed: true,
+            host: HostKind::Headless,
+            session: None,
+            branch: None,
+            folder: None,
+            base_commit: None,
+            start_head: None,
+            paused: false,
+            pane: None,
+            workspace: None,
+            label: None,
+            shell: None,
+            members: Vec::new(),
+        };
+        let mut json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["host"], "headless");
+        let back: Record = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(back.host, HostKind::Headless);
+        json.as_object_mut().unwrap().remove("host");
+        record.host = HostKind::Herdr;
+        assert_eq!(serde_json::from_value::<Record>(json).unwrap(), record);
+    }
 }

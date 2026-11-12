@@ -4,6 +4,7 @@
 
 use std::path::Path;
 use std::sync::mpsc::TryRecvError;
+use std::sync::Arc;
 use std::time::Duration;
 
 use idlemax_core::protocol::{JobUpdate, RunningJob};
@@ -171,7 +172,8 @@ impl Workers {
         let handle = t.progress.handle.clone()?;
         let folder = t.progress.folder.clone()?;
         let line = brief_line(t.worker.action, &folder);
-        match self.host.state(&handle).ok()?.status {
+        let host = Arc::clone(&t.host);
+        match host.state(&handle).ok()?.status {
             AgentStatus::Idle => {}
             AgentStatus::Gone => {
                 self.begin_stop(
@@ -183,7 +185,7 @@ impl Workers {
             }
             _ => return None,
         }
-        if let Err(e) = self.host.send(&handle, &line) {
+        if let Err(e) = host.send(&handle, &line) {
             let end = End::failed(format!("the brief could not be sent: {e}"));
             self.begin_stop(id, end, now_ms);
             return None;
@@ -205,10 +207,20 @@ impl Workers {
             return None;
         }
         let handle = t.progress.handle.clone()?;
-        let state = match self.host.state(&handle) {
+        let state = match t.host.state(&handle) {
             Ok(state) => state,
             Err(e) => return self.host_down(id, &e.to_string(), now_ms),
         };
+        // A headless agent that exited with an error ended its turn in failure; its last
+        // lines may hold the limit message Spec 3 reads (A9).
+        if let (AgentStatus::Done, Some(code)) = (state.status, state.exit_code) {
+            if code != 0 {
+                let mut end = End::failed(format!("the agent exited with code {code}"));
+                end.end_text = t.host.end_text(&handle);
+                self.begin_stop(id, end, now_ms);
+                return None;
+            }
+        }
         let blocked_ms = i64::try_from(t.worker.blocked_secs.saturating_mul(1000)).ok()?;
         let t = self.tracked.get_mut(&id)?;
         if state.session.is_some() {
@@ -294,11 +306,7 @@ impl Workers {
             _ => false,
         };
         if !committed {
-            end.end_text = t
-                .progress
-                .handle
-                .as_ref()
-                .and_then(|h| self.host.end_text(h));
+            end.end_text = t.progress.handle.as_ref().and_then(|h| t.host.end_text(h));
         }
         end
     }
@@ -389,7 +397,7 @@ impl Workers {
             }
         }
         let closed = match &t.progress.handle {
-            Some(handle) => self.host.stop(handle).is_ok(),
+            Some(handle) => t.host.stop(handle).is_ok(),
             None => true,
         };
         t.phase = Phase::Stopping {

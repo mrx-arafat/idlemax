@@ -717,15 +717,15 @@ A server with a running Herdr keeps using the Herdr host of Spec 2 in its own lo
 
 **Definition of Done:**
 
-- [ ] `headless_args` returns exactly the two Claude lists above for a first start and a continued session, and `Unsupported` for Codex with a message that names the session id.
-- [ ] With a stub CLI that reads its input to the end and prints it, `start` then `send` puts the sent line into `logs/jobs/<id>.log`, `state` reads `working` and then `done` with `exit_code` 0, and the log ends with the footer that makes `idlemax logs <id> --follow` return.
-- [ ] A stub that prints `usage limit reached` and exits with code 1 gives `done` with `exit_code` 1, `end_text` holds that line, and the manager ends the job `failed` with the text in the last update.
-- [ ] The stub's environment holds `IDLEMAX_JOB_ID`, `IDLEMAX_JOB_TAG` and `GIT_TERMINAL_PROMPT=0` and no `IDLEMAX_TOKEN`, and a stub started with `GH_TOKEN` set is never sent a brief.
-- [ ] `stop` on a stub that ignores SIGTERM leaves no process of its group after the 5 s kill and leaves an uncommitted file in the worktree.
-- [ ] A manager test over `HeadlessHost` and the stub ends a launch `succeeded`, and a stop followed by a resume passes the same session id with `--resume`.
-- [ ] A manager built over a saved headless record reports a retryable kill for that job and leaves no process with its tag, and a record without `host` is read as a Herdr one.
-- [ ] `pick_host` gives the headless host for `production` with every value of the key, for `auto` with no `herdr` on `PATH` and for `auto` with a `herdr` that does not answer, and the Herdr host for `auto` with one that answers; `Config::parse` refuses `workers.host = "herdr"` with `agent.profile = "production"` in a line that starts with `workers.host`.
-- [ ] Verify: `cargo test -p idlemax-core worker::launch && cargo test -p idlemax-core config && cargo test -p idlemax --bin idlemax agent::worker && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `headless_args` returns exactly the two Claude lists above for a first start and a continued session, and `Unsupported` for Codex with a message that names the session id.
+- [x] With a stub CLI that reads its input to the end and prints it, `start` then `send` puts the sent line into `logs/jobs/<id>.log`, `state` reads `working` and then `done` with `exit_code` 0, and the log ends with the footer that makes `idlemax logs <id> --follow` return.
+- [x] A stub that prints `usage limit reached` and exits with code 1 gives `done` with `exit_code` 1, `end_text` holds that line, and the manager ends the job `failed` with the text in the last update.
+- [x] The stub's environment holds `IDLEMAX_JOB_ID`, `IDLEMAX_JOB_TAG` and `GIT_TERMINAL_PROMPT=0` and no `IDLEMAX_TOKEN`, and a stub started with `GH_TOKEN` set is never sent a brief.
+- [x] `stop` on a stub that ignores SIGTERM leaves no process of its group after the 5 s kill and leaves an uncommitted file in the worktree.
+- [x] A manager test over `HeadlessHost` and the stub ends a launch `succeeded`, and a stop followed by a resume passes the same session id with `--resume`.
+- [x] A manager built over a saved headless record reports a retryable kill for that job and leaves no process with its tag, and a record without `host` is read as a Herdr one.
+- [x] `pick_host` gives the headless host for `production` with every value of the key, for `auto` with no `herdr` on `PATH` and for `auto` with a `herdr` that does not answer, and the Herdr host for `auto` with one that answers; `Config::parse` refuses `workers.host = "herdr"` with `agent.profile = "production"` in a line that starts with `workers.host`.
+- [x] Verify: `cargo test -p idlemax-core worker::launch && cargo test -p idlemax-core config && cargo test -p idlemax --bin idlemax agent::worker && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 9: Give each device its own credential
 

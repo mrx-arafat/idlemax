@@ -44,6 +44,12 @@ impl Agent {
                 .await;
             self.tell_probes(&new).await;
         }
+        if report.applies("workers.host") {
+            if let Some(link) = &self.workers {
+                let profile = self.config.agent.profile_or_default(Os::current());
+                link.set_host_policy(new.workers.host, Some(profile));
+            }
+        }
         if report.applies("agent.notify") {
             self.notify = new.agent.notify;
         }

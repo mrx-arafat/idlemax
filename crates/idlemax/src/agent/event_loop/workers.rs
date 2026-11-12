@@ -7,8 +7,9 @@ use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use idlemax_core::config::WorkerHostChoice;
 use idlemax_core::protocol::{JobUpdate, RunningJob};
-use idlemax_core::types::{Job, QuotaSnapshot};
+use idlemax_core::types::{DeviceProfile, Job, QuotaSnapshot};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -29,6 +30,8 @@ enum LinkMsg {
     Worker(Msg),
     Allowlist(Vec<String>),
     Readings(Vec<QuotaSnapshot>),
+    /// `workers.host` and the device profile, for the next worker start.
+    HostPolicy(WorkerHostChoice, Option<DeviceProfile>),
 }
 
 /// What the manager last published for the loop to read.
@@ -80,6 +83,9 @@ impl WorkerLink {
                     }
                     Ok(LinkMsg::Allowlist(list)) => workers.set_allowlist(list),
                     Ok(LinkMsg::Readings(readings)) => workers.set_readings(readings),
+                    Ok(LinkMsg::HostPolicy(setting, profile)) => {
+                        workers.set_host_policy(setting, profile);
+                    }
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
@@ -122,6 +128,11 @@ impl WorkerLink {
     /// The agent's newest quota readings, for the spend of a review (D10 item 1).
     pub fn set_readings(&self, readings: Vec<QuotaSnapshot>) {
         let _ = self.tx.send(LinkMsg::Readings(readings));
+    }
+
+    /// A reloaded `workers.host` applies from the next worker start (A2).
+    pub fn set_host_policy(&self, setting: WorkerHostChoice, profile: Option<DeviceProfile>) {
+        let _ = self.tx.send(LinkMsg::HostPolicy(setting, profile));
     }
 
     /// The workers as the heartbeat reports them.

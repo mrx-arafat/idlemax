@@ -4,7 +4,9 @@
 
 use std::path::PathBuf;
 
+use idlemax_core::types::JobId;
 use idlemax_core::worker::WorkerCli;
+use serde::{Deserialize, Serialize};
 
 use super::cmd::CmdError;
 
@@ -19,8 +21,21 @@ pub struct Launch {
     /// The pane's environment pairs (`pane_env`).
     pub env: Vec<(String, String)>,
     pub cli: WorkerCli,
-    /// The arguments after the program name (`agent_args`).
+    /// The arguments after the program name (`agent_args`, or `headless_args`).
     pub args: Vec<String>,
+    /// The worker job and its attempt; the headless host names its log file and header by them.
+    pub job: JobId,
+    pub attempt: u32,
+}
+
+/// Which host started a worker; saved with it, so a stop, a kill and a recovery go to that host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostKind {
+    /// A record written before the headless host existed has no `host` and is a Herdr one.
+    #[default]
+    Herdr,
+    Headless,
 }
 
 /// Where a started worker lives; saved so a stop closes only this pane.
@@ -51,6 +66,8 @@ pub struct HostState {
     pub shell_pid: Option<u32>,
     /// The pids of the pane's foreground processes.
     pub foreground: Vec<u32>,
+    /// The exit code of a finished worker process (headless host). None for Herdr host.
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -67,6 +84,8 @@ pub enum HostError {
     Missing { call: String, what: String },
     #[error("pane {pane} is no longer the worker's (label or workspace changed); not closing it")]
     NotOurs { pane: String },
+    #[error("worker {handle} was already sent a prompt")]
+    AlreadySent { handle: String },
 }
 
 /// The runner seam. Every call is bounded in time by its implementation.
@@ -80,6 +99,14 @@ pub trait WorkerHost: Send + Sync {
     fn matches(&self, handle: &Handle) -> Result<bool, HostError>;
     /// The text that ended the last turn, at most 2,000 characters (A9).
     fn end_text(&self, handle: &Handle) -> Option<String>;
+    /// Whether this host is the headless runner.
+    fn is_headless(&self) -> bool {
+        false
+    }
+    /// Whether this host is available and answers.
+    fn is_available(&self) -> bool {
+        true
+    }
 }
 
 /// A scripted host: each `state` call takes the next scripted state, the last one repeats.
@@ -101,22 +128,43 @@ pub struct FakeHost {
     pub owned: std::sync::Mutex<Option<bool>>,
     /// While set, `state` fails as a host that does not answer.
     pub state_error: std::sync::Mutex<bool>,
+    pub headless: std::sync::Mutex<Option<bool>>,
+    pub available: std::sync::Mutex<Option<bool>>,
 }
 
 #[cfg(test)]
 impl FakeHost {
     pub fn push_state(&self, status: AgentStatus, session: Option<&str>, pids: &[u32]) {
+        self.push_state_with_exit(status, session, pids, None);
+    }
+
+    pub fn push_state_with_exit(
+        &self,
+        status: AgentStatus,
+        session: Option<&str>,
+        pids: &[u32],
+        exit_code: Option<i32>,
+    ) {
         self.states.lock().unwrap().push_back(HostState {
             status,
             session: session.map(Into::into),
             shell_pid: pids.first().copied(),
             foreground: pids.iter().skip(1).copied().collect(),
+            exit_code,
         });
     }
 }
 
 #[cfg(test)]
 impl WorkerHost for FakeHost {
+    fn is_headless(&self) -> bool {
+        self.headless.lock().unwrap().unwrap_or(false)
+    }
+
+    fn is_available(&self) -> bool {
+        self.available.lock().unwrap().unwrap_or(true)
+    }
+
     fn start(&self, launch: &Launch) -> Result<Handle, HostError> {
         self.starts.lock().unwrap().push(launch.clone());
         if let Some(e) = self.start_errors.lock().unwrap().pop_front() {
@@ -148,6 +196,7 @@ impl WorkerHost for FakeHost {
             session: None,
             shell_pid: None,
             foreground: Vec::new(),
+            exit_code: None,
         }))
     }
 
@@ -195,6 +244,8 @@ mod tests {
             env: Vec::new(),
             cli: WorkerCli::Claude,
             args: Vec::new(),
+            job: 1,
+            attempt: 1,
         };
         let handle = host.start(&launch).unwrap();
         let first = host.state(&handle).unwrap();
