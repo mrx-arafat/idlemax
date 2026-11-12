@@ -124,7 +124,14 @@ pub fn budget(input: &BudgetInput<'_>) -> Budget {
         Some(cap) => cap_figures(input, cap),
         None => weekly_figures(input),
     };
-    let left = (fig.spendable_pct - fig.spent_pct - input.committed_pct).max(0.0);
+    // On a daily cap `runs_today` already counts the running Runs, and `committed_pct` is in
+    // percent of the weekly window: only a weekly Budget holds the running Runs' estimates.
+    let committed = if a.daily_cap_runs.is_some() {
+        0.0
+    } else {
+        input.committed_pct
+    };
+    let left = (fig.spendable_pct - fig.spent_pct - committed).max(0.0);
     let rests_until_ms = input
         .limit_hit_ms
         .and_then(|hit| limit_rest_until(a, input.windows, hit, input.now_ms));

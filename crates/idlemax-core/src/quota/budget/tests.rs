@@ -33,6 +33,7 @@ struct Case {
     measuring_left_pct: Option<f64>,
     last_owner_use_ms: Option<UnixMs>,
     limit_hit_ms: Option<UnixMs>,
+    committed_pct: f64,
 }
 
 impl Case {
@@ -54,6 +55,7 @@ impl Case {
             measuring_left_pct: None,
             last_owner_use_ms: None,
             limit_hit_ms: None,
+            committed_pct: 0.0,
         }
     }
 
@@ -67,7 +69,7 @@ impl Case {
             owner: self.owner,
             idlemax_week_pct: self.idlemax_week_pct,
             spent_today_pct: self.spent_today_pct,
-            committed_pct: 0.0,
+            committed_pct: self.committed_pct,
             runs_today: self.runs_today,
             measuring_left_pct: self.measuring_left_pct,
             owner_reserve_override_pct: None,
@@ -168,6 +170,10 @@ fn a_daily_cap_counts_runs_and_needs_a_cap() {
         (100.0, 60.0, 40.0, true, BudgetBasis::DailyCap)
     );
     assert_eq!(b.why, "daily cap: 3 of 5 runs used today");
+    // A running Run is one of today's started Runs already, and its weekly estimate is in
+    // another unit: neither may lower a cap's room again.
+    cap.committed_pct = 20.0;
+    assert_eq!(cap.budget().left_pct, 40.0);
     cap.runs_today = 5;
     assert_eq!(cap.budget().basis, BudgetBasis::Spent);
     cap.account = account(Provider::Opencode, None);
