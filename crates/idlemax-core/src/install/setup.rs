@@ -155,6 +155,8 @@ pub enum SetupError {
          if agents should use the name, and add the name to coordinator.allowed_hosts)"
     )]
     ListenNeedsIp(String),
+    #[error("refusing to listen on {0}: bind the server's private-network address, the one section 3.1 of docs/ROLLOUT.md finds")]
+    PublicListen(std::net::SocketAddr),
     #[error(
         "config.toml already sets coordinator.url to {have}, not {want}: edit config.toml to change \
          it, or leave out --coord-url"
@@ -248,21 +250,26 @@ pub fn config_for(
     if let Some(url) = coord_url {
         cfg.coordinator.url = url.to_string();
         if let Some(authority) = authority_with_port(url).filter(|_| role.runs_coordinator()) {
-            cfg.coordinator.listen = listen_for(authority)
-                .ok_or_else(|| SetupError::ListenNeedsIp(authority.to_string()))?;
+            cfg.coordinator.listen = listen_for(authority)?;
         }
     }
     Ok(cfg)
 }
 
-/// The `coordinator.listen` for a URL authority `host:port`: an IP address as it is,
-/// `localhost` as 127.0.0.1, and None for any other name.
-fn listen_for(authority: &str) -> Option<String> {
-    if authority.parse::<std::net::SocketAddr>().is_ok() {
-        return Some(authority.to_string());
+/// The `coordinator.listen` for a URL authority `host:port`: an IP address as it is (refusing
+/// public addresses), `localhost` as 127.0.0.1, and an error for any other name.
+fn listen_for(authority: &str) -> Result<String, SetupError> {
+    if let Ok(addr) = authority.parse::<std::net::SocketAddr>() {
+        if crate::host::listen_scope(addr.ip()) == crate::host::ListenScope::Public {
+            return Err(SetupError::PublicListen(addr));
+        }
+        return Ok(authority.to_string());
     }
-    let port = authority.strip_prefix("localhost:")?.parse::<u16>().ok()?;
-    Some(format!("127.0.0.1:{port}"))
+    let port = authority
+        .strip_prefix("localhost:")
+        .and_then(|p| p.parse::<u16>().ok())
+        .ok_or_else(|| SetupError::ListenNeedsIp(authority.to_string()))?;
+    Ok(format!("127.0.0.1:{port}"))
 }
 
 /// What `service install` would do to a unit file that may already exist.

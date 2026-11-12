@@ -483,3 +483,19 @@ ROADMAP 2, done when:
 
 If any box is unchecked, the rollout is not done.
 Record the failing row or SQL result and keep the old coordinator running until it is fixed.
+
+## 8. The dispatcher on servers
+
+This section covers moving the dispatcher coordinator to an always-on server and joining work servers as dispatcher workers, building on sections 0 to 5.
+
+1. **One coordinator for all:** The coordinator runs on one always-on server, and every other device, the Mac included, is one of its agents.
+2. **Upgrade order:** The coordinator is upgraded before any agent, because of the profile names introduced in Task 1 (`laptop`, `workbox`, `production`). An older coordinator cannot read the new profile names.
+3. **Migrate coordinator settings:** The settings the coordinator reads move with it: `[[quota.accounts]]`, the other `[quota]` keys, `[workers]`, `[dispatcher]`, `[advisor]` and the file `rules.md` are copied from the old coordinator's state dir to the new one, because a fresh server config has no account and an empty `workers.clis`.
+4. **Time zone:** The coordinator runs in the owner's time zone, so Spec 4's daily summary goes out at 09:00 for the owner (A22): on a host that runs other services a drop-in sets `Environment=TZ=<zone>` for the coordinator unit alone, and on a work server the owner may set the system zone with `timedatectl set-timezone` instead.
+5. **Agent user on work servers:** A work server runs its agent as the owner's login user, because workers need that user's repositories, agent CLI logins and Herdr session.
+6. **Work server setup:** It is set up with `idlemax device credential <id> --raw` on a device that holds the owner token, piped into `idlemax setup --role agent --profile workbox --coord-url <url> --token-stdin` on the server, and kept running from boot with the `loginctl enable-linger` step that `idlemax service install` already names (`cli/service.rs:355-357`).
+7. **Herdr and headless fallback:** A server whose Herdr session is not running after a reboot runs its workers headless until the owner starts the session again.
+8. **Production route:** The packaged root unit with its own system user and `ProtectHome=read-only` (`packaging/linux/idlemax-agent.service:19`, `:48`) stays the `production` route; such a device has no agent CLI login and cannot write the owner's repositories, so it starts no worker, and its login check says why.
+9. **Logins verified in doctor:** Each agent CLI is logged in on each server as the login user, and `idlemax doctor` shows the `login.*` checks.
+10. **Device and project activation:** A server is put to work with `idlemax device on <id>` and `idlemax project on <name> --device <id>`, and taken out with `idlemax device off <id>`.
+11. **Mode safety fence:** The mode stays `off` or `propose` after the move until the owner has answered the question of the worker fence (A13, A15).

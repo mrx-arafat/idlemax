@@ -139,7 +139,7 @@ The repository is public: no address, host name or device id of the owner's mach
 - [ ] Task 7: Run the base checks again when the day's budget is spent
 - [ ] Task 8: Add the headless runner
 - [ ] Task 9: Give each device its own credential
-- [ ] Task 10: Refuse a public coordinator address and write the server rollout
+- [x] Task 10: Refuse a public coordinator address and write the server rollout
 - [ ] Task 11: Needs the owner's OK: move the coordinator to the always-on server
 - [ ] Task 12: Needs the owner's OK: join both servers as workbox and prove the dispatcher there
 
@@ -842,11 +842,11 @@ A worker on a server then finds nothing on that server that opens an owner route
 
 **Definition of Done:**
 
-- [ ] `listen_scope` returns `Loopback` for both loopback forms, `Private` for one address of each private range, the shared range, link-local and unique local, and `Public` for a documentation-range IPv4 address (RFC 5737) and a documentation-range IPv6 address (RFC 3849).
-- [ ] `listen_addr` refuses a public address with a message that names the private-network address and `docs/ROLLOUT.md`, and still accepts every address its existing test accepts (`coord/mod.rs:98-126`).
-- [ ] `idlemax setup --role coord --coord-url` with a public address fails in `--dry-run` with the same message and writes nothing.
-- [ ] `docs/ROLLOUT.md` has the section with each step above, and no address, host name or device id of a real machine.
-- [ ] Verify: `cargo test -p idlemax-core host && cargo test -p idlemax --bin idlemax coord::tests && cargo test -p idlemax --test setup && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `listen_scope` returns `Loopback` for both loopback forms, `Private` for one address of each private range, the shared range, link-local and unique local, and `Public` for a documentation-range IPv4 address (RFC 5737) and a documentation-range IPv6 address (RFC 3849).
+- [x] `listen_addr` refuses a public address with a message that names the private-network address and `docs/ROLLOUT.md`, and still accepts every address its existing test accepts (`coord/mod.rs:98-126`).
+- [x] `idlemax setup --role coord --coord-url` with a public address fails in `--dry-run` with the same message and writes nothing.
+- [x] `docs/ROLLOUT.md` has the section with each step above, and no address, host name or device id of a real machine.
+- [x] Verify: `cargo test -p idlemax-core host && cargo test -p idlemax --bin idlemax coord::tests && cargo test -p idlemax --test setup && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 11: Needs the owner's OK: move the coordinator to the always-on server
 

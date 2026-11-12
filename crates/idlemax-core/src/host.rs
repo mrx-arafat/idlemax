@@ -1,9 +1,52 @@
-//! Domain: which `Host` header values the HTTP servers answer to. A web page can be made to
-//! reach a local server under the attacker's own domain name (DNS rebinding), and the browser
-//! then sends that name as `Host`. Only IP literals, loopback names and names the owner lists
-//! are accepted. Pure.
+//! Domain: which `Host` header values the HTTP servers answer to, and the network scope of
+//! listen addresses (loopback, private network, or public). Pure.
 
 use std::net::IpAddr;
+
+/// The network reachability of an IP address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListenScope {
+    /// Loopback only: 127.0.0.0/8, ::1.
+    Loopback,
+    /// Private network: RFC 1918, RFC 6598 (tailnets), link-local, IPv6 unique local.
+    Private,
+    /// Publicly routable address.
+    Public,
+}
+
+/// Classifies an IP address into loopback, private network, or public.
+///
+/// IPv4-mapped IPv6 addresses (e.g. `::ffff:127.0.0.1`) are canonicalized to IPv4 first.
+pub fn listen_scope(ip: IpAddr) -> ListenScope {
+    let ip = ip.to_canonical();
+    if ip.is_loopback() {
+        return ListenScope::Loopback;
+    }
+    match ip {
+        IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            // RFC 1918 private ranges, RFC 6598 shared address space (100.64.0.0/10),
+            // or RFC 3927 link-local (169.254.0.0/16).
+            let is_shared = octets[0] == 100 && (64..=127).contains(&octets[1]);
+            if v4.is_private() || is_shared || v4.is_link_local() {
+                ListenScope::Private
+            } else {
+                ListenScope::Public
+            }
+        }
+        IpAddr::V6(v6) => {
+            let segments = v6.segments();
+            // RFC 4291 link-local (fe80::/10) or RFC 4193 unique local (fc00::/7).
+            let is_link_local = (segments[0] & 0xffc0) == 0xfe80;
+            let is_unique_local = (segments[0] & 0xfe00) == 0xfc00;
+            if is_link_local || is_unique_local {
+                ListenScope::Private
+            } else {
+                ListenScope::Public
+            }
+        }
+    }
+}
 
 /// The extra host names a server answers to, besides IP literals and loopback names.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -95,5 +138,39 @@ mod tests {
             !AllowedHosts::default().allows("box:7878"),
             "nothing listed, no names"
         );
+    }
+
+    #[test]
+    fn listen_scope_distinguishes_loopback_private_and_public() {
+        for loopback in ["127.0.0.1", "::1", "::ffff:127.0.0.1"] {
+            let ip: IpAddr = loopback.parse().unwrap();
+            assert_eq!(listen_scope(ip), ListenScope::Loopback, "{loopback}");
+        }
+
+        for private in [
+            "10.0.0.1",
+            "172.16.0.1",
+            "192.168.1.1",
+            "100.64.0.1",
+            "169.254.1.1",
+            "fe80::1",
+            "fd00::1",
+            "::ffff:10.0.0.1",
+            "::ffff:100.64.0.1",
+        ] {
+            let ip: IpAddr = private.parse().unwrap();
+            assert_eq!(listen_scope(ip), ListenScope::Private, "{private}");
+        }
+
+        for public in [
+            "192.0.2.1",
+            "198.51.100.1",
+            "203.0.113.1",
+            "2001:db8::1",
+            "::ffff:192.0.2.1",
+        ] {
+            let ip: IpAddr = public.parse().unwrap();
+            assert_eq!(listen_scope(ip), ListenScope::Public, "{public}");
+        }
     }
 }

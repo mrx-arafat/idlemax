@@ -32,6 +32,8 @@ pub enum CoordError {
     BadListen(String),
     #[error("refusing to listen on {0}: use a loopback or tailnet address, never all interfaces")]
     AllInterfaces(SocketAddr),
+    #[error("refusing to listen on {0}: bind the server's private-network address, the one section 3.1 of docs/ROLLOUT.md finds")]
+    PublicListen(SocketAddr),
     #[error("bind {addr}: {source}")]
     Bind {
         addr: SocketAddr,
@@ -76,6 +78,9 @@ fn listen_addr(listen: &str) -> Result<SocketAddr, CoordError> {
     // `::ffff:0.0.0.0` is the IPv4 wildcard in IPv6 clothes: look through the mapping.
     if addr.ip().to_canonical().is_unspecified() {
         return Err(CoordError::AllInterfaces(addr));
+    }
+    if idlemax_core::host::listen_scope(addr.ip()) == idlemax_core::host::ListenScope::Public {
+        return Err(CoordError::PublicListen(addr));
     }
     Ok(addr)
 }
@@ -127,5 +132,25 @@ mod tests {
             listen_addr("localhost:7878"),
             Err(CoordError::BadListen(_))
         ));
+    }
+
+    #[test]
+    fn public_listen_addresses_are_refused() {
+        for public in [
+            "192.0.2.1:7878",
+            "[2001:db8::1]:7878",
+            "[::ffff:192.0.2.1]:7878",
+        ] {
+            let err = listen_addr(public).unwrap_err();
+            assert!(
+                matches!(err, CoordError::PublicListen(_)),
+                "{public} must be refused with PublicListen, got {err:?}"
+            );
+            let msg = err.to_string();
+            assert!(
+                msg.contains("bind the server's private-network address, the one section 3.1 of docs/ROLLOUT.md finds"),
+                "{public} message was {msg}"
+            );
+        }
     }
 }

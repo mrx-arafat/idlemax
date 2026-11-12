@@ -330,3 +330,26 @@ fn setup_agent_profile_flag_and_default() {
         assert!(text2.contains("agent.profile production"), "{text2}");
     }
 }
+
+#[test]
+fn coord_refuses_public_address_in_dry_run() {
+    let home = Home::new();
+    let (code, error) = home.json(&[
+        "--dry-run",
+        "--role",
+        "coord",
+        "--coord-url",
+        "http://192.0.2.1:7878",
+    ]);
+    assert_eq!(code, 2, "{error}");
+    assert_eq!(error["help"], "idlemax setup --help");
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("bind the server's private-network address, the one section 3.1 of docs/ROLLOUT.md finds"),
+        "{error}"
+    );
+    assert!(!home.state.exists(), "nothing is written on failure");
+    assert!(is_empty_dir(&home.home), "nothing is written under HOME");
+}

@@ -1329,6 +1329,8 @@ The TUI (tab 6) and the web dashboard list schedules too, with pause, resume and
 
 ## Deploying across devices
 
+For rolling out the coordinator and dispatcher across servers, see [docs/ROLLOUT.md](docs/ROLLOUT.md#8-the-dispatcher-on-servers).
+
 1. Run Tailscale (or another private network) on every device, and bind the coordinator to its private IP with `coordinator.listen = "<tailnet-ip>:7878"`.
 
 2. Install the coordinator and a server agent on Linux:

@@ -247,3 +247,19 @@ fn a_coordinator_listens_on_an_ip_never_on_a_name_it_cannot_bind() {
     );
     assert!(agent.is_ok());
 }
+
+#[test]
+fn a_coordinator_refuses_a_public_address() {
+    for public in ["http://192.0.2.1:7878", "http://[2001:db8::1]:7878"] {
+        let err = config_for(Role::Coord, Os::Linux, None, Some(public)).unwrap_err();
+        assert!(
+            matches!(err, SetupError::PublicListen(_)),
+            "{public}: expected PublicListen, got {err:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bind the server's private-network address, the one section 3.1 of docs/ROLLOUT.md finds"),
+            "{public}: {msg}"
+        );
+    }
+}

@@ -47,6 +47,8 @@ What the lock does not stop:
 
 ## Coordinator (default `127.0.0.1:7878`, tailnet IP in production)
 
+The coordinator binds only to loopback or private network addresses (such as RFC 1918, RFC 6598 tailnet IPs, link-local, or unique local IPv6). A public listen address is refused at startup (`CoordError::PublicListen`).
+
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | GET | /healthz | | `ok` (text, no auth) |
@@ -119,7 +121,7 @@ An unset `key` is left out of the JSON, and a coordinator or agent that predates
 `POST /v1/jobs/{id}/cancel` answers 404 for an unknown job and 409 for a finished one.
 `GET /v1/jobs/{id}/why` answers 404 for an unknown job (see [Why a job is not running](#why-a-job-is-not-running)).
 A job update for an unknown job is 404.
-`coordinator.listen` on `0.0.0.0`, `[::]` or `[::ffff:0.0.0.0]` is refused at startup.
+`coordinator.listen` on `0.0.0.0`, `[::]` or `[::ffff:0.0.0.0]`, or on any public IP address, is refused at startup.
 
 ## Agent local API (default `127.0.0.1:7879`)
 
