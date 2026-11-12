@@ -208,3 +208,59 @@ mod after_job {
         assert_eq!(moved(older, u), None);
     }
 }
+
+#[test]
+fn a_long_end_text_is_clipped() {
+    use crate::protocol::JobUpdate;
+    use crate::types::{CostClass, Job, JobSpec, JobStatus};
+    use crate::worker::report::{WorkerReport, MAX_END_TEXT_CHARS};
+
+    let run = Run {
+        state: RunState::Running,
+        job: Some(9),
+        ..Default::default()
+    };
+    let job = Job {
+        id: 9,
+        spec: JobSpec {
+            cost: CostClass::Ai,
+            worker: Some(WorkerSpec::default()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let update = JobUpdate {
+        id: 9,
+        status: JobStatus::Succeeded,
+        worker: Some(Box::new(WorkerReport {
+            end_text: Some("é".repeat(MAX_END_TEXT_CHARS + 10)),
+            ..Default::default()
+        })),
+        ..Default::default()
+    };
+    let next = after_job(&run, &job, &update, 1).unwrap();
+    let kept = next.facts.end_text.unwrap();
+    assert_eq!(kept.chars().count(), MAX_END_TEXT_CHARS);
+}
+
+#[test]
+fn the_baseline_commit_is_bounded() {
+    use crate::types::{CostClass, JobSpec, SpecError};
+    use crate::worker::Baseline;
+
+    let spec = JobSpec {
+        name: "w".into(),
+        command: vec!["idlemax-worker".into()],
+        cost: CostClass::Ai,
+        ai_account: Some("max".into()),
+        worker: Some(WorkerSpec {
+            baseline: Some(Baseline {
+                base_commit: "a".repeat(5000),
+                passed: None,
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    assert!(matches!(spec.validate(), Err(SpecError::OverLimit { .. })));
+}

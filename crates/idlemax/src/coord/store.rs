@@ -262,7 +262,8 @@ impl Store {
                 [history_cutoff],
             )?,
             runs: tx.execute(
-                "DELETE FROM runs WHERE state IN ('kept', 'discarded') AND end_ms < ?1",
+                "DELETE FROM runs WHERE state IN ('kept', 'discarded')
+                   AND COALESCE(end_ms, updated_ms) < ?1",
                 [jobs_cutoff],
             )?,
         };

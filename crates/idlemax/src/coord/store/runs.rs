@@ -7,7 +7,7 @@ use idlemax_core::worker::run::{after_owner_stop, Run, RunLaunch, RunState};
 use idlemax_core::worker::RunId;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
-use super::jobs::{get_job, unfinished_with_key, Added};
+use super::jobs::{check_live_cap, get_job, unfinished_with_key, Added};
 use super::{enum_col, enum_text, json_col, json_text, sql_limit, Store, StoreError, StoreResult};
 
 const COLUMNS: &str = "id, device, project, task, task_title, source, branch, worktree, \
@@ -48,31 +48,44 @@ impl Store {
     /// Stores a new Run with what its relaunches need and returns it with its id.
     pub fn insert_run(&mut self, run: &Run, launch: &RunLaunch) -> StoreResult<Run> {
         self.conn.execute(
-            "INSERT INTO runs (device, project, task, task_title, source, provider, account,
-               model, state, reason, launch, start_ms, updated_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+            "INSERT INTO runs (device, project, task, task_title, source, branch, worktree,
+               provider, account, model, session, state, verdict, concern, reason, summary,
+               facts, quota_before, quota_after, job, launches, start_tries, start_ms, end_ms,
+               updated_ms, launch)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+               ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
             params![
                 run.device,
                 run.project,
                 run.task,
                 run.task_title,
                 run.source,
+                run.branch,
+                run.worktree,
                 enum_text(&run.provider)?,
                 run.account,
                 run.model,
+                run.session,
                 run.state.as_str(),
+                run.verdict.map(|v| v.as_str()),
+                run.concern,
                 run.reason,
-                json_text(launch)?,
+                run.summary,
+                json_text(&run.facts)?,
+                json_text(&run.quota_before)?,
+                json_text(&run.quota_after)?,
+                run.job,
+                run.launches,
+                run.start_tries,
                 run.start_ms,
+                run.end_ms,
+                run.updated_ms,
+                json_text(launch)?,
             ],
         )?;
         let id = self.conn.last_insert_rowid();
-        let mut stored = run.clone();
-        stored.id = id;
-        stored.updated_ms = run.start_ms;
-        update_run(&self.conn, &stored, run.state)?;
         self.get_run(id)?
-            .ok_or(StoreError::Corrupt(format!("run {id}")))
+            .ok_or_else(|| StoreError::Corrupt(format!("run {id}")))
     }
 
     /// Writes `run` only while its stored state is still `expect`; false when it moved, so
@@ -123,12 +136,14 @@ impl Store {
         now: UnixMs,
     ) -> StoreResult<Added> {
         spec.validate().map_err(StoreError::InvalidSpec)?;
+        let live_jobs = self.caps.live_jobs;
         let tx = self.conn.transaction()?;
         if let Some(key) = &spec.key {
             if let Some(job) = unfinished_with_key(&tx, key)? {
                 return Ok(Added::Existing(job));
             }
         }
+        check_live_cap(&tx, live_jobs)?;
         tx.execute(
             "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key, device,
                lease_expires_ms, attempts, worker)
@@ -406,5 +421,49 @@ mod tests {
         assert_eq!(ids(s.runs_of_project("a").unwrap()), [a.id, c.id]);
         assert_eq!(s.runs_of_account("max", T0).unwrap().len(), 3);
         assert!(s.runs_of_account("max", T0 + 1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn insert_run_stores_every_field_it_is_given() {
+        let mut s = Store::open_in_memory().unwrap();
+        let mut given = run("demo", RunState::Starting);
+        given.session = Some("sess".into());
+        given.updated_ms = T0 + 5;
+        given.launches = 1;
+        let stored = s.insert_run(&given, &RunLaunch::default()).unwrap();
+        given.id = stored.id;
+        assert_eq!(stored, given);
+    }
+
+    #[test]
+    fn leased_jobs_count_against_the_live_jobs_cap() {
+        let caps = super::super::Caps {
+            live_jobs: 1,
+            ..Default::default()
+        };
+        let mut s = Store::open_in_memory().unwrap().with_caps(caps);
+        s.insert_leased_job(&ai_spec("w1", true), "mac", T0 + 1, T0)
+            .unwrap();
+        assert!(matches!(
+            s.insert_leased_job(&ai_spec("w2", true), "mac", T0 + 1, T0),
+            Err(StoreError::LimitReached { .. })
+        ));
+    }
+
+    #[test]
+    fn prune_drops_old_kept_and_discarded_runs_even_without_an_end_time() {
+        let mut s = Store::open_in_memory().unwrap();
+        let launch = RunLaunch::default();
+        let mut kept = run("a", RunState::Kept);
+        kept.end_ms = Some(T0);
+        let mut discarded = run("a", RunState::Discarded);
+        discarded.updated_ms = T0;
+        let clean = run("a", RunState::Clean);
+        for r in [&kept, &discarded, &clean] {
+            s.insert_run(r, &launch).unwrap();
+        }
+        let report = s.prune(T0 + 91 * 86_400_000, i64::MAX).unwrap();
+        assert_eq!(report.runs, 2);
+        assert_eq!(s.list_runs(None, None, 0).unwrap().len(), 1);
     }
 }

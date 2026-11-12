@@ -257,18 +257,7 @@ pub(super) fn insert_job(
     now: UnixMs,
 ) -> StoreResult<Job> {
     spec.validate().map_err(StoreError::InvalidSpec)?;
-    let live: i64 = conn.query_row(
-        &format!("SELECT count(*) FROM jobs WHERE status IN {LIVE}"),
-        [],
-        |r| r.get(0),
-    )?;
-    if live >= max_live {
-        return Err(StoreError::LimitReached {
-            what: "queued jobs",
-            limit: max_live,
-            hint: "wait for some to finish, or cancel them",
-        });
-    }
+    check_live_cap(conn, max_live)?;
     conn.execute(
         "INSERT INTO jobs (spec, name, status, priority, ai_account, created_ms, key, worker)
              VALUES (?1, ?2, 'queued', ?3, ?4, ?5, ?6, ?7)",
@@ -284,6 +273,23 @@ pub(super) fn insert_job(
     )?;
     let id = conn.last_insert_rowid();
     get_job(conn, id)?.ok_or(StoreError::JobNotFound(id))
+}
+
+/// `LimitReached` when `max_live` jobs are already unfinished.
+pub(super) fn check_live_cap(conn: &Connection, max_live: i64) -> StoreResult<()> {
+    let live: i64 = conn.query_row(
+        &format!("SELECT count(*) FROM jobs WHERE status IN {LIVE}"),
+        [],
+        |r| r.get(0),
+    )?;
+    if live >= max_live {
+        return Err(StoreError::LimitReached {
+            what: "queued jobs",
+            limit: max_live,
+            hint: "wait for some to finish, or cancel them",
+        });
+    }
+    Ok(())
 }
 
 pub(super) fn get_job(conn: &Connection, id: JobId) -> StoreResult<Option<Job>> {

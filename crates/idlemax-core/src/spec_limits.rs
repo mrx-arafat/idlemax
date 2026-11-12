@@ -90,6 +90,10 @@ fn worker(w: &WorkerSpec) -> Result<(), SpecError> {
         ("worker.session", w.session.as_ref()),
         ("worker.reviewer.model", reviewer.map(|r| &r.model)),
         ("worker.reviewer.account", reviewer.map(|r| &r.account)),
+        (
+            "worker.baseline.base_commit",
+            w.baseline.as_ref().map(|b| &b.base_commit),
+        ),
     ];
     for (field, text) in texts {
         bounded(field, text.map_or("", String::as_str), MAX_CWD_BYTES)?;

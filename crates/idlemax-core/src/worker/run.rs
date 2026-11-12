@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::report::{CheckFacts, WorkerPhase};
+use super::report::{CheckFacts, WorkerPhase, MAX_END_TEXT_CHARS};
 use super::{RunId, WorkerSpec};
 use crate::protocol::JobUpdate;
 use crate::quota::Provider;
@@ -185,7 +185,8 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
         next.session = r.session.clone().or(next.session);
         next.branch = r.branch.clone().or(next.branch);
         next.worktree = r.worktree.clone().or(next.worktree);
-        next.facts.end_text = r.end_text.clone().or(next.facts.end_text);
+        let end_text = r.end_text.as_ref().map(|t| clip(t, MAX_END_TEXT_CHARS));
+        next.facts.end_text = end_text.or(next.facts.end_text);
     }
     let error = || {
         update
@@ -213,6 +214,11 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
         JobStatus::Leased | JobStatus::Cancelled | JobStatus::Parked => run.state,
     };
     move_to(next, run.state, target, now_ms)
+}
+
+/// The first `max` characters: a device sends `end_text`, so the coordinator bounds it.
+fn clip(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
 }
 
 /// The Run after the sweep ended its job because the lease ran out.
