@@ -160,10 +160,11 @@ pub async fn base_commit(root: &Path, base: &str) -> Option<String> {
     Some(out.trim().to_string()).filter(|c| !c.is_empty())
 }
 
-/// The roadmap text on the base branch: `ROADMAP.md`, then `docs/ROADMAP.md`.
-pub async fn roadmap_text(root: &Path, base: &str) -> Option<String> {
+/// The roadmap text at `rev` (`refs/heads/<base>`, or `HEAD`): `ROADMAP.md`, then
+/// `docs/ROADMAP.md`.
+pub async fn roadmap_text(root: &Path, rev: &str) -> Option<String> {
     for file in ROADMAP_FILES {
-        if let Some(text) = git(root, &["show", &format!("refs/heads/{base}:{file}")]).await {
+        if let Some(text) = git(root, &["show", &format!("{rev}:{file}")]).await {
             return Some(text);
         }
     }

@@ -109,13 +109,20 @@ async fn fill_project(report: &mut RepoReport, p: &Project) {
         .base_branch
         .clone()
         .or_else(|| report.default_branch.clone());
-    if let Some(base) = base.filter(|b| plain(b)) {
-        report.base_commit = repo::base_commit(&dir, &base).await;
-        if let Some(text) = repo::roadmap_text(&dir, &base).await {
-            let mut items = parse_roadmap(&text);
-            items.truncate(MAX_ROADMAP_ITEMS);
-            report.roadmap = items;
+    let base = base.filter(|b| plain(b));
+    // Without a known base the roadmap is read at HEAD, so its items still reach the owner
+    // with the reason "set the base branch"; no base commit is reported, so no check runs.
+    let rev = match &base {
+        Some(b) => {
+            report.base_commit = repo::base_commit(&dir, b).await;
+            format!("refs/heads/{b}")
         }
+        None => "HEAD".to_string(),
+    };
+    if let Some(text) = repo::roadmap_text(&dir, &rev).await {
+        let mut items = parse_roadmap(&text);
+        items.truncate(MAX_ROADMAP_ITEMS);
+        report.roadmap = items;
     }
     let mut touched: Vec<String> = repo::touched(&dir)
         .await
@@ -293,5 +300,26 @@ mod tests {
             Some(head(&on))
         );
         assert!(!marker.exists(), "a repository hook ran");
+    }
+
+    #[tokio::test]
+    async fn dispatch_feed_reads_the_roadmap_at_head_when_no_base_branch_is_known() {
+        let dir = tempfile::tempdir().unwrap();
+        let on = dir.path().canonicalize().unwrap().join("on");
+        repo(&on);
+        std::fs::write(
+            on.join("ROADMAP.md"),
+            "## Do it\n\nDone when: `true` passes.\n",
+        )
+        .unwrap();
+        git_cmd(&on, &["add", "ROADMAP.md"]);
+        git_cmd(&on, &["commit", "-q", "-m", "roadmap"]);
+        let mut p = project(&on);
+        p.settings.base_branch = None;
+        let inputs = collect(&ctx(&dir.path().join("state"), vec![p]), None).await;
+        let r = &inputs.repos[0];
+        assert_eq!(r.default_branch, None);
+        assert_eq!(r.roadmap.len(), 1, "{r:?}");
+        assert_eq!(r.base_commit, None);
     }
 }

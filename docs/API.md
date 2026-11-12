@@ -571,7 +571,7 @@ Types live in `crates/idlemax-core/src/dispatch/inputs.rs`.
   A folder inside `$IDLEMAX_HOME` is never the owner's and is skipped.
 - `working` is true when a Herdr agent with status `working` runs in the repository.
 - `default_branch` is the local branch `origin/HEAD` names, kept only when it exists locally.
-- `base_commit`, `roadmap` and `touched` are filled only for the switched-on projects of the last reply; `roadmap` comes from `ROADMAP.md`, then `docs/ROADMAP.md`, on the base branch.
+- `base_commit`, `roadmap` and `touched` are filled only for the switched-on projects of the last reply; `roadmap` comes from `ROADMAP.md`, then `docs/ROADMAP.md`, on the base branch, or at `HEAD` while neither the project nor `origin/HEAD` names one (its items then carry the reason "set the base branch").
 - `DispatchInputs::check` refuses more than 64 repositories, 50 roadmap items or 200 touched paths per repository, over-long text and any control character with 400; the store refuses a payload over 256 KiB.
 - An unknown repository becomes a project that is off, with `source: "herdr"` and its default branch as the base; a known one is marked seen, and owner-active when `working`.
   A device holds at most 200 projects; a repository beyond that is skipped, never refused.
