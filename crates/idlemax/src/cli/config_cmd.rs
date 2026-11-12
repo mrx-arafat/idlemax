@@ -127,7 +127,9 @@ async fn change(paths: &Paths, key: &str, value: Option<&str>, out: &Out) -> Res
     .map_err(refused)?;
     let rewrote = edit.text != before;
     let backup = if rewrote {
-        files::save(&file, Some(&before), &edit.text)?
+        let saved = files::save(&file, Some(&before), &edit.text)?;
+        crate::owner_writes::record(&file, &edit.text);
+        saved
     } else {
         None
     };

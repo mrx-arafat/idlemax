@@ -44,6 +44,9 @@ pub struct CheckCtx {
     /// The agent's newest quota readings, so a review counts for the account that paid.
     pub readings: Arc<Mutex<Vec<QuotaSnapshot>>>,
     pub cancel: Arc<AtomicBool>,
+    /// The state dir and the digests of its guarded files when the launch began.
+    pub state_dir: PathBuf,
+    pub guarded: Vec<(String, String)>,
 }
 
 pub fn spawn(ctx: CheckCtx) -> Receiver<CheckFacts> {
@@ -88,6 +91,8 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
         baseline_before,
         baseline_after,
         review: None,
+        // idlemax's own files the turn changed without an owner command (red team 2, 3).
+        tampered: crate::owner_writes::tampered_since(&ctx.state_dir, &ctx.guarded),
     };
     let w = &ctx.worker;
     let high = risk_is_high(
@@ -353,6 +358,8 @@ mod tests {
             remotes: Vec::new(),
             readings: Arc::default(),
             cancel: Arc::default(),
+            state_dir: PathBuf::new(),
+            guarded: Vec::new(),
         };
         let facts = gather(&ctx);
         let paths: Vec<&str> = facts.diff.files.iter().map(|f| f.path.as_str()).collect();
@@ -402,6 +409,8 @@ mod tests {
             remotes: Vec::new(),
             readings: Arc::default(),
             cancel: Arc::default(),
+            state_dir: PathBuf::new(),
+            guarded: Vec::new(),
         };
         let facts = gather(&ctx);
         assert_eq!(facts.tip.as_deref(), Some(tip.as_str()));

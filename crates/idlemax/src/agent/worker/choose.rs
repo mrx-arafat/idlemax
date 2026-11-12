@@ -139,6 +139,7 @@ impl Workers {
                 kill: None,
             },
             saved: None,
+            guarded: crate::owner_writes::snapshot(self.paths.root()),
         }
     }
 }

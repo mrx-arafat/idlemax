@@ -91,6 +91,7 @@ fn add_line(paths: &Paths, line: &str) -> Result<(), ApiFailure> {
         ));
     }
     files::save(&file, before.as_deref(), &new)?;
+    crate::owner_writes::record(&file, &new);
     Ok(())
 }
 

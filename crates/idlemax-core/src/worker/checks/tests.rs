@@ -156,6 +156,21 @@ fn concern(j: &Judged) -> &str {
 }
 
 #[test]
+fn a_turn_that_changed_idlemax_own_files_is_rejected() {
+    // Red team cases 2 and 3: the worker wrote config.toml without an owner command.
+    let j = judged(CheckFacts {
+        tampered: vec!["config.toml".into()],
+        ..good()
+    });
+    assert_eq!(j.verdict, Verdict::Rejected);
+    assert!(
+        concern(&j).contains("changed idlemax's own files while it ran: config.toml"),
+        "{}",
+        concern(&j)
+    );
+}
+
+#[test]
 fn rejected_for_no_commit_an_off_limits_path_or_a_check_it_broke() {
     let none = judged(CheckFacts {
         commits: 0,

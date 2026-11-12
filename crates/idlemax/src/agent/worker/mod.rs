@@ -97,6 +97,9 @@ struct Tracked {
     phase: Phase,
     /// The record last saved, so an unchanged worker is not written again.
     saved: Option<String>,
+    /// The digests of idlemax's own files when this launch began (`owner_writes`); empty for
+    /// a worker recovered after a restart or a review, which then checks nothing.
+    guarded: Vec<(String, String)>,
 }
 
 pub struct Workers {

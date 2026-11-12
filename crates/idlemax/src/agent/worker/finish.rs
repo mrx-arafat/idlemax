@@ -82,6 +82,8 @@ impl Workers {
             remotes: t.progress.remotes.clone(),
             readings: Arc::clone(&self.readings),
             cancel: Arc::clone(&cancel),
+            state_dir: self.paths.root().to_path_buf(),
+            guarded: t.guarded.clone(),
         });
         let t = self.tracked.get_mut(&id)?;
         t.phase = Phase::Checking { rx, cancel, end };

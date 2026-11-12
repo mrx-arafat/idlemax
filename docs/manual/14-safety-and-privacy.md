@@ -99,7 +99,7 @@ The lock stops accidents and a launched process that tries the documented switch
 **It is not a sandbox.** It does not stop:
 
 - A write to `config.toml` in the state folder: every `[dispatcher]` key, the mode included, and every quota key except `quota.accounts` apply at once, because the daemons re-read them when the file changes; `[workers]` keys apply at the coordinator's next launch step; `[guard]` keys and the other live agent keys apply at the agent's next reload (which `idlemax config set` asks for); every other key, `quota.accounts` included, applies at the next restart.
-- A write to `rules.md`, the database or the token file, or deleting the `PAUSE` file: it is the same OS user.
+- A write to `rules.md`, the database or the token file, or deleting the `PAUSE` file: it is the same OS user. A worker's change to `config.toml`, `rules.md` or the token file that no owner command made is detected when its turn is checked: the Run is rejected and the owner gets a needs-you notice.
 - Detaching, where a worker has no systemd scope (macOS, or Linux without a systemd manager): one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1. On Linux with a systemd manager a worker runs in a scope (`idlemax-w-…`) and every process in one counts as launched whatever its environment, so detaching does not get past the check; a process the worker gets the owner's own session to start still does.
 - A call to a coordinator on another machine: a caller that is not on the coordinator's host is judged by the token alone.
 - Acting through your own session: a shell start-up file, a git hook or a service file that your session runs later, or a script that drives your browser.

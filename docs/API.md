@@ -46,7 +46,7 @@ The CLI refuses an owner-only command before any call when its own environment h
 What the lock does not stop:
 
 - A write to `config.toml` in the state dir: every `[dispatcher]`, `[workers]` and quota key, the mode included, applies at once, because each daemon re-reads those keys when the file's mtime changes; every other key applies at the next reload or start.
-- A write to `rules.md`, the store or the token file, or deleting the `PAUSE` file: it is the same OS user.
+- A write to `rules.md`, the store or the token file, or deleting the `PAUSE` file: it is the same OS user. A worker's change to `config.toml`, `rules.md` or the token file that no owner command made is detected when its turn is checked: the Run is rejected and the owner gets a needs-you notice.
 - Detaching, where a worker has no systemd scope (macOS, or Linux without a systemd manager): one line such as `( env -u IDLEMAX_JOB_ID curl ... & )` leaves a caller with a clean environment under pid 1. On Linux with a systemd manager a worker runs in a scope (`idlemax-w-…`) and every process in one counts as launched whatever its environment, so detaching does not get past the check; a process the worker gets the owner's own session to start still does.
 - A call to a coordinator on another machine: a caller that is not on the coordinator's host is judged by the token alone.
 - Acting through the owner's own session: a shell start-up file, a git hook or a service file that the owner's session runs later, or a script that drives the owner's browser.
@@ -904,7 +904,7 @@ On high risk the agent asks the job's reviewer, always another provider than the
 
 The coordinator turns the facts into one verdict, the worst finding winning:
 
-- `rejected`: a change to the repository's git config or hooks (whatever the job's end status, so the Run is never queued again by itself), no commit, a worktree `HEAD` that is not the Run's branch at its tip, a changed path under an off-limits path, or a check that passed before the change and fails after it.
+- `rejected`: a change to the repository's git config or hooks (whatever the job's end status, so the Run is never queued again by itself), no commit, a worktree `HEAD` that is not the Run's branch at its tip, a changed path under an off-limits path, a check that passed before the change and fails after it, or a change to idlemax's own `config.toml`, `rules.md` or `token` while the worker ran that no owner command made (`facts.check.tampered`; the dispatcher view then lists `run:<id>:tampered` under `needs_you`, which raises a needs-you notice). Owner commands that write those files (`config set`, the mode, limits and rule-proposal routes) add the new content's digest to `.owner-writes` in the state dir. A worker runs as the same user and could forge that file, so this detects tampering; only a sandbox prevents it (A13).
 - `needs_you`, with the exact concern: a changed path outside the scope paths or no scope named, tracked files left uncommitted, a check that failed before and still fails or did not finish after, the reviewer's concern, or a high risk with no review.
 - `clean` otherwise.
 

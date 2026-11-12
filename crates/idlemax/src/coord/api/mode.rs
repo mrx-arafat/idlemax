@@ -56,6 +56,7 @@ fn switch(
     let before: Mode = serde_json::from_value(edit.before.clone()).unwrap_or_default();
     if edit.changed {
         files::save(&file, before_text.as_deref(), &edit.text)?;
+        crate::owner_writes::record(&file, &edit.text);
         let msg = format!("dispatcher mode {before} -> {mode}");
         store.append_event(EventKind::Control, None, None, &msg, now_ms())?;
     }

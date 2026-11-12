@@ -1,6 +1,6 @@
 //! Domain: the "needs you" lines of the dispatcher view: tasks sent to the owner, runs that
-//! changed the repository's git config or hooks, accounts resting past today, devices in an
-//! emergency and devices switched off with a project on. Pure.
+//! changed the repository's git config or hooks or idlemax's own files, accounts resting past
+//! today, devices in an emergency and devices switched off with a project on. Pure.
 
 use super::{DeviceLine, NeedKind, NeedsYouLine};
 use crate::dispatch::label::{plain, RunLine};
@@ -9,12 +9,12 @@ use crate::dispatch::project::ProjectView;
 use crate::dispatch::room::LineState;
 use crate::quota::budget::{Budget, BudgetBasis};
 use crate::quota::identity::AccountProblem;
-use crate::worker::checks::GIT_CHANGED;
+use crate::worker::checks::{tampered_concern, GIT_CHANGED};
 use crate::worker::run::RunState;
 
 /// What needs the owner, in this order: tasks the orchestrator sent to them, rejected runs
-/// that changed the git config or hooks, accounts out of quota past today, accounts their
-/// logins close, then devices (see `device_needs`).
+/// that changed the git config or hooks or idlemax's own files, accounts out of quota past
+/// today, accounts their logins close, then devices (see `device_needs`).
 pub(super) fn needs_you(
     plan: &Plan,
     runs: &[RunLine],
@@ -43,6 +43,16 @@ pub(super) fn needs_you(
                 r.id
             ),
         });
+    // A Run that changed idlemax's own files is rejected, and the owner must look at once.
+    let tampered = runs.iter().filter_map(|l| {
+        let files = &l.run.facts.check.as_ref()?.tampered;
+        (!files.is_empty()).then(|| NeedsYouLine {
+            key: format!("run:{}:tampered", l.run.id),
+            kind: NeedKind::Task,
+            subject: plain(&format!("{}: {}", l.run.project, l.run.task_title)),
+            reason: plain(&format!("{}; check them", tampered_concern(files))),
+        })
+    });
     let accounts = budgets
         .iter()
         .filter(|b| b.basis == BudgetBasis::Resting)
@@ -63,6 +73,7 @@ pub(super) fn needs_you(
     });
     tasks
         .chain(changed_git)
+        .chain(tampered)
         .chain(accounts)
         .chain(closed)
         .chain(device_needs(devices, projects))

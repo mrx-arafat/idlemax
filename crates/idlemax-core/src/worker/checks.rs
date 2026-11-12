@@ -116,6 +116,9 @@ fn rejections(facts: &CheckFacts, scope: &ScopeFindings) -> Vec<String> {
     if facts.commits == 0 {
         found.push("no commit was made".to_string());
     }
+    if !facts.tampered.is_empty() {
+        found.push(tampered_concern(&facts.tampered));
+    }
     if facts.head_off_branch {
         found.push("the worktree's HEAD is not the Run's branch at its tip".to_string());
     }
@@ -273,6 +276,14 @@ fn glob(pattern: &[u8], name: &[u8]) -> bool {
         }
     }
     pattern[p..].iter().all(|&c| c == b'*')
+}
+
+/// The concern of a turn that changed idlemax's own files (red team cases 2 and 3).
+pub fn tampered_concern(files: &[String]) -> String {
+    format!(
+        "changed idlemax's own files while it ran: {}",
+        files.join(", ")
+    )
 }
 
 fn join(items: Vec<String>) -> String {

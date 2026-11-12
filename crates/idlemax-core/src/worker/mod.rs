@@ -10,6 +10,7 @@ pub mod name;
 pub mod pace;
 pub mod report;
 pub mod run;
+pub mod tamper;
 
 use serde::{Deserialize, Serialize};
 

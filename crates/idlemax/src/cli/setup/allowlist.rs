@@ -50,7 +50,8 @@ pub(super) fn step(paths: &Paths, edit: &Edit, dry_run: bool) -> StepReport {
             .with_files(vec![file]);
     }
     let saved = files::read_optional(&file)
-        .and_then(|before| files::save(&file, before.as_deref(), &edit.text));
+        .and_then(|before| files::save(&file, before.as_deref(), &edit.text))
+        .inspect(|_| crate::owner_writes::record(&file, &edit.text));
     match saved {
         Ok(backup) => StepReport::new("allowlist", Status::Done, detail, command)
             .with_files(vec![file])

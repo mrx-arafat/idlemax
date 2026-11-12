@@ -167,6 +167,7 @@ impl Workers {
                 host_down_since: None,
             },
             saved: None,
+            guarded: Vec::new(),
             job: r.job,
         };
         let mut tracked = tracked;

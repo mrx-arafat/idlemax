@@ -59,6 +59,7 @@ fn change(paths: &Paths, req: LimitRequest) -> Result<LimitReply, ApiFailure> {
         let report = plan_reload(&parsed(&text)?, &parsed(&edit.text)?)
             .map_err(|e| ApiFailure::Internal(e.to_string()))?;
         files::save(&file, before_text.as_deref(), &edit.text)?;
+        crate::owner_writes::record(&file, &edit.text);
         report
     } else {
         ReloadReport::default()

@@ -189,6 +189,28 @@ fn needs_you_holds_tasks_resting_accounts_and_emergencies_and_nothing_else() {
 }
 
 #[test]
+fn a_run_that_changed_idlemax_own_files_needs_the_owner() {
+    let mut bad = run(4, RunState::Rejected, 1);
+    bad.run.facts.check = Some(crate::worker::report::CheckFacts {
+        tampered: vec!["config.toml".into(), "token".into()],
+        ..Default::default()
+    });
+    let runs = [bad, run(5, RunState::Rejected, 2)];
+    let v = view(&plan(LineState::Run, Vec::new()), &runs, &[], &[]);
+    let line = v
+        .needs_you
+        .iter()
+        .find(|n| n.key == "run:4:tampered")
+        .unwrap();
+    assert_eq!(line.subject, "app: task 4");
+    assert_eq!(
+        line.reason,
+        "changed idlemax's own files while it ran: config.toml, token; check them"
+    );
+    assert_eq!(v.needs_you.len(), 1, "{:?}", v.needs_you);
+}
+
+#[test]
 fn a_budget_shows_today_then_the_earlier_days_newest_first() {
     let day = |start, pct| AccountDay {
         account: "acc".into(),

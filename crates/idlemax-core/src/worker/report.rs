@@ -108,4 +108,7 @@ pub struct CheckFacts {
     pub baseline_after: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review: Option<ReviewFacts>,
+    /// idlemax's own files the turn changed without an owner command (`worker::tamper`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tampered: Vec<String>,
 }
