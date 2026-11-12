@@ -375,8 +375,8 @@ fn a_task_that_failed_its_checks_twice_needs_the_owner() {
     assert!(!plan.not_judged.iter().any(|t| t.id == judged.id));
 }
 
-#[test]
-fn a_pass_proposes_a_rule_for_a_rejected_run_and_it_waits_open() {
+#[tokio::test]
+async fn a_pass_proposes_a_rule_for_a_rejected_run_and_it_waits_open() {
     use idlemax_core::dispatch::proposal::ProposalStatus;
     use idlemax_core::worker::run::{Run, RunLaunch, RunState};
     let (mut store, cfg, _) = pass_world();
@@ -404,8 +404,10 @@ fn a_pass_proposes_a_rule_for_a_rejected_run_and_it_waits_open() {
         "rule_proposal": {"run": run.id, "line": "Never delete a fixture.",
                           "reason": "the run deleted one"}}});
     finish(&mut store, &cfg, &envelope.to_string(), T0 + 2_000);
-    let all = store.proposals().unwrap();
+    assert!(store.finished_runs().unwrap().is_empty());
+    let api = Api::start_with_store(store, cfg.clone()).await;
+    let res = api.get_as("/v1/proposals", "localhost").await;
+    let all: Vec<idlemax_core::dispatch::proposal::Proposal> = res.json().await.unwrap();
     assert_eq!(all.len(), 1, "{all:?}");
     assert_eq!((all[0].run, all[0].status), (run.id, ProposalStatus::Open));
-    assert!(store.finished_runs().unwrap().is_empty());
 }

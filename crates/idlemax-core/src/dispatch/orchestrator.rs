@@ -330,7 +330,11 @@ fn check_lengths(out: &Output) -> Result<(), String> {
     if out.needs_you.len() > MAX_NEEDS_YOU {
         return Err(format!("more than {MAX_NEEDS_YOU} needs_you entries"));
     }
-    if out.picks.iter().any(|p| long(&p.reason)) || out.needs_you.iter().any(|n| long(&n.reason)) {
+    let long_proposal = out.rule_proposal.as_ref().is_some_and(|r| long(&r.reason));
+    if out.picks.iter().any(|p| long(&p.reason))
+        || out.needs_you.iter().any(|n| long(&n.reason))
+        || long_proposal
+    {
         return Err(format!("a reason is over {MAX_REASON_CHARS} characters"));
     }
     let bad_scope = out.picks.iter().any(|p| {

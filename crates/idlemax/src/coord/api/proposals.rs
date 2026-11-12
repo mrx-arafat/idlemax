@@ -148,4 +148,37 @@ mod tests {
             .unwrap();
         assert!(all.iter().all(|p| p.status != ProposalStatus::Open));
     }
+
+    #[tokio::test]
+    async fn the_list_shows_open_first_and_a_full_rules_file_refuses_the_line() {
+        let mut store = Store::open_in_memory().unwrap();
+        for run in [1, 2] {
+            let p = RuleProposal {
+                run,
+                line: format!("Rule {run}."),
+                reason: "it happened".into(),
+            };
+            store.insert_proposal(&p, 1).unwrap();
+        }
+        store
+            .decide_proposal(2, ProposalStatus::Rejected, 2)
+            .unwrap();
+        let api = Api::start_with_store(store, Config::default()).await;
+        let all: Vec<Proposal> = api
+            .get_as("/v1/proposals", "localhost")
+            .await
+            .json()
+            .await
+            .unwrap();
+        // Proposal 2 is newer but decided: the open one comes first.
+        assert_eq!(all.iter().map(|p| p.id).collect::<Vec<_>>(), [1, 2]);
+
+        let rules = api.home().join("rules.md");
+        let full = format!("{}\n", "x".repeat(MAX_RULES_BYTES - 1));
+        std::fs::write(&rules, &full).unwrap();
+        let res = api.post("/v1/proposals/1/approve", &()).await;
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert!(res.text().await.unwrap().contains("16 KiB limit"));
+        assert_eq!(std::fs::read_to_string(&rules).unwrap(), full);
+    }
 }

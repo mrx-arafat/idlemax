@@ -348,6 +348,10 @@ fn a_rule_proposal_stands_only_for_a_finished_run_it_was_offered() {
         dropped.dropped
     );
 
+    let mut long = with(7);
+    long["rule_proposal"]["reason"] = json!("x".repeat(301));
+    assert!(validate(&long, &offer).is_err());
+
     let mut unknown = with(7);
     unknown["rule_proposal"]["why"] = json!("x");
     assert!(validate(&unknown, &offer).is_err());

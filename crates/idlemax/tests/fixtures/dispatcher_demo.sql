@@ -2,7 +2,8 @@
 -- screenshots of dispatcher Spec 4. One device that went offline two hours ago, two projects
 -- (app on, site off), four runs with a job each, a rejected run with an open rule proposal,
 -- and a roadmap item of app that says it needs the owner. Times are relative to the load and
--- every lease expiry lies a day ahead, so no sweep touches a seeded job. Load it into a store that the coordinator created.
+-- every lease expiry lies a day ahead, so no sweep touches a seeded job. Load it into a store
+-- that the coordinator created.
 
 INSERT INTO devices (id, info, first_seen_ms, last_seen_ms) VALUES
   ('mac', '{"id":"mac","hostname":"mac"}',

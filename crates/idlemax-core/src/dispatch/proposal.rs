@@ -84,6 +84,14 @@ pub fn admit(
             "the line must be one line of 1 to {MAX_LINE_CHARS} characters"
         ));
     }
+    // A list marker or a heading would change the shape of the owner's file.
+    let start = p.line.trim_start();
+    if start.starts_with("- ") || start.starts_with('#') {
+        return Err("the line must not start with `- ` or `#`".into());
+    }
+    if p.reason.chars().any(char::is_control) {
+        return Err("the reason must be one line".into());
+    }
     if has_rule(rules, &p.line) {
         return Err("rules.md already has the line".into());
     }
@@ -184,6 +192,17 @@ mod tests {
                 rejected,
                 rules,
                 &earlier,
+            ),
+            admit(&proposal(3, "- Listed already."), rejected, rules, &[]),
+            admit(&proposal(3, "# A heading"), rejected, rules, &[]),
+            admit(
+                &RuleProposal {
+                    reason: "two\nlines".into(),
+                    ..proposal(3, line)
+                },
+                rejected,
+                rules,
+                &[],
             ),
         ];
         for (i, r) in refused.iter().enumerate() {
