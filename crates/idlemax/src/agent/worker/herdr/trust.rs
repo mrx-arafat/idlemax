@@ -13,22 +13,28 @@ use super::{parse, strings, HerdrHost};
 const READY_WAIT: Duration = Duration::from_secs(1);
 const READY_TRIES: u32 = 30;
 
-/// Is `screen` Claude Code's trust dialog, naming exactly `folder` as the workspace?
+/// Is `screen` Claude Code's trust dialog, naming exactly `folder` as the workspace? claude
+/// wraps its own text to the pane's width, so the question is matched with whitespace
+/// collapsed and the path as its lines joined back up to the next blank line.
 pub fn is_our_trust_dialog(screen: &str, folder: &str) -> bool {
-    let asks = screen.contains("Is this a project you created or one you trust?")
-        && screen.contains("Yes, I trust this folder");
+    let flat = screen.split_whitespace().collect::<Vec<_>>().join(" ");
+    let asks = flat.contains("Is this a project you created or one you trust?")
+        && flat.contains("Yes, I trust this folder");
     let mut lines = screen
         .lines()
         .map(|l| l.trim_matches(|c: char| c.is_whitespace() || c == '│'));
-    let shown = lines
+    let Some(first) = lines
         .by_ref()
         .find_map(|l| l.strip_prefix("Accessing workspace:"))
-        .map(str::trim)
-        .and_then(|rest| match rest.is_empty() {
-            true => lines.find(|l| !l.is_empty()),
-            false => Some(rest),
-        });
-    asks && shown == Some(folder)
+    else {
+        return false;
+    };
+    let shown: String = std::iter::once(first.trim())
+        .chain(lines)
+        .skip_while(|l| l.is_empty())
+        .take_while(|l| !l.is_empty())
+        .collect();
+    asks && !shown.is_empty() && shown == folder.split_whitespace().collect::<String>()
 }
 
 impl HerdrHost {
@@ -85,8 +91,39 @@ mod tests {
  Enter to confirm · Esc to cancel
 ";
 
+    /// Captured from a real 54-column Herdr pane: claude wraps the path itself.
+    const REAL: &str = r#"arafat@testing-team:~/idlemax-live/state/worktrees/demo/scratch-trust-d2$ claude --model haiku --strict-mcp-config --permission-mode bypassPermissions --session-id 0b6a4c8e-2f1d-4c55-9a1e-d2d2d2d2d2d2
+
+──────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /home/arafat/idlemax-live/state/worktrees/demo/scrat
+ ch-trust-d2
+
+ Quick safety check: Is this a project you created or
+ one you trust? (Like your own code, a well-known
+ open source project, or work from your team). If
+ not, take a moment to review what's in this folder
+ first.
+
+ Claude Code'll be able to read, edit, and execute
+ files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel"#;
+    const REAL_FOLDER: &str = "/home/arafat/idlemax-live/state/worktrees/demo/scratch-trust-d2";
+
     #[test]
     fn only_the_trust_dialog_for_our_own_worktree_is_ours() {
+        assert!(is_our_trust_dialog(REAL, REAL_FOLDER));
+        assert!(!is_our_trust_dialog(
+            REAL,
+            "/home/arafat/idlemax-live/state/worktrees/demo/scrat"
+        ));
         assert!(is_our_trust_dialog(DIALOG, "/w/app/fix"));
         assert!(!is_our_trust_dialog(DIALOG, "/w/app/fix2"));
         assert!(!is_our_trust_dialog(DIALOG, "/w/app"));
