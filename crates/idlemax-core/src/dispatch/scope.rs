@@ -29,7 +29,8 @@ pub fn drop_broad(paths: &mut Vec<String>) -> Vec<String> {
     broad
 }
 
-/// Top-level folders that hold a project's tests; the one a project has joins every scope.
+/// Top-level folders that hold a project's tests; the one a project has joins the scope of
+/// a task that asks for tests.
 const TEST_FOLDERS: [&str; 4] = ["tests", "test", "spec", "__tests__"];
 
 /// A pick's scope: the paths kept, and the named ones dropped because they do not exist.
@@ -65,11 +66,14 @@ pub fn pick_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> Result<S
         true => format!("{} {detail} {done}", task.title),
         false => String::new(),
     };
+    // The task asks for tests in its own words, not in the check that proves it done.
+    let asks_tests = owners && mentions_tests(&format!("{} {detail}", task.title));
     let off_limits = project.map_or_else(Vec::new, |v| v.project.settings.all_off_limits());
     narrow_scope(
         &pp.scope_paths,
         &Files { files, complete },
         &text,
+        asks_tests,
         &off_limits,
     )
 }
@@ -82,14 +86,15 @@ pub struct Files<'a> {
 }
 
 /// The named paths that match a tracked file or are a new file in a folder the project has,
-/// plus the files `task_text` names whose folder exists and the project's test folder, none
-/// under `off_limits`. Named paths that do not exist are dropped; with none left, Err. An
+/// plus the files `task_text` names whose folder exists and, when the task `asks_tests`, the
+/// project's test folder, none under `off_limits`. Named paths that do not exist are dropped; with none left, Err. An
 /// empty file list means it is unknown, and the named paths stay; on a cut list a missing
 /// path is unknown, and it stays when it is a safe relative path.
 pub fn narrow_scope(
     named: &[String],
     listed: &Files<'_>,
     task_text: &str,
+    asks_tests: bool,
     off_limits: &[String],
 ) -> Result<Scope, String> {
     let files = listed.files;
@@ -127,11 +132,17 @@ pub fn narrow_scope(
     for dir in TEST_FOLDERS {
         let probe = format!("{dir}/new_test");
         let used = files.iter().any(|f| f.starts_with(&format!("{dir}/")));
-        if used && allowed(&probe) && !kept.iter().any(|k| in_scope(&probe, k)) {
+        if asks_tests && used && allowed(&probe) && !kept.iter().any(|k| in_scope(&probe, k)) {
             kept.push(format!("{dir}/"));
         }
     }
     Ok(Scope { kept, dropped })
+}
+
+/// The text asks for a test: a word that starts with "test" (`tests`, `testing`).
+fn mentions_tests(text: &str) -> bool {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|w| w.to_ascii_lowercase().starts_with("test"))
 }
 
 /// The relative file paths a task's text names, such as `seqs/pascal.py`: a word with a `/`

@@ -235,11 +235,8 @@ fn a_new_file_in_an_existing_folder_stays_and_the_file_a_task_names_joins_the_sc
         ["seqs/__init__.py", "tests/*", "seqs/pascal.py"]
     );
     assert_eq!(a.reason, "a is small");
-    // New files whose folders exist stay; the project's test folder joins too.
-    assert_eq!(
-        b.scope_paths,
-        ["seqs/fib.py", "tests/test_fib.py", "tests/"]
-    );
+    // New files whose folders exist stay; a task that asks for no tests gets no test folder.
+    assert_eq!(b.scope_paths, ["seqs/fib.py", "tests/test_fib.py"]);
     // A new file in a folder the project lacks is a guess: dropped, never widened.
     let mut w = World::new().with_pass(&["a"]);
     w.repos[0].repo.files = vec!["seqs/__init__.py".into()];
@@ -272,7 +269,7 @@ fn the_paths_a_roadmap_item_names_and_the_test_folder_join_the_scope_but_never_o
         },
         RoadmapItem {
             title: "Add a key".into(),
-            detail: "Write secrets/key.py.".into(),
+            detail: "Write secrets/key.py, with a test.".into(),
             ..Default::default()
         },
     ];
@@ -289,6 +286,15 @@ fn the_paths_a_roadmap_item_names_and_the_test_folder_join_the_scope_but_never_o
         b.scope_paths,
         ["seqs/__init__.py", "tests/"],
         "off-limits secrets/ stays out"
+    );
+    // The test folder joins only a task that asks for tests (its done check does not count).
+    let mut w = World::new().with_pass(&["a"]);
+    w.tasks[0].done_check = Some("`python3 -m unittest discover -s tests` passes".into());
+    w.repos[0].repo.files = vec!["seqs/__init__.py".into(), "tests/test_seqs.py".into()];
+    w.pass.as_mut().unwrap().picks[0].scope_paths = vec!["seqs/__init__.py".into()];
+    assert_eq!(
+        w.build().devices[0].picks[0].scope_paths,
+        ["seqs/__init__.py"]
     );
 }
 
