@@ -228,8 +228,9 @@ idlemax config set quota.codex_standard_model <model>
 On a usage-limit message or HTTP 429, idlemax:
 
 - stops that account's workers with their state saved;
-- **rests** the account until the used-up window resets, that is the window that reads 90% or more (basis `resting` in the plan);
-  when no window reads as used up, it rests until the account's shortest window resets, or 5 hours after the hit for a 5-hour window with no reading yet, never until the weekly reset by default;
+- **rests** the account until the used-up window resets, that is the window that reads 90% or more (basis `resting` in the plan); this is the weekly reset only when the weekly window is the one used up;
+  when no window reads as used up, it rests until the account's shortest window resets, or 5 hours after the hit for a 5-hour window with no reading yet;
+  an `agy` or `opencode` account (one with `daily_cap_runs`) rests until the end of the current UTC day instead;
 - moves waiting tasks to another account;
 - never retries in a loop.
 

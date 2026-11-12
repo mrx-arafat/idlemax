@@ -126,8 +126,8 @@ The lock stops accidents and a launched process that tries the documented switch
 | Machine metrics and guard verdicts | your coordinator | (needed) |
 | Job results and logs metadata | your coordinator; full logs stay on the device | (needed) |
 | `gh` summary and session **metadata** (never message text) | your coordinator, for the advisor | `agent.advisor_inputs_secs = 0` |
-| Paths of git repositories, your activity, roadmap items and changed files of switched-on projects (full paths) | your coordinator, for the dispatcher | `agent.dispatch_inputs_secs = 0` |
-| A compact summary of tasks and projects | Anthropic, via your own `claude -p` orchestrator pass | `idlemax mode off` |
+| Paths of git repositories, your activity, and for switched-on projects the roadmap items, your changed files, the tracked file list (at most 200) and the start of `AGENTS.md` or `CLAUDE.md` (at most 2,000 characters) | your coordinator, for the dispatcher | `agent.dispatch_inputs_secs = 0` |
+| A compact summary of tasks and projects, with their file lists and the start of their conventions file | Anthropic, via your own `claude -p` orchestrator pass | `idlemax mode off` |
 | The code a worker works on | the worker's AI provider, via its official CLI | keep projects off |
 | Quota readings | read from local CLI files only; never sent to a provider | |
 

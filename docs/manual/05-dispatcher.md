@@ -184,8 +184,12 @@ It is one `claude -p --model opus` job, so it **spends quota**.
 
 The orchestrator is one short Claude Opus job.
 It reads a compact summary of the offered tasks, projects (with the files each one tracks, at most 200) and usable accounts, plus the rules in `$IDLEMAX_HOME/rules.md`, and answers with picks: task, account, model, scope paths and a one-sentence reason, plus the tasks it sends to "needs you".
-It is told to name scope paths only from the project's files.
-When a named path matches none of them, the scope becomes the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
+It also sees the start of the project's `AGENTS.md` (else `CLAUDE.md`), up to 2,000 characters, as the project's conventions.
+It is told to build scope paths from the project's files, adding every file the task names and the new files the conventions call for.
+
+- A named path that matches no file is kept as a new file when its folder exists, so a task can create `seqs/pascal.py` next to the other files in `seqs/`.
+- A file the task's title or done check names joins the scope when its folder exists.
+- A named path that matches no file and sits in no existing folder widens the scope to the whole project (off-limits paths still hold), and the pick's reason ends with `(scope widened: the named paths did not exist)`.
 
 - It runs with no tools, no hooks and no MCP servers.
 - It runs when its inputs changed, at most once an hour by itself, or on `idlemax plan --refresh`.
