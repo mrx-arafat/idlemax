@@ -211,6 +211,13 @@ Each of these counts one attempt, and after `max_attempts` (default 3) the job i
 `attempts` counts leases.
 AI jobs are never retried: such a cause parks them at once, and their own failures end `failed`.
 
+A worker job (one with a `worker` section) is never queued again and never parked; its Run decides whether the work is launched again.
+A returned lease ends it `cancelled`, a `retryable` end ends it `killed`, and a lease that ran out ends it `killed`, and in each case its Run becomes `shed` (back in the queue).
+When the Run was still `starting` for the third launch in a row, it becomes `needs_you` with the concern `could not be started 3 times: <last error>`.
+An owner stop (local `stop_all` with `owner_stop`, a coordinator `stop_all` or `cancel`) makes the Run `stopped`, which only the owner's start moves on.
+Any other `failed` or `killed` end makes it `needs_you` with the job's error as the concern, and a `succeeded` launch leaves it in `checking` for its verdict.
+After the coordinator itself slept (a gap of more than two sweep periods, 30 s), the first sweep renews a worker lease that ran out instead of ending it, since the agent on the same machine slept too.
+
 ### Job updates
 
 The agent posts a `JobUpdate` on every status change of a leased job:
@@ -231,6 +238,8 @@ Terminal updates carry `exit_code`, `output_path` (inbox file on the device) and
 Every other `failed` or `killed` update is final, including one from an agent that predates the field.
 `worker` is present only on the updates of a worker job, and holds `run`, `phase` (`preparing`, `running`, `checking` or `done`), `session`, `branch` and `worktree`.
 The last update of a launch carries them again, plus `facts` (what the device found in the worktree after the turn) and `end_text`: the text that ended a turn in which no commit was added, at most 2,000 characters, and the only output of a worker that leaves the device.
+The Run of a worker job moves in the same transaction as the job: phase `running` makes it `running`, phase `checking` makes it `checking`, the session, branch and worktree are stored when sent, and `end_text` is kept in the Run's `facts`.
+An update that the states do not allow, such as one for a Run the owner stopped, leaves the Run as it is, and a replayed update changes nothing.
 An update never moves a terminal job out of its terminal status, and an update from a device that does not hold the lease is ignored.
 The one exception is a late result: if the agent was away past the lease, the sweep put the job back in the queue (or parked it), and the agent then delivers the terminal update of that attempt, the coordinator applies it as if it had arrived in time.
 That needs `attempt`, the lease count of the attempt the update belongs to (`Job.attempts` when it was leased), to equal the stored job's `attempts` while the job has no device.

@@ -149,7 +149,7 @@ target/debug/idlemax init
 
 - [x] Task 1: Add the Run, its states, the worker job section and the `[workers]` settings to the core
 - [x] Task 2: Store runs, list them, and take worker jobs out of the old AI rules
-- [ ] Task 3: End a worker job instead of retrying it, and let its Run follow
+- [x] Task 3: End a worker job instead of retrying it, and let its Run follow
 - [ ] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
 - [ ] Task 5: Build the runner seam, the Herdr host and the fenced launch
 - [ ] Task 6: Run one worker job on the agent from lease to exit
@@ -306,13 +306,13 @@ A queued worker job would be leased by the scheduler under the plain AI rules, a
 
 **Definition of Done:**
 
-- [ ] A worker job that returns its lease is `cancelled`, a retryable kill is `killed`, an expired lease is `killed`, and in no case is the job `queued` or `parked`; the same updates on a plain job behave as before.
-- [ ] One test per row of the mapping above passes for `after_job`, and the third start that fails in a row gives `needs_you` with the last error in the concern.
-- [ ] A replayed job update leaves the Run unchanged, and an update for a run the owner already stopped does not move it.
-- [ ] `stop-all` on the account of a running worker leaves the job `killed` and the Run `stopped`.
-- [ ] A sweep that follows a gap of 60 s ends no worker job and renews its lease, and the next sweep 15 s later ends one whose lease then runs out.
-- [ ] `docs/API.md` "Retries" and "Job updates" say what differs for worker jobs.
-- [ ] Verify: `cargo test -p idlemax-core scheduler && cargo test -p idlemax-core worker::run && cargo test -p idlemax --bin idlemax worker_tests && cargo test -p idlemax --bin idlemax sweep && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A worker job that returns its lease is `cancelled`, a retryable kill is `killed`, an expired lease is `killed`, and in no case is the job `queued` or `parked`; the same updates on a plain job behave as before.
+- [x] One test per row of the mapping above passes for `after_job`, and the third start that fails in a row gives `needs_you` with the last error in the concern.
+- [x] A replayed job update leaves the Run unchanged, and an update for a run the owner already stopped does not move it.
+- [x] `stop-all` on the account of a running worker leaves the job `killed` and the Run `stopped`.
+- [x] A sweep that follows a gap of 60 s ends no worker job and renews its lease, and the next sweep 15 s later ends one whose lease then runs out.
+- [x] `docs/API.md` "Retries" and "Job updates" say what differs for worker jobs.
+- [x] Verify: `cargo test -p idlemax-core scheduler && cargo test -p idlemax-core worker::run && cargo test -p idlemax --bin idlemax worker_tests && cargo test -p idlemax --bin idlemax sweep && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
 

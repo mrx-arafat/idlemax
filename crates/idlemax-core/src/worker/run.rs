@@ -3,10 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::report::CheckFacts;
+use super::report::{CheckFacts, WorkerPhase};
 use super::{RunId, WorkerSpec};
+use crate::protocol::JobUpdate;
 use crate::quota::Provider;
-use crate::types::{DeviceId, JobId, QuotaSnapshot, UnixMs};
+use crate::types::{DeviceId, Job, JobId, JobStatus, QuotaSnapshot, UnixMs};
+
+/// Launches in a row that may fail to reach `running` before the Run needs the owner.
+pub const START_TRIES: u32 = 3;
 
 /// Where a Run is. The ten shared values of docs/DISPATCHER.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -166,55 +170,104 @@ pub struct RunLaunch {
     pub brief: String,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn may_become_allows_exactly_the_listed_moves() {
-        use RunState::*;
-        let allowed = [
-            (Starting, Running),
-            (Starting, Stopped),
-            (Starting, Shed),
-            (Starting, NeedsYou),
-            (Running, Checking),
-            (Running, Stopped),
-            (Running, Shed),
-            (Running, NeedsYou),
-            (Checking, Clean),
-            (Checking, NeedsYou),
-            (Checking, Rejected),
-            (Checking, Stopped),
-            (Checking, Shed),
-            (Stopped, Shed),
-            (Stopped, Discarded),
-            (Shed, Starting),
-            (Shed, Discarded),
-            (Clean, Kept),
-            (Clean, Discarded),
-            (NeedsYou, Kept),
-            (NeedsYou, Discarded),
-            (Rejected, Kept),
-            (Rejected, Discarded),
-        ];
-        for from in RunState::ALL {
-            for to in RunState::ALL {
-                assert_eq!(
-                    from.may_become(to),
-                    allowed.contains(&(from, to)),
-                    "{from} -> {to}"
-                );
-            }
-        }
+/// The Run after an update of its live `launch` or `resume` job, or None when the update
+/// does not move it: another job, an action that runs no agent, or a move the states do not
+/// allow (a Run the owner stopped stays stopped).
+pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Run> {
+    let action = job.spec.worker.as_ref()?.action;
+    if !action.is_launch() || run.job != Some(job.id) {
+        return None;
     }
-
-    #[test]
-    fn states_round_trip_as_snake_case() {
-        for st in RunState::ALL {
-            let json = serde_json::to_value(st).unwrap();
-            assert_eq!(json, st.as_str());
-            assert_eq!(st.as_str().parse::<RunState>().unwrap(), st);
-        }
+    let report = update.worker.as_deref();
+    let mut next = run.clone();
+    next.updated_ms = now_ms;
+    if let Some(r) = report {
+        next.session = r.session.clone().or(next.session);
+        next.branch = r.branch.clone().or(next.branch);
+        next.worktree = r.worktree.clone().or(next.worktree);
+        next.facts.end_text = r.end_text.clone().or(next.facts.end_text);
     }
+    let error = || {
+        update
+            .error
+            .clone()
+            .unwrap_or_else(|| format!("job {}", update.status))
+    };
+    let target = match update.status {
+        JobStatus::Running | JobStatus::Paused => match report.map(|r| r.phase) {
+            Some(WorkerPhase::Running) => RunState::Running,
+            Some(WorkerPhase::Checking) => RunState::Checking,
+            _ => run.state,
+        },
+        JobStatus::Killed if update.owner_stop => RunState::Stopped,
+        JobStatus::Queued => return back_in_queue(next, run, error(), now_ms),
+        JobStatus::Failed | JobStatus::Killed if update.retryable => {
+            return back_in_queue(next, run, error(), now_ms)
+        }
+        JobStatus::Failed | JobStatus::Killed => {
+            next.concern = Some(error());
+            RunState::NeedsYou
+        }
+        // Waits in `checking` for its verdict.
+        JobStatus::Succeeded => RunState::Checking,
+        JobStatus::Leased | JobStatus::Cancelled | JobStatus::Parked => run.state,
+    };
+    move_to(next, run.state, target, now_ms)
 }
+
+/// The Run after the sweep ended its job because the lease ran out.
+pub fn after_expiry(run: &Run, job: &Job, now_ms: UnixMs) -> Option<Run> {
+    let device = job.device.as_deref().unwrap_or("unknown device");
+    let update = JobUpdate {
+        id: job.id,
+        status: JobStatus::Killed,
+        retryable: true,
+        error: Some(format!("lease expired on {device}")),
+        ..Default::default()
+    };
+    after_job(run, job, &update, now_ms)
+}
+
+/// The Run after a coordinator control (`stop_all`, `cancel`) ended its job: the owner
+/// asked for it, so it is `stopped` (D11).
+pub fn after_owner_stop(run: &Run, job: &Job, now_ms: UnixMs) -> Option<Run> {
+    let update = JobUpdate {
+        id: job.id,
+        status: JobStatus::Killed,
+        owner_stop: true,
+        ..Default::default()
+    };
+    after_job(run, job, &update, now_ms)
+}
+
+/// `shed`, or `needs_you` once `START_TRIES` launches in a row never reached `running`.
+fn back_in_queue(mut next: Run, run: &Run, error: String, now_ms: UnixMs) -> Option<Run> {
+    if run.state == RunState::Starting {
+        next.start_tries = run.start_tries + 1;
+        if next.start_tries >= START_TRIES {
+            next.concern = Some(format!("could not be started {START_TRIES} times: {error}"));
+            return move_to(next, run.state, RunState::NeedsYou, now_ms);
+        }
+    }
+    move_to(next, run.state, RunState::Shed, now_ms)
+}
+
+/// `next` in `target` when `from` may get there; a `starting` Run whose `running` update was
+/// lost passes through `running`.
+fn move_to(mut next: Run, from: RunState, target: RunState, now_ms: UnixMs) -> Option<Run> {
+    let through_running = from == RunState::Starting && RunState::Running.may_become(target);
+    if from != target && !from.may_become(target) && !through_running {
+        return None;
+    }
+    if matches!(target, RunState::Running | RunState::Checking) {
+        next.start_tries = 0;
+    }
+    if target == RunState::NeedsYou {
+        next.end_ms = Some(now_ms);
+    }
+    next.state = target;
+    Some(next)
+}
+
+#[cfg(test)]
+mod tests;

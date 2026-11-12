@@ -14,6 +14,7 @@ use idlemax_core::protocol::{
 };
 use idlemax_core::scheduler::{apply_update, lease_deadline, pick, pick_lines, SchedContext};
 use idlemax_core::types::{ControlScope, EventKind, Job, JobId, JobStatus, UnixMs};
+use idlemax_core::worker::run::{after_job, Run, RunState};
 use idlemax_core::Config;
 use serde_json::{json, Value};
 
@@ -277,9 +278,14 @@ pub(super) fn on_job_update(
     if let Some(next) = &next {
         events.extend(transition_entry(&job, next));
     }
+    let run = match next {
+        Some(_) => run_after(store, &job, update, now)?,
+        None => None,
+    };
     let writes = UpdateWrites {
         limit_hit,
         job: next.as_ref(),
+        run: run.as_ref().map(|(after, before)| (after, *before)),
         events: &events,
     };
     if !store.commit_update(&update.device, update.seq, &writes, now)? {
@@ -292,6 +298,23 @@ pub(super) fn on_job_update(
     };
     let ai_done = next.status == JobStatus::Succeeded && ingests(&job.spec);
     Ok(update.output_tail.clone().filter(|_| ai_done))
+}
+
+/// A worker job's Run as the update leaves it, with the state it had; None for a plain job
+/// or an update that does not move the Run.
+fn run_after(
+    store: &Store,
+    job: &Job,
+    update: &JobUpdate,
+    now: UnixMs,
+) -> Result<Option<(Run, RunState)>, ApiFailure> {
+    let Some(worker) = &job.spec.worker else {
+        return Ok(None);
+    };
+    let Some(run) = store.get_run(worker.run)? else {
+        return Ok(None);
+    };
+    Ok(after_job(&run, job, update, now).map(|next| (next, run.state)))
 }
 
 /// The output of an advisor AI pass stored as succeeded whose advice was never recorded.

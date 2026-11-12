@@ -3,7 +3,7 @@
 //! only refuses to overwrite a state that moved in between.
 
 use idlemax_core::types::{Job, JobSpec, UnixMs};
-use idlemax_core::worker::run::{Run, RunLaunch, RunState};
+use idlemax_core::worker::run::{after_owner_stop, Run, RunLaunch, RunState};
 use idlemax_core::worker::RunId;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -81,6 +81,18 @@ impl Store {
         update_run(&self.conn, run, expect)
     }
 
+    /// Job and Run changes in one transaction, so a Run never misses its job's end.
+    pub fn update_jobs_and_runs(
+        &mut self,
+        jobs: &[Job],
+        runs: &[(Run, RunState)],
+    ) -> StoreResult<()> {
+        let tx = self.conn.transaction()?;
+        write_jobs_and_runs(&tx, jobs, runs)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Runs of `account` started at or after `since_ms`, oldest first.
     pub fn runs_of_account(&self, account: &str, since_ms: UnixMs) -> StoreResult<Vec<Run>> {
         self.runs_where(
@@ -138,6 +150,39 @@ impl Store {
         tx.commit()?;
         Ok(Added::New(job))
     }
+}
+
+/// Moves to `stopped` the Run of each worker job a coordinator control (`stop_all`,
+/// `cancel`) just ended, because the owner asked for it (D11). The caller owns the
+/// transaction, so the jobs and their Runs commit together.
+pub(super) fn stop_runs_of(conn: &Connection, ended: &[Job], now: UnixMs) -> StoreResult<()> {
+    for job in ended.iter().filter(|j| j.status.is_terminal()) {
+        let Some(worker) = &job.spec.worker else {
+            continue;
+        };
+        let sql = format!("SELECT {COLUMNS} FROM runs WHERE id = ?1");
+        let run = conn
+            .query_row(&sql, [worker.run], run_from_row)
+            .optional()?;
+        if let Some((run, next)) = run.and_then(|r| after_owner_stop(&r, job, now).map(|n| (r, n)))
+        {
+            update_run(conn, &next, run.state)?;
+        }
+    }
+    Ok(())
+}
+
+/// Writes job and Run changes together: the sweep's expired worker jobs and their Runs.
+pub(super) fn write_jobs_and_runs(
+    conn: &Connection,
+    jobs: &[Job],
+    runs: &[(Run, RunState)],
+) -> StoreResult<()> {
+    super::jobs::update_jobs(conn, jobs)?;
+    for (run, expect) in runs {
+        update_run(conn, run, *expect)?;
+    }
+    Ok(())
 }
 
 /// The write behind `update_run`; the caller owns the transaction. `launch` never changes.

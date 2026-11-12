@@ -3,11 +3,13 @@
 //! causes, so a crash or a replay never applies half of it or all of it twice.
 
 use idlemax_core::types::{DeviceId, EventKind, Job, JobId, UnixMs};
+use idlemax_core::worker::run::{Run, RunState};
 use rusqlite::params;
 
 use super::events::insert_event;
 use super::jobs::update_jobs;
 use super::quota::upsert_limit_hit;
+use super::runs::update_run;
 use super::{u64_to_sql, Store, StoreResult};
 
 /// An event row to append.
@@ -26,6 +28,8 @@ pub struct UpdateWrites<'a> {
     pub limit_hit: Option<&'a str>,
     /// The job's new state, when the update moves it.
     pub job: Option<&'a Job>,
+    /// A worker job's Run as the update leaves it, with the state it must still have.
+    pub run: Option<(&'a Run, RunState)>,
     pub events: &'a [NewEvent],
 }
 
@@ -57,6 +61,9 @@ impl Store {
         }
         if let Some(job) = writes.job {
             update_jobs(&tx, std::slice::from_ref(job))?;
+        }
+        if let Some((run, expect)) = writes.run {
+            update_run(&tx, run, expect)?;
         }
         for e in writes.events {
             insert_event(

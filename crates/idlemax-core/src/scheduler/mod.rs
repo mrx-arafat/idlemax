@@ -23,7 +23,7 @@ pub use blockers::{
     ai_leased_accounts, blocker, blockers, cost_allowed, device_blockers, job_blockers,
     job_blockers_in, spendable_headroom, token_class_pct, Blocker, SchedContext,
 };
-pub use lease::{expire_leases, lease_deadline};
+pub use lease::{expire_leases, lease_deadline, renew_worker_leases};
 pub use pick::{pick, pick_lines, start_budget};
 pub use retry::{backoff_ms, retry_or_park, BACKOFF_BASE_MS, BACKOFF_MAX_MS};
 pub use update::apply_update;

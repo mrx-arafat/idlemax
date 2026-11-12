@@ -12,6 +12,8 @@ use crate::types::{Job, JobStatus, UnixMs};
 /// `retryable` (guard kill, agent shutdown, start failure) goes back in the queue.
 /// A result for an attempt whose lease expired while its agent was away still counts when
 /// the job has not been leased since (see `is_late_result`).
+/// A worker job is never queued again or parked: a returned lease ends it `cancelled` and a
+/// retryable end ends it `killed`, and its Run decides whether the work is launched again.
 pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job> {
     if update.attempt != 0 && update.attempt != job.attempts {
         return None;
@@ -32,8 +34,13 @@ pub fn apply_update(job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Option<Job
         .output_path
         .clone()
         .or_else(|| job.output_path.clone());
+    let worker = job.spec.worker.is_some();
     match update.status {
         JobStatus::Leased => return None,
+        JobStatus::Queued if worker => finish_as(&mut next, update, JobStatus::Cancelled),
+        JobStatus::Failed | JobStatus::Killed if worker && update.retryable => {
+            finish_as(&mut next, update, JobStatus::Killed)
+        }
         JobStatus::Running | JobStatus::Paused => {
             next.status = update.status;
             next.started_ms = job.started_ms.or(Some(update.at_ms));
@@ -79,7 +86,11 @@ fn is_late_result(job: &Job, update: &JobUpdate) -> bool {
 
 /// Terminal state reported by the agent: no retry, no park.
 fn finish(next: &mut Job, update: &JobUpdate) {
-    next.status = update.status;
+    finish_as(next, update, update.status);
+}
+
+fn finish_as(next: &mut Job, update: &JobUpdate, status: JobStatus) {
+    next.status = status;
     next.lease_expires_ms = None;
     next.finished_ms = Some(update.at_ms);
     next.last_error = update.error.clone();

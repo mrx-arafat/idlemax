@@ -44,6 +44,13 @@ pub enum WorkerAction {
     Discard,
 }
 
+impl WorkerAction {
+    /// True for the actions that run an agent (`launch` and `resume`).
+    pub fn is_launch(self) -> bool {
+        matches!(self, WorkerAction::Launch | WorkerAction::Resume)
+    }
+}
+
 /// The agent that reviews a high-risk diff, always another provider than the author (D8).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]

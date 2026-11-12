@@ -20,6 +20,7 @@ impl Store {
             record_pause(&tx, max_spans, scope, *paused, now)?;
         }
         super::jobs::update_jobs(&tx, &plan.jobs)?;
+        super::runs::stop_runs_of(&tx, &plan.jobs, now)?;
         tx.commit()?;
         Ok(())
     }
