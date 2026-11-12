@@ -19,6 +19,8 @@ pub mod supervise;
 #[cfg(test)]
 mod tests;
 mod uplink;
+// The agent loop starts the manager in dispatcher Spec 2 Task 7; until then only tests use it.
+#[allow(dead_code)]
 pub mod worker;
 
 use std::future::Future;

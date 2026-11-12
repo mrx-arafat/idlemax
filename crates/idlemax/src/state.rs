@@ -173,6 +173,27 @@ pub fn generate_token() -> Result<String, StateError> {
     Ok(encode_token(&buf))
 }
 
+/// A random UUID (version 4) from the OS RNG: the session id idlemax gives a Claude worker,
+/// so it is stored on the Run before the agent starts.
+pub fn new_session_id() -> Result<String, StateError> {
+    let path = Path::new("/dev/urandom");
+    let mut b = [0u8; 16];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut b))
+        .map_err(io_err(path))?;
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let hex = encode_token(&b);
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    ))
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
@@ -194,5 +215,16 @@ mod tests {
             assert_eq!(mode(&dir), 0o700, "{}", dir.display());
         }
         assert_eq!(mode(&paths.logs_dir()), 0o700, "logs");
+    }
+
+    #[test]
+    fn a_session_id_is_a_version_4_uuid() {
+        let id = new_session_id().unwrap();
+        let parts: Vec<&str> = id.split('-').collect();
+        let lens: Vec<usize> = parts.iter().map(|p| p.len()).collect();
+        assert_eq!(lens, [8, 4, 4, 4, 12], "{id}");
+        assert!(parts[2].starts_with('4'), "{id}");
+        assert!(matches!(&parts[3][..1], "8" | "9" | "a" | "b"), "{id}");
+        assert_ne!(id, new_session_id().unwrap());
     }
 }

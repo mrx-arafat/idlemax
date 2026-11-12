@@ -206,6 +206,14 @@ impl WorkerHost for HerdrHost {
             .map(drop)
     }
 
+    fn matches(&self, handle: &Handle) -> Result<bool, HostError> {
+        Ok(self.panes(None)?.iter().any(|p| {
+            p.id == handle.pane
+                && p.label.as_deref() == Some(handle.label.as_str())
+                && p.workspace_id.as_deref() == Some(handle.workspace.as_str())
+        }))
+    }
+
     fn end_text(&self, handle: &Handle) -> Option<String> {
         let args = strings(&["agent", "read", &handle.pane, "--source", "recent"]);
         let args = [args, strings(&["--lines", END_LINES])].concat();

@@ -1,0 +1,300 @@
+//! Adapter: the manager's tick. It takes each launch's outcome, watches a briefed worker's
+//! turn (done, blocked, gone, out of runtime), saves its member pids, and stops a worker by
+//! closing its pane and then waiting until none of its pids is left, killing what stays.
+
+use std::path::Path;
+use std::sync::mpsc::TryRecvError;
+use std::time::Duration;
+
+use idlemax_core::protocol::JobUpdate;
+use idlemax_core::types::{JobId, JobStatus, UnixMs};
+use idlemax_core::worker::report::WorkerPhase;
+
+use super::cmd::Cmd;
+use super::host::AgentStatus;
+use super::steps::Outcome;
+use super::{End, Phase, Workers};
+use crate::agent::runner::os::Sig;
+
+/// What is left of a worker this long after its pane was closed is killed by pid.
+const STOP_GRACE_MS: UnixMs = 5_000;
+/// Ticks in a row that must read the turn as over.
+const ENDED_TICKS: u8 = 2;
+
+impl Workers {
+    /// Advances every worker one step; the updates to send.
+    pub fn tick(&mut self, now_ms: UnixMs, awake_ms: i64) -> Vec<JobUpdate> {
+        let ids: Vec<JobId> = self.tracked.keys().copied().collect();
+        let mut updates = Vec::new();
+        for id in ids {
+            updates.extend(self.step(id, now_ms, awake_ms));
+        }
+        self.save_records();
+        updates
+    }
+
+    fn step(&mut self, id: JobId, now_ms: UnixMs, awake_ms: i64) -> Option<JobUpdate> {
+        let t = self.tracked.get_mut(&id)?;
+        match &t.phase {
+            Phase::Launching { rx, kill, .. } => {
+                let outcome = match rx.try_recv() {
+                    Ok(outcome) => outcome,
+                    Err(TryRecvError::Empty) => return None,
+                    Err(TryRecvError::Disconnected) => Outcome::Failed {
+                        error: "the launch ended without a result".into(),
+                        progress: t.progress.clone(),
+                    },
+                };
+                let kill = kill.clone();
+                self.launched(id, outcome, kill, now_ms)
+            }
+            Phase::Watching { .. } => self.watch(id, now_ms, awake_ms),
+            Phase::Stopping { .. } => self.stopping(id, now_ms),
+        }
+    }
+
+    fn launched(
+        &mut self,
+        id: JobId,
+        outcome: Outcome,
+        kill: Option<End>,
+        now_ms: UnixMs,
+    ) -> Option<JobUpdate> {
+        let t = self.tracked.get_mut(&id)?;
+        let (progress, end) = match outcome {
+            Outcome::Briefed(p) => (p, kill),
+            Outcome::Failed { error, progress } => {
+                (progress, Some(kill.unwrap_or(End::failed(error))))
+            }
+            Outcome::Cancelled(p) => (
+                p,
+                Some(kill.unwrap_or(End::failed("the launch was cancelled"))),
+            ),
+        };
+        t.progress = progress;
+        match end {
+            Some(end) => {
+                self.begin_stop(id, end, now_ms);
+                None
+            }
+            None => {
+                t.phase = Phase::Watching {
+                    saw_working: false,
+                    ended: 0,
+                    blocked_since: None,
+                };
+                let t = &self.tracked[&id];
+                Some(self.update(t, JobStatus::Running, WorkerPhase::Running, now_ms))
+            }
+        }
+    }
+
+    fn watch(&mut self, id: JobId, now_ms: UnixMs, awake_ms: i64) -> Option<JobUpdate> {
+        self.save_members(id);
+        let t = self.tracked.get(&id)?;
+        if t.paused {
+            return None;
+        }
+        let limit_secs = t.job.spec.max_runtime_secs;
+        if t.clock.active_ms(awake_ms) > i64::try_from(limit_secs.saturating_mul(1000)).ok()? {
+            let mut end = End::failed(format!("ran longer than {limit_secs} s"));
+            end.status = JobStatus::Killed;
+            self.begin_stop(id, end, now_ms);
+            return None;
+        }
+        let handle = t.progress.handle.clone()?;
+        let state = self.host.state(&handle).ok()?;
+        let blocked_ms = i64::try_from(t.worker.blocked_secs.saturating_mul(1000)).ok()?;
+        let t = self.tracked.get_mut(&id)?;
+        if state.session.is_some() {
+            t.progress.session = state.session;
+        }
+        let Phase::Watching {
+            saw_working,
+            ended,
+            blocked_since,
+        } = &mut t.phase
+        else {
+            return None;
+        };
+        *saw_working |= state.status == AgentStatus::Working;
+        *blocked_since = match state.status {
+            AgentStatus::Blocked => Some(blocked_since.unwrap_or(now_ms)),
+            _ => None,
+        };
+        let over = match state.status {
+            AgentStatus::Done => true,
+            AgentStatus::Idle => *saw_working,
+            _ => false,
+        };
+        *ended = if over { *ended + 1 } else { 0 };
+        let waited = blocked_since.is_some_and(|since| now_ms - since > blocked_ms);
+        let finished = *ended >= ENDED_TICKS;
+        let end = match state.status {
+            AgentStatus::Gone => Some(End::failed("the agent exited before it finished")),
+            _ if waited => Some(End::failed("the worker waited for input")),
+            _ if finished => Some(self.turn_end(id)),
+            _ => None,
+        };
+        if let Some(end) = end {
+            self.begin_stop(id, end, now_ms);
+        }
+        None
+    }
+
+    /// A finished turn; the host's `end_text` when the turn added no commit (A9).
+    fn turn_end(&self, id: JobId) -> End {
+        let mut end = End {
+            status: JobStatus::Succeeded,
+            error: None,
+            retryable: false,
+            owner_stop: false,
+            end_text: None,
+        };
+        let Some(t) = self.tracked.get(&id) else {
+            return end;
+        };
+        let committed = match (&t.progress.folder, &t.progress.base_commit) {
+            (Some(folder), Some(base)) => self.commits_since(folder, base) > 0,
+            _ => false,
+        };
+        if !committed {
+            end.end_text = t
+                .progress
+                .handle
+                .as_ref()
+                .and_then(|h| self.host.end_text(h));
+        }
+        end
+    }
+
+    fn commits_since(&self, folder: &Path, base: &str) -> u64 {
+        let cmd = Cmd {
+            program: "git".into(),
+            args: vec![
+                "-C".into(),
+                folder.display().to_string(),
+                "rev-list".into(),
+                "--count".into(),
+                format!("{base}..HEAD"),
+            ],
+            cwd: None,
+            env: Vec::new(),
+            stdin: None,
+            limit: Duration::from_secs(10),
+            throttle: false,
+            tag: None,
+        };
+        let out = self.commands.run(&cmd).ok();
+        let out = out.filter(|o| o.code == Some(0));
+        out.and_then(|o| o.stdout.trim().parse().ok()).unwrap_or(0)
+    }
+
+    /// Saves the worker's member pids with their start times, and puts each new one in the
+    /// background class (A16), so a stop never depends on Herdr.
+    fn save_members(&mut self, id: JobId) {
+        let Some(t) = self.tracked.get(&id) else {
+            return;
+        };
+        let Some(shell) = t.progress.shell_pid else {
+            return;
+        };
+        let (tag, started) = (t.tag, t.clock.started_ms());
+        let Some(members) = self
+            .procs
+            .lock()
+            .ok()
+            .map(|mut p| p.members(shell, tag, started))
+        else {
+            return;
+        };
+        let fresh: Vec<u32> = members
+            .iter()
+            .map(|(pid, _)| *pid)
+            .filter(|pid| !t.throttled.contains(pid))
+            .collect();
+        for pid in &fresh {
+            self.throttle(*pid);
+        }
+        if let Some(t) = self.tracked.get_mut(&id) {
+            t.throttled.extend(fresh);
+            if !members.is_empty() {
+                t.members = members;
+            }
+        }
+    }
+
+    fn throttle(&self, pid: u32) {
+        let Some(program) = &self.background else {
+            return;
+        };
+        let cmd = Cmd {
+            program: program.clone(),
+            args: vec!["-b".into(), "-p".into(), pid.to_string()],
+            cwd: None,
+            env: Vec::new(),
+            stdin: None,
+            limit: Duration::from_secs(10),
+            throttle: false,
+            tag: None,
+        };
+        let _ = self.commands.run(&cmd);
+    }
+
+    /// Thaws a paused worker and closes its pane; `stopping` waits for its pids to go.
+    pub(super) fn begin_stop(&mut self, id: JobId, end: End, now_ms: UnixMs) {
+        self.save_members(id);
+        let pids = self.pids_of(id);
+        let Some(t) = self.tracked.get_mut(&id) else {
+            return;
+        };
+        if t.paused {
+            if let Ok(mut procs) = self.procs.lock() {
+                procs.signal(&pids, Sig::Cont);
+            }
+        }
+        let closed = match &t.progress.handle {
+            Some(handle) => self.host.stop(handle).is_ok(),
+            None => true,
+        };
+        t.phase = Phase::Stopping {
+            since_ms: now_ms,
+            end,
+            forced: !closed,
+        };
+    }
+
+    /// The terminal update once no pid of the worker is left; what outlives the grace, or a
+    /// pane that could not be closed, is killed by pid.
+    fn stopping(&mut self, id: JobId, now_ms: UnixMs) -> Option<JobUpdate> {
+        let pids = self.pids_of(id);
+        let t = self.tracked.get(&id)?;
+        let Phase::Stopping {
+            since_ms,
+            end,
+            forced,
+        } = &t.phase
+        else {
+            return None;
+        };
+        if !pids.is_empty() {
+            if *forced || now_ms - since_ms >= STOP_GRACE_MS {
+                if let Ok(mut procs) = self.procs.lock() {
+                    procs.signal(&pids, Sig::Kill);
+                }
+            }
+            return None;
+        }
+        let end = end.clone();
+        let mut update = self.update(t, end.status, WorkerPhase::Done, now_ms);
+        update.error = end.error;
+        update.retryable = end.retryable;
+        update.owner_stop = end.owner_stop;
+        if let Some(report) = update.worker.as_mut() {
+            report.end_text = end.end_text;
+        }
+        self.tracked.remove(&id);
+        self.forget_record(id);
+        Some(update)
+    }
+}

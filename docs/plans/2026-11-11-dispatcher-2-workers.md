@@ -152,7 +152,7 @@ target/debug/idlemax init
 - [x] Task 3: End a worker job instead of retrying it, and let its Run follow
 - [x] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
 - [x] Task 5: Build the runner seam, the Herdr host and the fenced launch
-- [ ] Task 6: Run one worker job on the agent from lease to exit
+- [x] Task 6: Run one worker job on the agent from lease to exit
 - [ ] Task 7: Start, hold, shed and stop workers in the agent tick
 - [ ] Task 8: Check a finished task and give it a verdict
 - [ ] Task 9: Launch from the Plan in auto mode, one worker at a time
@@ -474,17 +474,17 @@ The manager is tested with `FakeHost` and `FakeCommands`; Task 7 puts it into th
 
 **Definition of Done:**
 
-- [ ] With a `FakeHost` and a temp repository, a launch creates the worktree, records the baseline, sends the brief only after the environment check passed and the status was `idle`, reports the session id in its first update, and ends `succeeded` after the status goes `working` then `done` on two ticks.
-- [ ] A fake worker whose environment holds `GH_TOKEN` on the first start and not on the second is briefed after one restart; one that still holds it is never sent a brief and its job ends `failed` naming the variable and the fix.
-- [ ] A job whose CLI is missing from the allowlist ends `failed` and final without a pane, and so does one whose check argv starts with a program that is missing.
-- [ ] A kill closes the pane, leaves the worktree and an uncommitted file in place, and reports `killed` only after the fake process set is empty; a set that outlives the close is killed after 5 s, and a close that errors still ends with the set empty.
-- [ ] A kill during setup ends the fake child, and the setup and check calls carry the `pane_env` pairs, the tag and `throttle` true.
-- [ ] A worker past `max_runtime_secs` of awake time ends `killed` with "ran longer than"; a paused worker whose status reads `idle` is not ended and its clock does not move.
-- [ ] A turn that ends with no new commit puts the host's `end_text` into the last update, and one with a commit does not.
-- [ ] A `resume` job starts with the saved session id and does not run setup again.
-- [ ] A launch whose spec carries a `baseline` for the worktree's base commit does not run the check argv before the agent starts, and one whose `baseline` names another commit runs it once.
-- [ ] A manager built over a saved record takes back a worker whose pane matches and reports a retryable kill for one whose pane is gone.
-- [ ] Verify: `cargo test -p idlemax --bin idlemax agent::worker::steps && cargo test -p idlemax --bin idlemax agent::worker::record && cargo test -p idlemax --bin idlemax agent::worker::tests && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] With a `FakeHost` and a temp repository, a launch creates the worktree, records the baseline, sends the brief only after the environment check passed and the status was `idle`, reports the session id in its first update, and ends `succeeded` after the status goes `working` then `done` on two ticks.
+- [x] A fake worker whose environment holds `GH_TOKEN` on the first start and not on the second is briefed after one restart; one that still holds it is never sent a brief and its job ends `failed` naming the variable and the fix.
+- [x] A job whose CLI is missing from the allowlist ends `failed` and final without a pane, and so does one whose check argv starts with a program that is missing.
+- [x] A kill closes the pane, leaves the worktree and an uncommitted file in place, and reports `killed` only after the fake process set is empty; a set that outlives the close is killed after 5 s, and a close that errors still ends with the set empty.
+- [x] A kill during setup ends the fake child, and the setup and check calls carry the `pane_env` pairs, the tag and `throttle` true.
+- [x] A worker past `max_runtime_secs` of awake time ends `killed` with "ran longer than"; a paused worker whose status reads `idle` is not ended and its clock does not move.
+- [x] A turn that ends with no new commit puts the host's `end_text` into the last update, and one with a commit does not.
+- [x] A `resume` job starts with the saved session id and does not run setup again.
+- [x] A launch whose spec carries a `baseline` for the worktree's base commit does not run the check argv before the agent starts, and one whose `baseline` names another commit runs it once.
+- [x] A manager built over a saved record takes back a worker whose pane matches and reports a retryable kill for one whose pane is gone.
+- [x] Verify: `cargo test -p idlemax --bin idlemax agent::worker::steps && cargo test -p idlemax --bin idlemax agent::worker::record && cargo test -p idlemax --bin idlemax agent::worker::tests && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 7: Start, hold, shed and stop workers in the agent tick
 

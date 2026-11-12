@@ -192,8 +192,8 @@ impl ProcTable {
     /// The variables of process `pid` as `name=value` pairs; None when the process is gone or
     /// its environment cannot be read (macOS hides it for some binaries), which the worker
     /// check treats as a failure.
-    // The worker manager (dispatcher Spec 2 Task 6) is its caller.
-    #[cfg_attr(not(test), allow(dead_code))]
+    // The worker manager is wired into the agent loop by dispatcher Spec 2 Task 7.
+    #[allow(dead_code)]
     pub fn environ(&mut self, pid: u32) -> Option<Vec<(String, String)>> {
         let pid = Pid::from_u32(pid);
         let kind = ProcessRefreshKind::nothing()
@@ -210,6 +210,15 @@ impl ProcTable {
             Some((name.to_string(), value.to_string()))
         });
         Some(pairs.collect())
+    }
+
+    /// Resident memory of `pids` together, from the last refresh.
+    #[allow(dead_code)]
+    pub fn rss_of(&self, pids: &[u32]) -> u64 {
+        pids.iter()
+            .filter_map(|&pid| self.sys.process(Pid::from_u32(pid)))
+            .map(|p| p.memory())
+            .sum()
     }
 
     /// Processes of each live job, keyed by root pid, from the last refresh.

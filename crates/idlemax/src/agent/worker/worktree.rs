@@ -26,6 +26,9 @@ pub struct WorktreeMarker {
     pub branch: String,
     pub base_commit: String,
     pub creation_time: UnixMs,
+    /// Exit code of the project's check on the base commit; None when not recorded (D8).
+    #[serde(default)]
+    pub baseline: Option<i32>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -50,6 +53,19 @@ pub enum WorktreeError {
 
 fn marker_path_for(folder: &Path) -> PathBuf {
     PathBuf::from(format!("{}.json", folder.display()))
+}
+
+/// The marker idlemax wrote beside `folder`, when there is one.
+pub fn marker_of(folder: &Path) -> Option<WorktreeMarker> {
+    read_marker(&marker_path_for(folder)).ok()
+}
+
+/// Records the baseline exit code in the folder's marker.
+pub fn record_baseline(folder: &Path, baseline: Option<i32>) -> Result<(), WorktreeError> {
+    let path = marker_path_for(folder);
+    let mut marker = read_marker(&path)?;
+    marker.baseline = baseline;
+    write_marker(&path, &marker)
 }
 
 fn read_marker(marker_path: &Path) -> Result<WorktreeMarker, WorktreeError> {
@@ -243,6 +259,7 @@ pub fn create_worktree(
             branch: branch.clone(),
             base_commit,
             creation_time: now_ms,
+            baseline: None,
         };
         write_marker(&marker_path_for(&folder), &marker).map(|()| marker.base_commit)
     });

@@ -76,6 +76,8 @@ pub trait WorkerHost: Send + Sync {
     fn send(&self, handle: &Handle, text: &str) -> Result<(), HostError>;
     /// Closes the worker's pane; Ok when it is already gone.
     fn stop(&self, handle: &Handle) -> Result<(), HostError>;
+    /// True while the pane is still listed with the saved label and workspace.
+    fn matches(&self, handle: &Handle) -> Result<bool, HostError>;
     /// The text that ended the last turn, at most 2,000 characters (A9).
     fn end_text(&self, handle: &Handle) -> Option<String>;
 }
@@ -90,6 +92,13 @@ pub struct FakeHost {
     pub sent: std::sync::Mutex<Vec<(Handle, String)>>,
     pub stopped: std::sync::Mutex<Vec<Handle>>,
     pub end_text: std::sync::Mutex<Option<String>>,
+    /// Runs on every stop, so a test's fake processes can leave with the pane.
+    #[allow(clippy::type_complexity)]
+    pub on_stop: std::sync::Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// Errors the next stops return, after running `on_stop`.
+    pub stop_errors: std::sync::Mutex<std::collections::VecDeque<HostError>>,
+    /// What `matches` answers; true when unset.
+    pub owned: std::sync::Mutex<Option<bool>>,
 }
 
 #[cfg(test)]
@@ -144,7 +153,17 @@ impl WorkerHost for FakeHost {
 
     fn stop(&self, handle: &Handle) -> Result<(), HostError> {
         self.stopped.lock().unwrap().push(handle.clone());
-        Ok(())
+        if let Some(hook) = self.on_stop.lock().unwrap().as_ref() {
+            hook();
+        }
+        match self.stop_errors.lock().unwrap().pop_front() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+
+    fn matches(&self, _handle: &Handle) -> Result<bool, HostError> {
+        Ok(self.owned.lock().unwrap().unwrap_or(true))
     }
 
     fn end_text(&self, _handle: &Handle) -> Option<String> {
