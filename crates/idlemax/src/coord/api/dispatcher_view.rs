@@ -14,6 +14,7 @@ use idlemax_core::Config;
 use super::budget::budgets;
 use super::http::ApiFailure;
 use super::AppState;
+use crate::agent::metrics::default_device_id;
 use crate::coord::store::{Store, StoreError};
 use crate::dispatch::gather_plan;
 use crate::state::now_ms;
@@ -72,6 +73,12 @@ pub fn gather_view(
         let since = b.day_start_ms - DAY_MS * EARLIER_DAYS as i64;
         days.extend(store.budget_days(&b.account, since)?);
     }
+    let limits: Vec<_> = store
+        .devices(now, i64::MAX)?
+        .into_iter()
+        .filter_map(|d| Some((d.info.id, d.limits?)))
+        .collect();
+    let own = limits_device(live);
     let input = ViewInput {
         plan: &plan,
         runs: &runs,
@@ -80,8 +87,20 @@ pub fn gather_view(
         days: &days,
         review_cap: live.workers.review_cap,
         proposals_open: store.open_proposals()?,
+        limits_device: Some(&own),
+        limits: &limits,
     };
     Ok(dispatcher_view(&input, now))
+}
+
+/// The device id of the coordinator's own machine, whose `config.toml` `POST /v1/limits`
+/// edits: `agent.device_id`, else the id its agent would take from the host name.
+fn limits_device(live: &Config) -> String {
+    live.agent
+        .device_id
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| default_device_id(&sysinfo::System::host_name().unwrap_or_default()))
 }
 
 #[cfg(test)]

@@ -10,12 +10,17 @@ use super::project::ProjectView;
 use super::room::LineState;
 use super::Mode;
 use crate::config::Setting;
-use crate::quota::budget::{Budget, BudgetBasis, BudgetUnit};
+use crate::quota::budget::{Budget, BudgetUnit};
 use crate::quota::owner_use::AccountDay;
 use crate::quota::Provider;
 use crate::types::{DeviceId, UnixMs};
 use crate::worker::run::{Run, RunState};
 use crate::worker::RunId;
+#[cfg(test)]
+use needs::device_needs;
+use needs::needs_you;
+
+mod needs;
 
 /// Earlier account days shown beside today.
 pub const EARLIER_DAYS: usize = 6;
@@ -36,19 +41,23 @@ pub struct DispatcherView {
     pub review: Vec<WorkerLine>,
     pub budgets: Vec<BudgetLine>,
     pub proposals_open: u64,
+    /// The device whose `config.toml` `POST /v1/limits` edits; every other device's limits
+    /// are shown read-only in `devices[].limits` (A23).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limits_device: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DeviceLine {
     pub id: DeviceId,
-    /// None until Spec 5; no surface draws a device toggle for None.
+    /// None from a coordinator that predates the device switch; no surface draws a toggle then.
     pub enabled: Option<bool>,
     pub state: LineState,
     pub reason: String,
     pub open_slots: u32,
     pub held: Option<String>,
-    /// The device's own limits, read-only here (A23); empty until Spec 5 fills it.
+    /// The device's own limits, read-only here (A23); empty for `limits_device`.
     pub limits: Vec<Setting>,
 }
 
@@ -154,6 +163,10 @@ pub struct ViewInput<'a> {
     /// The value of `workers.review_cap`.
     pub review_cap: u32,
     pub proposals_open: u64,
+    /// The device whose `config.toml` `POST /v1/limits` edits (A23).
+    pub limits_device: Option<&'a str>,
+    /// The limits each device reported in its last heartbeat.
+    pub limits: &'a [(DeviceId, Vec<Setting>)],
 }
 
 pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView {
@@ -168,7 +181,7 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
             reason: plain(&d.room.reason),
             open_slots: d.room.open_slots,
             held: d.held.as_deref().map(plain),
-            limits: Vec::new(),
+            limits: read_only_limits(input, &d.device),
         })
         .collect();
     let planned = plan
@@ -208,7 +221,21 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
         budgets: budget_lines(input.budgets, input.days),
         devices,
         proposals_open: input.proposals_open,
+        limits_device: input.limits_device.map(str::to_string),
     }
+}
+
+/// What a device reported, unless it is the one whose limits the owner edits here.
+fn read_only_limits(input: &ViewInput<'_>, device: &str) -> Vec<Setting> {
+    if input.limits_device == Some(device) {
+        return Vec::new();
+    }
+    input
+        .limits
+        .iter()
+        .find(|(id, _)| id == device)
+        .map(|(_, l)| l.clone())
+        .unwrap_or_default()
 }
 
 fn is_worker(state: RunState) -> bool {
@@ -283,70 +310,6 @@ fn project_lines(input: &ViewInput<'_>) -> Vec<ProjectLine> {
             }
         })
         .collect()
-}
-
-/// What needs the owner, in this order: tasks the orchestrator sent to them, accounts out of
-/// quota past today, then devices (see `device_needs`).
-fn needs_you(
-    plan: &Plan,
-    budgets: &[Budget],
-    devices: &[DeviceLine],
-    projects: &[ProjectView],
-) -> Vec<NeedsYouLine> {
-    let tasks = plan.needs_you.iter().map(|t| NeedsYouLine {
-        key: format!("task:{}:{}", t.project_id, t.id),
-        kind: NeedKind::Task,
-        subject: plain(&format!("{}: {}", t.project, t.title)),
-        reason: plain(t.needs_you.as_deref().unwrap_or_default()),
-    });
-    let accounts = budgets
-        .iter()
-        .filter(|b| b.basis == BudgetBasis::Resting)
-        .filter(|b| b.rests_until_ms.is_some_and(|until| until > b.day_end_ms))
-        .map(|b| NeedsYouLine {
-            key: format!("account:{}", b.account),
-            kind: NeedKind::Account,
-            subject: b.account.clone(),
-            reason: plain(&b.why),
-        });
-    tasks
-        .chain(accounts)
-        .chain(device_needs(devices, projects))
-        .collect()
-}
-
-/// Devices over the emergency line, then devices switched off while a project on them is on
-/// (A23).
-fn device_needs(devices: &[DeviceLine], projects: &[ProjectView]) -> Vec<NeedsYouLine> {
-    let emergencies = devices
-        .iter()
-        .filter(|d| d.state == LineState::Emergency)
-        .map(|d| NeedsYouLine {
-            key: format!("device:{}:emergency", d.id),
-            kind: NeedKind::Device,
-            subject: d.id.clone(),
-            reason: plain(&d.reason),
-        });
-    let off = devices
-        .iter()
-        .filter(|d| d.enabled == Some(false))
-        .filter_map(|d| {
-            let on = projects
-                .iter()
-                .filter(|v| v.project.device == d.id && v.project.enabled)
-                .count();
-            (on > 0).then(|| NeedsYouLine {
-                key: format!("device:{}:off", d.id),
-                kind: NeedKind::Device,
-                subject: d.id.clone(),
-                reason: format!(
-                    "off, with {on} {} switched on: idlemax device on {}",
-                    if on == 1 { "project" } else { "projects" },
-                    d.id
-                ),
-            })
-        });
-    emergencies.chain(off).collect()
 }
 
 fn budget_lines(budgets: &[Budget], days: &[AccountDay]) -> Vec<BudgetLine> {

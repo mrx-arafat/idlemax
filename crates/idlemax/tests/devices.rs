@@ -279,6 +279,24 @@ async fn an_agent_with_its_own_credential_runs_a_plain_job_and_no_owner_command(
             .then_some(())
     });
 
+    // The server reports its own limits; the owner sees them read-only (A23).
+    let view: Value = reqwest::Client::new()
+        .get(format!("{coord}/v1/dispatcher"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let line = view["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "box");
+    let limits = line.map(|d| d["limits"].as_array().map_or(0, Vec::len));
+    assert!(limits.is_some_and(|n| n > 0), "{view}");
+
     let added = owner.run(&[
         "job",
         "add",

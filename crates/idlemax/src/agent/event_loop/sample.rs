@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use idlemax_core::config::DispatcherConfig;
+use idlemax_core::config::{limit_settings, DispatcherConfig, Setting};
 use idlemax_core::dispatch::linux::{linux_facts, linux_numbers, LinuxFacts, LinuxNumbers};
 use idlemax_core::dispatch::room::{RoomDecision, RoomPolicy};
 use idlemax_core::reconcile::fail_safe_decision;
@@ -61,8 +61,22 @@ impl Agent {
     /// and the guard's battery floor and thermal switch (A2, A17).
     async fn evaluate_room(&mut self) {
         let live = Arc::clone(&self.live);
-        let dispatcher = match tokio::task::spawn_blocking(move || live.current()).await {
-            Ok(cfg) => cfg.dispatcher.clone(),
+        let file = self.paths.config_file();
+        let seen = self.limits_of.clone();
+        let read = tokio::task::spawn_blocking(move || {
+            let cfg = live.current();
+            let fresh = !seen.is_some_and(|s| Arc::ptr_eq(&s, &cfg));
+            let limits = fresh.then(|| own_limits(&file));
+            (cfg, limits)
+        });
+        let dispatcher = match read.await {
+            Ok((cfg, limits)) => {
+                if let Some(limits) = limits {
+                    self.limits = limits.or(self.limits.take());
+                    self.limits_of = Some(Arc::clone(&cfg));
+                }
+                cfg.dispatcher.clone()
+            }
             Err(e) => {
                 warn!("reading config.toml failed: {e}");
                 self.config.dispatcher.clone()
@@ -112,6 +126,19 @@ impl Agent {
                 self.device = device;
             }
             Err(e) => warn!("refresh device info failed: {e}"),
+        }
+    }
+}
+
+/// The limits of this device's `config.toml` for the heartbeat (A23); None when the file
+/// cannot be read or parsed, and the last list sent stays.
+fn own_limits(file: &std::path::Path) -> Option<Vec<Setting>> {
+    let text = crate::files::read_optional(file).ok()?.unwrap_or_default();
+    match limit_settings(&text, Os::current()) {
+        Ok(limits) => Some(limits),
+        Err(e) => {
+            warn!("config.toml limits not read: {e}");
+            None
         }
     }
 }

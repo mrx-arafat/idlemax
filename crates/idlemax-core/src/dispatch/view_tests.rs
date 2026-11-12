@@ -3,6 +3,7 @@ use crate::dispatch::plan::DevicePlan;
 use crate::dispatch::project::Project;
 use crate::dispatch::room::RoomDecision;
 use crate::dispatch::task::{Task, TaskSource};
+use crate::quota::budget::BudgetBasis;
 
 const DAY: UnixMs = 86_400_000;
 const NOW: UnixMs = 100 * DAY;
@@ -108,6 +109,8 @@ fn view(plan: &Plan, runs: &[RunLine], budgets: &[Budget], days: &[AccountDay]) 
         days,
         review_cap: 3,
         proposals_open: 0,
+        limits_device: None,
+        limits: &[],
     };
     dispatcher_view(&input, NOW)
 }
@@ -214,4 +217,45 @@ fn a_plan_over_an_off_device_with_a_project_on_needs_you() {
     assert_eq!(v.devices[0].enabled, Some(false));
     let keys: Vec<&str> = v.needs_you.iter().map(|n| n.key.as_str()).collect();
     assert!(keys.contains(&"device:mac:off"), "{keys:?}");
+}
+
+#[test]
+fn only_the_other_devices_show_their_reported_limits() {
+    use crate::config::Setting;
+    let mut two = plan(LineState::Run, Vec::new());
+    let mut other = two.devices[0].clone();
+    other.device = "box".into();
+    two.devices.push(other);
+    let setting = |key: &str| Setting {
+        key: key.into(),
+        value: serde_json::json!(90.0),
+        default: serde_json::json!(90.0),
+        from_file: false,
+    };
+    let limits = [
+        (
+            "mac".to_string(),
+            vec![setting("dispatcher.hold_mem_used_pct")],
+        ),
+        (
+            "box".to_string(),
+            vec![setting("dispatcher.hold_mem_used_pct")],
+        ),
+    ];
+    let projects = projects();
+    let input = ViewInput {
+        plan: &two,
+        runs: &[],
+        projects: &projects,
+        budgets: &[],
+        days: &[],
+        review_cap: 3,
+        proposals_open: 0,
+        limits_device: Some("mac"),
+        limits: &limits,
+    };
+    let v = dispatcher_view(&input, NOW);
+    assert_eq!(v.limits_device.as_deref(), Some("mac"));
+    let of = |id: &str| v.devices.iter().find(|d| d.id == id).unwrap().limits.len();
+    assert_eq!((of("mac"), of("box")), (0, 1));
 }

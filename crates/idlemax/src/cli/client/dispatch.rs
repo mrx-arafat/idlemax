@@ -141,3 +141,16 @@ impl ApiClient {
         self.stop_workers(&req).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::segment;
+
+    #[test]
+    fn a_device_id_is_one_percent_encoded_path_segment() {
+        assert_eq!(segment("my box"), "my%20box");
+        assert_eq!(segment("a/b"), "a%2Fb");
+        assert_eq!(segment("mac-1.lan_~"), "mac-1.lan_~");
+        assert_eq!(segment("ü"), "%C3%BC");
+    }
+}

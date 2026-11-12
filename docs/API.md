@@ -745,7 +745,8 @@ Types live in `crates/idlemax-core/src/dispatch/view.rs` and `dispatch/label.rs`
 It costs one plan, the same work as `GET /v1/plan`, and reads at most 200 runs per state and seven account days per account.
 
 - `at_ms`, `mode`, `picked_by` (where the picks come from, from the plan).
-- `devices[]`: `id`, `enabled` (null until devices can be switched off), `state` (the line state), `reason`, `open_slots`, `held`, `limits` (the device's own limits, read-only; empty for now).
+- `limits_device`: the device whose `config.toml` `POST /v1/limits` edits: the coordinator's `agent.device_id`, else the id its host name gives.
+- `devices[]`: `id`, `enabled` (whether the device is switched on; null from a coordinator that predates the switch), `state` (the line state), `reason`, `open_slots`, `held`, `limits` (the limits the device reported in its last heartbeat, shown read-only; empty for `limits_device` and for a device that reported none).
 - `projects[]`: `id`, `name`, `device`, `enabled`, `waiting` (its runs in `clean` and `needs_you`, the two counted against `workers.review_cap`) and `review_cap`.
 - `planned[]`: each pick of the plan with its `device`, `project`, `task`, `title`, `provider`, `account`, `model` and `reason`.
 - `ready_unjudged[]`: ready tasks no orchestrator pass has judged (`project`, `task`, `title`); no slot is filled from them, and surfaces label them `not judged by the orchestrator`.
@@ -800,6 +801,8 @@ Only these keys can be changed here, so the token alone never changes `agent.com
 The reply is `{"key": "dispatcher.hold_mem_used_pct", "before": 90.0, "after": 85.0, "changed": true, "report": {"applied": ["dispatcher.hold_mem_used_pct"], "restart_agent": [], "restart_coordinator": []}}`: a key under `applied` holds now, one under the other two lists needs that process restarted.
 The route calls no daemon; both read the file again when its mtime changes.
 It changes the coordinator's own file: a device's limits are changed on that device.
+Each agent sends its own list as `Heartbeat.limits` (the `GET /v1/limits` shape for its `config.toml`, at most 64 entries), rebuilt when its file changes; the coordinator keeps the last list it got, and `DeviceView.limits` serves it.
+An agent that predates the field sends none, and the stored list stays as it was.
 Changing a limit is owner-only (see "Auth and errors"), and no pause, guard or line state holds it.
 
 ## Projects

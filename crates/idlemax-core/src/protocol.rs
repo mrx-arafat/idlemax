@@ -50,6 +50,10 @@ pub struct Heartbeat {
     /// The id of the newest notice this device delivered, 0 for none (D17, A22).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notices_after: Option<i64>,
+    /// The device's own limits from its `config.toml` (A23); None from an agent that predates
+    /// them, which leaves the stored list as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Vec<crate::config::Setting>>,
 }
 
 /// Longest device id and host name an agent may report.
@@ -110,6 +114,9 @@ impl Heartbeat {
                 }
                 _ => {}
             }
+        }
+        if self.limits.as_ref().is_some_and(|l| l.len() > MAX_TAGS) {
+            return Err(format!("limits has more than {MAX_TAGS} entries"));
         }
         match &d.command_allowlist {
             Some(list) if list.len() > MAX_ALLOWLIST_ENTRIES => Err(format!(
@@ -211,6 +218,9 @@ pub struct DeviceView {
     /// one and from a coordinator that predates device credentials.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_auth: Option<crate::control::credential::AgentAuth>,
+    /// The limits the device reported in its last heartbeat (A23); absent before then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Vec<crate::config::Setting>>,
     /// How much of the device's allowance is in use and why it is not using more. Set by
     /// the coordinator; absent from one that predates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -365,5 +375,22 @@ mod tests {
         assert!(hb.check().is_ok());
         hb.device.claude_login = None;
         assert!(hb.check().is_ok());
+    }
+
+    #[test]
+    fn a_heartbeat_carries_a_bounded_list_of_limits_and_an_old_one_none() {
+        let setting = crate::config::Setting {
+            key: "dispatcher.hold_mem_used_pct".into(),
+            value: serde_json::json!(90.0),
+            default: serde_json::json!(90.0),
+            from_file: false,
+        };
+        let hb = Heartbeat {
+            limits: Some(vec![setting; MAX_TAGS + 1]),
+            ..Heartbeat::default()
+        };
+        assert!(hb.check().unwrap_err().starts_with("limits"));
+        let old: Heartbeat = serde_json::from_str(r#"{"device":{"id":"mac"}}"#).unwrap();
+        assert_eq!(old.limits, None);
     }
 }

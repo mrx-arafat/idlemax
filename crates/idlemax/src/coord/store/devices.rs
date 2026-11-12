@@ -26,13 +26,13 @@ struct StoredDevice {
 
 const UPSERT_DEVICE: &str = "
 INSERT INTO devices (id, info, first_seen_ms, last_seen_ms, metrics, guard, running,
-                     interactive_use, local_paused, online, room)
-VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)
+                     interactive_use, local_paused, online, room, limits)
+VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10)
 ON CONFLICT (id) DO UPDATE SET
   info = excluded.info, last_seen_ms = excluded.last_seen_ms, metrics = excluded.metrics,
   guard = excluded.guard, running = excluded.running,
   interactive_use = excluded.interactive_use, local_paused = excluded.local_paused,
-  online = 1, room = excluded.room";
+  online = 1, room = excluded.room, limits = coalesce(excluded.limits, devices.limits)";
 
 // SET expressions read the row before the update, so `samples` is the old count.
 const FOLD_MINUTE: &str = "
@@ -97,6 +97,7 @@ impl Store {
             json_text(&hb.interactive_use)?,
             hb.local_paused,
             hb.room.as_ref().map(json_text).transpose()?,
+            hb.limits.as_ref().map(json_text).transpose()?,
         ])?;
         fold_minute(&tx, hb, now)?;
         super::report::record_guard(
@@ -174,7 +175,7 @@ impl Store {
         let global = paused.contains(&ControlScope::Global);
         let mut stmt = self.conn.prepare_cached(
             "SELECT info, last_seen_ms, metrics, guard, running, local_paused, room, dispatch_on,
-                    agent_auth
+                    agent_auth, limits
              FROM devices WHERE ?1 IS NULL OR id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map([only], device_from_row)?;
@@ -273,6 +274,7 @@ fn device_from_row(r: &Row<'_>) -> rusqlite::Result<DeviceView> {
             .get::<_, Option<String>>(8)?
             .map(|_| super::enum_col(r, 8))
             .transpose()?,
+        limits: opt_json_col(r, 9)?,
     })
 }
 
@@ -305,6 +307,24 @@ mod tests {
         beat(&mut s, T0 + 1);
         assert_eq!(enabled(&s), Some(true));
         assert_eq!(s.set_device_dispatch("nope", true, T0).unwrap(), None);
+    }
+
+    #[test]
+    fn a_heartbeat_without_limits_keeps_the_ones_stored() {
+        let mut s = Store::open_in_memory().unwrap();
+        let mut hb = Heartbeat::default();
+        hb.device.id = "mac".into();
+        hb.limits = Some(vec![idlemax_core::config::Setting {
+            key: "dispatcher.hold_mem_used_pct".into(),
+            value: serde_json::json!(80.0),
+            default: serde_json::json!(90.0),
+            from_file: true,
+        }]);
+        s.record_heartbeat(&hb, T0).unwrap();
+        hb.limits = None;
+        s.record_heartbeat(&hb, T0 + 1).unwrap();
+        let view = s.device("mac", T0, i64::MAX).unwrap().unwrap();
+        assert_eq!(view.limits.map(|l| l.len()), Some(1));
     }
 
     #[test]

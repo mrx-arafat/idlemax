@@ -121,6 +121,9 @@ pub struct Agent {
     live: Arc<LiveConfig>,
     /// The worker room of the newest sample.
     room: RoomDecision,
+    /// This device's limits for the heartbeat, and the config they were read from (A23).
+    limits: Option<Vec<idlemax_core::config::Setting>>,
+    limits_of: Option<Arc<Config>>,
     running: Vec<RunningJob>,
     /// Where the running jobs work, so the disk reading covers their filesystems.
     job_dirs: Vec<PathBuf>,
@@ -174,6 +177,8 @@ impl Agent {
             worker_room: w.worker_room,
             live: w.live,
             room: RoomDecision::hold("no sample yet", now_ms()),
+            limits: None,
+            limits_of: None,
             running: Vec::new(),
             job_dirs: Vec::new(),
             online: false,

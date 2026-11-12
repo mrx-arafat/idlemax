@@ -126,6 +126,7 @@ impl Agent {
             local_paused: self.reading.kill_switch || self.state.local_paused(),
             room: Some(self.room.clone()),
             notices_after: Some(crate::agent::notices::cursor(&self.paths)),
+            limits: self.limits.clone(),
         }
     }
 
