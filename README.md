@@ -1025,7 +1025,7 @@ idlemax config unset guard.require_ac_power       # back to the default
 ```
 
 `set` checks the value the way startup does and refuses one that would stop the agent from starting, keeps your comments, saves the previous file as `config.toml.idlemax.bak`, and asks the running agent to reload.
-Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake` and every `[dispatcher]` key apply at once.
+Every `[guard]` key, `agent.command_allowlist`, `agent.notify`, `agent.keep_awake`, every `[dispatcher]` key and every `[workers]` key apply at once.
 Every `[dispatcher]` key applies without a restart on both the agent and the coordinator.
 The reply says when a setting is read only at start, and which process to restart.
 `set` replaces a list, so name every program the device may run.
@@ -1072,6 +1072,15 @@ Use `idlemax config set agent.keep_awake off` to disable it; Linux sleep inhibit
 | `dispatcher.swap_in_high_pages_per_sec` | `100.0` | swap-in above this for a minute sheds a worker |
 | `dispatcher.worker_mem_mib` | `512` | memory one worker is expected to take; sets how many workers fit under the hold line |
 | `dispatcher.worker_models` | `["claude:sonnet"]` | models a worker may use, as `provider:model` |
+| `workers.clis` | `[]` | agent CLIs that may run workers, `claude` or `codex`; empty means no worker starts |
+| `workers.reviewers` | `[]` | agent CLIs that may review a high-risk diff, `claude` or `codex` |
+| `workers.review_cap` | `3` | finished tasks per project that may wait for your review before idlemax moves on |
+| `workers.settle_secs` | `60` | seconds between two worker launches on one device, so memory can settle |
+| `workers.max_runtime_secs` | `3600` | awake seconds one worker launch may run before it is stopped |
+| `workers.blocked_secs` | `120` | seconds a worker may wait for input before it is stopped |
+| `workers.review_diff_lines` | `300` | a diff of more added plus removed lines gets an independent review |
+| `workers.setup_secs` | `900` | limit for a project's setup command in a worker's worktree |
+| `workers.check_secs` | `600` | limit for a project's check command in a worker's worktree |
 
 A window entry looks like `{ kind = "rolling", minutes = 300, reserve_pct = 40.0 }` or `{ kind = "weekly", reserve_pct = 30.0, final_day_reserve_pct = 15.0 }`.
 TOML has no null, so a `[guard]` override cannot switch a check off; set a value that never trips instead.

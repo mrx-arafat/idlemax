@@ -26,6 +26,7 @@ pub mod schedule;
 pub mod scheduler;
 pub mod spec_limits;
 pub mod types;
+pub mod worker;
 
 pub use config::{Config, ConfigError, GuardPolicy};
 pub use paths::{HomeError, Paths};

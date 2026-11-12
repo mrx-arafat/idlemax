@@ -9,13 +9,14 @@ use super::{Config, ConfigError, GuardPolicy};
 use crate::types::Os;
 
 /// The sections that hold settings, in the order they are listed.
-const SECTIONS: [&str; 6] = [
+const SECTIONS: [&str; 7] = [
     "coordinator",
     "agent",
     "guard",
     "quota",
     "advisor",
     "dispatcher",
+    "workers",
 ];
 
 /// Capacity is sized to the machine when the agent starts, so an unset value has no

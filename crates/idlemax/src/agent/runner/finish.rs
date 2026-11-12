@@ -70,6 +70,7 @@ pub fn finish(
         // it orders. A non-zero exit and a kill for the job's own limits are final.
         owner_stop: false,
         retryable: false,
+        worker: None,
     }
 }
 

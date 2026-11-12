@@ -13,6 +13,8 @@ mod schedules;
 #[cfg(test)]
 mod tests;
 mod why;
+#[cfg(test)]
+mod worker_tests;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -181,7 +183,7 @@ impl From<ControlError> for ApiFailure {
             | ControlError::InvalidJob(_)
             | ControlError::InvalidDevice(_)
             | ControlError::UnknownAccount(_)
-            | ControlError::DispatcherOnly => ApiFailure::BadRequest(e.to_string()),
+            | ControlError::DispatcherOnly(_) => ApiFailure::BadRequest(e.to_string()),
         }
     }
 }

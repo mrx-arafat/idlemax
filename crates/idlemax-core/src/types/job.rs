@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::{DeviceId, JobId, UnixMs};
+use crate::worker::WorkerSpec;
 
 /// What a job does when the user becomes active on its device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -95,6 +96,9 @@ pub struct JobSpec {
     /// a plain one, which is the safe side.
     #[serde(skip_serializing_if = "Admission::is_guard")]
     pub admission: Admission,
+    /// Set only by the dispatcher: this job is one launch, resume, keep or discard of a Run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker: Option<WorkerSpec>,
 }
 
 impl Default for JobSpec {
@@ -117,6 +121,7 @@ impl Default for JobSpec {
             on_user_active: ActivePolicy::default(),
             max_attempts: DEFAULT_MAX_ATTEMPTS,
             admission: Admission::Guard,
+            worker: None,
         }
     }
 }
@@ -133,6 +138,8 @@ pub enum SpecError {
     AiWithoutAccount,
     #[error("ai_account is only allowed with cost ai")]
     AccountWithoutAi,
+    #[error("a worker section needs cost ai")]
+    WorkerWithoutAi,
     #[error("key is empty")]
     EmptyKey,
     #[error("key is longer than 128 characters")]
@@ -181,6 +188,9 @@ impl JobSpec {
             (CostClass::Ai, None) => return Err(SpecError::AiWithoutAccount),
             (c, Some(_)) if c != CostClass::Ai => return Err(SpecError::AccountWithoutAi),
             _ => {}
+        }
+        if self.worker.is_some() && self.cost != CostClass::Ai {
+            return Err(SpecError::WorkerWithoutAi);
         }
         crate::spec_limits::check(self)
     }

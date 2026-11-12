@@ -3,6 +3,7 @@
 //! a 400 that names the field and the limit. The sizes are far above anything real. Pure.
 
 use crate::types::{JobSpec, SpecError};
+use crate::worker::WorkerSpec;
 
 pub const MAX_NAME_CHARS: usize = 200;
 /// Arguments in `command`, the size of one, and of all together (Linux caps one at 128 KiB).
@@ -62,12 +63,64 @@ pub fn check(spec: &JobSpec) -> Result<(), SpecError> {
             return Err(over(field, MAX_LIST_ITEM_CHARS, "characters per entry"));
         }
     }
+    if let Some(w) = &spec.worker {
+        worker(w)?;
+    }
     match &spec.ai_account {
         Some(a) if a.chars().count() > MAX_LIST_ITEM_CHARS => {
             Err(over("ai_account", MAX_LIST_ITEM_CHARS, "characters"))
         }
         _ => Ok(()),
     }
+}
+
+/// The worker section's texts are bounded like `cwd`, its lists like `requires`, and the done
+/// check like one command argument.
+fn worker(w: &WorkerSpec) -> Result<(), SpecError> {
+    let reviewer = w.reviewer.as_ref();
+    let texts = [
+        ("worker.project", Some(&w.project)),
+        ("worker.task", Some(&w.task)),
+        ("worker.task_title", Some(&w.task_title)),
+        ("worker.repo", Some(&w.repo)),
+        ("worker.base_branch", w.base_branch.as_ref()),
+        ("worker.branch", w.branch.as_ref()),
+        ("worker.worktree", w.worktree.as_ref()),
+        ("worker.model", Some(&w.model)),
+        ("worker.session", w.session.as_ref()),
+        ("worker.reviewer.model", reviewer.map(|r| &r.model)),
+        ("worker.reviewer.account", reviewer.map(|r| &r.account)),
+    ];
+    for (field, text) in texts {
+        bounded(field, text.map_or("", String::as_str), MAX_CWD_BYTES)?;
+    }
+    bounded("worker.done_check", &w.done_check, MAX_ARG_BYTES)?;
+    let lists = [
+        ("worker.setup", &w.setup),
+        ("worker.check", &w.check),
+        ("worker.scope_paths", &w.scope_paths),
+        ("worker.off_limits", &w.off_limits),
+        ("worker.core_paths", &w.core_paths),
+    ];
+    for (field, list) in lists {
+        if list.len() > MAX_LIST_ENTRIES {
+            return Err(over(field, MAX_LIST_ENTRIES, "entries"));
+        }
+        for entry in list {
+            bounded(field, entry, MAX_CWD_BYTES)?;
+        }
+    }
+    Ok(())
+}
+
+fn bounded(field: &'static str, text: &str, limit: usize) -> Result<(), SpecError> {
+    if text.contains('\0') {
+        return Err(SpecError::Nul(field));
+    }
+    if text.len() > limit {
+        return Err(over(field, limit, "bytes"));
+    }
+    Ok(())
 }
 
 fn command(argv: &[String]) -> Result<(), SpecError> {

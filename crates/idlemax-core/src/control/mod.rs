@@ -30,8 +30,9 @@ pub enum ControlError {
     UnknownAccount(String),
     #[error("{0}")]
     InvalidDevice(String),
-    #[error("admission \"lines\" is set by the dispatcher only")]
-    DispatcherOnly,
+    /// Names the refused field.
+    #[error("{0} is set by the dispatcher only")]
+    DispatcherOnly(&'static str),
 }
 
 /// What one control request changes. The adapter persists it and logs `summary`.
@@ -86,10 +87,13 @@ pub fn paused_accounts(paused: &[ControlScope]) -> Vec<String> {
 /// Admission for `POST /v1/jobs`: a valid spec whose AI account is configured, since an
 /// unknown account is never spendable and the job would wait forever.
 /// Every operator path (job add, schedule add, advice accept) goes through here, so none can
-/// ask for the dispatcher's admission by the lines.
+/// ask for the dispatcher's admission by the lines or a worker section.
 pub fn admit_job(spec: &JobSpec, quota: &QuotaConfig) -> Result<(), ControlError> {
     if crate::types::is_dispatcher_job(spec) {
-        return Err(ControlError::DispatcherOnly);
+        return Err(ControlError::DispatcherOnly("admission \"lines\""));
+    }
+    if spec.worker.is_some() {
+        return Err(ControlError::DispatcherOnly("worker"));
     }
     spec.validate()?;
     match &spec.ai_account {

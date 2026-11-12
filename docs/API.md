@@ -57,7 +57,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | POST | /v1/projects/{id}/settings | `ProjectSettings` | `ProjectView` |
 
 `status` is a `JobStatus` (`queued`, `leased`, `running`, `paused`, `succeeded`, `failed`, `killed`, `cancelled`, `parked`).
-`POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate` or names an `ai_account` missing from `[[quota.accounts]]`, and 409 when 10000 jobs are already unfinished.
+`POST /v1/jobs` returns 201 with the queued job; it answers 400 for a spec that fails `JobSpec::validate`, names an `ai_account` missing from `[[quota.accounts]]` or carries a `worker` section (`worker is set by the dispatcher only`), and 409 when 10000 jobs are already unfinished.
 `JobSpec::validate` bounds every field, and the 400 names the field and its limit:
 
 | Field | Limit |
@@ -69,6 +69,7 @@ The agent local API accepts IP addresses and `localhost` names only.
 | `cwd` | 4096 bytes, no NUL byte |
 | `requires`, `devices` | 64 entries of up to 128 characters |
 | `ai_account` | 128 characters |
+| `worker` | texts 4096 bytes, `done_check` 128 KiB, lists 64 entries of up to 4096 bytes, no NUL byte |
 A spec may carry `key`, an idempotency key of 1 to 128 characters.
 While a job with that key is queued, leased, running or paused, `POST /v1/jobs` queues nothing and answers 200 with that job, so a client may retry safely.
 Once the job has finished the key is free again.
@@ -172,6 +173,11 @@ At most one dispatcher job is leased or running per device, it uses none of the 
 A pause, the kill switch, `stop_all`, the command allowlist, retry backoff and the one-AI-lease rule apply to it as to any job.
 An agent that predates the field treats it as a plain job.
 
+`JobSpec.worker` turns a job into one step of a worker Run, and only the coordinator's dispatcher sets it: `POST /v1/jobs`, schedules and advice accept refuse it with 400, and `idlemax job add` refuses it in a spec file.
+It is absent on the wire for a plain job, and a spec with it must have `cost = "ai"`.
+It holds `run` (the Run id), `action` (`launch`, `resume`, `keep`, `keep_merge` or `discard`), `project`, `task` (the task slug), `task_title`, `done_check` (text for the worker and reviewer, never run by idlemax), `repo`, `base_branch`, `branch` and `worktree` (set for every action except a first `launch`), `cli` (`claude`, `codex`, `opencode` or `agy`), `model`, `session`, `setup` and `check` (argv lists), `baseline` (`{"base_commit", "passed"}` from the dispatcher's check job, when known), `scope_paths`, `off_limits`, `core_paths`, `reviewer` (`{"cli", "model", "account"}`), `review_diff_lines`, `blocked_secs`, `setup_secs` and `check_secs`.
+The brief travels in `stdin`, which no operator response returns.
+
 ### Limits and retention
 
 The store is bounded so one token holder cannot grow it without limit:
@@ -221,6 +227,8 @@ Terminal updates carry `exit_code`, `output_path` (inbox file on the device) and
 `owner_stop = true` marks a `killed` update caused by the owner's local `stop_all`.
 `retryable = true` marks an attempt that ended for a reason that is not the job's fault: a guard kill, an agent shutting down, an agent that could not start the job, or an orphan reaped after an agent restart.
 Every other `failed` or `killed` update is final, including one from an agent that predates the field.
+`worker` is present only on the updates of a worker job, and holds `run`, `phase` (`preparing`, `running`, `checking` or `done`), `session`, `branch` and `worktree`.
+The last update of a launch carries them again, plus `facts` (what the device found in the worktree after the turn) and `end_text`: the text that ended a turn in which no commit was added, at most 2,000 characters, and the only output of a worker that leaves the device.
 An update never moves a terminal job out of its terminal status, and an update from a device that does not hold the lease is ignored.
 The one exception is a late result: if the agent was away past the lease, the sweep put the job back in the queue (or parked it), and the agent then delivers the terminal update of that attempt, the coordinator applies it as if it had arrived in time.
 That needs `attempt`, the lease count of the attempt the update belongs to (`Job.attempts` when it was leased), to equal the stored job's `attempts` while the job has no device.

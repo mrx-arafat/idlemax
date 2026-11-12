@@ -9,8 +9,10 @@ use serde_json::Value;
 use super::settings::json;
 use super::{Config, ConfigError};
 
-/// Settings the agent applies on reload, besides every `guard.*` and `dispatcher.*` key (both
-/// daemons read `[dispatcher]` again when the file changes). Anything not listed here
+/// Settings the agent applies on reload, besides every `guard.*`, `dispatcher.*` and
+/// `workers.*` key (both daemons read `[dispatcher]` again when the file changes, and the
+/// coordinator reads `[workers]` at every launch step and carries what a device needs in the
+/// worker job). Anything not listed here
 /// or under `coordinator.` and `advisor.` is read at agent start, so a setting added later is
 /// reported as needing a restart until someone makes it live.
 const LIVE: [&str; 3] = [
@@ -59,7 +61,9 @@ pub fn plan_reload(old: &Config, new: &Config) -> Result<ReloadReport, ConfigErr
         if old.get(key) == new.get(key) {
             continue;
         }
-        let live = key.starts_with("guard.") || key.starts_with("dispatcher.");
+        let live = ["guard.", "dispatcher.", "workers."]
+            .iter()
+            .any(|section| key.starts_with(section));
         let list = if live || LIVE.contains(&key.as_str()) {
             &mut report.applied
         } else if key.starts_with("coordinator.") || key.starts_with("advisor.") {

@@ -244,6 +244,13 @@ pub(super) fn parse_file_spec(text: &str, origin: &str) -> Result<JobSpec> {
         )
         .into());
     }
+    if spec.worker.is_some() {
+        return Err(CliError::usage(
+            format!("{origin}: worker is set by the dispatcher only; remove the section"),
+            "remove `[worker]` from the spec file",
+        )
+        .into());
+    }
     Ok(spec)
 }
 

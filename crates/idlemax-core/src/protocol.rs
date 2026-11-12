@@ -152,6 +152,9 @@ pub struct JobUpdate {
     /// may run the job again. Every other `failed` or `killed` update is final, and so is
     /// one from an agent that predates the field.
     pub retryable: bool,
+    /// What a worker job reports about its launch; absent for a plain job.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker: Option<Box<crate::worker::report::WorkerReport>>,
 }
 
 /// Reply to POST /v1/agent/job-update.

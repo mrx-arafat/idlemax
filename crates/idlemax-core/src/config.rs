@@ -11,12 +11,14 @@ mod edit;
 mod guard_policy;
 mod reload;
 mod settings;
+mod workers;
 
 pub use dispatcher::{parse_worker_model, DispatcherConfig};
 pub use edit::{find_setting, set_setting, unset_setting, Edit, EditError};
 pub use guard_policy::{GuardPolicy, MemoryCap, SwapGrowth, AGENT_OVERHEAD_MIB};
 pub use reload::{plan_reload, ReloadReport};
 pub use settings::{list_settings, show_value, Setting};
+pub use workers::WorkersConfig;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ConfigError {
@@ -48,6 +50,7 @@ pub struct Config {
     pub quota: QuotaConfig,
     pub advisor: AdvisorConfig,
     pub dispatcher: DispatcherConfig,
+    pub workers: WorkersConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,14 +166,15 @@ impl Config {
         Ok(toml::to_string_pretty(self)?)
     }
 
-    /// Checks `[guard]` overrides against both presets, the quota accounts and the
-    /// dispatcher lines.
+    /// Checks `[guard]` overrides against both presets, the quota accounts, the
+    /// dispatcher lines and the worker settings.
     pub fn validate(&self) -> Result<(), ConfigError> {
         for os in [Os::Macos, Os::Linux] {
             self.guard_policy(os)?;
         }
         self.quota.validate()?;
         self.dispatcher.validate().map_err(ConfigError::Guard)?;
+        self.workers.validate().map_err(ConfigError::Guard)?;
         Ok(())
     }
 

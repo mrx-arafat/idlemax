@@ -147,7 +147,7 @@ target/debug/idlemax init
 
 ## Progress Tracking
 
-- [ ] Task 1: Add the Run, its states, the worker job section and the `[workers]` settings to the core
+- [x] Task 1: Add the Run, its states, the worker job section and the `[workers]` settings to the core
 - [ ] Task 2: Store runs, list them, and take worker jobs out of the old AI rules
 - [ ] Task 3: End a worker job instead of retrying it, and let its Run follow
 - [ ] Task 4: Name things, run child commands with a limit, and manage worktrees with plain git
@@ -213,12 +213,12 @@ Nothing uses them yet; this task fixes the names that the later tasks and the ot
 
 **Definition of Done:**
 
-- [ ] A test walks every pair of states and `may_become` allows exactly the moves listed above.
-- [ ] A spec with a `worker` section and a `cost` other than `ai` fails `validate`, `admit_job` refuses any spec with a `worker` section, and the coordinator test `worker_spec_is_refused_from_the_api` gets 400 from `POST /v1/jobs` with a message that says only the dispatcher sets it.
-- [ ] A `JobSpec` and a `JobUpdate` without the new fields serialize with no `worker` key, and one with them survives a JSON round trip.
-- [ ] `Config::parse("[workers]\nreview_cap = 0\n")` fails with a line that starts with `workers.review_cap`, an empty file parses with `clis` empty and `review_cap` 3, and `plan_reload` puts a changed `workers.review_cap` under `applied`.
-- [ ] `docs/API.md` describes `JobSpec.worker` and `JobUpdate.worker`.
-- [ ] Verify: `cargo test -p idlemax-core worker && cargo test -p idlemax-core control && cargo test -p idlemax-core config && cargo test -p idlemax --bin idlemax worker_tests && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] A test walks every pair of states and `may_become` allows exactly the moves listed above.
+- [x] A spec with a `worker` section and a `cost` other than `ai` fails `validate`, `admit_job` refuses any spec with a `worker` section, and the coordinator test `worker_spec_is_refused_from_the_api` gets 400 from `POST /v1/jobs` with a message that says only the dispatcher sets it.
+- [x] A `JobSpec` and a `JobUpdate` without the new fields serialize with no `worker` key, and one with them survives a JSON round trip.
+- [x] `Config::parse("[workers]\nreview_cap = 0\n")` fails with a line that starts with `workers.review_cap`, an empty file parses with `clis` empty and `review_cap` 3, and `plan_reload` puts a changed `workers.review_cap` under `applied`.
+- [x] `docs/API.md` describes `JobSpec.worker` and `JobUpdate.worker`.
+- [x] Verify: `cargo test -p idlemax-core worker && cargo test -p idlemax-core control && cargo test -p idlemax-core config && cargo test -p idlemax --bin idlemax worker_tests && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 2: Store runs, list them, and take worker jobs out of the old AI rules
 
