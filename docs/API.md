@@ -588,9 +588,11 @@ A heartbeat never changes it; only `POST /v1/devices/{id}/on` and `/off` do, and
 - `changed` is false when the device already had that value.
 - On an off device the Plan gives no pick and names `device <id> is off: idlemax device on <id>` as `held`, no orchestrator pass is placed there, the `dispatch-inputs` reply lists no project, no setup or check job is queued for its projects, and no dispatcher job is leased to it.
   Plain jobs keep their usual rules.
-- `off` cancels the device's queued dispatcher jobs and kills its active ones (`jobs_stopped`), as `stop_all` on each job, and stores no pause.
+- `off` first stops the device's workers with their state saved, as `POST /v1/workers/stop` stops an account's: every Run in `starting`, `running` or `checking` there becomes `shed` and its job `killed` (`runs_stopped`).
+  It then cancels the device's other queued dispatcher jobs and kills its active ones (`jobs_stopped`), as `stop_all` on each job.
+  It stores no owner stop and no pause, so after `on` the launch step relaunches the shed Runs one at a time, as the lines and the Budget allow.
   A switch that changes nothing (`changed` false) stops nothing and drops no check.
-  `runs_stopped` counts the Runs stopped with their state saved; this build reports 0.
+- `POST /v1/workers/stop` with a `device` scope is 400 and names `POST /v1/devices/<id>/off`: a stop without the switch would be undone by the next sweep.
 - A server is held like an off device until its agent proves itself with its own credential: a device whose profile is not `laptop` and whose `DeviceView.agent_auth` is `owner_token_remote`, or not known yet, gets `server <id> has no credential of its own: idlemax device credential <id>` as `held`.
   `agent_auth` is how the agent proved itself on its last heartbeat: `credential`, `owner_token_local` (the owner token from the coordinator's own host) or `owner_token_remote`; it is absent before the first heartbeat.
   A heartbeat counts as from the coordinator's own host only when its peer address is a loopback address or the address it reached the coordinator on, so an agent on the coordinator's host should talk to it on `127.0.0.1` or hold a credential.

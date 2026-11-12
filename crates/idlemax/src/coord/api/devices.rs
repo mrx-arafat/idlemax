@@ -17,6 +17,7 @@ use super::caller::Who;
 use super::http::{credential_digest, ApiFailure};
 use super::jobs::apply_control;
 use super::AppState;
+use crate::coord::dispatch::stop_workers;
 use crate::coord::store::Store;
 use crate::state::now_ms;
 
@@ -53,12 +54,11 @@ async fn switch(
     Ok(Json(reply))
 }
 
-/// Stores the switch. Off ends the device's own dispatcher jobs; on runs again the base
-/// checks of its projects that ended without a result, so `step` queues them anew. A switch
-/// that changes nothing does nothing else.
-// SHORTCUT: runs_stopped stays 0 until Spec 2's stop_workers lands, then off sheds the
-// device's Runs here with their state saved.
-pub(super) fn switch_device(
+/// Stores the switch. Off sheds the device's live Runs with their state saved, through the
+/// workers' own stop, and ends its other dispatcher jobs; on runs again the base checks of its
+/// projects that ended without a result, so `step` queues them anew. A switch that changes
+/// nothing does nothing else, and neither stores an owner stop or a pause (A23).
+pub(crate) fn switch_device(
     store: &mut Store,
     id: &str,
     on: bool,
@@ -73,6 +73,7 @@ pub(super) fn switch_device(
     let changed = plan_switch(&known, current, id, on)?.changed();
     store.set_device_dispatch(id, on, now)?;
     let mut jobs_stopped = 0;
+    let mut runs_stopped = 0;
     if on && changed {
         let projects: Vec<i64> = store
             .list_projects(Some(id))?
@@ -83,6 +84,11 @@ pub(super) fn switch_device(
             store.delete_base_check(project)?;
         }
     } else if !on && changed {
+        // The Runs first: their jobs end with them, so only the device's other dispatcher jobs
+        // (setup, check, pass) are left for `stop_targets`.
+        let why = format!("device {id} switched off");
+        let shed = stop_workers(store, &ControlScope::Device(id.into()), &why, now)?;
+        runs_stopped = u32::try_from(shed.len()).unwrap_or(u32::MAX);
         let mut jobs = store.active_jobs()?;
         jobs.extend(store.queued_jobs()?);
         for job in stop_targets(&jobs, id) {
@@ -99,7 +105,7 @@ pub(super) fn switch_device(
         device: id.to_string(),
         enabled: on,
         changed,
-        runs_stopped: 0,
+        runs_stopped,
         jobs_stopped,
     })
 }

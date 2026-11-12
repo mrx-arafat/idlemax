@@ -122,6 +122,68 @@ async fn a_switch_off_ends_the_dispatchers_jobs_and_an_off_device_leases_none() 
     );
 }
 
+/// A worker job leased to the Mac and its Run in `running`.
+fn running_worker(store: &mut Store, task: &str) -> i64 {
+    use idlemax_core::worker::run::{Run, RunLaunch, RunState};
+    use idlemax_core::worker::WorkerSpec;
+    let spec = JobSpec {
+        name: format!("worker:app:{task}"),
+        command: vec!["true".into()],
+        devices: vec!["mac".into()],
+        ai_account: Some("max".into()),
+        cost: idlemax_core::types::CostClass::Ai,
+        worker: Some(WorkerSpec::default()),
+        ..JobSpec::default()
+    };
+    let job = store.insert_job(&spec, T0).unwrap().id;
+    store.lease_job(job, "mac", T0 + 60_000, T0).unwrap();
+    let run = Run {
+        device: "mac".into(),
+        project: "app".into(),
+        task: task.into(),
+        state: RunState::Running,
+        job: Some(job),
+        start_ms: T0,
+        updated_ms: T0,
+        ..Run::default()
+    };
+    store.insert_run(&run, &RunLaunch::default()).unwrap();
+    job
+}
+
+#[test]
+fn a_switch_off_sheds_the_devices_workers_and_stores_no_owner_stop() {
+    use idlemax_core::worker::run::RunState;
+    let mut store = Store::open_in_memory().unwrap();
+    store.record_heartbeat(&roomy("mac"), T0).unwrap();
+    store.set_device_dispatch("mac", true, T0).unwrap();
+    let workers = [
+        running_worker(&mut store, "a"),
+        running_worker(&mut store, "b"),
+    ];
+    let check = check_job(&mut store);
+    store.lease_job(check, "mac", T0 + 60_000, T0).unwrap();
+    let plain = JobSpec {
+        name: "build".into(),
+        command: vec!["true".into()],
+        ..JobSpec::default()
+    };
+    let plain = store.insert_job(&plain, T0).unwrap().id;
+    store.lease_job(plain, "mac", T0 + 60_000, T0).unwrap();
+
+    let reply = switch_device(&mut store, "mac", false, T0).unwrap();
+    assert_eq!((reply.runs_stopped, reply.jobs_stopped), (2, 1));
+    let runs = store.list_runs(None, None, 0).unwrap();
+    assert!(runs.iter().all(|r| r.state == RunState::Shed), "{runs:?}");
+    let status = |id| store.get_job(id).unwrap().unwrap().status;
+    for job in [workers[0], workers[1], check] {
+        assert_eq!(status(job), JobStatus::Killed, "job {job}");
+    }
+    assert_eq!(status(plain), JobStatus::Leased);
+    assert!(store.worker_stop().unwrap().is_none());
+    assert!(store.paused_scopes().unwrap().is_empty());
+}
+
 fn credential_of(res: serde_json::Value) -> String {
     res["credential"].as_str().unwrap().to_string()
 }

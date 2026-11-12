@@ -396,9 +396,9 @@ Switching a device off stops its workers with their state saved and ends the dis
 - [x] `POST /v1/devices/mac/on` answers `changed` true the first time and false the second, and `GET /v1/status` then shows `enabled` true for it.
 - [x] `POST /v1/devices/nope/on` answers 404 with a message that lists the known device ids, and a device id that holds a space is switched through its percent-encoded path.
 - [x] With a caller lookup that returns a chain marked for this home, `on` answers 403 and `off` answers 200.
-- [ ] For an off device with one project on: the Plan has no pick and gives the `off_reason` text as `held`, `may_launch` refuses, a `shed` run of that device is not relaunched, `pass_due` refuses, the dispatch-inputs reply is empty, `step` queues no job, and `lease_lines` leaves a queued `dispatch-check` job unleased.
-- [ ] Switching off a device with two running workers and one running check job leaves both Runs `shed`, all three jobs `killed`, reports `runs_stopped` 2 and `jobs_stopped` 1 and stores no owner stop row and no pause; a plain job leased to that device is untouched.
-- [ ] After `on`, `launch_due` relaunches the two Runs one at a time, and `step` queues the check again.
+- [x] For an off device with one project on: the Plan has no pick and gives the `off_reason` text as `held`, `may_launch` refuses, a `shed` run of that device is not relaunched, `pass_due` refuses, the dispatch-inputs reply is empty, `step` queues no job, and `lease_lines` leaves a queued `dispatch-check` job unleased.
+- [x] Switching off a device with two running workers and one running check job leaves both Runs `shed`, all three jobs `killed`, reports `runs_stopped` 2 and `jobs_stopped` 1 and stores no owner stop row and no pause; a plain job leased to that device is untouched.
+- [x] After `on`, `launch_due` relaunches the two Runs one at a time, and `step` queues the check again.
 - [x] `dispatcher_view` over an off device with one project on holds the "needs you" entry `device:<id>:off`.
 - [x] The dispatcher tests of Specs 1 to 4 pass with their device switched on and no changed assertion, and `cargo test -p idlemax --test e2e` passes with no device switched on.
 - [x] `docs/API.md` lists both routes, their replies and `DeviceView.enabled`.

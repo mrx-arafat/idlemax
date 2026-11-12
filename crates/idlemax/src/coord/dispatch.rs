@@ -307,6 +307,8 @@ fn launched(store: &mut Store, run: &Run, job: &Job, now: UnixMs) -> Result<(), 
     Ok(())
 }
 
+#[cfg(test)]
+mod device_tests;
 mod facts;
 mod job;
 #[cfg(test)]

@@ -95,7 +95,13 @@ pub async fn stop(
                     done
                 }
                 ControlScope::Account(_) => stop_workers(store, &req.scope, &why, now)?,
-                ControlScope::Device(_) => return Err(bad(StopError::Scope("device"))),
+                // A stop without the switch would be undone by the next sweep, which
+                // relaunches shed Runs.
+                ControlScope::Device(d) => {
+                    return Err(ApiFailure::BadRequest(format!(
+                        "use POST /v1/devices/{d}/off to stop a device's workers"
+                    )))
+                }
                 ControlScope::Job(_) => return Err(bad(StopError::Scope("job"))),
             };
             Ok::<_, ApiFailure>(StopReply {

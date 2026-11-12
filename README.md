@@ -941,7 +941,7 @@ Every device is off for the dispatcher too, the Mac included, until you switch i
 ```sh
 idlemax device list     # every device and whether the dispatcher may use it
 idlemax device on mac   # let the dispatcher use this device
-idlemax device off mac  # stop its dispatcher jobs there; plain jobs keep running
+idlemax device off mac  # stop its workers (state saved) and dispatcher jobs; plain jobs keep running
 ```
 
 `add` sets the base branch to the local branch `origin/HEAD` names, else to the branch checked out now; change it with `project set <name> base <branch>`.

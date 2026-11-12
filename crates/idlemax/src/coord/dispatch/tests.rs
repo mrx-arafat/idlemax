@@ -11,12 +11,12 @@ use idlemax_core::worker::WorkerAction;
 use super::*;
 use crate::coord::api::plan::tests::{finish, pass_world, T0};
 
-const FASTER: &str = "roadmap:1:faster-sync";
-const DARK: &str = "roadmap:1:dark-mode";
+pub(super) const FASTER: &str = "roadmap:1:faster-sync";
+pub(super) const DARK: &str = "roadmap:1:dark-mode";
 
 /// A heartbeat of the Mac at `at` with the 5-hour window at `five` percent, the room in
 /// `state`, and the jobs it reports running.
-fn beat(store: &mut Store, at: UnixMs, five: f64, state: LineState, running: &[i64]) {
+pub(super) fn beat(store: &mut Store, at: UnixMs, five: f64, state: LineState, running: &[i64]) {
     let snap = |window, used| QuotaSnapshot {
         account: "max".into(),
         window,
@@ -56,7 +56,7 @@ fn beat(store: &mut Store, at: UnixMs, five: f64, state: LineState, running: &[i
 /// The world of Spec 1's pass tests with a pass that picked both roadmap items, and a live
 /// config in `auto` with Claude workers allowed. A Run is estimated at 1 percent, so the
 /// measuring week's 10 percent (A7) leaves room for the launches these tests are about.
-fn world() -> (Store, Config, Config) {
+pub(super) fn world() -> (Store, Config, Config) {
     let (mut store, mut cfg, _) = pass_world();
     cfg.quota.seed_standard_pct = 1.0;
     crate::dispatch::step(&mut store, &cfg, &cfg, "rules", T0, false).unwrap();
@@ -74,7 +74,13 @@ fn world() -> (Store, Config, Config) {
     (store, cfg, live)
 }
 
-fn sweep(store: &mut Store, cfg: &Config, live: &Config, refusals: &mut Refusals, now: UnixMs) {
+pub(super) fn sweep(
+    store: &mut Store,
+    cfg: &Config,
+    live: &Config,
+    refusals: &mut Refusals,
+    now: UnixMs,
+) {
     let step = LaunchStep {
         cfg,
         live,
@@ -84,7 +90,7 @@ fn sweep(store: &mut Store, cfg: &Config, live: &Config, refusals: &mut Refusals
     launch_due(store, &step, refusals).unwrap();
 }
 
-fn runs(store: &Store) -> Vec<Run> {
+pub(super) fn runs(store: &Store) -> Vec<Run> {
     let mut all = store.list_runs(None, None, 0).unwrap();
     all.reverse();
     all

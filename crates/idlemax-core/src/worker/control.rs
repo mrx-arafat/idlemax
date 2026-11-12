@@ -1,7 +1,7 @@
 //! Domain: stopping and continuing workers as a whole. The owner's global stop moves every
 //! live Run to `stopped`, which only the owner's start moves on (D11); an account stop (the
-//! 5-hour line, the cap, a rate limit) moves that account's live Runs to `shed`, so they
-//! continue by themselves when the account allows it (A18). Pure.
+//! 5-hour line, the cap, a rate limit) and a device switched off move that scope's live Runs
+//! to `shed`, so they continue by themselves when it allows them again (A18, A23). Pure.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,8 @@ use super::RunId;
 use crate::types::{ControlScope, UnixMs};
 
 /// `POST /v1/workers/stop`: `global` is the owner's stop, `account` the stop Spec 3 asks
-/// for; `device` and `job` are refused until Spec 5.
+/// for. A device is stopped by switching it off (`POST /v1/devices/<id>/off`), which this
+/// route points to.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StopRequest {
     pub scope: ControlScope,
@@ -39,7 +40,7 @@ pub struct StartReply {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StopError {
-    #[error("workers are stopped as a whole or per account; a {0} scope is not supported yet")]
+    #[error("workers are stopped as a whole, per account or per device; not per {0}")]
     Scope(&'static str),
 }
 
@@ -49,10 +50,10 @@ pub fn plan_stop(
     scope: &ControlScope,
     now_ms: UnixMs,
 ) -> Result<Vec<(Run, RunState)>, StopError> {
-    let (target, account) = match scope {
-        ControlScope::Global => (RunState::Stopped, None),
-        ControlScope::Account(a) => (RunState::Shed, Some(a.as_str())),
-        ControlScope::Device(_) => return Err(StopError::Scope("device")),
+    let (target, account, device) = match scope {
+        ControlScope::Global => (RunState::Stopped, None, None),
+        ControlScope::Account(a) => (RunState::Shed, Some(a.as_str()), None),
+        ControlScope::Device(d) => (RunState::Shed, None, Some(d.as_str())),
         ControlScope::Job(_) => return Err(StopError::Scope("job")),
     };
     let live = |r: &&Run| {
@@ -65,6 +66,7 @@ pub fn plan_stop(
         .iter()
         .filter(live)
         .filter(|r| account.is_none_or(|a| r.account == a))
+        .filter(|r| device.is_none_or(|d| r.device == d))
         .map(|r| (moved(r, target, now_ms), r.state))
         .collect())
 }
@@ -121,7 +123,13 @@ mod tests {
         let max = plan_stop(&runs, &ControlScope::Account("max".into()), 9).unwrap();
         assert_eq!(max.len(), 1);
         assert_eq!((max[0].0.id, max[0].0.state), (1, RunState::Shed));
-        assert!(plan_stop(&runs, &ControlScope::Device("mac".into()), 9).is_err());
+        // A device switched off sheds its own live Runs, so they continue once it is on.
+        let mut on_box = runs.clone();
+        on_box[1].device = "box".into();
+        let off = plan_stop(&on_box, &ControlScope::Device("box".into()), 9).unwrap();
+        assert_eq!(off.len(), 1);
+        assert_eq!((off[0].0.id, off[0].0.state), (2, RunState::Shed));
+        assert!(plan_stop(&runs, &ControlScope::Job(1), 9).is_err());
     }
 
     #[test]
