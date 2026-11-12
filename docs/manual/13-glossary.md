@@ -34,7 +34,7 @@
 | **Mode** | the dispatcher's setting: `off`, `propose` or `auto` |
 | **Needs you** | a list of tasks idlemax could not do alone, each with the reason |
 | **Notice** | one of the three things that interrupt you: finished tasks, something needs you, the daily summary |
-| **Off-limits** | paths of a project a worker must not touch: yours, plus `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/` unless `default-off-limits` is `off` |
+| **Off-limits** | paths of a project a worker must not touch: yours, plus the 14 defaults (CI and release config, secret files, agent and tool config such as hooks and MCP servers; listed in [chapter 5](05-dispatcher.md#the-orchestrator-pass)) unless `default-off-limits` is `off` |
 | **Orchestrator** | the short Claude Opus pass that picks task, account and model for each open slot |
 | **Owner** | you: the person whose machines and quota these are |
 | **Owner session** | an agent session or app you started; idlemax never stops one, edits its files or shares its folder |
