@@ -134,7 +134,7 @@ The repository is public: no address, host name or device id of the owner's mach
 - [x] Task 2: Feed the Linux readings into the worker room
 - [ ] Task 3: Switch devices on and off on the coordinator
 - [ ] Task 4: Add idlemax device on and off, the device toggle and the read-only limits
-- [ ] Task 5: Read each device's Claude login and check the logins in doctor
+- [x] Task 5: Read each device's Claude login and check the logins in doctor
 - [ ] Task 6: Keep one Budget per login and pace a server-only account
 - [ ] Task 7: Run the base checks again when the day's budget is spent
 - [ ] Task 8: Add the headless runner
@@ -524,13 +524,13 @@ Where idlemax cannot tell, it says so, keeps the last good reading for a day and
 
 **Definition of Done:**
 
-- [ ] `claude_login` returns `In` with the `orgId` for a logged-in reply, `In` with no id for a logged-in reply without `orgId`, `Out` for `{"loggedIn": false}` and `Unknown` for text that is not JSON.
-- [ ] A reply that holds an `email` key gives a result whose debug text does not contain that value.
-- [ ] `codex_login` returns `In` for exit code 0, `Out` for `Not logged in` with exit code 1, and `Unknown` for exit code 2 or a timeout.
-- [ ] `keep_last_good` returns the earlier `In` for an `Unknown` reading 23 hours later, the `Unknown` reading 25 hours later, and always the new reading when it is `In` or `Out`.
-- [ ] With a stub `claude` that writes a marker file and a config with no account, the device info has no `claude_login` and the marker file does not exist; with one `claude` account in the config and a stub that reports an id, the device info carries `In` with that id.
-- [ ] In `tests/doctor.rs`, with one `claude` account in the temp config and a stub `claude` first on `PATH` that prints `{"loggedIn": false}`, `idlemax doctor --json` holds a check `login.claude` at level `warn` whose detail starts with `needs you:`; a stub that prints other text gives a detail that starts with `cannot tell whether`; with no account the report holds no `login.` check.
-- [ ] Verify: `cargo test -p idlemax-core quota::login && cargo test -p idlemax --bin idlemax doctor::logins && cargo test -p idlemax --bin idlemax agent::metrics && cargo test -p idlemax --test doctor && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `claude_login` returns `In` with the `orgId` for a logged-in reply, `In` with no id for a logged-in reply without `orgId`, `Out` for `{"loggedIn": false}` and `Unknown` for text that is not JSON.
+- [x] A reply that holds an `email` key gives a result whose debug text does not contain that value.
+- [x] `codex_login` returns `In` for exit code 0, `Out` for `Not logged in` with exit code 1, and `Unknown` for exit code 2 or a timeout.
+- [x] `keep_last_good` returns the earlier `In` for an `Unknown` reading 23 hours later, the `Unknown` reading 25 hours later, and always the new reading when it is `In` or `Out`.
+- [x] With a stub `claude` that writes a marker file and a config with no account, the device info has no `claude_login` and the marker file does not exist; with one `claude` account in the config and a stub that reports an id, the device info carries `In` with that id.
+- [x] In `tests/doctor.rs`, with one `claude` account in the temp config and a stub `claude` first on `PATH` that prints `{"loggedIn": false}`, `idlemax doctor --json` holds a check `login.claude` at level `warn` whose detail starts with `needs you:`; a stub that prints other text gives a detail that starts with `cannot tell whether`; with no account the report holds no `login.` check.
+- [x] Verify: `cargo test -p idlemax-core quota::login && cargo test -p idlemax --bin idlemax doctor::logins && cargo test -p idlemax --bin idlemax agent::metrics && cargo test -p idlemax --test doctor && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 
 ### Task 6: Keep one Budget per login and pace a server-only account
 

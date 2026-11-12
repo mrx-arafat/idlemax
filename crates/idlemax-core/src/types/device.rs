@@ -115,4 +115,7 @@ pub struct DeviceInfo {
     /// Config `agent.command_allowlist`: the only argv[0] values this device runs.
     /// None means the agent predates the field, so the coordinator cannot tell.
     pub command_allowlist: Option<Vec<String>>,
+    /// Claude login reported by the agent. None means the agent did not ask.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_login: Option<crate::quota::login::Login>,
 }

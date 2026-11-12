@@ -9,6 +9,7 @@ mod caps;
 mod cmd;
 pub mod disk;
 mod linux;
+pub mod login;
 mod macos;
 mod macos_vm;
 
@@ -16,7 +17,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use idlemax_core::config::AgentConfig;
-use idlemax_core::types::{DeviceInfo, MemoryPressure, MetricsSnapshot, Os};
+use idlemax_core::quota::login::{keep_last_good, Login};
+use idlemax_core::types::{DeviceInfo, MemoryPressure, MetricsSnapshot, Os, UnixMs};
 use sysinfo::System;
 
 use crate::state::now_ms;
@@ -46,6 +48,7 @@ pub struct Sampler {
     prev_therm: Option<(Option<bool>, Instant)>,
     #[cfg(target_os = "macos")]
     prev_swapins: SwapInMark,
+    last_claude_login: Option<(Login, UnixMs)>,
 }
 
 impl Sampler {
@@ -64,6 +67,7 @@ impl Sampler {
             prev_therm: None,
             #[cfg(target_os = "macos")]
             prev_swapins: None,
+            last_claude_login: None,
         })
     }
 
@@ -130,10 +134,69 @@ impl Sampler {
     fn fill_os_signals(&mut self, _s: &mut MetricsSnapshot) {}
 
     /// Static device description. Id is `agent.device_id`, else the short hostname.
-    pub fn device_info(&mut self, cfg: &AgentConfig) -> DeviceInfo {
+    pub fn device_info(&mut self, cfg: &AgentConfig, has_claude_account: bool) -> DeviceInfo {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let capabilities = caps::detect();
+        self.device_info_internal(cfg, has_claude_account, capabilities, &path, now_ms())
+    }
+
+    #[cfg(test)]
+    pub fn device_info_on_path(
+        &mut self,
+        cfg: &AgentConfig,
+        has_claude_account: bool,
+        path: &std::ffi::OsStr,
+    ) -> DeviceInfo {
+        self.device_info_at(cfg, has_claude_account, path, now_ms())
+    }
+
+    #[cfg(test)]
+    pub fn device_info_at(
+        &mut self,
+        cfg: &AgentConfig,
+        has_claude_account: bool,
+        path: &std::ffi::OsStr,
+        now: UnixMs,
+    ) -> DeviceInfo {
+        let capabilities = caps::detect_on_path(path, caps::KNOWN_TOOLS);
+        self.device_info_internal(cfg, has_claude_account, capabilities, path, now)
+    }
+
+    /// Updates the stored Claude login with `new_login` at `now_ms` and returns the effective login.
+    /// Stores `(new_login, now_ms)` only when the new reading itself is `In`.
+    pub fn update_claude_login(&mut self, new_login: Login, now_ms: UnixMs) -> Login {
+        if matches!(new_login, Login::In { .. }) {
+            self.last_claude_login = Some((new_login.clone(), now_ms));
+        } else if matches!(new_login, Login::Out) {
+            self.last_claude_login = None;
+        }
+        keep_last_good(
+            self.last_claude_login.as_ref().map(|(l, t)| (l, *t)),
+            new_login,
+            now_ms,
+        )
+    }
+
+    fn device_info_internal(
+        &mut self,
+        cfg: &AgentConfig,
+        has_claude_account: bool,
+        capabilities: Vec<String>,
+        path: &std::ffi::OsStr,
+        now: UnixMs,
+    ) -> DeviceInfo {
         self.sys.refresh_memory();
         let hostname = System::host_name().unwrap_or_default();
         let os = Os::current();
+        let has_claude_tool = capabilities.iter().any(|c| c == "claude");
+
+        let claude_login = if has_claude_tool && has_claude_account {
+            let new_login = login::read_claude_login(path);
+            Some(self.update_claude_login(new_login, now))
+        } else {
+            None
+        };
+
         DeviceInfo {
             id: cfg
                 .device_id
@@ -145,11 +208,12 @@ impl Sampler {
             arch: System::cpu_arch(),
             cpu_count: self.sys.cpus().len() as u32,
             mem_total_bytes: self.sys.total_memory(),
-            capabilities: caps::detect(),
+            capabilities,
             ai_accounts: cfg.ai_accounts.clone(),
             agent_version: idlemax_core::VERSION.to_string(),
             profile: cfg.profile_or_default(os),
             command_allowlist: Some(cfg.command_allowlist.clone()),
+            claude_login,
         }
     }
 }
@@ -220,5 +284,98 @@ fn pressure_from_level(level: u32) -> Option<MemoryPressure> {
         2 => Some(MemoryPressure::Warn),
         4 => Some(MemoryPressure::Critical),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_stub_claude_marker_and_device_info() {
+        let dir = tempdir().unwrap();
+        let stub = dir.path().join("claude");
+        let marker = dir.path().join("marker.txt");
+        let script = format!(
+            "#!/bin/sh\ntouch \"{}\"\necho '{{\"loggedIn\": true, \"orgId\": \"org-test-99\"}}'\n",
+            marker.display()
+        );
+        fs::write(&stub, script).unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut sampler = Sampler::new().unwrap();
+        let cfg = AgentConfig::default();
+
+        // 1. Config with no account: marker file must NOT exist, claude_login is None
+        let dev1 = sampler.device_info_on_path(&cfg, false, dir.path().as_os_str());
+        assert_eq!(dev1.claude_login, None);
+        assert!(
+            !marker.exists(),
+            "marker must not be created when no claude account configured"
+        );
+
+        // 2. Config with one claude account: marker file created, claude_login is In with id
+        let dev2 = sampler.device_info_on_path(&cfg, true, dir.path().as_os_str());
+        assert!(
+            marker.exists(),
+            "marker should be created by stub execution"
+        );
+        assert_eq!(
+            dev2.claude_login,
+            Some(Login::In {
+                id: Some("org-test-99".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn test_claude_login_time_decay() {
+        let dir = tempdir().unwrap();
+        let stub = dir.path().join("claude");
+        let mut sampler = Sampler::new().unwrap();
+        let cfg = AgentConfig::default();
+
+        let t0: UnixMs = 1_000_000_000;
+        let t_23h = t0 + 23 * 3_600_000;
+        let t_25h = t0 + 25 * 3_600_000;
+
+        // 1. In at t0: stub prints logged-in JSON
+        fs::write(
+            &stub,
+            "#!/bin/sh\necho '{\"loggedIn\": true, \"orgId\": \"org-decay-1\"}'\n",
+        )
+        .unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let dev_t0 = sampler.device_info_at(&cfg, true, dir.path().as_os_str(), t0);
+        assert_eq!(
+            dev_t0.claude_login,
+            Some(Login::In {
+                id: Some("org-decay-1".to_string())
+            })
+        );
+
+        // Stub fails from now on
+        fs::write(&stub, "#!/bin/sh\necho 'internal server error'\n").unwrap();
+
+        // 2. Unknown at t0+23h: reports earlier In
+        let dev_23h = sampler.device_info_at(&cfg, true, dir.path().as_os_str(), t_23h);
+        assert_eq!(
+            dev_23h.claude_login,
+            Some(Login::In {
+                id: Some("org-decay-1".to_string())
+            })
+        );
+
+        // 3. Unknown at t0+25h: reports Unknown
+        let dev_25h = sampler.device_info_at(&cfg, true, dir.path().as_os_str(), t_25h);
+        assert!(
+            matches!(dev_25h.claude_login, Some(Login::Unknown { .. })),
+            "at t0+25h expected Unknown, got {:?}",
+            dev_25h.claude_login
+        );
     }
 }

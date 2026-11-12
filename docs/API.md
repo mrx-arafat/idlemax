@@ -367,6 +367,11 @@ It is `null` for an agent that predates the field, and such a device is not filt
 The older names `macos_laptop` and `linux_server` are accepted on input as aliases.
 An older coordinator cannot read the new profile names, so the coordinator is upgraded before any agent.
 
+`DeviceInfo.claude_login` is the device's Claude login state, sent with every heartbeat when the device has `claude` and a configured Claude account. It is `null` when the agent did not ask (no Claude account configured or tool absent), or one of three states:
+- `{"state": "in", "id": "..."}`: logged in, with the organization id (or `null` when not reported).
+- `{"state": "out"}`: logged out.
+- `{"state": "unknown", "reason": "..."}`: status could not be determined (e.g. timeout or parse error).
+
 ## How much of each device is used
 
 `GET /v1/status` (and the reply of `POST /v1/control`) answers "how much is used, how much is idle, and why" without a `why` call per job.

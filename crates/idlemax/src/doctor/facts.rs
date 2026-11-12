@@ -9,6 +9,7 @@ pub enum CmdOutcome {
     /// Ran to completion; `code` is None when a signal ended it.
     Ran {
         code: Option<i32>,
+        stdout: String,
         stderr: String,
     },
     /// The program is not installed.
@@ -29,6 +30,7 @@ pub async fn output(mut cmd: tokio::process::Command, timeout: Duration) -> CmdO
         Ok(Err(e)) => CmdOutcome::Spawn(e),
         Ok(Ok(out)) => CmdOutcome::Ran {
             code: out.status.code(),
+            stdout: String::from_utf8_lossy(&out.stdout).trim().to_string(),
             stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
         },
     }

@@ -58,12 +58,20 @@ impl Probes {
         self.agent_cfg = cfg;
     }
 
+    fn has_claude_account(&self) -> bool {
+        self.quota
+            .accounts
+            .iter()
+            .any(|a| a.provider == idlemax_core::quota::Provider::Claude)
+    }
+
     pub fn device_info(&mut self, cfg: &AgentConfig) -> DeviceInfo {
-        self.sampler.device_info(cfg)
+        self.sampler.device_info(cfg, self.has_claude_account())
     }
 
     pub fn refresh_device_info(&mut self) -> DeviceInfo {
-        self.sampler.device_info(&self.agent_cfg)
+        self.sampler
+            .device_info(&self.agent_cfg, self.has_claude_account())
     }
 
     /// `job_dirs` are the working directories of the running jobs; the disk reading covers

@@ -373,7 +373,7 @@ warn  coordinator  http://127.0.0.1:7878 is up; the token was not checked
 ...
 ```
 
-- The checks are `home`, `config` (unknown keys are named), `token`, `coordinator` (reachable, accepts the token, same version), `agent`, `allowlist`, `disk`, `ai`, `gh` and `service`.
+- The checks are `home`, `config` (unknown keys are named), `token`, `coordinator` (reachable, accepts the token, same version), `agent`, `allowlist`, `disk`, `ai`, `login` (for agent CLIs your accounts need), `gh` and `service`.
 - It is read-only: it never runs `launchctl` or `systemctl` and starts nothing, and one broken check does not hide the others.
 - The exit code is 1 when any check fails and 0 otherwise, so a warn alone does not fail a script; `--json` prints the report, and `--coord URL` checks another coordinator.
 - It checks this device only, so run it on each one.

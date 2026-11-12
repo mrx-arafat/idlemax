@@ -101,6 +101,27 @@ fn doctor(home: &Path, state: &Path, extra: &[&str]) -> (i32, Value) {
     (out.status.code().unwrap_or(-1), json)
 }
 
+fn doctor_with_path(home: &Path, state: &Path, path: &str) -> (i32, Value) {
+    assert_isolated(state);
+    let out = Command::new(BIN)
+        .args(["doctor", "--json"])
+        .env("HOME", home)
+        .env("IDLEMAX_HOME", state)
+        .env("PATH", path)
+        .env_remove("IDLEMAX_TOKEN")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "doctor --json is not JSON: {e}\n{stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    (out.status.code().unwrap_or(-1), json)
+}
+
 fn check<'a>(report: &'a Value, id: &str) -> &'a Value {
     report["checks"]
         .as_array()
@@ -430,4 +451,69 @@ async fn doctor_reports_healthy_and_every_broken_case() {
         "{text}"
     );
     assert!(text.contains("11 checks: 10 ok, 1 warn, 0 fail"), "{text}");
+}
+
+#[test]
+fn doctor_checks_claude_login() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let state = temp.path().join("state");
+    let bin_dir = temp.path().join("bin");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    set_mode(&state, 0o700);
+
+    let coord_port = free_port();
+    let agent_port = free_port();
+    let claude_bin = bin_dir.join("claude");
+
+    // Case 1: with no account the report holds no login. check
+    write_config(&state, coord_port, agent_port, NO_DISK_GUARD, "[]");
+    let (_, report) = doctor(&home, &state, &[]);
+    let has_login = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["id"].as_str().unwrap().starts_with("login."));
+    assert!(
+        !has_login,
+        "no login check expected when no account configured"
+    );
+
+    // Append one claude account to config
+    let config_path = state.join("config.toml");
+    let mut config_text = std::fs::read_to_string(&config_path).unwrap();
+    config_text.push_str("\n\n[[quota.accounts]]\nname = \"claude-main\"\nprovider = \"claude\"\n");
+    std::fs::write(&config_path, &config_text).unwrap();
+
+    // System PATH + bin_dir first
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let test_path = format!("{}:{current_path}", bin_dir.display());
+
+    // Case 2: stub claude prints {"loggedIn": false}
+    std::fs::write(&claude_bin, "#!/bin/sh\necho '{\"loggedIn\": false}'\n").unwrap();
+    set_mode(&claude_bin, 0o755);
+
+    let (_, report_logged_out) = doctor_with_path(&home, &state, &test_path);
+    let check_logged_out = check(&report_logged_out, "login.claude");
+    assert_eq!(check_logged_out["level"], "warn");
+    let detail = check_logged_out["detail"].as_str().unwrap();
+    assert!(
+        detail.starts_with("needs you:"),
+        "detail should start with 'needs you:', got: {detail}"
+    );
+
+    // Case 3: stub prints other text
+    std::fs::write(&claude_bin, "#!/bin/sh\necho 'internal server error 500'\n").unwrap();
+    set_mode(&claude_bin, 0o755);
+
+    let (_, report_other) = doctor_with_path(&home, &state, &test_path);
+    let check_other = check(&report_other, "login.claude");
+    assert_eq!(check_other["level"], "warn");
+    let detail_other = check_other["detail"].as_str().unwrap();
+    assert!(
+        detail_other.starts_with("cannot tell whether"),
+        "detail should start with 'cannot tell whether', got: {detail_other}"
+    );
 }

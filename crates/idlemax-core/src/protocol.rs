@@ -96,6 +96,21 @@ impl Heartbeat {
                 return Err(problem);
             }
         }
+        if let Some(login) = &d.claude_login {
+            match login {
+                crate::quota::login::Login::In { id: Some(id) } => {
+                    if let Some(problem) = name_problem("device.claude_login.id", id, 128) {
+                        return Err(problem);
+                    }
+                }
+                crate::quota::login::Login::Unknown { reason } => {
+                    if let Some(problem) = name_problem("device.claude_login.reason", reason, 200) {
+                        return Err(problem);
+                    }
+                }
+                _ => {}
+            }
+        }
         match &d.command_allowlist {
             Some(list) if list.len() > MAX_ALLOWLIST_ENTRIES => Err(format!(
                 "device.command_allowlist has more than {MAX_ALLOWLIST_ENTRIES} entries"
@@ -289,5 +304,54 @@ pub struct ApiError {
 impl ApiError {
     pub fn new(msg: impl Into<String>) -> Self {
         Self { error: msg.into() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::quota::login::Login;
+
+    #[test]
+    fn test_heartbeat_check_claude_login() {
+        let mut hb = Heartbeat::default();
+        hb.device.id = "dev-1".to_string();
+        hb.device.hostname = "host".to_string();
+        hb.device.agent_version = "0.2.0".to_string();
+
+        hb.device.claude_login = Some(Login::In {
+            id: Some("org-ok".to_string()),
+        });
+        assert!(hb.check().is_ok());
+
+        // id over 128 chars
+        hb.device.claude_login = Some(Login::In {
+            id: Some("a".repeat(129)),
+        });
+        assert!(hb.check().is_err());
+
+        // id with control char
+        hb.device.claude_login = Some(Login::In {
+            id: Some("org\nline".to_string()),
+        });
+        assert!(hb.check().is_err());
+
+        // reason over 200 chars
+        hb.device.claude_login = Some(Login::Unknown {
+            reason: "r".repeat(201),
+        });
+        assert!(hb.check().is_err());
+
+        // reason within 200 chars
+        hb.device.claude_login = Some(Login::Unknown {
+            reason: "r".repeat(200),
+        });
+        assert!(hb.check().is_ok());
+
+        // Out or None
+        hb.device.claude_login = Some(Login::Out);
+        assert!(hb.check().is_ok());
+        hb.device.claude_login = None;
+        assert!(hb.check().is_ok());
     }
 }
