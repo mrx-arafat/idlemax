@@ -68,7 +68,7 @@ fn project_node(v: &ProjectView) -> Node {
         ("owner_active", Node::Bool(v.owner_active)),
         (
             "base",
-            Node::str(p.settings.base_branch.clone().unwrap_or_default()),
+            Node::str(p.settings.base_branch.clone().unwrap_or_else(|| "-".into())),
         ),
         ("check", Node::str(words(&p.settings.check_command))),
         ("path", Node::str(&p.path)),

@@ -81,21 +81,7 @@ pub async fn run(cmd: ProjectCmd, c: &ApiClient, out: &Out) -> Result<()> {
         }
         ProjectCmd::On { name, device } => switch(c, &name, device, true, out).await,
         ProjectCmd::Off { name, device } => switch(c, &name, device, false, out).await,
-        ProjectCmd::Add { path, name, device } => {
-            let root = repo_root(&path).await?;
-            let new = NewProject {
-                path: root,
-                device,
-                name,
-            };
-            let (view, created) = c.add_project(&new).await?;
-            let result = if created {
-                "added (off)"
-            } else {
-                "already known"
-            };
-            emit(out, result, &view)
-        }
+        ProjectCmd::Add { path, name, device } => add(c, &path, name, device, out).await,
         ProjectCmd::Set {
             name,
             setting,
@@ -110,6 +96,36 @@ pub async fn run(cmd: ProjectCmd, c: &ApiClient, out: &Out) -> Result<()> {
             emit(out, &shown, &view)
         }
     }
+}
+
+/// Adds the checkout as a project that is off, with its branch as the base when known.
+async fn add(
+    c: &ApiClient,
+    path: &Path,
+    name: Option<String>,
+    device: Option<String>,
+    out: &Out,
+) -> Result<()> {
+    let root = repo_root(path).await?;
+    let new = NewProject {
+        path: root,
+        device,
+        name,
+    };
+    let (mut view, created) = c.add_project(&new).await?;
+    if created && view.project.settings.base_branch.is_none() {
+        if let Some(base) = base_branch(Path::new(&view.project.path)).await {
+            let mut settings = view.project.settings.clone();
+            settings.base_branch = Some(base);
+            view = c.set_project_settings(view.project.id, &settings).await?;
+        }
+    }
+    let result = if created {
+        "added (off)"
+    } else {
+        "already known"
+    };
+    emit(out, result, &view)
 }
 
 async fn switch(
@@ -237,6 +253,15 @@ fn list(values: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// The branch a new project starts from: the local branch `origin/HEAD` names, else the
+/// branch checked out now; None for a detached HEAD or no repository.
+async fn base_branch(root: &Path) -> Option<String> {
+    match crate::dispatch::repo::default_branch(root).await {
+        Some(b) => Some(b),
+        None => crate::dispatch::repo::current_branch(root).await,
+    }
+}
+
 /// The main working tree of the repository that holds `path`, on this machine.
 async fn repo_root(path: &Path) -> Result<String> {
     let not_git = || -> anyhow::Error {
@@ -262,5 +287,20 @@ async fn repo_root(path: &Path) -> Result<String> {
     match (common.file_name(), common.parent()) {
         (Some(n), Some(root)) if n == ".git" => Ok(root.to_string_lossy().into_owned()),
         _ => Err(not_git()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dispatch::repo::tests::repo;
+
+    #[tokio::test]
+    async fn an_added_checkout_gets_its_branch_as_the_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("app");
+        repo(&root);
+        assert_eq!(base_branch(&root).await.as_deref(), Some("main"));
+        assert_eq!(base_branch(&dir.path().join("none")).await, None);
     }
 }

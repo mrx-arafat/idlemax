@@ -869,6 +869,7 @@ idlemax plan            # which workers it would launch now, on what, and why; i
 idlemax mode off        # plan nothing
 idlemax mode propose    # show what it would launch, and launch nothing (the default)
 ```
+`add` sets the base branch to the local branch `origin/HEAD` names, else to the branch checked out now; change it with `project set <name> base <branch>`.
 `--device <id>` picks a device when the same name exists on more than one.
 
 Every minute each agent tells the coordinator which git repositories its Herdr panes are in, whether one of your agent sessions is working there, and, for projects you switched on, the base commit, the roadmap items and your changed files.

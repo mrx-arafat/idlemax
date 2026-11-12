@@ -153,6 +153,12 @@ pub async fn default_branch(root: &Path) -> Option<String> {
     Some(name)
 }
 
+/// The branch checked out now; None for a detached HEAD.
+pub async fn current_branch(root: &Path) -> Option<String> {
+    let name = git(root, &["symbolic-ref", "--short", "-q", "HEAD"]).await?;
+    Some(name.trim().to_string()).filter(|n| !n.is_empty())
+}
+
 /// The commit at the tip of the local base branch.
 pub async fn base_commit(root: &Path, base: &str) -> Option<String> {
     let spec = format!("refs/heads/{base}^{{commit}}");
