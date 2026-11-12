@@ -873,3 +873,4 @@ No code changes here.
 25. fixed: `Store::prune` bounds `rule_proposals`.
 26. fixed: the core files live under Spec 1's `dispatch` module, and the TUI and CLI files are named after `DispatcherView`.
 27. fixed: Task 2 states the cost of the handler and its read bounds.
+28. implementation (Task 1): `ViewInput` has no `devices` field; the devices come from the Plan's `DevicePlan`s, `DeviceLine.enabled` stays `None` and `limits` empty, and Spec 5 adds the field when it sets them. The `device:<id>:off` kind is built and tested through `device_needs` and fires once `enabled` is set.

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::label::{run_label, run_summary, RunLine};
+use super::label::{plain, run_label, run_summary, RunLine};
 use super::plan::Plan;
 use super::project::ProjectView;
 use super::room::LineState;
@@ -165,9 +165,9 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
             id: d.device.clone(),
             enabled: None,
             state: d.room.state,
-            reason: d.room.reason.clone(),
+            reason: plain(&d.room.reason),
             open_slots: d.room.open_slots,
-            held: d.held.clone(),
+            held: d.held.as_deref().map(plain),
             limits: Vec::new(),
         })
         .collect();
@@ -177,28 +177,28 @@ pub fn dispatcher_view(input: &ViewInput<'_>, now_ms: UnixMs) -> DispatcherView 
         .flat_map(|d| d.picks.iter().map(move |p| (d, p)))
         .map(|(d, p)| PlannedLine {
             device: d.device.clone(),
-            project: p.project.clone(),
-            task: p.task.clone(),
-            title: p.title.clone(),
+            project: plain(&p.project),
+            task: plain(&p.task),
+            title: plain(&p.title),
             provider: p.provider,
             account: p.account.clone(),
-            model: p.model.clone(),
-            reason: p.reason.clone(),
+            model: plain(&p.model),
+            reason: plain(&p.reason),
         })
         .collect();
     let ready_unjudged = plan
         .not_judged
         .iter()
         .map(|t| TaskLine {
-            project: t.project.clone(),
-            task: t.id.clone(),
-            title: t.title.clone(),
+            project: plain(&t.project),
+            task: plain(&t.id),
+            title: plain(&t.title),
         })
         .collect();
     DispatcherView {
         at_ms: now_ms,
         mode: plan.mode,
-        picked_by: plan.picked_by.clone(),
+        picked_by: plain(&plan.picked_by),
         projects: project_lines(input),
         planned,
         ready_unjudged,
@@ -244,16 +244,16 @@ fn run_lines(
             WorkerLine {
                 run: r.id,
                 device: r.device.clone(),
-                project: r.project.clone(),
-                task: r.task.clone(),
+                project: plain(&r.project),
+                task: plain(&r.task),
                 state: r.state,
                 label: run_label(r.state, l.frozen).to_string(),
                 summary: run_summary(l),
-                why: r.reason.clone(),
+                why: plain(&r.reason),
                 provider: r.provider,
                 account: r.account.clone(),
-                model: r.model.clone(),
-                branch: r.branch.clone(),
+                model: plain(&r.model),
+                branch: r.branch.as_deref().map(plain),
                 start_ms: r.start_ms,
             }
         })
@@ -275,7 +275,7 @@ fn project_lines(input: &ViewInput<'_>) -> Vec<ProjectLine> {
                 .count();
             ProjectLine {
                 id: p.id,
-                name: p.name.clone(),
+                name: plain(&p.name),
                 device: p.device.clone(),
                 enabled: p.enabled,
                 waiting: u32::try_from(waiting).unwrap_or(u32::MAX),
@@ -296,8 +296,8 @@ fn needs_you(
     let tasks = plan.needs_you.iter().map(|t| NeedsYouLine {
         key: format!("task:{}:{}", t.project_id, t.id),
         kind: NeedKind::Task,
-        subject: format!("{}: {}", t.project, t.title),
-        reason: t.needs_you.clone().unwrap_or_default(),
+        subject: plain(&format!("{}: {}", t.project, t.title)),
+        reason: plain(t.needs_you.as_deref().unwrap_or_default()),
     });
     let accounts = budgets
         .iter()
@@ -307,7 +307,7 @@ fn needs_you(
             key: format!("account:{}", b.account),
             kind: NeedKind::Account,
             subject: b.account.clone(),
-            reason: b.why.clone(),
+            reason: plain(&b.why),
         });
     tasks
         .chain(accounts)
@@ -325,7 +325,7 @@ fn device_needs(devices: &[DeviceLine], projects: &[ProjectView]) -> Vec<NeedsYo
             key: format!("device:{}:emergency", d.id),
             kind: NeedKind::Device,
             subject: d.id.clone(),
-            reason: d.reason.clone(),
+            reason: plain(&d.reason),
         });
     let off = devices
         .iter()
@@ -358,7 +358,7 @@ fn budget_lines(budgets: &[Budget], days: &[AccountDay]) -> Vec<BudgetLine> {
                 spendable_pct: Some(b.spendable_pct),
                 spent_pct: Some(b.spent_pct),
                 left_pct: Some(b.left_pct),
-                why: Some(b.why.clone()),
+                why: Some(plain(&b.why)),
             };
             let mut earlier: Vec<&AccountDay> = days
                 .iter()
@@ -371,7 +371,7 @@ fn budget_lines(budgets: &[Budget], days: &[AccountDay]) -> Vec<BudgetLine> {
                 spendable_pct: d.spendable_pct,
                 spent_pct: d.idlemax_pct,
                 left_pct: None,
-                why: d.why.clone(),
+                why: d.why.as_deref().map(plain),
             });
             BudgetLine {
                 account: b.account.clone(),

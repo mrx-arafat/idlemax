@@ -118,6 +118,12 @@ fn workers_are_the_live_stopped_and_shed_runs_newest_first_and_waiting_counts_tw
         .enumerate()
         .map(|(i, s)| run(i as RunId + 1, *s, i as UnixMs))
         .chain([run(11, RunState::Clean, 20)])
+        .chain([{
+            // Same project name on another device: not this project's.
+            let mut other = run(12, RunState::Clean, 21);
+            other.run.device = "box".into();
+            other
+        }])
         .collect();
     let v = view(&plan(LineState::Run, Vec::new()), &runs, &[], &[]);
 
@@ -130,7 +136,7 @@ fn workers_are_the_live_stopped_and_shed_runs_newest_first_and_waiting_counts_tw
     assert_eq!(shed.why, "why 8");
 
     let review: Vec<RunState> = v.review.iter().map(|w| w.state).collect();
-    assert_eq!(review, [Clean, Rejected, NeedsYou, Clean]);
+    assert_eq!(review, [Clean, Clean, Rejected, NeedsYou, Clean]);
     // Two clean and one needs_you count; rejected does not.
     assert_eq!(v.projects[0].waiting, 3);
     assert_eq!(v.projects[0].review_cap, 3);
@@ -144,11 +150,15 @@ fn needs_you_holds_tasks_resting_accounts_and_emergencies_and_nothing_else() {
         budget("spent", BudgetBasis::Spent, None),
     ];
     let runs = [run(1, RunState::Starting, 1), run(2, RunState::Shed, 2)];
-    let tasks = vec![task("t9", Some("needs a decision"))];
+    let tasks = vec![task("t9\u{1b}[2J", Some("needs a\ndecision"))];
     let v = view(&plan(LineState::Emergency, tasks), &runs, &budgets, &[]);
     let keys: Vec<&str> = v.needs_you.iter().map(|n| n.key.as_str()).collect();
-    assert_eq!(keys, ["task:1:t9", "account:past", "device:mac:emergency"]);
-    assert_eq!(v.needs_you[0].subject, "app: title t9");
+    assert_eq!(
+        keys,
+        ["task:1:t9\u{1b}[2J", "account:past", "device:mac:emergency"]
+    );
+    // Text from roadmap files and issues reaches a terminal: no escape, no line break.
+    assert_eq!(v.needs_you[0].subject, "app: title t9 [2J");
     assert_eq!(v.needs_you[0].reason, "needs a decision");
 
     // Spec 5 sets `enabled`; a device switched off with a project on is the fourth kind.

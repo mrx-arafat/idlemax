@@ -71,10 +71,23 @@ fn is_live(state: RunState) -> bool {
     )
 }
 
-fn one_line(text: &str) -> String {
+/// `text` on one line of at most `SUMMARY_MAX_CHARS`.
+pub fn one_line(text: &str) -> String {
+    plain(text).chars().take(SUMMARY_MAX_CHARS).collect()
+}
+
+/// `text` with every control character and every line or paragraph separator (any
+/// whitespace but the space) made a space, so a terminal draws it as one line and no escape
+/// sequence reaches it.
+pub fn plain(text: &str) -> String {
     text.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .take(SUMMARY_MAX_CHARS)
+        .map(|c| {
+            if c.is_control() || (c.is_whitespace() && c != ' ') {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 
@@ -160,7 +173,7 @@ mod tests {
         }
         assert_eq!(run_label(RunState::Clean, true), "ready for review");
 
-        let long = format!("first\nsecond\r\u{7}{}", "x".repeat(300));
+        let long = format!("first\nsecond\u{2028}\u{7}{}", "x".repeat(300));
         let summary = run_summary(&line(RunState::NeedsYou, Some(&long), false));
         assert!(
             summary.starts_with("fix the login test: first second  x"),
@@ -168,5 +181,9 @@ mod tests {
         );
         assert_eq!(summary.chars().count(), SUMMARY_MAX_CHARS);
         assert!(!summary.chars().any(char::is_control));
+        assert_eq!(
+            run_summary(&line(RunState::NeedsYou, None, false)),
+            "fix the login test: no reason given"
+        );
     }
 }
