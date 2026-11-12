@@ -5,7 +5,7 @@
 
 use super::plan::{PassPick, PlanInput};
 use super::project::relative_path_problem;
-use super::task::Task;
+use super::task::{Task, TaskSource};
 use crate::worker::checks::{in_scope, under};
 
 /// Stars a scope pattern may hold; more is dropped, whatever the matcher's speed.
@@ -59,13 +59,18 @@ pub fn pick_scope(input: &PlanInput<'_>, task: &Task, pp: &PassPick) -> Result<S
         .and_then(|r| r.repo.roadmap.iter().find(|i| i.title == task.title))
         .map_or("", |i| i.detail.as_str());
     let done = task.done_check.as_deref().unwrap_or("");
-    let text = format!("{} {detail} {done}", task.title);
-    let off_limits = project.map_or(&[][..], |v| v.project.settings.off_limits.as_slice());
+    // Only text the owner wrote adds scope: never an issue title or session text.
+    let owners = matches!(task.source, TaskSource::Roadmap | TaskSource::BrokenCheck);
+    let text = match owners {
+        true => format!("{} {detail} {done}", task.title),
+        false => String::new(),
+    };
+    let off_limits = project.map_or_else(Vec::new, |v| v.project.settings.all_off_limits());
     narrow_scope(
         &pp.scope_paths,
         &Files { files, complete },
         &text,
-        off_limits,
+        &off_limits,
     )
 }
 
@@ -129,7 +134,8 @@ pub fn narrow_scope(
 }
 
 /// The relative file paths a task's text names, such as `seqs/pascal.py`: a word with a `/`
-/// whose last part has an extension, never absolute and never with `..`.
+/// whose last part has an extension, never absolute, never with `..` and never in or of a
+/// dot folder or file (`.github/`, `.claude/`, `.env`).
 fn paths_named(text: &str) -> Vec<String> {
     let path_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/');
     let mut out: Vec<String> = Vec::new();
@@ -138,9 +144,8 @@ fn paths_named(text: &str) -> Vec<String> {
         let file = word.rsplit('/').next().unwrap_or("");
         let ok = word.contains('/')
             && !word.starts_with('/')
-            && !word.split('/').any(|p| p == ".." || p.is_empty())
-            && file.contains('.')
-            && !file.starts_with('.');
+            && !word.split('/').any(|p| p.is_empty() || p.starts_with('.'))
+            && file.contains('.');
         if ok && !out.iter().any(|o| o == word) {
             out.push(word.to_string());
         }

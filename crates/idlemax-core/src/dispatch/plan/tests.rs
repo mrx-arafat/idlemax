@@ -180,7 +180,10 @@ fn a_pass_fills_the_slots_in_its_order() {
     );
     assert_eq!(p.reason, "b is small");
     assert_eq!(p.scope_paths, ["src/lib.rs"]);
-    assert_eq!(p.avoid_paths, ["secrets"]);
+    assert_eq!(
+        p.avoid_paths,
+        ["secrets", ".github/", ".gitlab-ci.yml", "*.env"]
+    );
     assert!(plan.not_judged.is_empty());
     assert!(plan.devices[0].empty.is_none());
 }
@@ -305,6 +308,32 @@ fn a_path_missing_from_a_cut_file_list_is_unknown_not_wrong() {
 }
 
 #[test]
+fn only_owner_written_task_text_adds_scope_and_never_a_dot_folder_or_ci_path() {
+    let mut w = World::new().with_pass(&["a", "b"]);
+    w.tasks[0].source = TaskSource::GithubIssue;
+    w.tasks[0].title = "Fix typo in src/new.rs and .github/workflows/release.yml".into();
+    w.tasks[1].title = "Add src/b.rs, .claude/hooks/x.json and ci/deploy.env".into();
+    w.repos[0].repo.files = vec![
+        "src/a.rs".into(),
+        ".github/workflows/release.yml".into(),
+        ".claude/hooks/old.json".into(),
+        "ci/old.env".into(),
+    ];
+    let picks = &mut w.pass.as_mut().unwrap().picks;
+    picks[0].scope_paths = vec!["src/a.rs".into()];
+    picks[1].scope_paths = vec!["src/a.rs".into()];
+    let plan = w.build();
+    let (a, b) = (&plan.devices[0].picks[0], &plan.devices[0].picks[1]);
+    assert_eq!(a.scope_paths, ["src/a.rs"], "an issue title adds nothing");
+    assert_eq!(
+        b.scope_paths,
+        ["src/a.rs", "src/b.rs"],
+        "no dot folder, no *.env"
+    );
+    assert!(b.avoid_paths.contains(&".github/".to_string()));
+}
+
+#[test]
 fn auto_mode_picks_like_propose() {
     let mut world = World::new().with_pass(&["b", "a"]);
     world.mode = Mode::Auto;
@@ -349,7 +378,13 @@ fn the_owners_active_project_is_used_only_when_nothing_else_is_ready() {
     let plan = only.build();
     assert_eq!(
         plan.devices[0].picks[0].avoid_paths,
-        ["secrets", "src/main.rs"]
+        [
+            "secrets",
+            ".github/",
+            ".gitlab-ci.yml",
+            "*.env",
+            "src/main.rs"
+        ]
     );
 
     let mut clipped = only;

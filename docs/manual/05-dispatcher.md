@@ -96,6 +96,7 @@ idlemax project set app check -- cargo test -p core     # the focused check, as 
 idlemax project set app setup -- npm ci                 # installs dependencies in a fresh worktree
 idlemax project set app priority 5                      # higher wins when tasks tie
 idlemax project set app off-limits secrets/ docs/legal  # paths a worker must not touch
+idlemax project set app default-off-limits off          # drop the built-in CI, release and secret paths
 idlemax project set app core-paths src/engine           # shared code: a diff here gets an independent review
 idlemax project set app check                           # no value clears a setting
 ```
@@ -191,6 +192,8 @@ It is told to build scope paths from the project's files, adding every file the 
 - A file the task's title, roadmap detail or done check names joins the scope when its folder exists.
   A roadmap item's detail is its section's text before the "Done when" line, at most 600 characters, so write `Add seqs/pascal.py ...` there and the file is in scope.
 - The project's top-level test folder (`tests`, `test`, `spec` or `__tests__`) joins every scope, never a path under an off-limits path.
+- Only text the owner wrote adds scope: roadmap items and broken checks. A GitHub issue title or session text never does, and no path in or of a dot folder (`.github/`, `.claude/`, `.env`) is added from any text.
+- Every project starts with these off-limits paths besides its own: `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/`. `idlemax project set app default-off-limits off` drops them for that project, and `on` brings them back.
 - A named path that matches no file and sits in no existing folder is dropped on its own, and the pick's reason ends with `(scope paths that do not exist were dropped: <paths>)`. When none of the named paths is left, the pick is not used: its task waits for the next pass, and the empty slot says `none of its scope paths exist`. idlemax never widens a scope to the whole project.
 - When the device reported no file list for the project (an older agent, for example), the named scope paths are kept as given. When the list was cut at 200 files, a named path missing from it may still exist, so it is kept if it is a plain relative path (not absolute, no `..`).
 

@@ -139,7 +139,7 @@ pub fn summary(
             let (files, cut) = files_of(repos, v, cap * 4);
             let conventions = repo_of(repos, v).and_then(|r| r.repo.conventions.as_deref());
             json!({"name": v.project.name, "priority": s.priority, "owner_active": v.owner_active,
-                   "off_limits": s.off_limits, "core_paths": s.core_paths,
+                   "off_limits": s.all_off_limits(), "core_paths": s.core_paths,
                    "files": files, "files_cut": cut, "conventions": conventions})
         })
         .collect();

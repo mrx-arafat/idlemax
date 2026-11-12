@@ -379,7 +379,7 @@ fn owner_rule(
     let Some(project) = view(task.project_id) else {
         return Err(format!("{}: its project is gone", task.title));
     };
-    let mut avoid = project.project.settings.off_limits.clone();
+    let mut avoid = project.project.settings.all_off_limits();
     if !project.owner_active {
         return Ok(avoid);
     }

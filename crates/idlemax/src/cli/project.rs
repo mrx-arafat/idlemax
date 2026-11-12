@@ -59,6 +59,8 @@ pub enum SettingName {
     Base,
     Priority,
     OffLimits,
+    /// `on` (the default) keeps CI, release and secret paths off-limits; `off` drops them.
+    DefaultOffLimits,
     CorePaths,
     Setup,
     Check,
@@ -207,6 +209,15 @@ fn apply(
         SettingName::OffLimits => {
             s.off_limits = list(&values);
             format!("off-limits = {}", views::words(&s.off_limits))
+        }
+        SettingName::DefaultOffLimits => {
+            s.no_default_off_limits = match values.as_slice() {
+                [v] if v == "on" => false,
+                [v] if v == "off" => true,
+                _ => return Err(usage("default-off-limits takes on or off")),
+            };
+            let on = if s.no_default_off_limits { "off" } else { "on" };
+            format!("default-off-limits = {on}")
         }
         SettingName::CorePaths => {
             s.core_paths = list(&values);

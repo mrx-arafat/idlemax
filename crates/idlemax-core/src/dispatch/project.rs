@@ -29,9 +29,32 @@ pub struct ProjectSettings {
     pub core_paths: Vec<String>,
     /// Higher is picked first.
     pub priority: i32,
+    /// The owner switched `DEFAULT_OFF_LIMITS` off for this project.
+    pub no_default_off_limits: bool,
 }
 
+/// CI, release and secret paths no worker touches unless the owner says otherwise.
+pub const DEFAULT_OFF_LIMITS: [&str; 4] = [".github/", ".gitlab-ci.yml", "*.env", "secrets/"];
+
 impl ProjectSettings {
+    /// The owner's off-limits paths, then the defaults the owner did not switch off or list.
+    pub fn all_off_limits(&self) -> Vec<String> {
+        let mut all = self.off_limits.clone();
+        let listed = |d: &str| {
+            let d = d.trim_end_matches('/');
+            all.iter().any(|o| o.trim_end_matches('/') == d)
+        };
+        if !self.no_default_off_limits {
+            let missing: Vec<String> = DEFAULT_OFF_LIMITS
+                .iter()
+                .filter(|d| !listed(d))
+                .map(|d| d.to_string())
+                .collect();
+            all.extend(missing);
+        }
+        all
+    }
+
     /// The first reason these settings must be refused, if any.
     pub fn validate(&self) -> Result<(), String> {
         if let Some(branch) = &self.base_branch {
@@ -231,6 +254,29 @@ pub fn owner_active(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ci_release_and_secret_paths_are_off_limits_until_the_owner_turns_that_off() {
+        let s = ProjectSettings {
+            off_limits: vec!["secrets".into(), "migrations/".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            s.all_off_limits(),
+            [
+                "secrets",
+                "migrations/",
+                ".github/",
+                ".gitlab-ci.yml",
+                "*.env"
+            ]
+        );
+        let off = ProjectSettings {
+            no_default_off_limits: true,
+            ..s
+        };
+        assert_eq!(off.all_off_limits(), ["secrets", "migrations/"]);
+    }
 
     #[test]
     fn settings_refuse_option_like_branches_and_paths_outside_the_repository() {

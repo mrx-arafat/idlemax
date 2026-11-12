@@ -823,7 +823,7 @@ Types live in `crates/idlemax-core/src/dispatch/project.rs`.
 ```json
 {"id": 1, "name": "app", "device": "mac", "path": "/Users/me/app", "enabled": true,
  "base_branch": "main", "setup_command": [], "check_command": ["cargo", "test", "-p", "core"],
- "off_limits": [], "core_paths": ["crates/core"], "priority": 0,
+ "off_limits": [], "core_paths": ["crates/core"], "priority": 0, "no_default_off_limits": false,
  "source": "owner", "owner_active": false, "seen_ms": null}
 ```
 `ProjectView`: the project, its settings flattened into it, `source` (`herdr` or `owner`), `owner_active`, `seen_ms` and, after a settings change, `warning` when the device's `agent.command_allowlist` would refuse the setup or check command.
@@ -831,7 +831,8 @@ Types live in `crates/idlemax-core/src/dispatch/project.rs`.
 - `NewProject` is `{"path": "/abs/path", "device": "mac", "name": "app"}`; `device` defaults to the only known device (400 naming the known ones otherwise) and `name` to the folder name.
   A known `(device, path)` answers 200 with the existing row; a taken name gets `-2`, `-3` and so on.
   A device holds at most 200 projects (409 beyond).
-- `ProjectSettings` replaces all six settings at once.
+- `ProjectSettings` replaces all seven settings at once.
+  A worker's off-limits paths are `off_limits` plus the defaults `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/`, unless `no_default_off_limits` is true; the pass sees the same list, and no path under one ever joins a scope.
   The commands are argv, never a shell line.
   400 for a base branch that is empty, starts with `-` or holds whitespace, an empty first command word, or an off-limits or core path that is absolute or holds `..`.
 - An unknown id is 404.
