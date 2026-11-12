@@ -72,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/ins
 curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh
 ```
 
-(Or from source with Rust 1.95: `git clone https://github.com/mrx-arafat/idlemax && cd idlemax && cargo install --path crates/idlemax`.)
+(Or from source with Rust 1.95 or newer: `git clone https://github.com/mrx-arafat/idlemax && cd idlemax && cargo install --path crates/idlemax`.)
 
 **2. Set up this device** (config, token, background services, then a health check):
 
@@ -98,7 +98,7 @@ ran: 1.0s on laptop
 ...
 ```
 
-Still queued after a minute? That is the guard protecting you (on a laptop it waits for 10 idle minutes on AC power).
+Still queued after a minute? That is the guard protecting you: on a Mac (profile `laptop`) it waits for 10 idle minutes on AC power, while Linux defaults to the `production` profile, which has no idle wait and holds only for load, memory pressure or disk.
 `idlemax why 1` says exactly what holds it and how to change it.
 
 **4. Open the dashboard** at <http://127.0.0.1:7878/> and paste your token from `cat ~/.idlemax/token`.
@@ -107,8 +107,9 @@ Or stay in the terminal with `idlemax tui`.
 **5. Your first dispatcher plan**, which launches nothing in the default `propose` mode:
 
 ```sh
-idlemax device list              # find this device's id, then switch it on:
-idlemax device on laptop
+idlemax device list                                           # find this device's id (its hostname)
+idlemax device on <your-device-id>
+idlemax config set agent.command_allowlist /bin/echo,git,cargo  # the check below runs cargo, so allow it
 idlemax project add ~/code/app
 idlemax project set app check -- cargo test
 idlemax project on app
@@ -142,10 +143,12 @@ The full story, including where the fences end, is in [Safety and privacy](docs/
 idlemax job add --wait --key pr-42-tests -- cargo test -p core
 ```
 
-**Repeat a job** once a day, whenever the machine is idle:
+**Repeat a job** once a day, whenever the machine is idle.
+Copy a starter spec first: the examples hold placeholder paths, their script must be on the allowlist, and `repo-health` is `cpu_heavy`, which a Linux `production` device never takes.
 
 ```sh
-idlemax schedule add examples/jobs/repo-health-project-a.toml --every 1d
+cp examples/jobs/repo-health-project-a.toml my-health.toml   # edit the paths and device in it
+idlemax schedule add my-health.toml --every 1d
 ```
 
 **Ask why** a job is waiting, and get the fix:
@@ -173,7 +176,7 @@ today: 6 jobs ran (<1 job-min); guard held 6 min, all of it by memory pressure; 
 $ idlemax quota
 ...
 ACCOUNT     BUDGET  SPENT   LEFT    WORKERS  DAY ENDS  WHY
-claude-max  7.3%    2.0%    5.3%    yes      in 5h10m  41% used, the owner's usual use holds 18%, margin 10%: 31% surplus over 4 days
+claude-max  8.2%    2.0%    6.2%    yes      in 4h00m  41% used, the owner's usual use holds 18%, margin 10%: 31% surplus over 4 days
 ```
 
 **Review what workers did**, then keep, merge or discard:
@@ -240,11 +243,11 @@ idlemax is one Rust binary, `idlemax`, that plays every role: coordinator, agent
 crates/idlemax-core/src/   domain: types, protocol, config, guard, quota, scheduler, schedule, control,
                            reconcile, job_run, advice, explain, install, notify, dispatch (pure, unit tested)
 crates/idlemax/src/        adapters and delivery: agent/, coord/, advisor/, doctor/, cli/, tui/
-crates/idlemax/assets/     dashboard.html
+crates/idlemax/assets/     dashboard.html, dashboard.js
 crates/idlemax/tests/      integration tests that run the real binary in a temp home
 examples/                  configs, job specs, job scripts
 packaging/                 launchd plists, systemd units
-scripts/                   install.sh, changelog.sh, verify-linux.sh
+scripts/                   install.sh, changelog.sh, verify-linux.sh, and their tests
 ```
 
 | Layer | Where | Holds |
