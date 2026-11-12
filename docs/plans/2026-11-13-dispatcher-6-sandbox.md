@@ -118,7 +118,7 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 ## Progress Tracking
 
-- [ ] Task 1: Add the sandbox setting and the pure decision
+- [x] Task 1: Add the sandbox setting and the pure decision
 - [ ] Task 2: Build the bwrap arguments and the sandbox's Claude home
 - [ ] Task 3: Serve the allow-list proxy and the in-sandbox relay
 - [ ] Task 4: Wrap the agent CLI in both hosts and check it took
@@ -150,13 +150,13 @@ Ubuntu's `bubblewrap` package ships the AppArmor profile that lets bwrap create 
 
 **Definition of Done:**
 
-- [ ] `decide` gives `Wrap` for a usable probe in `auto` and `required`, `Bare` with the reason for an unusable probe in `auto`, `Refuse` with the reason in `required` and on a production device in `auto`, and `Bare` for `off`.
-- [ ] `Config::parse` refuses `workers.sandbox = "off"` beside `agent.profile = "production"` in a line that starts with `workers.sandbox`.
-- [ ] `host_allowed` allows `api.anthropic.com:443`, refuses `api.anthropic.com:80`, `evil.api.anthropic.com:443` and `api.anthropic.com.evil.io:443`.
+- [x] `decide` gives `Wrap` for a usable probe in `auto` and `required`, `Bare` with the reason for an unusable probe in `auto`, `Refuse` with the reason in `required` and on a production device in `auto`, and `Bare` for `off`.
+- [x] `Config::parse` refuses `workers.sandbox = "off"` beside `agent.profile = "production"` in a line that starts with `workers.sandbox`.
+- [x] `host_allowed` allows `api.anthropic.com:443`, refuses `api.anthropic.com:80`, `evil.api.anthropic.com:443` and `api.anthropic.com.evil.io:443`.
 
 **Verify:**
 
-- [ ] `cargo test -p idlemax-core sandbox && cargo test -p idlemax-core config::workers`
+- [x] `cargo test -p idlemax-core sandbox && cargo test -p idlemax-core config::workers`
 
 ### Task 2: Build the bwrap arguments and the sandbox's Claude home
 

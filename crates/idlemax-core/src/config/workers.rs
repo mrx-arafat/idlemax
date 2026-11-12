@@ -1,7 +1,11 @@
 //! Domain: the `[workers]` section of `config.toml`: which agent CLIs may run workers and
 //! review, the review cap and the time limits of a worker launch. Pure.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
+
+use crate::worker::sandbox::SandboxSetting;
 
 /// The CLIs a worker or reviewer may use for now (A21).
 const KNOWN_CLIS: [&str; 2] = ["claude", "codex"];
@@ -36,6 +40,10 @@ pub struct WorkersConfig {
     pub reviewers: Vec<String>,
     /// Which host a worker launch uses (`auto`, `herdr`, `headless`).
     pub host: WorkerHostChoice,
+    /// Whether workers run inside the OS sandbox (`auto`, `required`, `off`; A13).
+    pub sandbox: SandboxSetting,
+    /// The hosts a sandboxed worker of each CLI reaches; a CLI not listed gets the defaults.
+    pub sandbox_hosts: BTreeMap<String, Vec<String>>,
     /// Finished tasks per project that may wait for the owner's review (D9).
     pub review_cap: u32,
     /// Seconds between two launches on one device (D13).
@@ -56,6 +64,8 @@ impl Default for WorkersConfig {
             clis: Vec::new(),
             reviewers: Vec::new(),
             host: WorkerHostChoice::Auto,
+            sandbox: SandboxSetting::Auto,
+            sandbox_hosts: BTreeMap::new(),
             review_cap: 3,
             settle_secs: 60,
             max_runtime_secs: 3600,
@@ -134,6 +144,19 @@ mod tests {
         let err = Config::parse("[agent]\nprofile = \"production\"\n[workers]\nhost = \"herdr\"\n")
             .unwrap_err();
         assert!(err.to_string().starts_with("workers.host"), "{err}");
+    }
+
+    #[test]
+    fn sandbox_off_is_refused_on_production_profile() {
+        let err =
+            Config::parse("[agent]\nprofile = \"production\"\n[workers]\nsandbox = \"off\"\n")
+                .unwrap_err();
+        assert!(err.to_string().starts_with("workers.sandbox"), "{err}");
+        let cfg = Config::parse("[workers]\nsandbox = \"required\"\n").unwrap();
+        assert_eq!(
+            cfg.workers.sandbox,
+            crate::worker::sandbox::SandboxSetting::Required
+        );
     }
 
     #[test]

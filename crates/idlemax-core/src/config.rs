@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::quota::{QuotaConfig, QuotaConfigError};
 use crate::types::{DeviceProfile, Os};
+use crate::worker::sandbox::SandboxSetting;
 use crate::{DEFAULT_AGENT_LISTEN, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
 
 mod dispatcher;
@@ -184,6 +185,15 @@ impl Config {
             return Err(ConfigError::Guard(
                 "workers.host: 'herdr' does nothing on a production device, whose workers always \
                  run headless; set workers.host to 'auto' or 'headless', or change agent.profile"
+                    .into(),
+            ));
+        }
+        if self.workers.sandbox == SandboxSetting::Off
+            && self.agent.profile == Some(DeviceProfile::Production)
+        {
+            return Err(ConfigError::Guard(
+                "workers.sandbox: a production device always runs workers in the sandbox; set \
+                 workers.sandbox to 'auto' or 'required', or change agent.profile"
                     .into(),
             ));
         }
