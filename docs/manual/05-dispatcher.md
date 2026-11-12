@@ -95,7 +95,7 @@ idlemax project set app base main                       # the branch tasks start
 idlemax project set app check -- cargo test -p core     # the focused check, as argv
 idlemax project set app setup -- npm ci                 # installs dependencies in a fresh worktree
 idlemax project set app priority 5                      # higher wins when tasks tie
-idlemax project set app off-limits secrets/ docs/legal  # paths a worker must not touch
+idlemax project set app off-limits docs/legal vendor/   # paths a worker must not touch, besides the defaults below
 idlemax project set app default-off-limits off          # drop the built-in CI, release and secret paths
 idlemax project set app core-paths src/engine           # shared code: a diff here gets an independent review
 idlemax project set app check                           # no value clears a setting
@@ -293,6 +293,9 @@ The worktree shows up in `git worktree list` of that repository, so you can look
 A `production` device always runs workers headless, so `herdr` is refused there.
 On Linux with a systemd manager each worker runs in a transient scope of its own (`idlemax-w-<job>-…`): a headless worker starts in it, and a Herdr pane's shell is moved into it before the agent starts. A stop then also ends what the worker forked or `setsid`-ed out of its process group. Elsewhere, or when the move fails (logged at info), a stop ends the process group or the pane only.
 
+**Claude's folder trust dialog.** An interactive Claude Code started in a folder it has not seen asks whether you trust it, and its default answer exits.
+In Herdr, idlemax answers yes only when the dialog names exactly the worktree it made for that launch; any other dialog, or another folder, still fails the start.
+
 A worker is stopped after `workers.max_runtime_secs` (3600) awake seconds per launch, and after `workers.blocked_secs` (120) waiting for input.
 
 ### What fences a worker
@@ -302,6 +305,7 @@ A worker is stopped after `workers.max_runtime_secs` (3600) awake seconds per la
 | No personal MCP servers | Claude starts with `--strict-mcp-config`; Codex gets `enabled=false` for each configured server |
 | No idlemax token, no credential variables | the pane gets them empty, and a worker whose real environment still holds one is never briefed |
 | No untracked files of yours such as `.env` | a fresh worktree holds tracked files only |
+| No CI, release or secret paths | `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/` are off-limits in every project unless you set `default-off-limits off`; a change there rejects the task |
 | No `git push` | every remote and every push URL (any scheme, a path, a remote added later) gets a dead push address, with no credential helper and no askpass helper, for the agent and for the setup and check commands; a worker that drops its environment gets past it, which only an OS sandbox stops (A13) |
 | Codex writes and network | Codex's own `workspace-write` sandbox, approval `never` |
 | No pull requests, deploys, databases, messages or spending | the brief and `rules.md` say so, and the credential variables are missing |
@@ -351,6 +355,7 @@ When a worker finishes, idlemax checks the result before it tells you:
 
 - **Baseline:** the project's focused checks, recorded on the base branch before the worker started, must still pass on the worker's branch.
 - **Scope:** the diff touches only what the task needs.
+  A change under an off-limits path (yours or the defaults) rejects the task; a change outside the scope paths, or a task that named no scope paths, makes it `needs_you`.
 - **Independent review**, only when risk is high: an agent from a different provider (from `workers.reviewers`) reads the diff.
   Risk is high when the diff has more than `workers.review_diff_lines` (300) added plus removed lines, or touches the project's `core-paths`.
 

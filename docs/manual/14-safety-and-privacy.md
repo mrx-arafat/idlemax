@@ -68,6 +68,7 @@ At agent startup on Linux, the agent's own cgroup memory limit (minus 128 MiB) a
 | No personal MCP servers | Claude starts with `--strict-mcp-config`; Codex gets `enabled=false` for each configured server |
 | No idlemax token, no credential variables | the pane gets them empty, and a worker whose real environment still holds one is never briefed |
 | No untracked files of yours such as `.env` | a fresh worktree holds tracked files only |
+| No CI, release or secret paths | every project's off-limits paths include `.github/`, `.gitlab-ci.yml`, `*.env` and `secrets/` (unless you set `default-off-limits off`); the brief names them, no scope ever includes them, and a change there rejects the task |
 | No `git push` | every remote and every push URL (any scheme, a path, a remote added later) gets a dead push address, with no credential helper and no askpass helper, for the agent and for the setup and check commands; a worker that drops its environment gets past it, which only an OS sandbox stops (A13) |
 | Codex writes and network | Codex's own `workspace-write` sandbox, approval `never` |
 | No pull requests, deploys, databases, messages or spending | the brief and `rules.md` say so, and the credential variables are missing |

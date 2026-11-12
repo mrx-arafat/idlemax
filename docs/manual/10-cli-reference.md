@@ -322,7 +322,7 @@ The projects the dispatcher may work in; every one is off until you switch it on
 
 ```sh
 idlemax project set app check -- cargo test -p core
-idlemax project set app off-limits secrets/,docs/legal
+idlemax project set app off-limits docs/legal,vendor/
 ```
 
 ## device
