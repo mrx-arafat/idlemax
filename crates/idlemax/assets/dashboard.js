@@ -809,15 +809,22 @@ async function setMode(btn, mode) {
   act(btn, `Dispatcher mode: ${mode}`, () => api("POST", "/v1/dispatcher/mode", { mode }));
 }
 
+// A coordinator without the worker stop route still stops: stop_all ends every running job,
+// workers included, and holds new ones until Resume.
 async function stopWorkers(btn) {
   if (await confirmBox("Stop every worker now?", "Each worker's turn is cut and its state saved. They continue only after Start.", "Stop workers", true)) {
-    act(btn, "Workers stopped", () => api("POST", "/v1/workers/stop", { scope: scopes.global() }));
+    act(btn, (out) => out === "stop_all" ? "No worker stop on this coordinator: stopped all jobs instead (Resume continues them)" : "Workers stopped",
+      () => api("POST", "/v1/workers/stop", { scope: scopes.global() })
+        .catch((e) => { if (e && e.status === 404) return control(scopes.global(), "stop_all").then(() => "stop_all"); throw e; }));
   }
 }
 
 async function startWorkers(btn) {
   if (await confirmBox("Start the workers again?", "The stopped workers continue where they were, once memory and quota allow.", "Start")) {
-    act(btn, "Workers started", () => api("POST", "/v1/workers/start"));
+    act(btn, "Workers started", () => api("POST", "/v1/workers/start").catch((e) => {
+      if (e && e.status === 404) throw new Error("this coordinator has no worker start yet; Resume continues stopped jobs");
+      throw e;
+    }));
   }
 }
 
@@ -954,9 +961,10 @@ function replyText(r) {
 
 async function saveLimit(btn, key, value) {
   const out = await act(btn, `${key} saved`, () => api("POST", "/v1/limits", { key, value }));
+  // A refused value keeps what the owner typed; the toast says why.
+  if (!out) return;
   limitDraft.delete(key);
-  if (out) limitReply.set(key, replyText(out));
-  else delete sig.limits; // a refused value: show the stored one again on the next poll
+  limitReply.set(key, replyText(out));
 }
 
 function limitRow(s) {
@@ -966,7 +974,7 @@ function limitRow(s) {
   return h("div", { class: "limit" },
     h("label", { for: id, class: "mono" }, s.key),
     h("div", { class: "limit-c" }, input,
-      h("span", { class: "faint num" }, `default ${s.default}`),
+      h("span", { class: "faint num" }, `now ${s.value}, default ${s.default}`),
       h("button", { class: "btn sm", type: "button", onclick: (e) => saveLimit(e.currentTarget, s.key, input.value.trim()) }, "Save"),
       h("button", { class: "btn sm ghost", type: "button", onclick: (e) => saveLimit(e.currentTarget, s.key, null) }, "default")),
     limitReply.has(s.key) ? h("div", { class: "t2" }, limitReply.get(s.key)) : null);

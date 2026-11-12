@@ -693,8 +693,8 @@ It is verified by TS-001 to TS-006.
 **Definition of Done:**
 
 - [ ] TS-001 to TS-006 pass in a browser against the throwaway home, and the page has no console error.
-- [x] The cards read correctly at a phone width and in the light and the dark theme.
-- [x] Text typed into a limit input is still there, with the focus, after the next poll.
+- [ ] The cards read correctly at a phone width and in the light and the dark theme.
+- [ ] Text typed into a limit input is still there, with the focus, after the next poll.
 - [x] Against a coordinator that answers 404 to `GET /v1/dispatcher`, the page shows today's cards and no empty dispatcher card.
 - [x] The dashboard test still finds one script tag and no HTML sink, and the script parses.
 - [x] Verify: `cargo test -p idlemax --bin idlemax the_dashboard_runs_one_same_origin_script && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
@@ -876,3 +876,4 @@ No code changes here.
 28. implementation (Task 1): `ViewInput` has no `devices` field; the devices come from the Plan's `DevicePlan`s, `DeviceLine.enabled` stays `None` and `limits` empty, and Spec 5 adds the field when it sets them. The `device:<id>:off` kind is built and tested through `device_needs` and fires once `enabled` is set.
 29. implementation (Task 6): `admit` takes the pass's `RuleProposal` (run, line, reason) as one value, `admit(&proposal, run_state, rules_text, earlier)`, rather than the three fields apart. It also refuses a line that starts with `- ` or `#`, which would change the shape of the owner's file, and a reason with a control character; `check_lengths` bounds the proposal's reason like every other reason.
 30. implementation (Task 7): a day is checked once, at the first sweep after 09:00; an empty day covers its `daily:<date>` key with no notice, so a task that finishes later that day sends no "summary" of the 24 hours before 09:00. Notice items are pruned by `last_seen_ms`, so a condition that lasts a month stays covered.
+31. implementation (Task 9): "Stop workers" falls back to `stop_all` on `POST /v1/control` while `POST /v1/workers/stop` answers 404 (Spec 2 Task 10), and says so; "Start" explains its 404. A refused limit keeps the typed text and the row shows the stored value as `now <value>`. A test checks every path the script calls against the router, with the worker and device routes named as pending. The two screenshots are not retaken: the fixture home has one offline device and no account, so it would show less than the current pictures; they are retaken with the browser run of TS-001 to TS-006, which also proves the phone, theme and focus items. That run could not happen on the build host (the headless browser lacks system libraries), so those three boxes stay open.

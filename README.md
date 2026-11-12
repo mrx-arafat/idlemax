@@ -1106,7 +1106,7 @@ Every queued, leased or paused job carries a `waiting:` line with its headline r
 The page reads `GET /v1/why` once per refresh for all of them and asks for one job's full list only when you open it.
 It follows the system light or dark theme, and on a phone the jobs table becomes stacked cards.
 From it you can pause, resume, stop-all or cancel per scope, pause, resume or remove a schedule, and accept or dismiss advice.
-The Dispatcher card comes first: the mode switch (`off`, `propose`, `auto`, which asks first), each device's line state and reason, `Stop workers` (and `Start` while a worker is stopped by you), the workers with their label, summary, model and a `why` line, what would launch next and who picked it.
+The Dispatcher card comes first: the mode switch (`off`, `propose`, `auto`, which asks first), each device's line state and reason, `Stop workers` (and `Start` while a worker is stopped by you; a coordinator without the worker stop gets a stop-all instead, which `Resume` lifts), the workers with their label, summary, model and a `why` line, what would launch next and who picked it.
 Beside it are the cards Needs you, Waiting for review (keep or discard with `idlemax review`), Budget (today's spend of the day's share per account, then the earlier days), Projects (on asks first, off does not), Limits (each owner limit with its default, Save and `default`) and Rule proposals (Approve asks first).
 A coordinator without the dispatcher view shows none of these cards.
 

@@ -5,6 +5,8 @@ mod advice;
 mod agents;
 mod budget;
 pub mod caller;
+#[cfg(test)]
+mod dashboard_tests;
 mod dispatcher_view;
 pub mod http;
 mod jobs;
