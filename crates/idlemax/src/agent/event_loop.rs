@@ -256,7 +256,7 @@ impl Agent {
                 _ = feed_tick.tick(), if feed_on => feed_due = true,
                 Some(done) = join(&mut dispatch) => {
                     dispatch = None;
-                    self.on_dispatch_reply(done);
+                    dispatch_due |= self.on_dispatch_reply(done);
                 }
                 _ = dispatch_tick.tick(), if dispatch_on => dispatch_due = true,
                 _ = refresh_device.tick() => self.on_refresh_device_info().await,

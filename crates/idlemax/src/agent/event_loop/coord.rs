@@ -105,12 +105,24 @@ impl Agent {
         tokio::spawn(dispatch_feed::run(self.client.clone(), ctx))
     }
 
-    /// Keeps the reply's projects for the next run; a failed run keeps the last ones.
-    pub(super) fn on_dispatch_reply(&mut self, done: Result<Option<DispatchReply>, JoinError>) {
+    /// Keeps the reply's projects for the next run; a failed run keeps the last ones. True
+    /// when the projects changed, so the feed is sent again at once: an agent that just
+    /// started knows none, and the plan must not wait a whole interval for their roadmaps.
+    pub(super) fn on_dispatch_reply(
+        &mut self,
+        done: Result<Option<DispatchReply>, JoinError>,
+    ) -> bool {
         match done {
-            Ok(Some(reply)) => self.dispatch_projects = reply.projects,
-            Ok(None) => {}
-            Err(e) => warn!("dispatch feed task failed: {e}"),
+            Ok(Some(reply)) => {
+                let changed = reply.projects != self.dispatch_projects;
+                self.dispatch_projects = reply.projects;
+                changed
+            }
+            Ok(None) => false,
+            Err(e) => {
+                warn!("dispatch feed task failed: {e}");
+                false
+            }
         }
     }
 

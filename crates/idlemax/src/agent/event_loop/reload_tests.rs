@@ -100,3 +100,31 @@ async fn a_reload_applies_the_guard_rule_and_a_broken_file_changes_nothing() {
     std::fs::write(paths.config_file(), format!("{LAPTOP}sample_secs = 10\ncommand_allowlist = [\"git\"]\n[guard]\nrequire_ac_power = false\n")).unwrap();
     assert!(reload(&mut agent).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_reply_with_projects_the_feed_did_not_carry_sends_the_feed_again_at_once() {
+    use idlemax_core::dispatch::inputs::DispatchReply;
+    use idlemax_core::dispatch::project::Project;
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    crate::state::ensure_dirs(&paths).unwrap();
+    let mut agent = agent_at(&paths);
+    let demo = Project {
+        id: 3,
+        name: "demo".into(),
+        device: "reload".into(),
+        path: "/home/o/demo".into(),
+        enabled: true,
+        ..Default::default()
+    };
+    let reply = || {
+        Ok(Some(DispatchReply {
+            projects: vec![demo.clone()],
+        }))
+    };
+    // An agent that just started sent no projects; the reply names one, so it posts again.
+    assert!(agent.on_dispatch_reply(reply()));
+    assert_eq!(agent.dispatch_projects, std::slice::from_ref(&demo));
+    assert!(!agent.on_dispatch_reply(reply()));
+    assert!(!agent.on_dispatch_reply(Ok(None)));
+}
