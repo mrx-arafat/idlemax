@@ -198,6 +198,13 @@ pub fn after_job(run: &Run, job: &Job, update: &JobUpdate, now_ms: UnixMs) -> Op
             .clone()
             .unwrap_or_else(|| format!("job {}", update.status))
     };
+    // A turn a usage limit cut is not a failed check: back in the queue, state saved (D10.7).
+    let limit = report
+        .and_then(|r| r.end_text.as_deref())
+        .is_some_and(crate::quota::is_limit_message);
+    if limit && update.status.is_terminal() && !update.owner_stop {
+        return back_in_queue(next, run, "usage limit reached".into(), now_ms);
+    }
     let target = match update.status {
         JobStatus::Running | JobStatus::Paused => match report.map(|r| r.phase) {
             Some(WorkerPhase::Running) => RunState::Running,

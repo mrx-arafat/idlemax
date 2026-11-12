@@ -26,6 +26,7 @@ AI jobs spend only the quota above a reserve you choose, late in each window.
 - **It treats your AI account carefully.**
   AI jobs launch only the official CLIs, with your own login, on the device where you logged in.
   idlemax never reads or copies credentials, never retries an AI job, and stops spending an account for the rest of the window after any limit message.
+Workers rest the same way: one limit message stops that account's workers with their state saved until the used-up window resets, and a second one while it rests changes nothing.
   Consumer terms still restrict automated use, so read the [ban-risk stance](#ai-quota-maximizer) before you enable it.
 - **One file stops everything, even offline.**
   `touch $IDLEMAX_HOME/PAUSE` pauses every job on that device within seconds.

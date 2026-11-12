@@ -229,7 +229,7 @@ pub fn rate_limited(cost: CostClass, output: &str) -> bool {
     cost == CostClass::Ai && output.lines().any(line_rate_limited)
 }
 
-fn line_rate_limited(line: &str) -> bool {
+pub(crate) fn line_rate_limited(line: &str) -> bool {
     let l = line.to_ascii_lowercase();
     LIMIT_PHRASES.iter().any(|p| l.contains(p))
         || (has_number(&l, "429") && HTTP_CONTEXT.iter().any(|w| l.contains(w)))

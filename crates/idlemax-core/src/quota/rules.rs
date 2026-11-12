@@ -64,10 +64,12 @@ pub fn spendable(cfg: &QuotaConfig, account: &str, ctx: &SpendContext<'_>) -> bo
         .is_some_and(|a| verdict(a, &windows(a, ctx), ctx).0)
 }
 
-/// Classifies CLI output that reports a usage limit or HTTP 429.
+/// Classifies a worker's `end_text` (A9): a line with one of these phrases, or one the job
+/// detector calls rate limited (its phrases, or 429 next to an HTTP word).
 pub fn is_limit_message(text: &str) -> bool {
     let lower = text.to_lowercase();
     LIMIT_PHRASES.iter().any(|p| lower.contains(p))
+        || text.lines().any(crate::job_run::line_rate_limited)
 }
 
 fn account_views(account: &AccountConfig, ctx: &SpendContext<'_>) -> Vec<QuotaView> {

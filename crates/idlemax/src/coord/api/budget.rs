@@ -1,13 +1,15 @@
 //! Budget use cases on the coordinator (adapter): gathers the stored readings, Run samples
 //! and account days and calls the pure `idlemax_core::quota` rules. Persists what they decide.
 
+use idlemax_core::protocol::JobUpdate;
 use idlemax_core::quota::owner_use::{account_day, closed_slots, AccountDay, DAY_MS};
-use idlemax_core::quota::AccountConfig;
-use idlemax_core::types::UnixMs;
+use idlemax_core::quota::spend::{limit_rest_until, rest_event};
+use idlemax_core::quota::{is_limit_message, AccountConfig};
+use idlemax_core::types::{EventKind, JobId, UnixMs};
 use idlemax_core::Config;
 
 use super::quota_views;
-use crate::coord::store::{Store, StoreError};
+use crate::coord::store::{NewEvent, Store, StoreError};
 
 pub(crate) mod gather;
 
@@ -105,4 +107,74 @@ pub fn record_open_days(
         )?;
     }
     Ok(())
+}
+
+/// A worker turn a usage limit ended, on an account that does not rest yet.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct WorkerRest {
+    pub account: String,
+    pub message: String,
+}
+
+impl WorkerRest {
+    /// The one `Quota` event of a new rest.
+    pub(super) fn event(&self, device: &str, job: JobId) -> NewEvent {
+        NewEvent {
+            kind: EventKind::Quota,
+            device: Some(device.to_string()),
+            job: Some(job),
+            message: self.message.clone(),
+        }
+    }
+}
+
+/// Until when a limit hit now rests the account; None when its Budget already rests, so a
+/// second hit stores, logs and stops nothing (D10.7: never a retry loop).
+pub fn new_rest(
+    store: &Store,
+    cfg: &Config,
+    live: &Config,
+    account: &str,
+    now: UnixMs,
+) -> Result<Option<UnixMs>, StoreError> {
+    let views = quota_views(store, cfg, now)?;
+    let list = budgets(store, cfg, live, &views, now)?;
+    if list
+        .iter()
+        .any(|b| b.account == account && b.rests_until_ms.is_some())
+    {
+        return Ok(None);
+    }
+    let Some(a) = cfg.quota.account(account) else {
+        return Ok(None);
+    };
+    let windows: Vec<_> = views.into_iter().filter(|v| v.account == account).collect();
+    Ok(limit_rest_until(a, &windows, now, now))
+}
+
+/// The new rest a worker job's last update starts, when its `end_text` is a limit message
+/// (A9); the coordinator classifies that text and nothing else of a worker's output.
+pub(super) fn worker_rest(
+    store: &Store,
+    cfg: &Config,
+    live: &Config,
+    update: &JobUpdate,
+    now: UnixMs,
+) -> Result<Option<WorkerRest>, StoreError> {
+    let text = update.worker.as_deref().and_then(|w| w.end_text.as_deref());
+    if !update.status.is_terminal() || !text.is_some_and(is_limit_message) {
+        return Ok(None);
+    }
+    let Some(job) = store.get_job(update.id)? else {
+        return Ok(None);
+    };
+    let Some(account) = job.spec.ai_account.filter(|_| job.spec.worker.is_some()) else {
+        return Ok(None);
+    };
+    Ok(
+        new_rest(store, cfg, live, &account, now)?.map(|until| WorkerRest {
+            message: rest_event(&account, until, now),
+            account,
+        }),
+    )
 }

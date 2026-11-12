@@ -746,11 +746,11 @@ Nothing is retried in a loop.
 
 **Definition of Done:**
 
-- [ ] `is_limit_message` is true for `Error 429: Too Many Requests`, `You've hit your limit` and `weekly limit reached`, true for a text of several lines whose last line is `usage limit reached`, and false for `HTTP 200 OK` and `build 4290 passed`; `job_run::rate_limited` still answers false for an AI job whose output is `session limit` and true for `usage limit`.
-- [ ] `after_job` gives `shed` with no verdict for a last update whose `end_text` is `usage limit reached`, and the verdict of Spec 2's rule for a last update with no commit and the `end_text` `I could not find the cause`.
+- [x] `is_limit_message` is true for `Error 429: Too Many Requests`, `You've hit your limit` and `weekly limit reached`, true for a text of several lines whose last line is `usage limit reached`, and false for `HTTP 200 OK` and `build 4290 passed`; `job_run::rate_limited` still answers false for an AI job whose output is `session limit` and true for `usage limit`.
+- [x] `after_job` gives `shed` with no verdict for a last update whose `end_text` is `usage limit reached`, and the verdict of Spec 2's rule for a last update with no commit and the `end_text` `I could not find the cause`.
 - [ ] One worker job update whose `end_text` is a limit message leaves the hit in `rate_limits` at that time, one `Quota` event with the `rest_event` text, and the account's live runs `shed`; a replay of the same `(device, seq)` changes nothing.
-- [ ] A second worker's update with such an `end_text` while the account rests leaves `rate_limits.at_ms` unchanged and adds no event.
-- [ ] An old AI job's update with `rate_limited` still writes the event text `usage limit hit, no more AI jobs this window`.
+- [x] A second worker's update with such an `end_text` while the account rests leaves `rate_limits.at_ms` unchanged and adds no event.
+- [x] An old AI job's update with `rate_limited` still writes the event text `usage limit hit, no more AI jobs this window`.
 - [ ] A running Run on an account whose Budget turns `five_hour_stop` is stopped and becomes `shed`, and is relaunched once the 5-hour window reads under the line; a running Run on an account whose Budget turns `spent` keeps running.
 - [ ] With a `shed` run on a resting account, one pick for another task and a second usable account, `launch_due` starts the pick on the second account and leaves the `shed` run where it is.
 - [ ] `grep -rn "account_uses" crates/idlemax/src/coord/dispatch.rs` prints nothing, and the existing test of `quota/rules/tests.rs` passes with no assertion changed.

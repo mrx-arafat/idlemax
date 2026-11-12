@@ -207,7 +207,7 @@ mod after_job {
         let mut u = with_phase(update(JobStatus::Succeeded), WorkerPhase::Done);
         if let Some(w) = u.worker.as_mut() {
             w.facts = Some(facts.clone());
-            w.end_text = Some("usage limit reached".into());
+            w.end_text = Some("I could not find the cause".into());
         }
         let mut j = job(WorkerAction::Launch);
         if let Some(w) = j.spec.worker.as_mut() {
@@ -220,8 +220,18 @@ mod after_job {
         assert_eq!(next.verdict, Some(Verdict::Clean));
         assert_eq!(next.summary.as_deref(), Some("add a line"));
         assert_eq!(next.facts.check, Some(facts));
-        assert_eq!(next.facts.end_text.as_deref(), Some("usage limit reached"));
+        assert_eq!(
+            next.facts.end_text.as_deref(),
+            Some("I could not find the cause")
+        );
         assert_eq!(next.end_ms, Some(70));
+
+        // A turn a usage limit cut goes back in the queue and is never a failed check.
+        if let Some(w) = u.worker.as_mut() {
+            w.end_text = Some("usage limit reached".into());
+        }
+        let next = after_job(&run(RunState::Running), &j, &u, 70).unwrap();
+        assert_eq!((next.state, next.verdict), (RunState::Shed, None));
 
         let bare = with_phase(update(JobStatus::Succeeded), WorkerPhase::Done);
         let next = after_job(&run(RunState::Checking), &j, &bare, 70).unwrap();

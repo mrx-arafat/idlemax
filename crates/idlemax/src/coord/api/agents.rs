@@ -18,6 +18,7 @@ use idlemax_core::worker::run::{after_job, Run, RunState};
 use idlemax_core::Config;
 use serde_json::{json, Value};
 
+use super::budget::{worker_rest, WorkerRest};
 use super::http::{ApiFailure, JsonBody};
 use super::jobs::quota_views;
 use super::offline_after_ms;
@@ -49,9 +50,11 @@ pub async fn job_update(
 ) -> Result<Json<JobUpdateReply>, ApiFailure> {
     let now = now_ms();
     let (seq, job_id) = (update.seq, update.id);
+    let live = std::sync::Arc::clone(app.live());
     let ai_output = app
-        .with_store(move |store, _| {
-            let output = on_job_update(store, &update, now)?;
+        .with_store(move |store, cfg| {
+            let rest = worker_rest(store, cfg, &live.current(), &update, now)?;
+            let output = on_job_update_with(store, &update, rest, now)?;
             let pass = store.get_job(job_id)?.is_some_and(|j| is_pass(&j.spec));
             Ok::<_, ApiFailure>(output.map(|o| (o, pass)))
         })
@@ -260,21 +263,33 @@ fn lease_one(
 /// Returns the output of a succeeded advisor AI pass to ingest: the first time, and again on
 /// a replay while the pass has recorded no Advice event, which means the coordinator died
 /// between storing the result and ingesting it (the ack is sent only after the ingest).
+#[cfg(test)]
 pub(super) fn on_job_update(
     store: &mut Store,
     update: &JobUpdate,
     now: UnixMs,
 ) -> Result<Option<String>, ApiFailure> {
+    on_job_update_with(store, update, None, now)
+}
+
+/// `on_job_update` with the new rest a worker's limit message starts: its hit is stored by the
+/// same write as an old AI job's, with one `Quota` event.
+pub(super) fn on_job_update_with(
+    store: &mut Store,
+    update: &JobUpdate,
+    rest: Option<WorkerRest>,
+    now: UnixMs,
+) -> Result<Option<String>, ApiFailure> {
     let job = store
         .get_job(update.id)?
         .ok_or_else(|| ApiFailure::NotFound(format!("job {} not found", update.id)))?;
-    let limit_hit = job
+    let old_hit = job
         .spec
         .ai_account
         .as_deref()
-        .filter(|_| update.rate_limited);
+        .filter(|_| update.rate_limited && job.spec.worker.is_none());
     let mut events = Vec::new();
-    if let Some(account) = limit_hit {
+    if let Some(account) = old_hit {
         events.push(NewEvent {
             kind: EventKind::Quota,
             device: Some(update.device.clone()),
@@ -282,6 +297,8 @@ pub(super) fn on_job_update(
             message: format!("{account}: usage limit hit, no more AI jobs this window"),
         });
     }
+    events.extend(rest.as_ref().map(|r| r.event(&update.device, job.id)));
+    let limit_hit = old_hit.or(rest.as_ref().map(|r| r.account.as_str()));
     let next = apply_update(&job, update, now);
     if let Some(next) = &next {
         events.extend(transition_entry(&job, next));
@@ -300,6 +317,8 @@ pub(super) fn on_job_update(
         tracing::debug!(job = job.id, device = %update.device, seq = update.seq, "replayed job update ignored");
         return unfinished_ingest(store, &job, update);
     }
+    // MISSING HOOK (Spec 2 Task 9): with a new rest, stop the account's live workers with
+    // their state saved: `dispatch::stop_workers(store, &StopScope::Account(account), now)`.
     let Some(next) = next else {
         tracing::debug!(job = job.id, device = %update.device, "stale job update ignored");
         return Ok(None);

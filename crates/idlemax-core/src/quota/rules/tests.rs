@@ -159,3 +159,23 @@ fn a_limit_hit_marks_every_row_until_its_window_resets() {
     let old: QuotaView = serde_json::from_str(r#"{"account":"claude"}"#).unwrap();
     assert_eq!(old.limited, None);
 }
+
+#[test]
+fn a_worker_end_text_is_a_limit_by_either_phrase_list_or_an_http_429() {
+    for yes in [
+        "Error 429: Too Many Requests",
+        "You've hit your limit",
+        "weekly limit reached",
+        "working on it\nusage limit reached",
+        "request failed with status 429",
+    ] {
+        assert!(is_limit_message(yes), "{yes}");
+    }
+    for no in ["HTTP 200 OK", "build 4290 passed"] {
+        assert!(!is_limit_message(no), "{no}");
+    }
+    use crate::job_run::rate_limited;
+    use crate::types::CostClass;
+    assert!(!rate_limited(CostClass::Ai, "session limit"));
+    assert!(rate_limited(CostClass::Ai, "usage limit"));
+}

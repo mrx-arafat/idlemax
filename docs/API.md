@@ -239,6 +239,9 @@ The agent posts a `JobUpdate` on every status change of a leased job:
 A `queued` update gives the lease back: the coordinator re-queues the job without counting an attempt.
 Terminal updates carry `exit_code`, `output_path` (inbox file on the device) and `output_tail` (last 64 KiB of the attempt's log).
 `rate_limited = true` means an AI job hit a usage limit or HTTP 429; that account is blocked for the rest of its window.
+For a worker job the coordinator ignores `rate_limited` and classifies only `end_text`: when it is a usage-limit or HTTP 429 message, the Run goes back to `shed` (never `rejected`), and, unless the account already rests, the hit is stored with one `quota` event such as `claude-max: usage limit hit, workers rest for 3h 10m`.
+The account then rests until the window the limit used up resets: no worker starts on it, and its running workers stop with their state saved.
+Its running workers also stop when the 5-hour window reaches `quota.five_hour_stop_pct`; both resume when the account's Budget allows again.
 `owner_stop = true` marks a `killed` update caused by the owner's local `stop_all`.
 `retryable = true` marks an attempt that ended for a reason that is not the job's fault: a guard kill, an agent shutting down, an agent that could not start the job, or an orphan reaped after an agent restart.
 Every other `failed` or `killed` update is final, including one from an agent that predates the field.
