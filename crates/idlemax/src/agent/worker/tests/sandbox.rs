@@ -120,6 +120,12 @@ fn a_pane_gets_the_shim_first_on_path_and_fails_closed_when_it_did_not_take() {
     );
     let shim = std::fs::read_to_string(shim_dir.join("claude")).unwrap();
     let bwrap = rig._temp.path().join("bwrap").display().to_string();
+    // The brief lives beside the worktree; a worker that cannot read it guesses (live).
+    let brief = format!("{}.brief.md", start.folder.display());
+    assert!(
+        shim.contains(&format!("'--ro-bind' '{brief}' '{brief}'")),
+        "{shim}"
+    );
     assert!(
         shim.contains(&format!("exec '{bwrap}' '--ro-bind' '/usr' '/usr'"))
             && !shim.contains("'--ro-bind' '/' '/'"),

@@ -229,7 +229,10 @@ pub fn wrap(
         tmp: show(&tmp),
         hidden_dirs: hidden_dirs(&plan.root),
         home: home.as_deref().map(show),
-        visible: visible(home.as_deref(), &git.common, cli, plan.cli.as_deref()),
+        visible: visible(home.as_deref(), &git.common, cli, plan.cli.as_deref())
+            .into_iter()
+            .chain(brief(folder))
+            .collect(),
         hidden_files: credential_stores(&git.common, home.as_deref()),
         claude,
         codex,
@@ -455,6 +458,12 @@ fn visible(home: Option<&Path>, common: &Path, cli: WorkerCli, path: Option<&Pat
         out.extend(install_folder(&program, home, common));
     }
     out.iter().map(|p| show(p)).collect()
+}
+
+/// The brief beside the worktree, read-only: the worker is told to read it there.
+fn brief(folder: &Path) -> Option<String> {
+    let path = super::steps::brief_path(folder);
+    path.is_file().then(|| show(&path))
 }
 
 /// What of the CLI's install comes back: its folder, unless that folder holds a home, the
