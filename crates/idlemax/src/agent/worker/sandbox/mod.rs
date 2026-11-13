@@ -19,7 +19,7 @@ use idlemax_core::types::JobId;
 use idlemax_core::worker::sandbox::bwrap::{
     bwrap_args, new_session, ClaudeHome, CodexHome, Fence, SystemPath,
 };
-use idlemax_core::worker::sandbox::claude_home::sandbox_claude_json;
+use idlemax_core::worker::sandbox::claude_home::{sandbox_claude_json, sandbox_claude_settings};
 use idlemax_core::worker::sandbox::codex_home::sandbox_codex_config;
 use idlemax_core::worker::sandbox::credential_store::store_files;
 use idlemax_core::worker::WorkerCli;
@@ -349,6 +349,8 @@ fn claude_home(
     let file = dir.join(".claude.json");
     let json = sandbox_claude_json(&owner, &show(folder));
     std::fs::write(&file, json.to_string()).map_err(|e| e.to_string())?;
+    let settings = sandbox_claude_settings().to_string();
+    std::fs::write(dir.join("settings.json"), settings).map_err(|e| e.to_string())?;
     // With a worker token nothing of the owner's `~/.claude` is bound (review finding 6).
     let credentials = home
         .filter(|_| bind_credentials)

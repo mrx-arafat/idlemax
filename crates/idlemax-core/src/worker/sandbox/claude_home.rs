@@ -1,6 +1,7 @@
 //! Domain: the `.claude.json` of the sandbox's Claude home (A13, Spec 6 Task 2): only the keys
 //! the CLI needs to run from the owner's file, never the owner's MCP servers or projects, and
-//! only the worker's own worktree, trusted so no trust dialog appears. Pure.
+//! only the worker's own worktree, trusted so no trust dialog appears, and its `settings.json`.
+//! Pure.
 
 use serde_json::{Map, Value};
 
@@ -31,6 +32,17 @@ pub fn sandbox_claude_json(owner: &Value, worktree: &str) -> Value {
     Value::Object(out)
 }
 
+/// The sandbox's `settings.json`: idlemax starts Claude in bypass mode inside this sandbox on
+/// purpose, so its warning, which waits for a key nobody presses, stays away.
+pub fn sandbox_claude_settings() -> Value {
+    let mut out = Map::new();
+    out.insert(
+        "skipDangerousModePermissionPrompt".into(),
+        Value::Bool(true),
+    );
+    Value::Object(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,6 +69,16 @@ mod tests {
         assert_eq!(
             out["projects"]["/s/worktrees/app/t1"]["hasTrustDialogAccepted"],
             true
+        );
+    }
+
+    #[test]
+    fn the_bypass_warning_is_skipped_inside_the_sandbox() {
+        // A fresh Claude home showed "WARNING: Claude Code running in Bypass Permissions mode"
+        // and every sandboxed start stopped there (live, 2026-11-14).
+        assert_eq!(
+            sandbox_claude_settings(),
+            json!({"skipDangerousModePermissionPrompt": true})
         );
     }
 }
