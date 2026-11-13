@@ -121,7 +121,8 @@ fn a_pane_gets_the_shim_first_on_path_and_fails_closed_when_it_did_not_take() {
     let shim = std::fs::read_to_string(shim_dir.join("claude")).unwrap();
     let bwrap = rig._temp.path().join("bwrap").display().to_string();
     assert!(
-        shim.contains(&format!("exec '{bwrap}' '--ro-bind' '/' '/'")),
+        shim.contains(&format!("exec '{bwrap}' '--ro-bind' '/usr' '/usr'"))
+            && !shim.contains("'--ro-bind' '/' '/'"),
         "{shim}"
     );
     // A pane gets its own session too, so the CLI cannot push keys into the pane (TIOCSTI).

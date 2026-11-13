@@ -153,6 +153,7 @@ impl Workers {
                     hosts,
                     headless: kind == HostKind::Headless,
                     claude_token,
+                    cli: None,
                 };
                 Ok((Some(plan), Some(SandboxFact::Wrapped { note })))
             }

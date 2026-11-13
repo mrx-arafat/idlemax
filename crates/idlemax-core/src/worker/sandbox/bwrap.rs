@@ -35,10 +35,20 @@ pub struct CodexHome {
     pub dir: String,
 }
 
+/// One system folder: bound read-only, or a link to `link` as on the host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemPath {
+    pub path: String,
+    pub link: Option<String>,
+}
+
 /// The facts of one launch the adapter found; every path is absolute and, for the hidden
 /// and git paths, exists.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Fence {
+    /// The system folders the worker reads, bound read-only, or made a link when the host's
+    /// is one (`/bin -> usr/bin`): never `/` whole, so data elsewhere stays out (finding N5).
+    pub system: Vec<SystemPath>,
     pub worktree: String,
     /// The writable parts of the git common dir: `objects`, `refs`, `logs`, `packed-refs`
     /// and the worktree's own `worktrees/<name>`; never `config` or `hooks`.
@@ -69,17 +79,13 @@ pub struct Fence {
 /// absolute path and its arguments, which the script `exec`s.
 pub fn bwrap_args(f: &Fence) -> Vec<String> {
     let mut a = Argv::default();
-    a.push(&[
-        "--ro-bind",
-        "/",
-        "/",
-        "--dev",
-        "/dev",
-        "--proc",
-        "/proc",
-        "--tmpfs",
-        "/run",
-    ]);
+    for sys in &f.system {
+        match &sys.link {
+            Some(target) => a.push(&["--symlink", target, &sys.path]),
+            None => a.push(&["--ro-bind", &sys.path, &sys.path]),
+        }
+    }
+    a.push(&["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/run"]);
     for dir in f.hidden_dirs.iter().chain(&f.home) {
         a.push(&["--tmpfs", dir]);
     }
@@ -180,6 +186,16 @@ mod tests {
 
     fn fence() -> Fence {
         Fence {
+            system: vec![
+                SystemPath {
+                    path: "/usr".into(),
+                    link: None,
+                },
+                SystemPath {
+                    path: "/bin".into(),
+                    link: Some("usr/bin".into()),
+                },
+            ],
             worktree: "/s/worktrees/app/t1".into(),
             git_writable: vec![
                 "/code/app/.git/objects".into(),
@@ -208,7 +224,7 @@ mod tests {
     fn the_argv_hides_every_home_and_binds_back_only_what_is_allowed() {
         let argv = bwrap_args(&fence());
         let line = argv.join(" ");
-        let expected = "--ro-bind / / --dev /dev --proc /proc --tmpfs /run \
+        let expected = "--ro-bind /usr /usr --symlink usr/bin /bin --dev /dev --proc /proc --tmpfs /run \
             --tmpfs /home --tmpfs /s --tmpfs /h --ro-bind /h/.cargo/bin /h/.cargo/bin \
             --ro-bind /code/app/.git/objects /code/app/.git/objects \
             --ro-bind /dev/null /h/.git-credentials \

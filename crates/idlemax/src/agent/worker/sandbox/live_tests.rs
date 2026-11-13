@@ -103,11 +103,7 @@ fn run_worker_with(w: &World, cli: WorkerCli, script: &str, token: Option<PathBu
 
 /// As `run_worker_with`, as Run `run`.
 fn run_as(w: &World, run: i64, cli: WorkerCli, script: &str, token: Option<PathBuf>) -> String {
-    let stub = w
-        .home
-        .parent()
-        .unwrap()
-        .join(format!("stub-{}", cli.as_str()));
+    let stub = w.home.parent().unwrap().join("bin").join(cli.as_str());
     write(
         &stub,
         &format!("#!/bin/sh\nexec >report.txt 2>&1\n{script}\n"),
@@ -120,6 +116,7 @@ fn run_as(w: &World, run: i64, cli: WorkerCli, script: &str, token: Option<PathB
         hosts: vec!["localhost".into()],
         headless: true,
         claude_token: token,
+        cli: Some(stub.clone()),
     };
     let dirs = GitDirs {
         common: w.repo.join(".git"),
@@ -467,5 +464,29 @@ fn live_n1_idlemaxs_check_never_runs_a_submodules_filter() {
     assert!(
         !pwned.exists(),
         "idlemax's check ran the worker's filter: {report}"
+    );
+}
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_n5_nothing_outside_the_allow_list_is_readable() {
+    let Some(w) = world() else { return };
+    let other = w.home.parent().unwrap().join("other/secret.txt");
+    write(&other, "SECRET\n");
+    let report = run_worker(
+        &w,
+        WorkerCli::Claude,
+        &format!(
+            "cat {} >/dev/null 2>&1 && echo READ-OUTSIDE; \
+             ls /srv /opt /var/www 2>/dev/null | head -3 | sed 's/^/SEEN /'; \
+             git -c user.name=w -c user.email=w@x commit -q --allow-empty -m ok && echo COMMITTED; \
+             sh -c 'echo shell' && echo TOOLS; true",
+            other.display()
+        ),
+    );
+    assert!(!report.contains("READ-OUTSIDE"), "{report}");
+    assert!(
+        report.contains("COMMITTED") && report.contains("TOOLS"),
+        "{report}"
     );
 }

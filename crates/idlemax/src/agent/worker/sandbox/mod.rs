@@ -16,7 +16,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use idlemax_core::types::JobId;
-use idlemax_core::worker::sandbox::bwrap::{bwrap_args, ClaudeHome, CodexHome, Fence};
+use idlemax_core::worker::sandbox::bwrap::{bwrap_args, ClaudeHome, CodexHome, Fence, SystemPath};
 use idlemax_core::worker::sandbox::claude_home::sandbox_claude_json;
 use idlemax_core::worker::sandbox::codex_home::sandbox_codex_config;
 use idlemax_core::worker::sandbox::credential_store::store_files;
@@ -31,6 +31,13 @@ const RELAY_PORT: u16 = 3128;
 const PROBE_LIMIT: Duration = Duration::from_secs(5);
 /// A Unix socket path longer than this cannot be bound (108 bytes with the terminator).
 const MAX_SOCKET_PATH: usize = 100;
+
+/// The system folders a worker reads (finding N5): the programs, their libraries and the
+/// system's settings. Everything else of `/` (such as `/srv`, `/opt`, `/var`, `/data`) is
+/// absent inside; a CLI installed elsewhere comes back through its own folder.
+const SYSTEM: [&str; 9] = [
+    "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/nix",
+];
 
 /// Folders that hold homes; each becomes an empty tmpfs (review finding 3).
 const HOMES: [&str; 4] = ["/home", "/root", "/mnt", "/media"];
@@ -82,6 +89,8 @@ pub struct SandboxPlan {
     pub headless: bool,
     /// `workers.claude_token_file` for a Claude worker; then `~/.claude` is not bound at all.
     pub claude_token: Option<PathBuf>,
+    /// The CLI's own path, whose folder comes back read-only; None finds it on `PATH`.
+    pub cli: Option<PathBuf>,
 }
 
 /// The variable a sandboxed Claude worker reads its worker token from.
@@ -203,6 +212,7 @@ pub fn wrap(
     )
     .map_err(|e| io("start its proxy", e))?;
     let fence = Fence {
+        system: system_paths(),
         worktree: show(folder),
         git_writable: git_writable(&private),
         read_only: read_only(folder, &private),
@@ -213,7 +223,7 @@ pub fn wrap(
         tmp: show(&tmp),
         hidden_dirs: hidden_dirs(&plan.root),
         home: home.as_deref().map(show),
-        visible: visible(home.as_deref(), &git.common, cli),
+        visible: visible(home.as_deref(), &git.common, cli, plan.cli.as_deref()),
         hidden_files: credential_stores(&git.common, home.as_deref()),
         claude,
         codex,
@@ -387,6 +397,24 @@ fn credential_stores(common: &Path, home: Option<&Path>) -> Vec<String> {
         .collect()
 }
 
+/// The system folders that exist: a link stays a link (merged `/usr`), a folder is bound.
+fn system_paths() -> Vec<SystemPath> {
+    SYSTEM
+        .iter()
+        .filter_map(|p| {
+            let meta = std::fs::symlink_metadata(p).ok()?;
+            let link = match meta.file_type().is_symlink() {
+                true => Some(show(&std::fs::read_link(p).ok()?)),
+                false => None,
+            };
+            Some(SystemPath {
+                path: p.to_string(),
+                link,
+            })
+        })
+        .collect()
+}
+
 /// Every folder of homes, and the state dir when it lies outside them.
 fn hidden_dirs(root: &Path) -> Vec<String> {
     let mut out: Vec<String> = HOMES
@@ -403,18 +431,36 @@ fn hidden_dirs(root: &Path) -> Vec<String> {
 
 /// The allow-list bound back read-only: the toolchains under `home`, the owner's git objects
 /// (the worker's alternate) and the folder the CLI is installed in.
-fn visible(home: Option<&Path>, common: &Path, cli: WorkerCli) -> Vec<String> {
+fn visible(home: Option<&Path>, common: &Path, cli: WorkerCli, path: Option<&Path>) -> Vec<String> {
     let mut out: Vec<PathBuf> = home
         .into_iter()
         .flat_map(|h| TOOLCHAINS.iter().map(move |t| h.join(t)))
         .filter(|p| p.exists())
         .collect();
     out.push(common.join("objects"));
-    let installed = find_on_path(cli.as_str())
-        .and_then(|p| std::fs::canonicalize(p).ok())
-        .and_then(|p| p.parent().map(Path::to_path_buf));
-    out.extend(installed.filter(|dir| !out.iter().any(|v| dir.starts_with(v))));
+    let program = path
+        .map(Path::to_path_buf)
+        .or_else(|| find_on_path(cli.as_str()))
+        .and_then(|p| std::fs::canonicalize(p).ok());
+    if let Some(program) = program {
+        out.extend(install_folder(&program, home, common));
+    }
     out.iter().map(|p| show(p)).collect()
+}
+
+/// What of the CLI's install comes back: its folder, unless that folder holds a home, the
+/// repository or a system root (a CLI put straight into `/srv` or `~`), when only the program
+/// file itself does, so an install folder never opens up more than the install.
+fn install_folder(program: &Path, home: Option<&Path>, common: &Path) -> Option<PathBuf> {
+    let dir = program.parent()?;
+    let broad = dir.parent().is_none()
+        || home.is_some_and(|h| h.starts_with(dir))
+        || common.starts_with(dir)
+        || HOMES.iter().any(|h| Path::new(h).starts_with(dir));
+    Some(match broad {
+        true => program.to_path_buf(),
+        false => dir.to_path_buf(),
+    })
 }
 
 fn socket_path(sandbox: &Path, job: JobId, tag: u64) -> PathBuf {

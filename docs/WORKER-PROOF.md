@@ -106,6 +106,7 @@ Run the first rows in the throwaway setup with the stub CLIs of `~/idlemax-wt/sm
 | A detached process | In the worker, `setsid -f sleep 600`, then `idlemax stop` | No `sleep 600` is left | |
 | The pane TUI in its own session | A Herdr worker: resize the pane, then press Ctrl-C in it | The CLI redraws at the new size and takes the Ctrl-C; nothing typed by the worker reaches the pane's shell |
 | The pane took the shim | A Herdr worker | Its CLI runs in another mount namespace than the agent (`/proc/<pid>/ns/mnt`) | |
+| Only the system folders | A worker runs the real CLI with `/` replaced by `/usr`, `/etc`, `/bin`, `/sbin`, `/lib*` and `/nix` (finding N5) | The CLI starts, reaches the API through the proxy and runs `git` and the project's check; if a tool needs another system folder, it is added to `SYSTEM` in `sandbox/mod.rs` | |
 | Real Claude | One worker on the sample task | Reaches `idle` with no trust dialog, commits | |
 | A token refresh | A worker that runs past the access token's expiry | Keeps working; the owner's own `claude` is still logged in after it | |
 
