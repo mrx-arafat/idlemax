@@ -5,13 +5,27 @@
 
 use std::path::Path;
 
-/// Put before the git subcommand: no fsmonitor command, no hook.
-pub const SAFE: [&str; 4] = [
+/// Put before the git subcommand: no fsmonitor command, no hook, never into a submodule or
+/// through the file protocol a submodule would use, and no attributes file of the user's
+/// (review finding N1: a worker's branch may hold a gitlink whose repository has a filter).
+/// With `ENV`, the system config stays out too.
+pub const SAFE: [&str; 12] = [
     "-c",
     "core.fsmonitor=false",
     "-c",
     "core.hooksPath=/dev/null",
+    "-c",
+    "submodule.recurse=false",
+    "-c",
+    "diff.ignoreSubmodules=all",
+    "-c",
+    "protocol.file.allow=never",
+    "-c",
+    "core.attributesFile=/dev/null",
 ];
+
+/// The environment of every git idlemax runs on a project repository.
+pub const ENV: [(&str, &str); 1] = [("GIT_CONFIG_NOSYSTEM", "1")];
 
 /// The argv after `git`: the safe options, `-C <dir>`, then `args`.
 pub fn args(dir: &Path, args: &[&str]) -> Vec<String> {

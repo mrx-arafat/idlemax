@@ -28,6 +28,7 @@ async fn git_result(dir: &Path, args: &[&str]) -> Result<String, String> {
         .arg("-C")
         .arg(dir)
         .args(args)
+        .envs(crate::safe_git::ENV)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);

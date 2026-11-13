@@ -413,3 +413,59 @@ fn live_n2_no_git_credential_store_is_readable() {
         "git's own settings still come back: {report}"
     );
 }
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_n1_idlemaxs_check_never_runs_a_submodules_filter() {
+    use std::sync::Arc;
+
+    use super::super::check::{spawn, CheckCtx};
+    use super::super::cmd::OsCommands;
+    use idlemax_core::worker::WorkerSpec;
+
+    let Some(w) = world() else { return };
+    let pwned = w.home.join("pwned-submodule-filter");
+    let base = rev(&w.repo, "main");
+    let commands = Arc::new(OsCommands::new());
+    let snap =
+        super::super::gitdir::take(commands.as_ref(), &w.folder, &w.state.join("snap")).unwrap();
+    let report = run_worker(
+        &w,
+        WorkerCli::Claude,
+        &format!(
+            "export GIT_AUTHOR_NAME=w GIT_AUTHOR_EMAIL=w@x GIT_COMMITTER_NAME=w GIT_COMMITTER_EMAIL=w@x; \
+             mkdir sub && (cd sub && env -u GIT_DIR -u GIT_WORK_TREE sh -c '\
+               git init -q . && git config filter.x.clean \"sh -c \\\"touch {p}; cat\\\"\" && \
+               echo \"* filter=x\" > .gitattributes && echo a > f && git add . && git commit -qm s') && \
+             git add sub && git commit -qm 'add sub' && echo b >> sub/f && echo PLANTED; true",
+            p = pwned.display()
+        ),
+    );
+    assert!(report.contains("PLANTED"), "{report}");
+    assert!(!pwned.exists(), "the worker's own run made it: {report}");
+    let ctx = CheckCtx {
+        commands,
+        worker: WorkerSpec {
+            run: 3,
+            ..Default::default()
+        },
+        job: 7,
+        tag: 1,
+        folder: w.folder.clone(),
+        branch: "idlemax/t1".into(),
+        base_commit: base,
+        git: Some(snap),
+        git_changed: false,
+        remotes: Vec::new(),
+        readings: Arc::default(),
+        cancel: Arc::default(),
+        state_dir: w.state.clone(),
+        guarded: Vec::new(),
+    };
+    let facts = spawn(ctx).recv().unwrap();
+    assert!(facts.commits >= 1, "the branch came over: {facts:?}");
+    assert!(
+        !pwned.exists(),
+        "idlemax's check ran the worker's filter: {report}"
+    );
+}

@@ -41,7 +41,10 @@ impl Cmd {
             program: "git".into(),
             args: crate::safe_git::args(dir, args),
             cwd: None,
-            env: Vec::new(),
+            env: crate::safe_git::ENV
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             stdin: None,
             limit,
             throttle: false,

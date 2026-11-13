@@ -51,6 +51,7 @@ This plan answers A13 (Q22) as the orchestrator decided it under the owner's del
    Inside the sandbox `GIT_DIR` is a folder of idlemax's own (`$IDLEMAX_HOME/sandbox/git/<run>`) with its own refs, index and objects, and the owner's objects as a read-only alternate; its `config`, `hooks` and `objects/info` are bound read-only.
    No ref, log or `packed-refs` of the owner's repository is writable (review finding 1).
    When the turn ends, idlemax fetches only the Run's branch from it into the owner's repository (the fetch checks every object), so that branch is the only ref a worker can move.
+   Every git idlemax itself runs on a project repository (`safe_git`) never runs a hook or fsmonitor, never goes into a submodule (`submodule.recurse=false`, `diff.ignoreSubmodules=all` and `--ignore-submodules=all` on each `status` and `diff`), never uses the file protocol a submodule would (the import's own local fetch allows it for that call alone), reads no attributes file of the user's and no system config, and its diffs run no external diff or textconv (review findings 4 and N1).
    `scripts/sandbox-live.sh` runs the live attack tests against a real bwrap in a throwaway container.
 7. **One process tree.**
    bwrap runs with `--unshare-pid --die-with-parent`, so when the stop kills bwrap every process of the worker dies with its PID namespace, a `setsid` daemon included (red-team case 10).

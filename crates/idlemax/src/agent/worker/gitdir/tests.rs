@@ -183,3 +183,44 @@ fn a_change_to_the_worktrees_git_pointers_is_found_and_put_back() {
     );
     assert!(!super::undo_change(&snap), "nothing changed since");
 }
+
+#[test]
+fn idlemax_git_never_runs_a_filter_of_a_submodule_the_worker_committed() {
+    // Review finding N1, without the sandbox: a gitlink on the worker's branch whose
+    // repository has a clean filter and a dirty file.
+    let r = rig();
+    let t = r.temp.path().display();
+    sh(
+        &r.folder,
+        &format!(
+            "mkdir sub && cd sub && git init -q . && git config user.name W && \
+             git config user.email w@x && echo '* filter=x' > .gitattributes && echo a > f && \
+             git add . && git commit -qm s && \
+             git config filter.x.clean \"sh -c 'touch {t}/pwned-sub; cat'\" && \
+             cd .. && git add sub && git commit -qm sub && echo b >> sub/f"
+        ),
+    );
+    assert_eq!(
+        pwned(&r),
+        Vec::<String>::new(),
+        "the setup itself ran nothing"
+    );
+    let tip = String::from_utf8(
+        std::process::Command::new("git")
+            .args(["-C", r.folder.to_str().unwrap(), "rev-parse", "HEAD"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let spec = WorkerSpec {
+        action: WorkerAction::KeepMerge,
+        repo: r.repo.display().to_string(),
+        worktree: Some(r.folder.display().to_string()),
+        branch: Some(r.branch.clone()),
+        tip: Some(tip.trim().to_string()),
+        ..Default::default()
+    };
+    let _ = review(&IsolatedGit(OsCommands::new()), &r.worktrees, &spec);
+    assert_eq!(pwned(&r), Vec::<String>::new());
+}

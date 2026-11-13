@@ -75,10 +75,22 @@ fn gather(ctx: &CheckCtx) -> CheckFacts {
     let commits = git(ctx, &["rev-list", "--count", &range])
         .and_then(|out| out.trim().parse().ok())
         .unwrap_or(0);
-    let (modified, untracked) =
-        porcelain(&git(ctx, &["status", "--porcelain", "-z", "--no-renames"]).unwrap_or_default());
+    let (modified, untracked) = porcelain(
+        &git(
+            ctx,
+            &[
+                "status",
+                "--porcelain",
+                "-z",
+                "--no-renames",
+                "--ignore-submodules=all",
+            ],
+        )
+        .unwrap_or_default(),
+    );
     let numstat_args = [
         "diff",
+        "--ignore-submodules=all",
         "--no-ext-diff",
         "--no-textconv",
         "--numstat",
@@ -170,7 +182,17 @@ fn review(ctx: &CheckCtx, r: &Reviewer, range: &str) -> ReviewFacts {
         quota_before: readings_of(ctx, &r.account),
         ..Default::default()
     };
-    let diff = git(ctx, &["diff", "--no-ext-diff", "--no-textconv", range]).unwrap_or_default();
+    let diff = git(
+        ctx,
+        &[
+            "diff",
+            "--ignore-submodules=all",
+            "--no-ext-diff",
+            "--no-textconv",
+            range,
+        ],
+    )
+    .unwrap_or_default();
     if diff.len() > MAX_REVIEW_DIFF_BYTES {
         facts.concern = Some("the diff is too large to send to a reviewer".into());
         return facts;

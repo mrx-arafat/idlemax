@@ -90,13 +90,18 @@ fn remove_folder(
         return Ok(());
     }
     remove_worktree(commands, worktrees_dir, repo, folder).map_err(|e| {
-        let left = git(commands, folder, &["status", "--porcelain"], GIT_LIMIT)
-            .map(|out| {
-                out.lines()
-                    .map(|l| l.get(3..).unwrap_or(l).to_string())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let left = git(
+            commands,
+            folder,
+            &["status", "--porcelain", "--ignore-submodules=all"],
+            GIT_LIMIT,
+        )
+        .map(|out| {
+            out.lines()
+                .map(|l| l.get(3..).unwrap_or(l).to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
         format!(
             "{} still holds {}; commit or delete them there, then run the command again ({e})",
             folder.display(),
@@ -144,7 +149,12 @@ fn checked_tip(
 /// that fails once started, which is aborted so the checkout is as it was.
 fn merge(commands: &dyn Commands, repo: &Path, branch: &str, tip: &str) -> Result<(), String> {
     let shown = repo.display();
-    let dirty = git(commands, repo, &["status", "--porcelain"], GIT_LIMIT)?;
+    let dirty = git(
+        commands,
+        repo,
+        &["status", "--porcelain", "--ignore-submodules=all"],
+        GIT_LIMIT,
+    )?;
     if !dirty.trim().is_empty() {
         return Err(format!(
             "your checkout {shown} has uncommitted changes; commit or stash them and run the merge again, or keep without --merge"
@@ -181,8 +191,13 @@ fn merge(commands: &dyn Commands, repo: &Path, branch: &str, tip: &str) -> Resul
                 Err(e) => e,
             };
             let _ = run(commands, repo, &["merge", "--abort"], GIT_LIMIT);
-            let after =
-                git(commands, repo, &["status", "--porcelain"], GIT_LIMIT).unwrap_or_default();
+            let after = git(
+                commands,
+                repo,
+                &["status", "--porcelain", "--ignore-submodules=all"],
+                GIT_LIMIT,
+            )
+            .unwrap_or_default();
             let state = if after.trim().is_empty() {
                 "it was aborted and your checkout is as it was"
             } else {

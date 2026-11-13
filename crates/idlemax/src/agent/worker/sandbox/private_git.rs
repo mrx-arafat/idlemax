@@ -74,8 +74,12 @@ pub fn import(state: &Path, run_id: i64, folder: &Path, branch: &str) -> Result<
     )?;
     let owner = |args: &[&str]| run_in(folder, args);
     let scratch = format!("refs/idlemax/incoming/{run_id}");
+    // A local fetch needs the file protocol, for this one call; never into a submodule.
     owner(&[
+        "-c",
+        "protocol.file.allow=always",
         "fetch",
+        "--no-recurse-submodules",
         "-q",
         "--no-tags",
         "--no-write-fetch-head",
@@ -93,13 +97,14 @@ fn run(git_dir: Option<&Path>, args: &[&str]) -> Result<(), String> {
 
 fn run_in(folder: &Path, args: &[&str]) -> Result<(), String> {
     let mut cmd = Command::new("git");
-    cmd.args(crate::safe_git::args(folder, args));
+    cmd.args(crate::safe_git::args(folder, args))
+        .envs(crate::safe_git::ENV);
     finish(cmd, args)
 }
 
 fn output(git_dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
-    cmd.args(crate::safe_git::SAFE);
+    cmd.args(crate::safe_git::SAFE).envs(crate::safe_git::ENV);
     if let Some(dir) = git_dir {
         cmd.arg(format!("--git-dir={}", dir.display()));
     }
