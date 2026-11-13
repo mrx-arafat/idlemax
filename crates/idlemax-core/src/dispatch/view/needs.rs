@@ -69,7 +69,7 @@ pub(super) fn needs_you(
             kind: NeedKind::Device,
             subject: plain(device),
             reason: plain(&format!(
-                "workers run without the sandbox ({why}); install bubblewrap, or set \
+                "workers run without the sandbox ({why}); run idlemax doctor for the fix, or set \
                  workers.sandbox to off to accept it"
             )),
         })

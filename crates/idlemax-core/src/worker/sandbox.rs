@@ -51,6 +51,9 @@ pub enum SandboxFact {
 pub const NO_WORKER_TOKEN: &str =
     "Claude token refresh may fail inside the sandbox; set workers.claude_token_file";
 
+/// What the probe says when bwrap is not on the `PATH`.
+pub const NO_BWRAP: &str = "bwrap is not installed";
+
 /// How one launch runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxUse {
@@ -104,8 +107,7 @@ pub fn doctor_check(
             format!("no worker CLI is configured (workers.clis); {state}"),
         );
     }
-    const FIX: &str =
-        "install bubblewrap (sudo apt install bubblewrap), then run idlemax doctor again";
+    let fix = fix_for(probe);
     match decide(setting, profile, probe) {
         SandboxUse::Wrap => {
             let login = match claude_token {
@@ -125,8 +127,22 @@ pub fn doctor_check(
             ID,
             "off (workers.sandbox): workers run with the soft fences only",
         ),
-        SandboxUse::Bare(note) => Check::warn(ID, format!("workers run with {note}"), FIX),
-        SandboxUse::Refuse(why) => Check::fail(ID, format!("no worker can start: {why}"), FIX),
+        SandboxUse::Bare(note) => Check::warn(ID, format!("workers run with {note}"), fix),
+        SandboxUse::Refuse(why) => Check::fail(ID, format!("no worker can start: {why}"), fix),
+    }
+}
+
+/// Install bwrap where it is missing; where it is installed but cannot make its namespaces
+/// (Ubuntu 24.04 restricts unprivileged user namespaces), it needs an AppArmor profile.
+fn fix_for(probe: &Probe) -> &'static str {
+    match probe {
+        Probe::Unusable(why) if why.starts_with(NO_BWRAP) => {
+            "install bubblewrap (sudo apt install bubblewrap), then run idlemax doctor again"
+        }
+        _ => {
+            "let bwrap make user namespaces: add an AppArmor profile for /usr/bin/bwrap \
+             (manual chapter 14, The sandbox), then run idlemax doctor again"
+        }
     }
 }
 
@@ -154,8 +170,6 @@ pub fn host_allowed(hosts: &[String], target: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const NO_BWRAP: &str = "bwrap is not installed";
 
     #[test]
     fn a_usable_sandbox_wraps_and_a_missing_one_runs_bare_only_in_auto() {
@@ -203,6 +217,21 @@ mod tests {
             Level::Ok,
             "no worker CLI: nothing can be refused"
         );
+    }
+
+    #[test]
+    fn doctor_names_the_apparmor_profile_when_bwrap_is_installed_but_blocked() {
+        // Ubuntu 24.04 with kernel.apparmor_restrict_unprivileged_userns = 1 (seen live).
+        let blocked = Probe::Unusable(
+            "bwrap cannot make its namespaces: bwrap: loopback: Failed RTM_NEWADDR".into(),
+        );
+        let fix = doctor_check(SandboxSetting::Auto, None, &blocked, true, None).fix;
+        let fix = fix.unwrap_or_default();
+        assert!(fix.contains("AppArmor"), "{fix}");
+        assert!(!fix.contains("apt install"), "{fix}");
+        let gone = Probe::Unusable(NO_BWRAP.into());
+        let fix = doctor_check(SandboxSetting::Auto, None, &gone, true, None).fix;
+        assert!(fix.unwrap_or_default().contains("apt install bubblewrap"));
     }
 
     #[test]

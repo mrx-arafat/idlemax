@@ -138,7 +138,7 @@ pub struct Wrapped {
 
 /// The bwrap that may run workers here, or why none can.
 pub fn probe() -> Result<PathBuf, String> {
-    let bwrap = find_on_path("bwrap").ok_or("bwrap is not installed")?;
+    let bwrap = find_on_path("bwrap").ok_or(idlemax_core::worker::sandbox::NO_BWRAP)?;
     let args = ["--ro-bind", "/", "/", "--unshare-net", "--unshare-pid"];
     let child = Command::new(&bwrap)
         .args(args)
