@@ -125,8 +125,10 @@ fn a_pane_gets_the_shim_first_on_path_and_fails_closed_when_it_did_not_take() {
             && !shim.contains("'--ro-bind' '/' '/'"),
         "{shim}"
     );
-    // A pane gets its own session too, so the CLI cannot push keys into the pane (TIOCSTI).
-    assert!(shim.contains("'--new-session'"), "{shim}");
+    // A pane gets its own session unless the kernel refuses TIOCSTI, so Herdr sees the CLI.
+    let refused =
+        std::fs::read_to_string("/proc/sys/dev/tty/legacy_tiocsti").is_ok_and(|t| t.trim() == "0");
+    assert_eq!(shim.contains("'--new-session'"), !refused, "{shim}");
     assert!(
         shim.contains("'--unshare-net'") && shim.ends_with("\"$cli\" \"$@\"\n"),
         "{shim}"

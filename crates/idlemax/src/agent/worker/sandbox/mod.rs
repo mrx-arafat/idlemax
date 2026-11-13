@@ -16,7 +16,9 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use idlemax_core::types::JobId;
-use idlemax_core::worker::sandbox::bwrap::{bwrap_args, ClaudeHome, CodexHome, Fence, SystemPath};
+use idlemax_core::worker::sandbox::bwrap::{
+    bwrap_args, new_session, ClaudeHome, CodexHome, Fence, SystemPath,
+};
 use idlemax_core::worker::sandbox::claude_home::sandbox_claude_json;
 use idlemax_core::worker::sandbox::codex_home::sandbox_codex_config;
 use idlemax_core::worker::sandbox::credential_store::store_files;
@@ -234,6 +236,7 @@ pub fn wrap(
         proxy_socket: show(&socket),
         relay_port: RELAY_PORT,
         idlemax_bin: show(&plan.idlemax_bin),
+        new_session: new_session(plan.headless, legacy_tiocsti()),
     };
     let wrap = Wrap {
         program: plan.bwrap.clone(),
@@ -541,6 +544,12 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
 
 fn show(p: &Path) -> String {
     p.display().to_string()
+}
+
+/// Whether the kernel still lets a process push keys into its terminal; None off Linux.
+fn legacy_tiocsti() -> Option<bool> {
+    let text = std::fs::read_to_string("/proc/sys/dev/tty/legacy_tiocsti").ok()?;
+    Some(text.trim() != "0")
 }
 
 /// True when `root` or a process under it runs in another mount namespace than this agent:

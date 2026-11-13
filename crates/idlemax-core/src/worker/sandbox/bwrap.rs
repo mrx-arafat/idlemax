@@ -73,6 +73,15 @@ pub struct Fence {
     pub proxy_socket: String,
     pub relay_port: u16,
     pub idlemax_bin: String,
+    /// Starts the CLI in a session of its own (see `new_session`).
+    pub new_session: bool,
+}
+
+/// A new session stops a CLI pushing keys into the terminal with TIOCSTI, but it also hides
+/// the CLI from Herdr, which watches the pane's foreground. A pane goes without it only where
+/// the kernel already refuses TIOCSTI (`dev.tty.legacy_tiocsti = 0`); unknown keeps it.
+pub fn new_session(headless: bool, legacy_tiocsti: Option<bool>) -> bool {
+    headless || legacy_tiocsti != Some(false)
 }
 
 /// The arguments after `bwrap`, up to the relay script's `$0`; the caller appends the CLI's
@@ -125,8 +134,12 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
         "--unshare-ipc",
         "--unshare-uts",
     ]);
-    // Its own session in every host: no TIOCSTI into the pane's shell (CVE-2017-5226).
-    a.push(&["--die-with-parent", "--new-session"]);
+    // No TIOCSTI into the pane's shell (CVE-2017-5226): a session of its own, or a kernel
+    // that refuses it (`new_session`).
+    a.push(&["--die-with-parent"]);
+    if f.new_session {
+        a.push(&["--new-session"]);
+    }
     let proxy = format!("http://127.0.0.1:{}", f.relay_port);
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
         a.push(&["--setenv", name, &proxy]);
@@ -186,6 +199,7 @@ mod tests {
 
     fn fence() -> Fence {
         Fence {
+            new_session: true,
             system: vec![
                 SystemPath {
                     path: "/usr".into(),
@@ -251,6 +265,20 @@ mod tests {
         let script = &tail[0];
         assert!(script.contains("sandbox-relay --socket /run/idlemax/proxy.sock --port 3128"));
         assert!(script.ends_with("exec \"$@\""), "{script}");
+    }
+
+    #[test]
+    fn a_pane_drops_the_new_session_only_where_the_kernel_refuses_tiocsti() {
+        assert!(new_session(true, Some(false)), "headless always gets one");
+        assert!(!new_session(false, Some(false)));
+        assert!(new_session(false, Some(true)));
+        assert!(new_session(false, None), "unknown keeps it");
+        let line = bwrap_args(&Fence {
+            new_session: false,
+            ..fence()
+        })
+        .join(" ");
+        assert!(!line.contains("--new-session"), "{line}");
     }
 
     #[test]
