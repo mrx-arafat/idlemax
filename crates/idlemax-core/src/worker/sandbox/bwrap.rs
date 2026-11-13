@@ -28,11 +28,11 @@ pub struct ClaudeHome {
 }
 
 /// The sandbox's Codex home (`CODEX_HOME`): idlemax's own folder per Run, so a resumed Run
-/// finds its sessions, with the owner's `auth.json` bound into it (review finding 5).
+/// finds its sessions, holding a copy of the owner's `auth.json` (review findings 5 and N3:
+/// the owner's file is never bound, so a worker cannot change the owner's login).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexHome {
     pub dir: String,
-    pub auth: Option<String>,
 }
 
 /// The facts of one launch the adapter found; every path is absolute and, for the hidden
@@ -107,9 +107,6 @@ pub fn bwrap_args(f: &Fence) -> Vec<String> {
     }
     if let Some(home) = &f.codex {
         a.bind(&home.dir, CODEX_DIR);
-        if let Some(auth) = &home.auth {
-            a.bind(auth, &format!("{CODEX_DIR}/auth.json"));
-        }
     }
     for path in &f.read_only {
         a.push(&["--ro-bind", path, path]);
@@ -246,13 +243,19 @@ mod tests {
             claude: None,
             codex: Some(CodexHome {
                 dir: "/s/sandbox/codex/3".into(),
-                auth: Some("/h/.codex/auth.json".into()),
             }),
             ..fence()
         };
         let argv = bwrap_args(&f);
         let line = argv.join(" ");
-        assert!(line.contains("--bind /s/sandbox/codex/3 /run/idlemax/codex --bind /h/.codex/auth.json /run/idlemax/codex/auth.json"), "{line}");
+        assert!(
+            line.contains("--bind /s/sandbox/codex/3 /run/idlemax/codex"),
+            "{line}"
+        );
+        assert!(
+            !line.contains(".codex/auth.json"),
+            "the owner's auth is never bound: {line}"
+        );
         assert!(
             line.contains("--setenv CODEX_HOME /run/idlemax/codex"),
             "{line}"

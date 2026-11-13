@@ -258,7 +258,7 @@ fn keep(tag: u64, proxy: Proxy) {
 /// The sandbox's Claude home with its `.claude.json` written for this worktree.
 /// The sandbox's Codex home of Run `run`: kept across launches so `codex resume` finds its
 /// sessions, with a `config.toml` written from the owner's one without its MCP servers, and
-/// the owner's `auth.json` to bind into it (review finding 5).
+/// a copy of the owner's `auth.json` (review findings 5 and N3).
 fn codex_home(sandbox: &Path, home: Option<&Path>, run: i64) -> Result<CodexHome, String> {
     let dir = sandbox.join("codex").join(run.to_string());
     crate::state::create_private_dir(&dir).map_err(|e| e.to_string())?;
@@ -271,14 +271,24 @@ fn codex_home(sandbox: &Path, home: Option<&Path>, run: i64) -> Result<CodexHome
         .unwrap_or_default();
     std::fs::write(dir.join("config.toml"), sandbox_codex_config(&owner))
         .map_err(|e| e.to_string())?;
+    // A copy, renewed at each launch: the owner's own file is never bound (finding N3).
     let auth = owner_dir
         .map(|d| d.join("auth.json"))
-        .filter(|p| p.is_file())
-        .map(|p| show(&p));
-    Ok(CodexHome {
-        dir: show(&dir),
-        auth,
-    })
+        .filter(|p| p.is_file());
+    let copy = dir.join("auth.json");
+    let _ = std::fs::remove_file(&copy);
+    if let Some(auth) = auth {
+        std::fs::copy(&auth, &copy).map_err(|e| e.to_string())?;
+        set_private(&copy)?;
+    }
+    Ok(CodexHome { dir: show(&dir) })
+}
+
+#[cfg(unix)]
+fn set_private(file: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| e.to_string())
 }
 
 fn claude_home(

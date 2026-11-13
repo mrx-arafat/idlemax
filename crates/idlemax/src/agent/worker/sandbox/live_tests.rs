@@ -335,3 +335,20 @@ fn live_finding_6_a_worker_token_replaces_the_owners_credentials() {
     );
     assert!(!report.contains("CRED-WRITABLE"), "{report}");
 }
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_n3_a_codex_worker_never_writes_the_owners_auth() {
+    let Some(w) = world() else { return };
+    let owner = w.home.join(".codex/auth.json");
+    let before = std::fs::read_to_string(&owner).unwrap();
+    let report = run_worker(
+        &w,
+        WorkerCli::Codex,
+        "grep -q SECRET \"$CODEX_HOME/auth.json\" && echo AUTH; \
+         echo PWNED-AUTH > \"$CODEX_HOME/auth.json\" && echo OVERWROTE; \
+         rm -f \"$CODEX_HOME/auth.json\"; true",
+    );
+    assert!(report.contains("AUTH"), "Codex still signs in: {report}");
+    assert_eq!(std::fs::read_to_string(&owner).unwrap(), before, "{report}");
+}
