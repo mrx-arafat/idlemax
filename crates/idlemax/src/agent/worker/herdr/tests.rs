@@ -420,3 +420,25 @@ fn a_sandboxed_start_puts_the_shim_first_again_before_the_agent_starts() {
         "{calls:#?}"
     );
 }
+
+#[test]
+fn a_start_on_a_pane_herdr_calls_busy_tries_again_and_goes_on() {
+    let fake = Arc::new(FakeCommands::new());
+    let inner = existing_tab();
+    let starts = Arc::new(AtomicUsize::new(0));
+    let seen = starts.clone();
+    fake.set_fallback(move |cmd| {
+        let line = cmd.args.join(" ");
+        if line.starts_with("agent start") && seen.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Ok(Output {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: r#"{"error":{"code":"agent_pane_busy"}}"#.into(),
+            });
+        }
+        inner.run(cmd)
+    });
+    let host = HerdrHost::with_background(fake.clone(), None);
+    assert_eq!(host.start(&launch()).unwrap().pane, "p2");
+    assert_eq!(starts.load(Ordering::SeqCst), 2);
+}

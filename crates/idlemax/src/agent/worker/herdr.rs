@@ -208,7 +208,7 @@ impl HerdrHost {
             "--",
         ]));
         args.extend(launch.args.iter().cloned());
-        let started = self.call(&args);
+        let started = self.start_when_free(&args);
         if let Err(HostError::Failed { why, .. }) = &started {
             if why.contains("agent_not_ready") && self.accept_trust(pane, launch) {
                 return Ok(());

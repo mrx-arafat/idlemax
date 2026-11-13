@@ -1,5 +1,8 @@
 //! Adapter: puts the sandbox shim first on a Herdr pane's `PATH` again after the shell's
-//! start-up files ran, since a `.bashrc` that prepends `~/.local/bin` would hide it (A13).
+//! start-up files ran, since a `.bashrc` that prepends `~/.local/bin` would hide it (A13),
+//! and starts the agent once Herdr calls the pane free again.
+
+use std::time::Duration;
 
 use super::{strings, HerdrHost};
 use crate::agent::worker::host::{HostError, Launch};
@@ -29,6 +32,22 @@ impl HerdrHost {
             pane,
         ]))
         .map(drop)
+    }
+}
+
+impl HerdrHost {
+    /// `agent start`, tried again for up to 5 s while Herdr calls the pane busy: a new pane
+    /// that just ran the export is not an available shell for about half a second (live).
+    pub(super) fn start_when_free(&self, args: &[String]) -> Result<String, HostError> {
+        for _ in 0..10 {
+            match self.call(args) {
+                Err(HostError::Failed { why, .. }) if why.contains("agent_pane_busy") => {
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+                other => return other,
+            }
+        }
+        self.call(args)
     }
 }
 
