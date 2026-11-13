@@ -1,6 +1,6 @@
 //! Domain: the `.claude.json` of the sandbox's Claude home (A13, Spec 6 Task 2): only the keys
 //! the CLI needs to run from the owner's file, never the owner's MCP servers or projects, and
-//! the worker's worktree marked trusted so no trust dialog appears. Pure.
+//! only the worker's own worktree, trusted so no trust dialog appears. Pure.
 
 use serde_json::{Map, Value};
 
@@ -14,26 +14,19 @@ const KEPT: [&str; 6] = [
     "bypassPermissionsModeAccepted",
 ];
 
-/// The sandbox's file: the kept keys of `owner`, the sandbox's own `projects` from `existing`,
-/// and `worktree` trusted.
-pub fn sandbox_claude_json(owner: &Value, existing: Option<&Value>, worktree: &str) -> Value {
+/// The sandbox's file: the kept keys of `owner` and `worktree` trusted, nothing carried over
+/// from an earlier launch (finding N4).
+pub fn sandbox_claude_json(owner: &Value, worktree: &str) -> Value {
     let mut out = Map::new();
     for key in KEPT {
         if let Some(v) = owner.get(key) {
             out.insert(key.to_string(), v.clone());
         }
     }
-    let mut projects = existing
-        .and_then(|e| e.get("projects"))
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let entry = projects
-        .entry(worktree.to_string())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if let Some(obj) = entry.as_object_mut() {
-        obj.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
-    }
+    let mut trusted = Map::new();
+    trusted.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
+    let mut projects = Map::new();
+    projects.insert(worktree.to_string(), Value::Object(trusted));
     out.insert("projects".into(), Value::Object(projects));
     Value::Object(out)
 }
@@ -51,16 +44,15 @@ mod tests {
             "mcpServers": {"db": {"command": "psql", "env": {"PGPASSWORD": "s"}}},
             "projects": {"/home/o/app": {"hasTrustDialogAccepted": true}},
         });
-        let existing =
-            json!({"projects": {"/s/worktrees/app/t0": {"hasTrustDialogAccepted": true}}});
-        let out = sandbox_claude_json(&owner, Some(&existing), "/s/worktrees/app/t1");
+        let out = sandbox_claude_json(&owner, "/s/worktrees/app/t1");
         assert_eq!(out["oauthAccount"]["emailAddress"], "o@x");
         assert_eq!(out["userID"], "u1");
         assert!(out.get("mcpServers").is_none());
         assert!(out["projects"].get("/home/o/app").is_none());
         assert_eq!(
-            out["projects"]["/s/worktrees/app/t0"]["hasTrustDialogAccepted"],
-            true
+            out["projects"].as_object().unwrap().len(),
+            1,
+            "this worktree alone"
         );
         assert_eq!(
             out["projects"]["/s/worktrees/app/t1"]["hasTrustDialogAccepted"],

@@ -98,6 +98,11 @@ fn run_worker(w: &World, cli: WorkerCli, script: &str) -> String {
 
 /// As `run_worker`, with a worker token file for Claude (review finding 6).
 fn run_worker_with(w: &World, cli: WorkerCli, script: &str, token: Option<PathBuf>) -> String {
+    run_as(w, 3, cli, script, token)
+}
+
+/// As `run_worker_with`, as Run `run`.
+fn run_as(w: &World, run: i64, cli: WorkerCli, script: &str, token: Option<PathBuf>) -> String {
     let stub = w
         .home
         .parent()
@@ -119,7 +124,7 @@ fn run_worker_with(w: &World, cli: WorkerCli, script: &str, token: Option<PathBu
     let dirs = GitDirs {
         common: w.repo.join(".git"),
         admin: w.repo.join(".git/worktrees/t1"),
-        run: 3,
+        run,
         branch: "idlemax/t1".into(),
         start: rev(&w.repo, "main"),
     };
@@ -351,4 +356,26 @@ fn live_n3_a_codex_worker_never_writes_the_owners_auth() {
     );
     assert!(report.contains("AUTH"), "Codex still signs in: {report}");
     assert_eq!(std::fs::read_to_string(&owner).unwrap(), before, "{report}");
+}
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_n4_each_run_gets_a_fresh_claude_home() {
+    let Some(w) = world() else { return };
+    let plant = "echo '{\"hooks\":{}}' > \"$CLAUDE_CONFIG_DIR/settings.json\" && echo PLANTED; \
+                 printf '{\"projects\":{\"/other\":{\"mcpServers\":{\"x\":{}}}}}' \
+                   > \"$CLAUDE_CONFIG_DIR/.claude.json\"; true";
+    let look = "test -e \"$CLAUDE_CONFIG_DIR/settings.json\" && echo SETTINGS-LEFT; \
+                grep -q mcpServers \"$CLAUDE_CONFIG_DIR/.claude.json\" && echo MCP-LEFT; \
+                grep -q /other \"$CLAUDE_CONFIG_DIR/.claude.json\" && echo PROJECT-LEFT; \
+                grep -q '\"userID\"' \"$CLAUDE_CONFIG_DIR/.claude.json\" && echo OWNER-KEYS; true";
+    let report = run_as(&w, 3, WorkerCli::Claude, plant, None);
+    assert!(report.contains("PLANTED"), "{report}");
+    for run in [4, 3] {
+        let report = run_as(&w, run, WorkerCli::Claude, look, None);
+        assert!(report.contains("OWNER-KEYS"), "run {run}: {report}");
+        for left in ["SETTINGS-LEFT", "MCP-LEFT", "PROJECT-LEFT"] {
+            assert!(!report.contains(left), "run {run}: {left}: {report}");
+        }
+    }
 }

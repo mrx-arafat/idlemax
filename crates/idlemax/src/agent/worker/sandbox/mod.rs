@@ -178,7 +178,7 @@ pub fn wrap(
             let bind_credentials = plan.claude_token.is_none();
             Some(claude_home(
                 &sandbox,
-                home.as_deref(),
+                (home.as_deref(), git.run),
                 folder,
                 bind_credentials,
             )?)
@@ -291,14 +291,32 @@ fn set_private(file: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// The Claude home of Run `run`, fresh at each launch (finding N4): only the Run's own
+/// `projects/` (its transcripts, which `--resume` needs) is kept; any `settings.json`, hook,
+/// agent or anything else a worker left goes, and `.claude.json` is written anew from the
+/// owner's kept keys and this worktree alone. No Run shares it with another.
 fn claude_home(
     sandbox: &Path,
-    home: Option<&Path>,
+    (home, run): (Option<&Path>, i64),
     folder: &Path,
     bind_credentials: bool,
 ) -> Result<ClaudeHome, String> {
-    let dir = sandbox.join("claude");
+    let dir = sandbox.join("claude").join(run.to_string());
     crate::state::create_private_dir(&dir).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
+        if entry.file_name() == "projects" && entry.path().is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        let gone = match path.is_dir() && !path.is_symlink() {
+            true => std::fs::remove_dir_all(&path),
+            false => std::fs::remove_file(&path),
+        };
+        gone.map_err(|e| format!("{}: {e}", path.display()))?;
+    }
     let read = |p: &Path| {
         std::fs::read_to_string(p)
             .ok()
@@ -308,7 +326,7 @@ fn claude_home(
         .and_then(|h| read(&h.join(".claude.json")))
         .unwrap_or_default();
     let file = dir.join(".claude.json");
-    let json = sandbox_claude_json(&owner, read(&file).as_ref(), &show(folder));
+    let json = sandbox_claude_json(&owner, &show(folder));
     std::fs::write(&file, json.to_string()).map_err(|e| e.to_string())?;
     // With a worker token nothing of the owner's `~/.claude` is bound (review finding 6).
     let credentials = home
