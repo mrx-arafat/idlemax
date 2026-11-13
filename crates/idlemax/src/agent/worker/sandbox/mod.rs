@@ -19,6 +19,7 @@ use idlemax_core::types::JobId;
 use idlemax_core::worker::sandbox::bwrap::{bwrap_args, ClaudeHome, CodexHome, Fence};
 use idlemax_core::worker::sandbox::claude_home::sandbox_claude_json;
 use idlemax_core::worker::sandbox::codex_home::sandbox_codex_config;
+use idlemax_core::worker::sandbox::credential_store::store_files;
 use idlemax_core::worker::WorkerCli;
 
 use super::host::Wrap;
@@ -36,7 +37,7 @@ const HOMES: [&str; 4] = ["/home", "/root", "/mnt", "/media"];
 
 /// What of the owner's home a worker may read: toolchains and their caches, and git's own
 /// settings. Never a credential (`~/.cargo/credentials*` stays out: only cargo's subfolders).
-const TOOLCHAINS: [&str; 22] = [
+const TOOLCHAINS: [&str; 24] = [
     ".local/bin",
     ".local/lib",
     ".local/share/claude",
@@ -57,7 +58,10 @@ const TOOLCHAINS: [&str; 22] = [
     ".sdkman",
     "go",
     ".gitconfig",
-    ".config/git",
+    // git's own settings, file by file: never the folder, which holds the credential store.
+    ".config/git/config",
+    ".config/git/ignore",
+    ".config/git/attributes",
     ".config/mise",
 ];
 
@@ -210,7 +214,7 @@ pub fn wrap(
         hidden_dirs: hidden_dirs(&plan.root),
         home: home.as_deref().map(show),
         visible: visible(home.as_deref(), &git.common, cli),
-        hidden_files: Vec::new(),
+        hidden_files: credential_stores(&git.common, home.as_deref()),
         claude,
         codex,
         proxy_socket: show(&socket),
@@ -354,6 +358,33 @@ fn read_only(folder: &Path, private: &Path) -> Vec<String> {
     let mut out = vec![show(&folder.join(".git"))];
     out.extend(private_git::read_only(private).iter().map(|p| show(p)));
     out
+}
+
+/// The git credential store files that exist (finding N2), from the `credential.helper`
+/// values git uses for this repository (system, global and the repository's own), each to be
+/// covered by `/dev/null`.
+fn credential_stores(common: &Path, home: Option<&Path>) -> Vec<String> {
+    let Some(home) = home else {
+        return Vec::new();
+    };
+    let out = Command::new("git")
+        .args(crate::safe_git::SAFE)
+        .arg(format!("--git-dir={}", common.display()))
+        .args(["config", "--get-all", "credential.helper"])
+        .output();
+    let helpers: Vec<String> = out
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    store_files(&helpers, home)
+        .into_iter()
+        .filter(|p| p.is_file())
+        .map(|p| show(&p))
+        .collect()
 }
 
 /// Every folder of homes, and the state dir when it lies outside them.

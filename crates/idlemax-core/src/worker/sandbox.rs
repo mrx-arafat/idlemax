@@ -4,6 +4,7 @@
 pub mod bwrap;
 pub mod claude_home;
 pub mod codex_home;
+pub mod credential_store;
 
 use serde::{Deserialize, Serialize};
 

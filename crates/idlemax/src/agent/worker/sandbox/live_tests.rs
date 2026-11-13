@@ -379,3 +379,37 @@ fn live_n4_each_run_gets_a_fresh_claude_home() {
         }
     }
 }
+
+#[test]
+#[ignore = "live: scripts/sandbox-live.sh"]
+fn live_n2_no_git_credential_store_is_readable() {
+    let Some(w) = world() else { return };
+    let outside = w.home.parent().unwrap().join("store-creds");
+    write(&outside, "https://o:SECRET@github.com\n");
+    write(
+        &w.home.join(".config/git/credentials"),
+        "https://o:SECRET@github.com\n",
+    );
+    write(
+        &w.home.join(".config/git/config"),
+        &format!(
+            "[credential]\n\thelper = store --file {}\n[core]\n\tpager = less\n",
+            outside.display()
+        ),
+    );
+    let report = run_worker(
+        &w,
+        WorkerCli::Claude,
+        &format!(
+            "grep -q SECRET \"$HOME/.config/git/credentials\" && echo READ-XDG; \
+             grep -q SECRET {} && echo READ-STORE; \
+             grep -q pager \"$HOME/.config/git/config\" && echo GIT-CONFIG; true",
+            outside.display()
+        ),
+    );
+    assert!(!report.contains("READ-"), "{report}");
+    assert!(
+        report.contains("GIT-CONFIG"),
+        "git's own settings still come back: {report}"
+    );
+}
