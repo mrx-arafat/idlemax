@@ -96,6 +96,10 @@ pub struct SandboxPlan {
 /// The variable a sandboxed Claude worker reads its worker token from.
 pub const TOKEN_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
+/// The pane variable naming the shim's folder, so the Herdr host can put it first on `PATH`
+/// again once the shell's start-up files have run.
+pub const SHIM_DIR_VAR: &str = "IDLEMAX_SHIM_DIR";
+
 /// The worker token in `file`, which must be a regular file only its owner can read or write
 /// (`chmod 600`); the error never holds the token.
 pub fn read_token(file: &Path) -> Result<String, String> {
@@ -505,7 +509,10 @@ fn shim(
     std::fs::write(&file, body).map_err(|e| e.to_string())?;
     set_executable(&file)?;
     let path = std::env::var("PATH").unwrap_or_default();
-    Ok(vec![("PATH".into(), format!("{}:{path}", show(&dir)))])
+    Ok(vec![
+        ("PATH".into(), format!("{}:{path}", show(&dir))),
+        (SHIM_DIR_VAR.into(), show(&dir)),
+    ])
 }
 
 #[cfg(unix)]

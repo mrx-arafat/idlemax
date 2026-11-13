@@ -398,3 +398,25 @@ fn on_linux_the_panes_shell_moves_into_a_worker_scope_before_the_agent_starts() 
         .unwrap();
     assert!(adopt < start, "{calls:#?}");
 }
+
+#[test]
+fn a_sandboxed_start_puts_the_shim_first_again_before_the_agent_starts() {
+    // A .bashrc that prepends ~/.local/bin hid the shim, and claude ran outside bwrap (live).
+    let fake = existing_tab();
+    let host = HerdrHost::with_background(fake.clone(), None);
+    let mut start = launch();
+    start.env.push((
+        crate::agent::worker::sandbox::SHIM_DIR_VAR.into(),
+        "/s/7-1".into(),
+    ));
+    host.start(&start).unwrap();
+    let calls = lines(&fake);
+    let at = |want: &str| calls.iter().position(|c| c.starts_with(want));
+    let export = at("herdr pane run p2 export PATH='/s/7-1':\"$PATH\"; hash -r;");
+    let waited = at("herdr pane wait-output --match idlemax-shim-42");
+    let agent = at("herdr agent start im-app-fix-1");
+    assert!(
+        export < waited && waited < agent && export.is_some(),
+        "{calls:#?}"
+    );
+}

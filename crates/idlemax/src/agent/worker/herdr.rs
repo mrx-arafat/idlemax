@@ -5,6 +5,7 @@
 
 mod parse;
 mod scoped;
+mod shim;
 #[cfg(test)]
 mod tests;
 mod trust;
@@ -197,6 +198,7 @@ impl HerdrHost {
             )?;
         }
         self.adopt(pane, launch);
+        self.shim_first(pane, launch)?;
         let mut args = strings(&["agent", "start", &launch.name]);
         args.extend(strings(&[
             "--kind",
