@@ -87,6 +87,40 @@ Where bubblewrap works (`idlemax doctor` shows `ok  sandbox`), each worker runs 
 - its only network is a proxy that opens port 443 of the model hosts (`workers.sandbox_hosts`);
 - every process of the worker ends with it, a detached one included.
 
+#### Switching the sandbox on (Linux)
+
+The sandbox needs bubblewrap, and on Ubuntu 24.04 and later also a one-line AppArmor rule that lets bubblewrap build its sandbox.
+Run these once on each Linux device, in a real terminal (sudo asks for your password):
+
+```sh
+# 1. Install bubblewrap
+sudo apt install -y bubblewrap
+
+# 2. Ubuntu 24.04+ only: allow /usr/bin/bwrap to make user namespaces
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'RULE'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/bwrap>
+}
+RULE
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+
+# 3. Check
+idlemax doctor        # wants: ok  sandbox  workers run inside bubblewrap ...
+```
+
+Why step 2: Ubuntu 24.04 stops ordinary programs from making user namespaces (`kernel.apparmor_restrict_unprivileged_userns = 1`), and the `bubblewrap` package ships no rule for itself.
+The rule names `/usr/bin/bwrap` alone, the same kind of rule Flatpak relies on; every other program stays restricted.
+You need it when `idlemax doctor` says `bwrap cannot make its namespaces` (for example `Failed RTM_NEWADDR` or `setting up uid map: Permission denied`), and its fix then names the AppArmor profile.
+Other distributions that allow user namespaces need step 1 only.
+
+Then each worker's Run says how it ran: `wrapped` inside the sandbox, or `bare` with the reason.
+A worker the sandbox should wrap but did not is refused, never run loose (`the sandbox did not take`).
+
 #### One step for Claude workers: a worker token
 
 A sandboxed Claude worker should sign in with a token of its own, so it never needs your `~/.claude`:

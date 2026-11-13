@@ -200,6 +200,17 @@ Common plan lines:
 - `orchestrator pass 3m ago, 23 picks dropped: account max may not be spent: resting (23)`: the pass ran, but its picks could not be used; the most common reasons come first, with their counts.
   Here the account is resting after a usage limit; `idlemax quota` says until when.
 
+### `sandbox` warns: "bwrap is not installed" or "bwrap cannot make its namespaces"
+
+Workers still run, with the soft fences only.
+"not installed": `sudo apt install -y bubblewrap`.
+"cannot make its namespaces" on Ubuntu 24.04+: bubblewrap is there but AppArmor blocks it; add the one-file rule in [Switching the sandbox on](14-safety-and-privacy.md#switching-the-sandbox-on-linux), then run `idlemax doctor` again.
+
+### A worker ends with "the sandbox did not take"
+
+idlemax refused that worker because its CLI was not inside bubblewrap, so nothing ran unsandboxed.
+Update idlemax first (older builds lost the sandbox when a `.bashrc` put `~/.local/bin` first on `PATH`), then run `idlemax doctor`; the refused Run waits in `idlemax review` for you to discard.
+
 ### The dashboard asks for the token again
 
 It keeps the token in that browser's local storage.
