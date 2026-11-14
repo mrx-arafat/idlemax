@@ -18,7 +18,7 @@ use super::{ExitWith, Out};
 pub const DEFAULT_PATH: &str = "skills/idlemax/SKILL.md";
 
 /// Written as a trigger: terse, and about the user's intent rather than the tool's features.
-const TRIGGER: &str = "Use when the user asks what spare capacity their devices have, which background jobs are queued, running or failed, why a job is not running, or how much AI subscription quota can be spent before it resets. Runs idlemax from the shell.";
+const TRIGGER: &str = "Use when the user asks what spare capacity their devices have, which background jobs are queued, running or failed, why a job is not running, how much AI subscription quota can be spent before it resets, or to review the work idlemax's workers finished. Runs idlemax from the shell.";
 
 const INSTALL: &str =
     "curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh";
@@ -52,6 +52,7 @@ pub fn generate() -> String {
     out.push_str(
         "- A job runs only when the guard allows it; `idlemax why <id>` says what holds it.\n",
     );
+    out.push_str("- To review finished work: `idlemax review --json` lists each task with its verdict and a `read` command that prints its commits and diff; read the diff against the task, then tell the user what you found and let them choose `idlemax review keep <run>` or `idlemax review discard <run>`.\n");
     out.push_str("- `idlemax local status` still works when the coordinator is down.\n");
     out.push_str("- To see live state at the start of every session, ask the user before running `idlemax hooks install`.\n");
     out.push_str(&format!(

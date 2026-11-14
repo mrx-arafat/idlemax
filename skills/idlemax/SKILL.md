@@ -1,6 +1,6 @@
 ---
 name: idlemax
-description: Use when the user asks what spare capacity their devices have, which background jobs are queued, running or failed, why a job is not running, or how much AI subscription quota can be spent before it resets. Runs idlemax from the shell.
+description: Use when the user asks what spare capacity their devices have, which background jobs are queued, running or failed, why a job is not running, how much AI subscription quota can be spent before it resets, or to review the work idlemax's workers finished. Runs idlemax from the shell.
 ---
 
 # idlemax
@@ -35,6 +35,7 @@ Run useful jobs on spare device capacity and spend leftover AI quota before it r
 
 - Add `--json` to a command for machine-readable output.
 - A job runs only when the guard allows it; `idlemax why <id>` says what holds it.
+- To review finished work: `idlemax review --json` lists each task with its verdict and a `read` command that prints its commits and diff; read the diff against the task, then tell the user what you found and let them choose `idlemax review keep <run>` or `idlemax review discard <run>`.
 - `idlemax local status` still works when the coordinator is down.
 - To see live state at the start of every session, ask the user before running `idlemax hooks install`.
 
