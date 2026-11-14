@@ -128,6 +128,8 @@ pub struct Live {
     pub jobs: JobCounts,
     pub open_advice: u64,
     pub quota: Vec<QuotaLine>,
+    /// Finished dispatcher tasks waiting for the user's keep or discard.
+    pub review: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -178,7 +180,13 @@ pub fn live(status: &ClusterStatus, quota: &[QuotaView]) -> Live {
         jobs: status.jobs.clone(),
         open_advice: status.open_advice,
         quota: accounts,
+        review: 0,
     }
+}
+
+/// The hook's line to the session agent: the work waits on the user, and the agent can help.
+pub(super) fn review_note(n: u64) -> String {
+    format!("{n} finished tasks wait for the user; offer to review them (idlemax review --json)")
 }
 
 /// `path` with the user's home directory shown as `~`.
@@ -200,6 +208,9 @@ pub fn render(h: &Home, mode: Mode) -> String {
             out.extend(devices(&live.devices));
             out.push(format!("jobs: {}", jobs_line(&live.jobs, true)));
             out.push(format!("advice: {} open", live.open_advice));
+            if live.review > 0 {
+                out.push(format!("review: {} finished tasks wait", live.review));
+            }
             out.extend(quota(&live.quota));
             out.extend(help(&up_steps(live)));
         }
@@ -208,6 +219,9 @@ pub fn render(h: &Home, mode: Mode) -> String {
             out.push(format!("jobs: {}", jobs_line(&live.jobs, false)));
             if live.open_advice > 0 {
                 out.push(format!("advice: {} open", live.open_advice));
+            }
+            if live.review > 0 {
+                out.push(format!("review: {}", review_note(live.review)));
             }
             out.extend(quota(&live.quota));
             out.extend(help(&["Run `idlemax` for the full view".into()]));
@@ -286,6 +300,12 @@ fn quota(list: &[QuotaLine]) -> Vec<String> {
 pub(super) fn up_steps(live: &Live) -> Vec<String> {
     let j = &live.jobs;
     let mut steps = Vec::new();
+    if live.review > 0 {
+        steps.push(format!(
+            "Run `idlemax review` to see the {} finished tasks, or ask your coding agent to review them",
+            live.review
+        ));
+    }
     if live.devices.is_empty() {
         steps.push("Run `idlemax agent` on a device so it can take jobs".to_string());
     }

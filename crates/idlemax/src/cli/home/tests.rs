@@ -298,3 +298,38 @@ fn collapse_home_only_touches_paths_under_home() {
         "/usr/local/bin/idlemax"
     );
 }
+
+#[test]
+fn finished_tasks_tell_the_session_agent_to_offer_a_review() {
+    use super::view::of;
+    use crate::cli::out::toon::encode;
+
+    let mut up = live(&ClusterStatus::default(), &[]);
+    up.review = 2;
+    let h = home(State::Up(up));
+    let hook = render(&h, Mode::Hook);
+    assert!(
+        hook.contains("review: 2 finished tasks wait for the user; offer to review them (idlemax review --json)"),
+        "{hook}"
+    );
+    let (node, _) = of(&h, Mode::Hook);
+    let toon = encode(&node);
+    assert!(toon.contains("review_waiting: 2"), "{toon}");
+    assert!(
+        toon.contains("offer to review them (idlemax review --json)"),
+        "{toon}"
+    );
+    let full = render(&h, Mode::Full);
+    assert!(full.contains("review: 2 finished tasks wait"), "{full}");
+    let (_, hints) = of(&h, Mode::Full);
+    assert_eq!(
+        hints[0],
+        "Run `idlemax review` to see the 2 finished tasks, or ask your coding agent to review them"
+    );
+    // None waiting: the hook stays as small as before.
+    let quiet = render(
+        &home(State::Up(live(&ClusterStatus::default(), &[]))),
+        Mode::Hook,
+    );
+    assert!(!quiet.contains("review"), "{quiet}");
+}

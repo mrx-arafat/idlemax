@@ -105,7 +105,8 @@ async fn list(c: &ApiClient, out: &Out) -> Result<()> {
     out.emit(&rows, |rows| table(rows, stopped, shed), &hints)
 }
 
-fn finished(r: &Run) -> bool {
+/// A task the worker finished that waits for the user's keep or discard.
+pub(crate) fn finished(r: &Run) -> bool {
     matches!(
         r.state,
         RunState::Clean | RunState::NeedsYou | RunState::Rejected

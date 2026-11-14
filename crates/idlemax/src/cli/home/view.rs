@@ -16,7 +16,14 @@ pub fn of(h: &Home, mode: Mode) -> (Node, Vec<String>) {
         }
         (State::Up(live), Mode::Hook) => {
             let mut fields = live_fields(live);
-            fields.push(("help".into(), Node::str("Run `idlemax` for the full view")));
+            let help = match live.review {
+                0 => "Run `idlemax` for the full view".to_string(),
+                n => format!(
+                    "{}; run `idlemax` for the full view",
+                    render::review_note(n)
+                ),
+            };
+            fields.push(("help".into(), Node::Str(help)));
             (Node::Obj(fields), Vec::new())
         }
         (State::Down { reason, detail }, Mode::Full) => {
@@ -58,6 +65,9 @@ fn live_fields(live: &Live) -> Vec<(String, Node)> {
     ];
     if live.open_advice > 0 {
         fields.push(("advice_open".into(), Node::Uint(live.open_advice)));
+    }
+    if live.review > 0 {
+        fields.push(("review_waiting".into(), Node::Uint(live.review)));
     }
     if !live.quota.is_empty() {
         fields.push(("quota".into(), quota(&live.quota)));

@@ -11,6 +11,7 @@ use std::time::Duration;
 use anyhow::Result;
 use idlemax_core::DEFAULT_COORD_URL;
 
+use super::review::finished;
 use super::{ApiClient, ClientError, Out};
 use crate::state::{self, StateError};
 pub use render::{collapse_home, Mode, COMMANDS, DESCRIPTION};
@@ -34,9 +35,18 @@ async fn gather(coord: Option<String>) -> Home {
     let state = match client {
         Err(down) => down,
         Ok(client) => {
-            let both = async { tokio::try_join!(client.status(), client.quota()) };
-            match tokio::time::timeout(FETCH_TIMEOUT, both).await {
-                Ok(Ok((status, quota))) => State::Up(render::live(&status, &quota)),
+            // The review count is a bonus: a coordinator without the dispatcher still answers.
+            let all = async {
+                let runs = async { Ok(client.runs().await.ok()) };
+                tokio::try_join!(client.status(), client.quota(), runs)
+            };
+            match tokio::time::timeout(FETCH_TIMEOUT, all).await {
+                Ok(Ok((status, quota, runs))) => {
+                    let mut live = render::live(&status, &quota);
+                    live.review =
+                        runs.map_or(0, |r| r.iter().filter(|r| finished(r)).count() as u64);
+                    State::Up(live)
+                }
                 Ok(Err(ClientError::Unreachable { .. })) | Err(_) => {
                     down(Reason::Unreachable, String::new())
                 }
