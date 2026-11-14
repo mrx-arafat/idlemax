@@ -450,7 +450,7 @@ async fn doctor_reports_healthy_and_every_broken_case() {
         text.contains("fix: run `idlemax service install`"),
         "{text}"
     );
-    assert!(text.contains("12 checks: 11 ok, 1 warn, 0 fail"), "{text}");
+    assert!(text.contains("13 checks: 12 ok, 1 warn, 0 fail"), "{text}");
 }
 
 #[test]

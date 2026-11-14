@@ -194,9 +194,15 @@ idlemax hooks summary             # what the hook prints (always exits 0)
 
 ### The skill
 
-`skills/idlemax/SKILL.md` is a generated [Agent Skill](https://agentskills.io) for agents without hooks.
+`skills/idlemax/SKILL.md` is a generated [Agent Skill](https://agentskills.io).
+It tells your coding agent what idlemax is, which command answers which question, and how to review the work workers finished: read each task's diff with the `read` command from `idlemax review --json`, tell you what it found, and leave keep or discard to you.
+
+`idlemax setup` installs it for Claude Code, Codex and OpenCode, and `idlemax skill install` does the same by hand, for example after an upgrade; `idlemax doctor` warns when a copy is missing or older than the binary.
 `idlemax skill` prints it, and `idlemax skill --check` exits 1 when a committed copy is stale.
-The hook and the skill reach the same goal, so you need only one.
+
+The skill and the hook do different jobs, and they work together.
+The skill is how the agent knows what to do when you ask about idlemax.
+The hook is how the agent hears, at the start of every session, that something waits for you: when finished tasks wait for review, the summary says how many and asks the agent to offer a review.
 
 ### One line to hand work to idle capacity
 

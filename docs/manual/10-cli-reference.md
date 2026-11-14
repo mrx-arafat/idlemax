@@ -438,10 +438,11 @@ Session hooks for coding agents.
 
 ## skill
 
-Print the agent skill, or check the committed copy is current.
+Print the agent skill, install it for your coding agents, or check the committed copy is current.
 
-| Flag | Meaning |
+| Flag or subcommand | Meaning |
 |---|---|
+| `install [--dry-run]` | write the skill to `skills/idlemax/SKILL.md` under the Claude Code and Codex folders (OpenCode's own only when there is no Claude Code folder, since it reads Claude Code's); `idlemax setup` does this, and `idlemax doctor` warns when a copy is missing or older than this binary |
 | `--check [<PATH>]` | compare the skill file at PATH (default `skills/idlemax/SKILL.md`) with the generated one and exit 1 when they differ |
 
 ## advise

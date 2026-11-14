@@ -1,16 +1,18 @@
 //! Delivery: `idlemax skill`. Prints the agent skill generated from the same static text the
 //! home view uses, or with `--check` compares the committed copy to it so CI fails when the
-//! two drift. The skill carries no live state: only the hook and the home view can show that.
+//! two drift; `idlemax skill install` puts it in each coding agent's skills folder. The skill
+//! carries no live state: only the hook and the home view can show that.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use clap::Args;
+use clap::{Args, Subcommand};
 use idlemax_core::install::diff::line_diff;
 use serde::Serialize;
 
 use super::files::read_optional;
 use super::home::{COMMANDS, DESCRIPTION};
+use super::hooks::places::Places;
 use super::out::toon::Node;
 use super::{ExitWith, Out};
 
@@ -23,12 +25,27 @@ const TRIGGER: &str = "Use when the user asks what spare capacity their devices 
 const INSTALL: &str =
     "curl -fsSL https://raw.githubusercontent.com/mrx-arafat/idlemax/main/scripts/install.sh | sh";
 
+pub mod install;
+
 #[derive(Args, Debug)]
 pub struct SkillArgs {
+    #[command(subcommand)]
+    cmd: Option<SkillCmd>,
     /// Compare the skill file at PATH (default skills/idlemax/SKILL.md) with the generated one
     /// and exit 1 when they differ; without it, print the generated skill
     #[arg(long, value_name = "PATH", num_args = 0..=1, default_missing_value = DEFAULT_PATH)]
     check: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+enum SkillCmd {
+    /// Put the skill in the skills folder of Claude Code, Codex and OpenCode, wherever they are
+    /// set up, so they can tell you what idlemax did and review it with you
+    Install {
+        /// Print what would be written without writing it
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Serialize)]
@@ -63,6 +80,10 @@ pub fn generate() -> String {
 
 pub fn run(args: SkillArgs, out: &Out) -> Result<()> {
     let generated = generate();
+    if let Some(SkillCmd::Install { dry_run }) = args.cmd {
+        let done = install::install(&Places::from_env()?, &generated, dry_run)?;
+        return out.emit(&done, |d| installed_text(d), &[]);
+    }
     let Some(path) = args.check else {
         return out.raw(&generated);
     };
@@ -83,6 +104,24 @@ pub fn run(args: SkillArgs, out: &Out) -> Result<()> {
         return Err(ExitWith(1).into());
     }
     Ok(())
+}
+
+fn installed_text(done: &[install::Installed]) -> String {
+    if done.is_empty() {
+        return "skill: no Claude Code, Codex or OpenCode folder found; nothing to install".into();
+    }
+    let lines: Vec<String> = done
+        .iter()
+        .map(|i| {
+            format!(
+                "{}: {} {}",
+                i.agent,
+                i.status.replace('_', " "),
+                i.file.display()
+            )
+        })
+        .collect();
+    lines.join("\n")
 }
 
 /// The verdict as lines: `skill: ... is current`, or `error:` with the diff and the fix.

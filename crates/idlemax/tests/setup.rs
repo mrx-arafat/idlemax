@@ -144,7 +144,7 @@ fn dry_run_lists_every_file_and_command_and_writes_nothing() {
         "{toon}"
     );
     assert!(
-        toon.contains("steps[6]{step,status,detail,by_hand}:"),
+        toon.contains("steps[7]{step,status,detail,by_hand}:"),
         "{toon}"
     );
     assert!(
@@ -191,9 +191,11 @@ fn a_second_run_changes_nothing_and_says_so() {
         "no service was asked for, so doctor's findings do not fail it"
     );
     assert_eq!(first["changed"], true);
-    for name in ["config", "token", "statusline"] {
+    for name in ["config", "token", "statusline", "skill"] {
         assert_eq!(step(&first, name, None)["status"], "done", "{name}");
     }
+    let skill = std::fs::read_to_string(h.home.join(".claude/skills/idlemax/SKILL.md")).unwrap();
+    assert!(skill.contains("idlemax review"), "{skill}");
     assert_eq!(step(&first, "service", None)["status"], "skipped");
     assert!(first["doctor"]["version"].is_string(), "doctor ran");
 
@@ -214,7 +216,7 @@ fn a_second_run_changes_nothing_and_says_so() {
     let (code, second) = h.json(&args);
     assert_eq!(code, 0);
     assert_eq!(second["changed"], false, "{second:#}");
-    for name in ["config", "token", "statusline"] {
+    for name in ["config", "token", "statusline", "skill"] {
         assert_eq!(
             step(&second, name, None)["status"],
             "already_done",

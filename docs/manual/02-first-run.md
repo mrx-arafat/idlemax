@@ -52,6 +52,10 @@ would do      service agent   new, then started
                               ...
 skipped       statusline      not asked for: add --statusline
                               by hand: idlemax statusline install
+would do      skill           the idlemax skill for claude, codex
+                              would write: ~/.claude/skills/idlemax/SKILL.md
+                              would write: ~/.codex/skills/idlemax/SKILL.md
+                              by hand: idlemax skill install
 would do      doctor          waits up to 10s for services to connect, then checks the whole setup
                               would run: idlemax doctor
                               by hand: idlemax doctor
@@ -82,8 +86,10 @@ Here is what it does, in order:
 2. **Writes the allowlist.** `--allow /bin/echo` lets jobs run `/bin/echo`, which the example below uses.
 3. **Installs the coordinator and the agent as background services**, so they start again after a reboot or a log-in:
    a LaunchAgent on macOS, a systemd user unit on Linux.
-4. **Waits up to 10 seconds** for the agent to reach the coordinator.
-5. **Runs `idlemax doctor`**, which checks the whole setup.
+4. **Gives your coding agents the idlemax skill**, in the skills folder of Claude Code and Codex (OpenCode reads Claude Code's), wherever their folder exists.
+   That is how the agent you talk to knows what idlemax is doing, tells you when workers finished something, and reviews it with you.
+5. **Waits up to 10 seconds** for the agent to reach the coordinator.
+6. **Runs `idlemax doctor`**, which checks the whole setup.
 
 Running `idlemax setup` again is safe.
 Steps that are already done say `already done`.

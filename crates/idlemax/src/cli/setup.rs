@@ -100,6 +100,7 @@ pub async fn run(paths: &Paths, args: SetupArgs, coord: Option<String>, out: &Ou
         places: (plan.statusline == StatuslinePlan::Install)
             .then(|| statusline::places(paths))
             .transpose()?,
+        agents: super::hooks::places::Places::from_env().ok(),
         runner: &SystemRunner,
         dry_run: args.dry_run,
         token,

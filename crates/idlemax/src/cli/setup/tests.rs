@@ -60,6 +60,7 @@ fn env<'a>(root: &Path, paths: &'a Paths, runner: &'a Fake, dry_run: bool) -> En
         paths,
         svc: Some(svc),
         places: None,
+        agents: None,
         runner,
         dry_run,
         token: None,
@@ -197,6 +198,7 @@ fn a_dry_run_changes_nothing_and_a_second_run_changes_nothing_again() {
             Status::WouldDo,
             Status::WouldDo,
             Status::WouldDo,
+            Status::Skipped,
             Status::Skipped
         ]
     );
@@ -231,6 +233,7 @@ fn a_failing_service_command_stops_the_run_and_the_rest_is_not_run() {
             Status::Done,
             Status::Done,
             Status::Failed,
+            Status::Skipped,
             Status::Skipped,
             Status::Skipped
         ]

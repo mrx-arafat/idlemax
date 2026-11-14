@@ -9,5 +9,6 @@ pub mod opencode;
 pub mod quote;
 pub mod service;
 pub mod setup;
+pub mod skill;
 pub mod statusline;
 pub mod unit_read;

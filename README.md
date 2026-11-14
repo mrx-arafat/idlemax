@@ -187,6 +187,8 @@ idlemax review
 idlemax review keep 12 --merge
 ```
 
+Or ask your coding agent: `idlemax setup` gives Claude Code, Codex and OpenCode the idlemax skill, so "review what idlemax finished" makes the agent read each task's diff and report back, and the session hook (`idlemax hooks install`) tells it when finished work waits.
+
 **Change a setting** without opening a file; it applies at once:
 
 ```sh

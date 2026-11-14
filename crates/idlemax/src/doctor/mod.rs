@@ -39,5 +39,23 @@ pub async fn run(coord_url: Option<String>) -> Report {
     host::sandbox(&mut report, &config).await;
     host::github(&mut report, &config).await;
     service::check(&mut report, &units);
+    skill(&mut report);
     report
+}
+
+/// Each coding agent here has the current idlemax skill, so it can bring idlemax's work back
+/// to the user; nothing to check without a home to find the agents in.
+fn skill(report: &mut Report) {
+    let Ok(places) = crate::cli::hooks::places::Places::from_env() else {
+        return;
+    };
+    let generated = crate::cli::skill::generate();
+    match crate::cli::skill::install::copies(&places, &generated) {
+        Ok(copies) => report.push(idlemax_core::install::skill::check(&copies)),
+        Err(e) => report.push(idlemax_core::doctor::Check::warn(
+            "skill",
+            format!("could not read the agents' skill copies: {e:#}"),
+            "idlemax skill install",
+        )),
+    }
 }

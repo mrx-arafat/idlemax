@@ -4,7 +4,7 @@
 
 mod agents;
 mod opencode_migration;
-mod places;
+pub(crate) mod places;
 mod status;
 
 use std::path::PathBuf;

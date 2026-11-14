@@ -22,6 +22,8 @@ pub(super) struct Env<'a> {
     pub(super) svc: Option<Ctx>,
     /// Set when the statusline is to be wired.
     pub(super) places: Option<statusline::Places>,
+    /// Where the coding agents keep their skills; None without a home to find them in.
+    pub(super) agents: Option<crate::cli::hooks::places::Places>,
     pub(super) runner: &'a dyn Runner,
     pub(super) dry_run: bool,
     /// The token piped in with `--token-stdin`.
@@ -36,6 +38,7 @@ enum Stage {
     Service(ServiceKind),
     ServiceSkipped(&'static str),
     Statusline(StatuslinePlan),
+    Skill,
 }
 
 fn stages(plan: &SetupPlan, allow: bool) -> Vec<Stage> {
@@ -48,6 +51,7 @@ fn stages(plan: &SetupPlan, allow: bool) -> Vec<Stage> {
         None => stages.extend(plan.services.iter().map(|k| Stage::Service(*k))),
     }
     stages.push(Stage::Statusline(plan.statusline));
+    stages.push(Stage::Skill);
     stages
 }
 
@@ -80,6 +84,7 @@ fn run_stage(stage: &Stage, plan: &SetupPlan, env: &Env<'_>) -> StepReport {
         Stage::ServiceSkipped(reason) => skipped(stage, plan, reason),
         Stage::Statusline(StatuslinePlan::Install) => statusline_step(plan, env),
         Stage::Statusline(StatuslinePlan::Skip(reason)) => skipped(stage, plan, reason),
+        Stage::Skill => skill_step(plan, env),
     }
 }
 
@@ -102,6 +107,7 @@ fn labels(stage: &Stage) -> (&'static str, Option<&'static str>) {
         Stage::Service(kind) => ("service", Some(kind.name())),
         Stage::ServiceSkipped(_) => ("service", None),
         Stage::Statusline(_) => ("statusline", None),
+        Stage::Skill => ("skill", None),
     }
 }
 
@@ -113,6 +119,7 @@ fn command(stage: &Stage, plan: &SetupPlan) -> String {
         Stage::Service(kind) => format!("idlemax service install {}", kind.name()),
         Stage::ServiceSkipped(_) => "idlemax service install".into(),
         Stage::Statusline(_) => "idlemax statusline install".into(),
+        Stage::Skill => "idlemax skill install".into(),
         Stage::Allowlist => "idlemax config set agent.command_allowlist <programs>".into(),
     }
 }
@@ -323,4 +330,38 @@ fn statusline_step(plan: &SetupPlan, env: &Env<'_>) -> StepReport {
     StepReport::new("statusline", status, detail, cmd)
         .with_files(vec![change.settings, change.wrapper])
         .with_notes(notes)
+}
+
+/// Puts the idlemax skill in each coding agent's skills folder, so the agent the user talks to
+/// can say what idlemax did and review its finished work.
+fn skill_step(plan: &SetupPlan, env: &Env<'_>) -> StepReport {
+    let cmd = command(&Stage::Skill, plan);
+    let Some(agents) = &env.agents else {
+        return skipped(
+            &Stage::Skill,
+            plan,
+            "no home folder to find the coding agents in",
+        );
+    };
+    let generated = crate::cli::skill::generate();
+    let done = match crate::cli::skill::install::install(agents, &generated, env.dry_run) {
+        Ok(done) => done,
+        Err(e) => return StepReport::new("skill", Status::Failed, format!("{e:#}"), cmd),
+    };
+    if done.is_empty() {
+        return skipped(
+            &Stage::Skill,
+            plan,
+            "no Claude Code, Codex or OpenCode folder found",
+        );
+    }
+    let agents: Vec<&str> = done.iter().map(|i| i.agent).collect();
+    let status = match () {
+        _ if done.iter().all(|i| i.status == "current") => Status::AlreadyDone,
+        _ if env.dry_run => Status::WouldDo,
+        _ => Status::Done,
+    };
+    let files = done.into_iter().map(|i| i.file).collect();
+    let detail = format!("the idlemax skill for {}", agents.join(", "));
+    StepReport::new("skill", status, detail, cmd).with_files(files)
 }

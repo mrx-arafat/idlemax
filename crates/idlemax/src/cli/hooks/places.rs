@@ -28,15 +28,15 @@ impl Agent {
 }
 
 /// Each agent's config directory, from `HOME` and the variables the agents themselves honour.
-pub(super) struct Places {
-    pub(super) claude: PathBuf,
-    pub(super) codex: PathBuf,
-    pub(super) opencode: PathBuf,
-    pub(super) opencode_legacy: Vec<PathBuf>,
+pub(crate) struct Places {
+    pub(crate) claude: PathBuf,
+    pub(crate) codex: PathBuf,
+    pub(crate) opencode: PathBuf,
+    pub(crate) opencode_legacy: Vec<PathBuf>,
 }
 
 impl Places {
-    pub(super) fn from_env() -> Result<Self> {
+    pub(crate) fn from_env() -> Result<Self> {
         let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
         let home = var("HOME").map(PathBuf::from);
         let under = |dir: &str| home.as_ref().map(|h| h.join(dir));
