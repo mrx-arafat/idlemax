@@ -373,6 +373,8 @@ idlemax review
 ```
 
 It lists every finished task per project with its verdict and concern, a one-line summary, the diff size and the branch, and how many workers are stopped or wait to restart.
+Under a task with commits, `read it:` gives the command that prints those commits with their diff, run in the task's worktree (`read` and `worktree` in `--json`).
+That is enough for a coding agent to review the work for you: ask it to "review what idlemax finished", and the idlemax skill has it read each diff and report back, while keep and discard stay your call.
 
 ```sh
 idlemax review keep 12            # keep the branch, remove the worktree folder

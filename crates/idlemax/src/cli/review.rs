@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use idlemax_core::worker::report::CheckFacts;
 use idlemax_core::worker::run::{Run, RunState};
 use idlemax_core::worker::RunId;
 use idlemax_core::Paths;
@@ -61,6 +62,12 @@ struct Row {
     files: usize,
     lines: u64,
     branch: Option<String>,
+    /// The folder holding the task's checkout, while it is still there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worktree: Option<String>,
+    /// The command that prints the task's commits with their diff, for a review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    read: Option<String>,
     /// Why it ran without the OS sandbox, when it did (A13).
     #[serde(skip_serializing_if = "Option::is_none")]
     unsandboxed: Option<String>,
@@ -117,9 +124,23 @@ fn row(r: &Run) -> Row {
         files: diff.map_or(0, |d| d.files.len()),
         lines: diff.map_or(0, |d| d.lines()),
         branch: r.branch.clone(),
+        worktree: r.worktree.clone(),
+        read: read_command(r.worktree.as_deref(), r.facts.check.as_ref()),
         unsandboxed: idlemax_core::dispatch::view::unsandboxed(r.facts.sandbox.as_ref()),
         sandbox_note: idlemax_core::dispatch::view::sandbox_note(r.facts.sandbox.as_ref()),
     }
+}
+
+/// `git log -p` over the judged commits, run in the task's worktree; None before a check or
+/// when the task made no commit.
+fn read_command(worktree: Option<&str>, check: Option<&CheckFacts>) -> Option<String> {
+    let check = check?;
+    let tip = check.tip.as_deref()?;
+    if check.commits == 0 {
+        return None;
+    }
+    let dir = worktree?.replace('\'', "'\\''");
+    Some(format!("git -C '{dir}' log -p -n {} {tip}", check.commits))
 }
 
 fn table(rows: &[Row], stopped: usize, shed: usize) -> String {
@@ -141,6 +162,9 @@ fn table(rows: &[Row], stopped: usize, shed: usize) -> String {
                 r.lines,
                 r.branch.as_deref().unwrap_or("no branch")
             ));
+            if let Some(read) = &r.read {
+                out.push(format!("    read it: {read}"));
+            }
             if let Some(concern) = &r.concern {
                 out.push(format!("    {concern}"));
             }
@@ -183,5 +207,30 @@ async fn confirm(c: &ApiClient, id: RunId) -> Result<()> {
     match answer.trim() {
         "y" | "Y" | "yes" => Ok(()),
         _ => Err(CliError::runtime("nothing was discarded", "idlemax review").into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_checked_task_names_the_command_that_prints_its_commits() {
+        let check = CheckFacts {
+            commits: 2,
+            tip: Some("abc123".into()),
+            ..CheckFacts::default()
+        };
+        assert_eq!(
+            read_command(Some("/w/it's"), Some(&check)).as_deref(),
+            Some("git -C '/w/it'\\''s' log -p -n 2 abc123")
+        );
+        let none = CheckFacts {
+            commits: 0,
+            ..check.clone()
+        };
+        assert_eq!(read_command(Some("/w"), Some(&none)), None, "no commit");
+        assert_eq!(read_command(None, Some(&check)), None, "no folder");
+        assert_eq!(read_command(Some("/w"), None), None, "not checked");
     }
 }
