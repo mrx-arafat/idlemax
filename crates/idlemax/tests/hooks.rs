@@ -158,7 +158,7 @@ fn opencode_legacy_copy_is_reported_and_migration_is_previewed() {
     std::fs::create_dir_all(&state).unwrap();
     sb.write(
         ".config/opencode/plugins/idlemax.js",
-        &idlemax_core::install::opencode::plugin_source(BIN),
+        &idlemax_core::install::opencode::plugin_source(BIN, None),
     );
     let legacy = sb.home.join(".config/opencode/plugins/idlemax.js");
     let custom = sb._tmp.path().join("custom");
@@ -206,14 +206,17 @@ fn our_commands(settings: &str) -> Vec<String> {
     groups
         .flat_map(|g| g["hooks"].as_array().into_iter().flatten())
         .filter_map(|h| h["command"].as_str())
-        .filter(|c| c.ends_with("hooks summary"))
+        .filter(|c| c.contains("hooks summary"))
         .map(String::from)
         .collect()
 }
 
-fn exe_command() -> String {
+/// The command a hook runs here; the sandbox's IDLEMAX_HOME rides along as `--home`.
+fn exe_command(sb: &Sandbox) -> String {
     let exe = std::fs::canonicalize(BIN).unwrap();
-    idlemax_core::install::hooks::hook_command(exe.to_str().unwrap())
+    let state = sb.home.join("state");
+    let state = std::fs::canonicalize(&state).unwrap_or(state);
+    idlemax_core::install::hooks::hook_command(exe.to_str().unwrap(), state.to_str())
 }
 
 #[test]
@@ -236,10 +239,13 @@ fn hooks_install_repair_and_remove_only_their_own_entry() {
     let (code, report) = sb.hooks(&["install"]);
     assert_eq!(code, 0, "{report}");
     let settings = sb.read(".claude/settings.json");
-    assert_eq!(our_commands(&settings), [exe_command()]);
+    assert_eq!(our_commands(&settings), [exe_command(&sb)]);
     assert!(settings.contains("echo mine") && settings.contains("\"model\": \"opus\""));
     assert_eq!(sb.read(".claude/settings.json.idlemax.bak"), SETTINGS);
-    assert_eq!(our_commands(&sb.read(".codex/hooks.json")), [exe_command()]);
+    assert_eq!(
+        our_commands(&sb.read(".codex/hooks.json")),
+        [exe_command(&sb)]
+    );
     assert_eq!(
         sb.read(".codex/config.toml"),
         "model = \"o3\"\n\n[features]\nhooks = true\n"
@@ -263,7 +269,11 @@ fn hooks_install_repair_and_remove_only_their_own_entry() {
     assert_eq!(outcome(&report, "claude"), "repaired", "{report}");
     assert_eq!(
         our_commands(&sb.read(".claude/settings.json")),
-        ["idlemax hooks summary"]
+        [exe_command(&sb).replacen(
+            std::fs::canonicalize(BIN).unwrap().to_str().unwrap(),
+            "idlemax",
+            1
+        )]
     );
 
     // A hook whose binary is gone shows as stale, and install fixes it.

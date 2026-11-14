@@ -1,6 +1,6 @@
 //! Adapter: discover, migrate and remove owned OpenCode plugins across config locations.
 
-use super::agents::{new_report, plugin_install, plugin_remove};
+use super::agents::{new_report, plugin_install, plugin_remove, Hook};
 use super::places::{Agent, Places};
 use super::{AgentReport, Outcome};
 use crate::cli::files::{read_optional, write_atomic};
@@ -31,16 +31,17 @@ fn managed_legacy(places: &Places) -> Result<Vec<PathBuf>> {
     Ok(legacy)
 }
 
-pub(super) fn install(places: &Places, program: &str, dry_run: bool) -> Result<AgentReport> {
+pub(super) fn install(places: &Places, hook: &Hook, dry_run: bool) -> Result<AgentReport> {
     let legacy = managed_legacy(places)?;
     let target = places.file(Agent::OpenCode);
     let before = read_optional(&target)?;
-    let mut report = plugin_install(&target, program, dry_run)?;
+    let mut report = plugin_install(&target, hook, dry_run)?;
     if !legacy.is_empty() && report.outcome == Outcome::Unchanged {
         report.outcome = Outcome::Repaired;
         // Break a possible target-file symlink before removing its old backing file.
         if !dry_run {
-            write_atomic(&target, opencode::plugin_source(program).as_bytes(), None)?;
+            let source = opencode::plugin_source(&hook.program, hook.home.as_deref());
+            write_atomic(&target, source.as_bytes(), None)?;
         }
     }
     for path in legacy {
@@ -119,6 +120,14 @@ pub(super) fn status(places: &Places) -> Result<AgentReport> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn echo() -> Hook {
+        Hook {
+            program: "/bin/echo".into(),
+            home: None,
+        }
+    }
+
     #[test]
     fn migration_and_uninstall_preserve_unmanaged_files_and_refused_targets() {
         let temp = tempfile::tempdir().unwrap();
@@ -127,7 +136,7 @@ mod tests {
         for file in [&old, &user] {
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         }
-        let source = opencode::plugin_source("/bin/echo");
+        let source = opencode::plugin_source("/bin/echo", None);
         std::fs::write(&old, &source).unwrap();
         std::fs::write(&user, "user plugin").unwrap();
         let places = Places {
@@ -140,13 +149,13 @@ mod tests {
         let target = places.file(Agent::OpenCode);
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, "user target").unwrap();
-        assert!(install(&places, "/bin/echo", false).is_err());
+        assert!(install(&places, &echo(), false).is_err());
         assert!(old.exists());
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "user target");
         std::fs::remove_file(&target).unwrap();
-        install(&places, "/bin/echo", true).unwrap();
+        install(&places, &echo(), true).unwrap();
         assert!(old.exists() && !target.exists());
-        install(&places, "/bin/echo", false).unwrap();
+        install(&places, &echo(), false).unwrap();
         assert!(target.exists() && !old.exists());
         std::fs::write(&old, &source).unwrap();
         uninstall(&places, true).unwrap();
@@ -158,7 +167,7 @@ mod tests {
         {
             std::fs::write(&old, &source).unwrap();
             std::os::unix::fs::symlink(&old, &target).unwrap();
-            install(&places, "/bin/echo", false).unwrap();
+            install(&places, &echo(), false).unwrap();
             assert!(target.is_file() && !target.is_symlink() && !old.exists());
             uninstall(&places, false).unwrap();
             std::fs::write(&old, &source).unwrap();
@@ -168,7 +177,7 @@ mod tests {
                 opencode: alias,
                 ..places
             };
-            install(&alias_places, "/bin/echo", false).unwrap();
+            install(&alias_places, &echo(), false).unwrap();
             assert!(
                 old.exists(),
                 "directory alias cleanup deleted the selected plugin"

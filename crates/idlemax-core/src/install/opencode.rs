@@ -23,9 +23,15 @@ pub fn program_of(text: &str) -> Option<String> {
     serde_json::from_str(line.trim_end_matches(';')).ok()
 }
 
-/// The plugin source for `program` (a bare name on PATH or an absolute path).
-pub fn plugin_source(program: &str) -> String {
-    let args: Vec<&str> = SUBCOMMAND.split(' ').collect();
+/// The plugin source for `program` (a bare name on PATH or an absolute path), with the state
+/// folder as `--home` when it is not the default.
+pub fn plugin_source(program: &str, home: Option<&str>) -> String {
+    let mut args: Vec<&str> = SUBCOMMAND.split(' ').collect();
+    args.extend(
+        home.map(|dir| [super::hooks::HOME_FLAG, dir])
+            .into_iter()
+            .flatten(),
+    );
     let (program, args) = (Value::from(program), Value::from(args));
     format!(
         r###"// {MARKER}: written by `idlemax hooks install`; delete this line to keep your own edits.
@@ -92,7 +98,7 @@ mod tests {
             "/tmp/we\"ird\\path/idlemax",
             "/tmp/ünï/idlemax",
         ] {
-            let src = plugin_source(program);
+            let src = plugin_source(program, None);
             assert!(is_managed(&src));
             assert_eq!(program_of(&src).as_deref(), Some(program), "{src}");
             assert!(
@@ -100,6 +106,11 @@ mod tests {
                 "{src}"
             );
         }
+        let custom = plugin_source("idlemax", Some("/srv/state"));
+        assert!(
+            custom.contains(r#"const args = ["hooks","summary","--home","/srv/state"];"#),
+            "{custom}"
+        );
         assert!(!is_managed("export const Mine = async () => ({});\n"));
         assert!(!is_managed(
             "import x from 'y';\n// idlemax managed opencode plugin\n"

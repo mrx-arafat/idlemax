@@ -17,6 +17,8 @@ mod locate;
 /// What the hook runs after the program: `idlemax hooks summary`.
 pub const SUBCOMMAND: &str = "hooks summary";
 pub const BINARY: &str = "idlemax";
+/// The summary's flag naming a state folder other than the default.
+pub const HOME_FLAG: &str = "--home";
 /// A session start must never wait long on this hook.
 pub const TIMEOUT_SECS: u32 = 10;
 const EVENT: &str = "SessionStart";
@@ -47,9 +49,14 @@ pub enum HookState {
     Installed { command: String },
 }
 
-/// `<program> hooks summary`, with the program quoted for a shell.
-pub fn hook_command(program: &str) -> String {
-    format!("{} {SUBCOMMAND}", shell_quote(program))
+/// `<program> hooks summary`, with the program quoted for a shell, and `--home <dir>` when
+/// the state folder is not the default one: a session does not inherit `IDLEMAX_HOME`.
+pub fn hook_command(program: &str, home: Option<&str>) -> String {
+    let base = format!("{} {SUBCOMMAND}", shell_quote(program));
+    match home {
+        Some(dir) => format!("{base} {HOME_FLAG} {}", shell_quote(dir)),
+        None => base,
+    }
 }
 
 /// The program to put in the hook: the bare name when PATH resolves it to this very executable
@@ -68,12 +75,25 @@ pub fn find_on_path(path_var: &std::ffi::OsStr, name: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// True for a command this module wrote: any path to `idlemax`, then `hooks summary`.
+/// True for a command this module wrote: any path to `idlemax`, then `hooks summary`, then at
+/// most `--home <dir>`.
 pub fn is_ours(command: &str) -> bool {
     let Some((program, rest)) = read_shell_word(command) else {
         return false;
     };
-    Path::new(&program).file_name().is_some_and(|n| n == BINARY) && rest.trim() == SUBCOMMAND
+    let ours = Path::new(&program).file_name().is_some_and(|n| n == BINARY);
+    let Some(after) = rest.trim().strip_prefix(SUBCOMMAND) else {
+        return false;
+    };
+    let home_only = || {
+        let flag = after
+            .strip_prefix(' ')?
+            .strip_prefix(HOME_FLAG)?
+            .strip_prefix(' ')?;
+        let (_, tail) = read_shell_word(flag)?;
+        tail.trim().is_empty().then_some(())
+    };
+    ours && (after.is_empty() || home_only().is_some())
 }
 
 /// Reports what the file holds (`None` means the file does not exist).

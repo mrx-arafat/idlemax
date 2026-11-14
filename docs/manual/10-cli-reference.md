@@ -434,6 +434,7 @@ Session hooks for coding agents.
 | `--claude` | install, uninstall, status | Claude Code (`~/.claude/settings.json`) |
 | `--codex` | install, uninstall, status | Codex (`~/.codex/hooks.json` and `config.toml`) |
 | `--opencode` | install, uninstall, status | OpenCode (`~/.config/opencode/plugins/idlemax.js`) |
+| `--home <DIR>` | summary | read the state folder DIR; `hooks install` writes it into the hook when `IDLEMAX_HOME` is set |
 | `--dry-run` | install, uninstall | print the change as a diff without writing anything |
 
 ## skill

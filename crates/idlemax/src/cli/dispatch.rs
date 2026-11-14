@@ -28,7 +28,7 @@ pub(super) async fn execute(cli: Cli, out: &Out) -> Result<()> {
         rows::Zone::Local
     };
     let Some(cmd) = cmd else {
-        return home::run(coord, out, home::Mode::Full).await;
+        return home::run(coord, out, home::Mode::Full, None).await;
     };
     // Before the token is loaded and before any call: a launched job or worker gets the
     // lock's own text, not a token or network error.

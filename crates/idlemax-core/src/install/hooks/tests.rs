@@ -161,10 +161,16 @@ fn our_command_is_recognised_by_program_name_and_subcommand_only() {
         assert!(!is_ours(no), "{no}");
     }
     assert_eq!(
-        hook_command("/Users/me/my bin/idlemax"),
+        hook_command("/Users/me/my bin/idlemax", None),
         "'/Users/me/my bin/idlemax' hooks summary"
     );
-    assert!(is_ours(&hook_command("/Users/me/my bin/idlemax")));
+    assert!(is_ours(&hook_command("/Users/me/my bin/idlemax", None)));
+    // A state folder other than the default rides along, or the hook would read ~/.idlemax.
+    let custom = hook_command("idlemax", Some("/srv/idle max"));
+    assert_eq!(custom, "idlemax hooks summary --home '/srv/idle max'");
+    assert!(is_ours(&custom));
+    assert!(!is_ours("idlemax hooks summary --home"));
+    assert!(!is_ours("idlemax hooks summary --home /a extra"));
 
     let exe = Path::new("/home/me/.local/bin/idlemax");
     assert_eq!(program_for(exe, Some(exe)), "idlemax");

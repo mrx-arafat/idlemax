@@ -58,9 +58,9 @@ pub(super) fn refused(agent: Agent, path: PathBuf, why: &anyhow::Error) -> Agent
 }
 
 /// The command a hook runs: the bare name when PATH resolves it to this executable, else the
-/// absolute path; plus the bare program for the OpenCode plugin and a warning when the
-/// executable sits where a rebuild would replace it.
-fn command() -> Result<(String, String, Option<String>)> {
+/// absolute path; plus the bare program and the state folder for the OpenCode plugin and a
+/// warning when the executable sits where a rebuild would replace it.
+fn command() -> Result<(String, Hook, Option<String>)> {
     let exe = std::fs::canonicalize(std::env::current_exe()?).context("finding this executable")?;
     if exe.to_str().is_none() {
         bail!("{} is not valid UTF-8", exe.display());
@@ -75,14 +75,36 @@ fn command() -> Result<(String, String, Option<String>)> {
             exe.display()
         )
     });
-    Ok((hooks::hook_command(&program), program, warning))
+    let home = custom_home()?;
+    let command = hooks::hook_command(&program, home.as_deref());
+    Ok((command, Hook { program, home }, warning))
+}
+
+/// What the OpenCode plugin runs: the program, and the state folder when it is not the default.
+pub(super) struct Hook {
+    pub(super) program: String,
+    pub(super) home: Option<String>,
+}
+
+/// The state folder from `IDLEMAX_HOME`, which a new agent session would not inherit; None for
+/// the default folder, which the summary finds by itself.
+fn custom_home() -> Result<Option<String>> {
+    if std::env::var_os(idlemax_core::paths::HOME_ENV).is_none() {
+        return Ok(None);
+    }
+    let paths = crate::state::paths_from_env()?;
+    let root = std::fs::canonicalize(paths.root()).unwrap_or_else(|_| paths.root().to_path_buf());
+    match root.to_str() {
+        Some(dir) => Ok(Some(dir.to_string())),
+        None => bail!("{} is not valid UTF-8", root.display()),
+    }
 }
 
 // ---- install -------------------------------------------------------------------------------
 
 pub fn install(which: &Which, dry_run: bool) -> Result<Report> {
     let places = Places::from_env()?;
-    let (command, program, warning) = command()?;
+    let (command, hook, warning) = command()?;
     let chosen = selected(which, &places);
     if chosen.is_empty() {
         return Err(crate::cli::CliError::runtime(
@@ -102,7 +124,7 @@ pub fn install(which: &Which, dry_run: bool) -> Result<Report> {
             let result = match agent {
                 Agent::Claude => json_install(agent, &places.file(agent), &command, dry_run),
                 Agent::Codex => codex_install(&places, &command, dry_run),
-                Agent::OpenCode => super::opencode_migration::install(&places, &program, dry_run),
+                Agent::OpenCode => super::opencode_migration::install(&places, &hook, dry_run),
             };
             result.unwrap_or_else(|e| refused(agent, places.file(agent), &e))
         })
@@ -186,7 +208,7 @@ fn codex_install(places: &Places, command: &str, dry_run: bool) -> Result<AgentR
     Ok(r)
 }
 
-pub(super) fn plugin_install(file: &Path, program: &str, dry_run: bool) -> Result<AgentReport> {
+pub(super) fn plugin_install(file: &Path, hook: &Hook, dry_run: bool) -> Result<AgentReport> {
     let before = read_optional(file)?;
     if before.as_deref().is_some_and(|t| !opencode::is_managed(t)) {
         bail!(
@@ -194,7 +216,7 @@ pub(super) fn plugin_install(file: &Path, program: &str, dry_run: bool) -> Resul
             file.display()
         );
     }
-    let after = opencode::plugin_source(program);
+    let after = opencode::plugin_source(&hook.program, hook.home.as_deref());
     let r = new_report(
         Agent::OpenCode,
         file.to_path_buf(),

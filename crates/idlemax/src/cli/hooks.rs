@@ -33,7 +33,12 @@ enum HooksCmd {
     /// Show where the hook is installed and whether it still points at a working binary
     Status(Which),
     /// Print the compact summary a session hook loads (always exits 0)
-    Summary,
+    Summary {
+        /// The state folder, when it is not the default; `hooks install` writes it into the
+        /// hook from IDLEMAX_HOME, since a new session does not inherit that variable
+        #[arg(long, value_name = "DIR")]
+        home: Option<std::path::PathBuf>,
+    },
 }
 
 /// Which agents to act on. With no flag, every agent whose config directory exists.
@@ -110,7 +115,7 @@ pub struct Report {
 
 pub async fn run(coord: Option<String>, args: HooksArgs, out: &Out) -> Result<()> {
     let report = match args.cmd {
-        HooksCmd::Summary => return home::run(coord, out, Mode::Hook).await,
+        HooksCmd::Summary { home } => return home::run(coord, out, Mode::Hook, home).await,
         HooksCmd::Install(c) => agents::install(&c.which, c.dry_run)?,
         HooksCmd::Uninstall(c) => agents::uninstall(&c.which, c.dry_run)?,
         HooksCmd::Status(which) => status::run(&which)?,

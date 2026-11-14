@@ -9,7 +9,7 @@ mod view;
 use std::time::Duration;
 
 use anyhow::Result;
-use idlemax_core::DEFAULT_COORD_URL;
+use idlemax_core::{Paths, DEFAULT_COORD_URL};
 
 use super::review::finished;
 use super::{ApiClient, ClientError, Out};
@@ -20,9 +20,15 @@ use render::{Home, Reason, State};
 /// A session start must not wait on a coordinator that does not answer.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Prints the home view or, in hook mode, the compact session summary.
-pub async fn run(coord: Option<String>, out: &Out, mode: Mode) -> Result<()> {
-    let home = gather(coord).await;
+/// Prints the home view or, in hook mode, the compact session summary. `state_dir` overrides
+/// `IDLEMAX_HOME` and the default state folder.
+pub async fn run(
+    coord: Option<String>,
+    out: &Out,
+    mode: Mode,
+    state_dir: Option<std::path::PathBuf>,
+) -> Result<()> {
+    let home = gather(coord, state_dir).await;
     let (node, hints) = view::of(&home, mode);
     if mode == Mode::Hook {
         return out.emit_toon(node, &hints);
@@ -30,8 +36,8 @@ pub async fn run(coord: Option<String>, out: &Out, mode: Mode) -> Result<()> {
     out.emit_with(&home, |h| render::render(h, mode), || Ok(node), &hints)
 }
 
-async fn gather(coord: Option<String>) -> Home {
-    let (url, client) = connect(coord);
+async fn gather(coord: Option<String>, state_dir: Option<std::path::PathBuf>) -> Home {
+    let (url, client) = connect(coord, state_dir);
     let state = match client {
         Err(down) => down,
         Ok(client) => {
@@ -67,14 +73,17 @@ fn down(reason: Reason, detail: String) -> State {
 }
 
 /// The coordinator URL and a client for it, or the reason there is none.
-fn connect(coord: Option<String>) -> (String, Result<ApiClient, State>) {
+fn connect(
+    coord: Option<String>,
+    state_dir: Option<std::path::PathBuf>,
+) -> (String, Result<ApiClient, State>) {
     let fallback = || {
         coord
             .clone()
             .unwrap_or_else(|| DEFAULT_COORD_URL.to_string())
     };
     let failed = |e: &dyn std::fmt::Display| down(Reason::Failed, e.to_string());
-    let paths = match state::paths_from_env() {
+    let paths = match state_dir.map_or_else(state::paths_from_env, |d| Ok(Paths::new(d))) {
         Ok(p) => p,
         Err(e) => return (fallback(), Err(failed(&e))),
     };

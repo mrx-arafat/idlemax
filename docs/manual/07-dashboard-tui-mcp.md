@@ -187,6 +187,7 @@ idlemax hooks summary             # what the hook prints (always exits 0)
 | Codex | `~/.codex/hooks.json` (or `$CODEX_HOME`) | the same entry, plus `[features] hooks = true` in `config.toml` |
 | OpenCode | `~/.config/opencode/plugins/idlemax.js` | a managed plugin that adds the summary to the system prompt |
 
+- With `IDLEMAX_HOME` set, the hook runs `idlemax hooks summary --home <that folder>`, since a new agent session does not inherit the variable and would otherwise read `~/.idlemax`.
 - With no flag, `install` acts on the agents whose config folder exists; `--claude`, `--codex` and `--opencode` pick exactly the ones you name.
 - It edits only its own entry, keeps the old file as `<file>.idlemax.bak`, and running it again changes nothing.
 - A file it cannot understand (invalid JSON, a `hooks` key that is not an object) is reported as `refused`, left alone, and the exit code is 1.
