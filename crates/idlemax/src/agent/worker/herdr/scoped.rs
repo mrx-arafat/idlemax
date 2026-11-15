@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use super::{run, HerdrHost};
+use super::{run, HerdrHost, HERDR_LIMIT};
 use crate::agent::worker::host::Launch;
 use crate::agent::worker::scope::worker_cgroup;
 
@@ -21,7 +21,7 @@ impl HerdrHost {
         let Some((program, args)) = scope.adopt(launch.job, launch.attempt, pid) else {
             return tracing::info!(pane, "no busctl: the worker runs without a scope");
         };
-        if let Err(e) = run(self.commands.as_ref(), &program, &args) {
+        if let Err(e) = run(self.commands.as_ref(), &program, &args, HERDR_LIMIT) {
             tracing::info!(pane, error = %e, "the worker runs without a scope");
         }
     }

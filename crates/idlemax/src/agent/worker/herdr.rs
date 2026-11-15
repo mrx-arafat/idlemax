@@ -1,7 +1,8 @@
 //! Adapter: the Herdr worker host. Workers live in one workspace labelled `idlemax workers`,
 //! one tab per project and one pane per worker (D15). Every `herdr` call goes through
-//! `Commands` with a 10 s limit, names its own workspace or pane, never takes focus, and a
-//! pane is closed only while its label and workspace still match what was saved (D4).
+//! `Commands` with a 10 s limit (70 s for `agent start`), names its own workspace or pane,
+//! never takes focus, and a pane is closed only while its label and workspace still match
+//! what was saved (D4).
 
 mod parse;
 mod scoped;
@@ -24,6 +25,11 @@ use parse::Pane;
 /// The workspace that holds every worker pane.
 pub const WORKSPACE_LABEL: &str = "idlemax workers";
 const HERDR_LIMIT: Duration = Duration::from_secs(10);
+/// How long `agent start` waits for the agent to be ready: claude booting in the sandbox
+/// on a busy host took more than 10 s (Runs 76 and 82), and Herdr's own default is 30 s.
+const START_WAIT_MS: &str = "60000";
+/// The call's own limit, past Herdr's wait so Herdr answers first.
+const START_LIMIT: Duration = Duration::from_secs(70);
 /// Lines of the agent's recent output read for `end_text`.
 const END_LINES: &str = "40";
 
@@ -56,7 +62,7 @@ impl HerdrHost {
 
     /// One `herdr` call: its stdout, or why it failed.
     fn call(&self, args: &[String]) -> Result<String, HostError> {
-        run(self.commands.as_ref(), "herdr", args)
+        run(self.commands.as_ref(), "herdr", args, HERDR_LIMIT)
     }
 
     fn parsed<T>(
@@ -195,6 +201,7 @@ impl HerdrHost {
                 self.commands.as_ref(),
                 program,
                 &strings(&["-b", "-p", &pid.to_string()]),
+                HERDR_LIMIT,
             )?;
         }
         self.adopt(pane, launch);
@@ -205,6 +212,8 @@ impl HerdrHost {
             launch.cli.as_str(),
             "--pane",
             pane,
+            "--timeout",
+            START_WAIT_MS,
             "--",
         ]));
         args.extend(launch.args.iter().cloned());
@@ -312,14 +321,19 @@ impl WorkerHost for HerdrHost {
     }
 }
 
-fn run(commands: &dyn Commands, program: &str, args: &[String]) -> Result<String, HostError> {
+fn run(
+    commands: &dyn Commands,
+    program: &str,
+    args: &[String],
+    limit: Duration,
+) -> Result<String, HostError> {
     let cmd = Cmd {
         program: program.into(),
         args: args.to_vec(),
         cwd: None,
         env: Vec::new(),
         stdin: None,
-        limit: HERDR_LIMIT,
+        limit,
         throttle: false,
         tag: None,
     };

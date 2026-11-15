@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use super::{strings, HerdrHost};
+use super::{run, strings, HerdrHost, START_LIMIT};
 use crate::agent::worker::host::{HostError, Launch};
 use crate::agent::worker::sandbox::SHIM_DIR_VAR;
 
@@ -40,14 +40,14 @@ impl HerdrHost {
     /// that just ran the export is not an available shell for about half a second (live).
     pub(super) fn start_when_free(&self, args: &[String]) -> Result<String, HostError> {
         for _ in 0..10 {
-            match self.call(args) {
+            match run(self.commands.as_ref(), "herdr", args, START_LIMIT) {
                 Err(HostError::Failed { why, .. }) if why.contains("agent_pane_busy") => {
                     std::thread::sleep(Duration::from_millis(500));
                 }
                 other => return other,
             }
         }
-        self.call(args)
+        run(self.commands.as_ref(), "herdr", args, START_LIMIT)
     }
 }
 

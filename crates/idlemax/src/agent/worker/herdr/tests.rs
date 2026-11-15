@@ -89,7 +89,7 @@ fn a_start_splits_the_projects_tab_names_the_pane_and_starts_the_agent() {
         "herdr pane split --pane p1 --direction down --cwd /w/app/fix --env IDLEMAX_JOB_ID=7 --no-focus",
         "herdr pane rename p2 im-app-fix-1",
         "taskpolicy -b -p 4242",
-        "herdr agent start im-app-fix-1 --kind claude --pane p2 -- --model sonnet",
+        "herdr agent start im-app-fix-1 --kind claude --pane p2 --timeout 60000 -- --model sonnet",
     ] {
         assert!(calls.iter().any(|c| c == want), "{want} not in {calls:#?}");
     }
@@ -98,7 +98,13 @@ fn a_start_splits_the_projects_tab_names_the_pane_and_starts_the_agent() {
         .flat_map(|c| c.split(' '))
         .any(|w| w == "--focus" || w == "focus");
     assert!(!focus, "{calls:#?}");
-    assert!(fake.calls().iter().all(|c| c.limit == HERDR_LIMIT));
+    let (start, rest): (Vec<_>, Vec<_>) = fake
+        .calls()
+        .into_iter()
+        .partition(|c| c.args.starts_with(&["agent".into(), "start".into()]));
+    assert!(rest.iter().all(|c| c.limit == HERDR_LIMIT));
+    // Claude booting in the sandbox can take longer than a plain herdr call (Runs 76, 82).
+    assert!(start.iter().all(|c| c.limit > Duration::from_secs(60)));
 }
 
 #[test]
