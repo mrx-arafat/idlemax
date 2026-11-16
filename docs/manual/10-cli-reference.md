@@ -387,7 +387,7 @@ Show or change settings in `config.toml` and apply them to the running agent.
 |---|---|
 | `config list [--all]` | without `--all`, only the settings `config.toml` sets; with `--all`, every setting with its default. `list` is the default subcommand, so plain `idlemax config` is `config list` |
 | `config get <KEY>` | one setting: its value, its default and where the value comes from |
-| `config set <KEY> <VALUE>` | change one setting, save it and apply it to the running agent |
+| `config set <KEY> <VALUE>` | change one setting, save it and apply it to the running agent (`agent.listen` is saved only; restart the agent to apply it) |
 | `config unset <KEY>` | remove a setting from config.toml so its default applies again |
 
 `KEY` is `section.name`, such as `guard.require_ac_power`.

@@ -114,7 +114,7 @@ pub fn reload_failed(listen: &str, error: &ClientError) -> CliError {
     match error {
         ClientError::Api { status: 401, .. } => CliError::runtime(
             format!("saved, but agent reload failed at {listen}: the agent did not accept this home's token"),
-            "it may be another idlemax home's agent: check agent.listen (idlemax config set agent.listen 127.0.0.1:<port>) and the token in $IDLEMAX_HOME/token",
+            "it may be another idlemax home's agent: check agent.listen (idlemax config set agent.listen 127.0.0.1:<port>, then restart this home's agent) and the token in $IDLEMAX_HOME/token",
         ),
         other => CliError::runtime(
             format!("saved, but agent reload failed at {listen}: {}", other.describe()),

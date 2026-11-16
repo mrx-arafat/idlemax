@@ -133,10 +133,12 @@ async fn change(paths: &Paths, key: &str, value: Option<&str>, out: &Out) -> Res
     } else {
         None
     };
-    let agent = if edit.changed {
-        ask_agent(paths, &before).await?
-    } else {
+    let agent = if !edit.changed {
         Agent::Unchanged
+    } else if key == "agent.listen" {
+        Agent::RestartNeeded
+    } else {
+        ask_agent(paths, &before).await?
     };
     let outcome = Outcome::new(key, &edit, value.is_none(), rewrote, agent, backup);
     let hints = if edit.changed {
@@ -155,6 +157,9 @@ enum Agent {
     /// An agent from before live reload: it has no such route.
     TooOld,
     Reloaded(ReloadReport),
+    /// `agent.listen` is read only at start, and the running agent still listens on the old
+    /// address, so asking it would send the request where the change is moving away from.
+    RestartNeeded,
 }
 
 /// Asks the agent at the address the file gave before this edit, which is where the running
@@ -215,6 +220,7 @@ impl Outcome {
             Agent::NotRunning => ("not_running", None),
             Agent::TooOld => ("too_old", None),
             Agent::Reloaded(report) => ("reloaded", Some(report.clone())),
+            Agent::RestartNeeded => ("restart_needed", None),
         };
         Self {
             key: key.to_string(),
@@ -272,6 +278,10 @@ fn agent_note(key: &str, agent: &Agent) -> Option<String> {
         Agent::NotRunning => Some("not running; it uses the new value when it starts".to_string()),
         Agent::TooOld => Some(
             "saved; the running agent is older than this idlemax and cannot reload live, restart it to apply"
+                .to_string(),
+        ),
+        Agent::RestartNeeded => Some(
+            "saved, not reloaded: the agent reads agent.listen only at start, so restart this home's agent to apply it (macOS: launchctl kickstart -k gui/$(id -u)/com.idlemax.agent; Linux: systemctl --user restart idlemax-agent; by hand: stop it and run idlemax agent again)"
                 .to_string(),
         ),
         Agent::Reloaded(report) => Some(if report.applies(key) {

@@ -33,7 +33,8 @@ What `set` does for you:
 - checks the value the way startup does, and refuses one that would stop the agent from starting;
 - keeps your comments;
 - saves the previous file as `config.toml.idlemax.bak`;
-- asks the running agent to reload, and tells you when a setting is read only at start and which process to restart.
+- asks the running agent to reload, and tells you when a setting is read only at start and which process to restart;
+- does not ask the running agent for `agent.listen`, because the agent still listens on the old address: it saves the value and tells you to restart the agent.
 
 A value is `true`, a number such as `40`, a word, or a comma list such as `git,cargo`.
 `set` replaces a list, so name every item.
