@@ -65,7 +65,7 @@ idlemax setup [OPTIONS]
 | Flag | Meaning |
 |---|---|
 | `--role <ROLE>` | `agent` runs jobs for a coordinator elsewhere, `coord` holds the queue, `both` does everything on one machine [default: both] |
-| `--coord-url <URL>` | address agents and the CLI use to reach the coordinator, e.g. `http://100.64.0.1:7878` (required for `--role agent`; a coordinator listens there too) |
+| `--coord-url <URL>` | address agents and the CLI use to reach the coordinator, e.g. `http://100.64.0.1:7878` (required for `--role agent`; a coordinator listens there too, and with `--role both` on a port other than 7878 its agent listens on the next port up) |
 | `--token-stdin` | read the coordinator's token from stdin instead of generating one (required for `--role agent`) |
 | `--statusline` | also wire Claude Code's statusline into the quota probe (agent and both) |
 | `--no-service` | do not install the background service |

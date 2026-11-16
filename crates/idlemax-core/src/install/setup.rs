@@ -1,11 +1,17 @@
 //! Domain: what `idlemax setup` does for a role, decided from the flags and from what is
 //! already on disk. Pure: the CLI reads the facts, performs the steps and reports each one.
 
+use std::net::{Ipv4Addr, SocketAddr};
+
 use serde::Serialize;
 
 use super::service::{Platform, ServiceKind};
 use crate::config::Config;
 use crate::types::{DeviceProfile, Os};
+use crate::DEFAULT_AGENT_LISTEN;
+
+/// The port of `DEFAULT_COORD_LISTEN` and `DEFAULT_COORD_URL`.
+const DEFAULT_COORD_PORT: u16 = 7878;
 
 /// Whether freshly started services have completed their startup handshake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,6 +164,11 @@ pub enum SetupError {
     #[error("refusing to listen on {0}: bind the server's private-network address, the one section 3.1 of docs/ROLLOUT.md finds")]
     PublicListen(std::net::SocketAddr),
     #[error(
+        "--coord-url port {0} leaves no port above it for this device's agent, which takes the \
+         next port up: use a lower port"
+    )]
+    NoAgentPort(u16),
+    #[error(
         "config.toml already sets coordinator.url to {have}, not {want}: edit config.toml to change \
          it, or leave out --coord-url"
     )]
@@ -239,6 +250,7 @@ pub fn plan(req: &Request<'_>, existing: &Existing<'_>) -> Result<SetupPlan, Set
 /// The `config.toml` a new setup starts from: the defaults, this OS's guard profile, and the
 /// coordinator address. A coordinator that others must reach listens on that address too, so
 /// it must be an IP address: the coordinator binds a socket address and cannot bind a name.
+/// A device that runs both halves also moves its agent beside a coordinator on another port.
 pub fn config_for(
     role: Role,
     os: Os,
@@ -250,7 +262,11 @@ pub fn config_for(
     if let Some(url) = coord_url {
         cfg.coordinator.url = url.to_string();
         if let Some(authority) = authority_with_port(url).filter(|_| role.runs_coordinator()) {
-            cfg.coordinator.listen = listen_for(authority)?;
+            let listen = listen_for(authority)?;
+            cfg.coordinator.listen = listen.to_string();
+            if role.runs_agent() {
+                cfg.agent.listen = agent_listen_beside(listen)?;
+            }
         }
     }
     Ok(cfg)
@@ -258,18 +274,32 @@ pub fn config_for(
 
 /// The `coordinator.listen` for a URL authority `host:port`: an IP address as it is (refusing
 /// public addresses), `localhost` as 127.0.0.1, and an error for any other name.
-fn listen_for(authority: &str) -> Result<String, SetupError> {
-    if let Ok(addr) = authority.parse::<std::net::SocketAddr>() {
+fn listen_for(authority: &str) -> Result<SocketAddr, SetupError> {
+    if let Ok(addr) = authority.parse::<SocketAddr>() {
         if crate::host::listen_scope(addr.ip()) == crate::host::ListenScope::Public {
             return Err(SetupError::PublicListen(addr));
         }
-        return Ok(authority.to_string());
+        return Ok(addr);
     }
     let port = authority
         .strip_prefix("localhost:")
         .and_then(|p| p.parse::<u16>().ok())
         .ok_or_else(|| SetupError::ListenNeedsIp(authority.to_string()))?;
-    Ok(format!("127.0.0.1:{port}"))
+    Ok(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port))
+}
+
+/// The `agent.listen` for an agent beside a coordinator bound to `coord`. The default coordinator
+/// port keeps the default agent address. Any other coordinator port takes the next port up on
+/// loopback, so this agent never sits on 7879 where another home's agent may already listen.
+fn agent_listen_beside(coord: SocketAddr) -> Result<String, SetupError> {
+    if coord.port() == DEFAULT_COORD_PORT {
+        return Ok(DEFAULT_AGENT_LISTEN.into());
+    }
+    let port = coord
+        .port()
+        .checked_add(1)
+        .ok_or(SetupError::NoAgentPort(coord.port()))?;
+    Ok(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port).to_string())
 }
 
 /// What `service install` would do to a unit file that may already exist.

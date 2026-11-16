@@ -355,3 +355,43 @@ fn coord_refuses_public_address_in_dry_run() {
     assert!(!home.state.exists(), "nothing is written on failure");
     assert!(is_empty_dir(&home.home), "nothing is written under HOME");
 }
+
+#[test]
+fn both_moves_the_agent_beside_a_coordinator_on_another_port() {
+    let h = Home::new();
+    let (code, moved) = h.json(&["--dry-run", "--coord-url", "http://127.0.0.1:17878"]);
+    assert_eq!(code, 0, "{moved:#}");
+    let config = step(&moved, "config", None);
+    assert!(
+        config["detail"]
+            .as_str()
+            .unwrap()
+            .contains("agent.listen 127.0.0.1:17879"),
+        "{config:#}"
+    );
+    let notes: Vec<&str> = config["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_str().unwrap())
+        .collect();
+    assert!(
+        notes.contains(
+            &"the by-hand command leaves agent.listen at its default: add listen = \"127.0.0.1:17879\" under [agent]"
+        ),
+        "{notes:?}"
+    );
+
+    let default = Home::new();
+    let (code, report) = default.json(&["--dry-run"]);
+    assert_eq!(code, 0, "{report:#}");
+    let config = step(&report, "config", None);
+    assert!(
+        config["detail"]
+            .as_str()
+            .unwrap()
+            .contains("agent.listen 127.0.0.1:7879"),
+        "{config:#}"
+    );
+    assert!(config.get("notes").is_none(), "{config:#}");
+}

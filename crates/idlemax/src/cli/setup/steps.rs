@@ -8,7 +8,7 @@ use idlemax_core::install::setup::{
     unit_change, ConfigPlan, SetupPlan, StatuslinePlan, TokenPlan, UnitChange,
 };
 use idlemax_core::types::{DeviceProfile, Os};
-use idlemax_core::{Config, Paths, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
+use idlemax_core::{Config, Paths, DEFAULT_AGENT_LISTEN, DEFAULT_COORD_LISTEN, DEFAULT_COORD_URL};
 
 use super::report::{Status, StepReport};
 use crate::cli::service::{self, Ctx, Runner};
@@ -157,8 +157,13 @@ fn config_step(plan: &SetupPlan, env: &Env<'_>) -> StepReport {
         .agent
         .profile
         .map_or_else(String::new, |p| rows::snake(&p));
+    let agent_listen = if plan.role.runs_agent() {
+        format!(", agent.listen {}", cfg.agent.listen)
+    } else {
+        String::new()
+    };
     let detail = format!(
-        "coordinator.url {}, coordinator.listen {}, agent.profile {profile}",
+        "coordinator.url {}, coordinator.listen {}{agent_listen}, agent.profile {profile}",
         cfg.coordinator.url, cfg.coordinator.listen
     );
     let mut notes = Vec::new();
@@ -166,6 +171,12 @@ fn config_step(plan: &SetupPlan, env: &Env<'_>) -> StepReport {
         notes.push(format!(
             "the by-hand command leaves coordinator.listen at its default: add listen = \"{}\" under [coordinator]",
             cfg.coordinator.listen
+        ));
+    }
+    if cfg.agent.listen != DEFAULT_AGENT_LISTEN {
+        notes.push(format!(
+            "the by-hand command leaves agent.listen at its default: add listen = \"{}\" under [agent]",
+            cfg.agent.listen
         ));
     }
     let done = |status, detail: String| {

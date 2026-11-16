@@ -37,7 +37,7 @@ On a Mac it prints (trimmed):
 ```text
 dry run: nothing is written or run
 idlemax setup, role both
-would do      config          coordinator.url http://127.0.0.1:7878, coordinator.listen 127.0.0.1:7878, agent.profile laptop
+would do      config          coordinator.url http://127.0.0.1:7878, coordinator.listen 127.0.0.1:7878, agent.listen 127.0.0.1:7879, agent.profile laptop
                               would write: ~/.idlemax/config.toml
                               by hand: idlemax init
 would do      token           a new random token, mode 0600
@@ -64,7 +64,7 @@ dry run only: run the same command without --dry-run to apply it
 ```
 
 On Linux the profile reads `agent.profile production` and the services are systemd user units.
-The `by hand` line changes with your flags: with `--profile` it reads `idlemax init --profile <profile>`, and with `--coord-url` it reads `idlemax init --coord-url <URL>` plus a note about `coordinator.listen`.
+The `by hand` line changes with your flags: with `--profile` it reads `idlemax init --profile <profile>`, and with `--coord-url` it reads `idlemax init --coord-url <URL>` plus notes about `coordinator.listen` and `agent.listen` when they are not the defaults.
 
 > [!NOTE]
 > This is the `table` format, the default on a terminal.
@@ -118,7 +118,7 @@ Steps that are already done say `already done`.
 | `--role both` | a coordinator and an agent on this machine (the default) |
 | `--role coord` | the queue only; this machine runs no jobs |
 | `--role agent` | runs jobs for a coordinator on another machine; needs `--coord-url` and `--token-stdin` |
-| `--coord-url URL` | the address agents and the CLI use to reach the coordinator, such as `http://100.64.0.1:7878`; a coordinator listens there too |
+| `--coord-url URL` | the address agents and the CLI use to reach the coordinator, such as `http://100.64.0.1:7878`; a coordinator listens there too, and with `--role both` on a port other than 7878 this device's agent listens on the next port up |
 | `--token-stdin` | read the coordinator's token from stdin instead of making a new one |
 | `--allow PROGRAMS` | the programs jobs may run, as a comma list; replaces the allowlist and keeps your config comments |
 | `--profile laptop\|workbox\|production` | the guard preset (default: `laptop` on macOS, `production` on Linux); see [Concepts](03-concepts.md#profiles) |
