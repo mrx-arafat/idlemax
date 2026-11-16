@@ -25,7 +25,9 @@ warn  coordinator  http://127.0.0.1:7878 is up; the token was not checked
 The number of checks varies: a fresh Linux setup prints 10, and the kill switch check and the agent CLI `login` checks appear only when they apply.
 
 - The checks cover the state folder, the config (unknown keys are named), the token, the coordinator (reachable, accepts the token, same version), the agent, the kill switch and local pause, the allowlist, disk, AI accounts, agent CLI logins, `gh`, and the background service.
-- It is read-only: it never runs `launchctl` or `systemctl` and starts nothing.
+  On macOS the service check also shows launchd's last exit reason for each LaunchAgent.
+- It is read-only: it starts and changes nothing.
+  On macOS it reads each LaunchAgent's state with `launchctl print`, and it never runs `systemctl`.
 - Exit code 1 when any check fails; a warn alone does not fail.
 - It checks **this** device only, so run it on each one.
   `--coord URL` checks against another coordinator.
@@ -170,6 +172,22 @@ warning: the binary is inside a cargo target directory; a rebuild or `cargo clea
 ```
 
 Install the binary properly ([chapter 1](01-install.md#option-b-build-from-source)), then run `idlemax service install` again.
+
+### A service took 30 s to come back after an update (macOS)
+
+After you replace the binary, macOS can kill the first start of each service with `OS_REASON_CODESIGNING`.
+launchd then waits the plist's `ThrottleInterval` (30 s) before it starts the service again, so the service stays down for that long.
+The second start runs normally, and the idlemax logs show nothing for the killed one.
+The reason macOS kills that first start is not known yet.
+
+`idlemax doctor` now reads launchd's last exit reason and shows it:
+
+```text
+ok    launchd-agent  agent running; its previous start ended with OS_REASON_CODESIGNING, and launchd has started it again since
+```
+
+If the check says a service is not running, wait for launchd's retry and run `idlemax doctor` again.
+If it stays down, run `idlemax service install` to reload it.
 
 ### The Linux service stops when I log out
 

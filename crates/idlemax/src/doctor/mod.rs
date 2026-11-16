@@ -5,6 +5,7 @@ mod ai;
 mod checks;
 pub(crate) mod facts;
 mod host;
+mod launchd;
 mod logins;
 mod net;
 mod service;
@@ -39,6 +40,7 @@ pub async fn run(coord_url: Option<String>) -> Report {
     host::sandbox(&mut report, &config).await;
     host::github(&mut report, &config).await;
     service::check(&mut report, &units);
+    launchd::check(&mut report, facts::home_dir().as_deref()).await;
     skill(&mut report);
     report
 }

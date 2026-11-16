@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::config::{Config, ConfigError};
 use crate::types::{QuotaSnapshot, UnixMs};
 
+pub mod launchd;
+
 /// One check's outcome. A setup is healthy when no check fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
