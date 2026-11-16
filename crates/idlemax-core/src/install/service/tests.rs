@@ -185,35 +185,44 @@ fn commands_per_platform() {
             Platform::Launchd,
             ServiceKind::Agent,
             &e,
-            UnitChange::Update
+            UnitChange::Update,
+            Restart::IfChanged,
         )),
         [
             "launchctl bootout gui/501/com.idlemax.agent  # a failure here is fine",
             "launchctl bootstrap gui/501 /home/u/Library/LaunchAgents/com.idlemax.agent.plist",
         ]
     );
-    let systemd = |change| {
+    let systemd = |change, restart| {
         show(install_steps(
             Platform::SystemdUser,
             ServiceKind::Agent,
             &e,
             change,
+            restart,
         ))
     };
-    // A running unit keeps its old ExecStart until it restarts; an unchanged one only starts.
+    // A running unit keeps its old ExecStart until it restarts. A changed unit is reloaded and
+    // restarted; an unchanged one is only started, unless an explicit install asks for a restart.
+    let restarted = [
+        "systemctl --user daemon-reload",
+        "systemctl --user enable idlemax-agent.service",
+        "systemctl --user restart idlemax-agent.service",
+    ];
+    assert_eq!(systemd(UnitChange::Update, Restart::IfChanged), restarted);
+    assert_eq!(systemd(UnitChange::Update, Restart::Always), restarted);
     assert_eq!(
-        systemd(UnitChange::Update),
-        [
-            "systemctl --user daemon-reload",
-            "systemctl --user enable idlemax-agent.service",
-            "systemctl --user restart idlemax-agent.service",
-        ]
-    );
-    assert_eq!(
-        systemd(UnitChange::Same),
+        systemd(UnitChange::Same, Restart::IfChanged),
         [
             "systemctl --user enable idlemax-agent.service",
             "systemctl --user start idlemax-agent.service",
+        ]
+    );
+    assert_eq!(
+        systemd(UnitChange::Same, Restart::Always),
+        [
+            "systemctl --user enable idlemax-agent.service",
+            "systemctl --user restart idlemax-agent.service",
         ]
     );
     let r = removal(Platform::SystemdUser, ServiceKind::Coord, &e);

@@ -117,7 +117,7 @@ Install or remove the background service (LaunchAgent or systemd user unit).
 
 | Subcommand | Does |
 |---|---|
-| `service install [agent\|coord]` | write the service file for this OS and start it; running it again restarts it (on Linux, only if the file changed); with no name, it acts on every installed service, coordinator first, or on the agent when none is installed |
+| `service install [agent\|coord]` | write the service file for this OS and start it; running it again restarts it, so a new binary takes effect; with no name, it acts on every installed service, coordinator first, or on the agent when none is installed |
 | `service uninstall [agent\|coord]` | stop the service and delete its file [default: every installed service] |
 | `service status [agent\|coord]` | show whether each service is installed, loaded and running |
 | `service render [agent\|coord]` | render a Linux root unit offline; nothing is written or started (use `--format table` for raw unit text) |

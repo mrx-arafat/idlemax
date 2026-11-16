@@ -290,14 +290,26 @@ fn launchd_target(kind: ServiceKind, env: &ServiceEnv) -> String {
     format!("gui/{}/{}", env.uid, kind.label())
 }
 
+/// Whether an unchanged, running systemd unit is restarted. `idlemax setup` leaves it running,
+/// since it is safe to repeat; an explicit `idlemax service install` restarts it, because that is
+/// how a new binary gets into service. A changed unit is restarted either way, and launchd always
+/// restarts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Restart {
+    IfChanged,
+    Always,
+}
+
 /// Commands that start the service after its file is written. Safe to repeat. A running
-/// systemd unit keeps its old ExecStart, PATH and IDLEMAX_HOME until it restarts, so a
-/// changed unit is restarted; an unchanged one is only started if it is stopped.
+/// systemd unit keeps its old ExecStart, PATH and IDLEMAX_HOME until it restarts, so a changed
+/// unit is always restarted; an unchanged one is restarted only for `Restart::Always`, otherwise
+/// it is only started if it is stopped.
 pub fn install_steps(
     platform: Platform,
     kind: ServiceKind,
     env: &ServiceEnv,
     change: UnitChange,
+    restart: Restart,
 ) -> Vec<Step> {
     match platform {
         Platform::Launchd => {
@@ -313,11 +325,8 @@ pub fn install_steps(
         }
         Platform::SystemdUser => {
             let unit = kind.unit();
-            let start = if change == UnitChange::Same {
-                "start"
-            } else {
-                "restart"
-            };
+            let restarts = change != UnitChange::Same || restart == Restart::Always;
+            let start = if restarts { "restart" } else { "start" };
             let mut steps = Vec::new();
             if change != UnitChange::Same {
                 steps.push(Step::new(&["systemctl", "--user", "daemon-reload"], false));

@@ -72,12 +72,28 @@ fn install_status_uninstall_round_trip_under_a_temp_home() {
         "asked the service manager about an uninstalled unit"
     );
 
-    let dry = install(&ctx, &paths, &runner, &[ServiceKind::Agent], true).unwrap();
+    let dry = install(
+        &ctx,
+        &paths,
+        &runner,
+        &[ServiceKind::Agent],
+        true,
+        Restart::Always,
+    )
+    .unwrap();
     assert!(!dry[0].file.exists() && runner.seen.borrow().is_empty());
     assert!(dry[0].content.contains("MemoryMax=4224M"));
     assert!(dry[0].content.contains("CPUQuota=1500%"));
 
-    let done = install(&ctx, &paths, &runner, &[ServiceKind::Agent], false).unwrap();
+    let done = install(
+        &ctx,
+        &paths,
+        &runner,
+        &[ServiceKind::Agent],
+        false,
+        Restart::Always,
+    )
+    .unwrap();
     let written = std::fs::read_to_string(&done[0].file).unwrap();
     assert_eq!(written, done[0].content);
     assert!(done[0]
@@ -125,6 +141,7 @@ fn a_failed_step_says_what_failed_and_what_to_do() {
         &fake(Some("enable")),
         &[ServiceKind::Agent],
         false,
+        Restart::Always,
     )
     .err()
     .unwrap()
@@ -144,7 +161,15 @@ fn install_creates_a_missing_state_dir_and_logs_private() {
     let dir = tempfile::tempdir().unwrap();
     let (mut ctx, paths) = ctx(dir.path());
     ctx.platform = Platform::Launchd;
-    install(&ctx, &paths, &fake(None), &[ServiceKind::Agent], false).unwrap();
+    install(
+        &ctx,
+        &paths,
+        &fake(None),
+        &[ServiceKind::Agent],
+        false,
+        Restart::Always,
+    )
+    .unwrap();
     for made in [paths.root().to_path_buf(), paths.logs_dir()] {
         let mode = std::fs::metadata(&made).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "{}", made.display());
@@ -159,9 +184,9 @@ fn installing_again_restarts_a_changed_unit_and_only_starts_an_unchanged_one() {
     let agent = [ServiceKind::Agent];
     let ran = |runner: &Fake| std::mem::take(&mut *runner.seen.borrow_mut());
 
-    install(&ctx, &paths, &runner, &agent, false).unwrap();
+    install(&ctx, &paths, &runner, &agent, false, Restart::IfChanged).unwrap();
     ran(&runner);
-    install(&ctx, &paths, &runner, &agent, false).unwrap();
+    install(&ctx, &paths, &runner, &agent, false, Restart::IfChanged).unwrap();
     assert_eq!(
         ran(&runner),
         [
@@ -172,7 +197,7 @@ fn installing_again_restarts_a_changed_unit_and_only_starts_an_unchanged_one() {
     );
 
     ctx.env.path = Some("/usr/bin:/opt/other/bin".into());
-    install(&ctx, &paths, &runner, &agent, false).unwrap();
+    install(&ctx, &paths, &runner, &agent, false, Restart::IfChanged).unwrap();
     let steps = ran(&runner);
     assert_eq!(
         steps.last().map(String::as_str),
@@ -185,7 +210,15 @@ fn installing_again_restarts_a_changed_unit_and_only_starts_an_unchanged_one() {
 fn installed() -> (Ctx, tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let (ctx, paths) = ctx(dir.path());
-    let done = install(&ctx, &paths, &fake(None), &[ServiceKind::Agent], false).unwrap();
+    let done = install(
+        &ctx,
+        &paths,
+        &fake(None),
+        &[ServiceKind::Agent],
+        false,
+        Restart::Always,
+    )
+    .unwrap();
     let file = done[0].file.clone();
     (ctx, dir, file)
 }

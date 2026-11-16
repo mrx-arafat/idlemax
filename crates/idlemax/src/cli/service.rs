@@ -10,7 +10,8 @@ use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use idlemax_core::install::service::{
     bin_warning, install_steps, install_targets, parse_status, removal, render, status_step,
-    unit_path, Platform, Probe, ServiceEnv, ServiceKind, ServiceStatus, Step, PASSTHROUGH_VARS,
+    unit_path, Platform, Probe, Restart, ServiceEnv, ServiceKind, ServiceStatus, Step,
+    PASSTHROUGH_VARS,
 };
 use idlemax_core::install::setup::{unit_change, UnitChange};
 use idlemax_core::types::Os;
@@ -48,7 +49,7 @@ enum ServiceCmd {
         #[arg(long, value_name = "PATH")]
         state_dir: Option<PathBuf>,
     },
-    /// Write the service file for this OS and start it; running it again restarts it (on Linux, only if the file changed)
+    /// Write the service file for this OS and start it; running it again restarts it
     Install {
         /// Which service [default: every installed one, coordinator first; the agent if none is installed]
         which: Option<Unit>,
@@ -181,7 +182,7 @@ pub fn run(paths: &Paths, args: ServiceArgs, out: &Out) -> Result<()> {
         }
         ServiceCmd::Install { which, dry_run, .. } => {
             let kinds = install_kinds(&ctx, which);
-            let reports = install(&ctx, paths, &SystemRunner, &kinds, dry_run)?;
+            let reports = install(&ctx, paths, &SystemRunner, &kinds, dry_run, Restart::Always)?;
             out.emit_with(
                 &reports,
                 |r| r.iter().map(install_text).collect::<Vec<_>>().join("\n"),
@@ -323,13 +324,14 @@ pub(super) fn install(
     runner: &dyn Runner,
     kinds: &[ServiceKind],
     dry_run: bool,
+    restart: Restart,
 ) -> Result<Vec<InstallReport>> {
     let mut reports = Vec::new();
     for &kind in kinds {
         let unit = render(ctx.platform, kind, &ctx.env)?;
         let existing = std::fs::read_to_string(&unit.path).ok();
         let change = unit_change(existing.as_deref(), &unit.content);
-        let commands = install_steps(ctx.platform, kind, &ctx.env, change);
+        let commands = install_steps(ctx.platform, kind, &ctx.env, change, restart);
         if !dry_run {
             if ctx.platform == Platform::Launchd {
                 // launchd opens the log file before the agent starts and gives up if the dir is missing.

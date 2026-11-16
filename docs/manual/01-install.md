@@ -196,8 +196,7 @@ That is expected: you set it up in the next chapter.
 - **Install script:** run it again. It replaces the binary only after the new one runs.
 - **From source:** `git pull`, then `cargo install --path crates/idlemax` again.
 
-After an update, restart the background services so they run the new binary: `idlemax service install` restarts every installed idlemax service, coordinator first.
-On macOS each run restarts them; on Linux a service whose unit file did not change is only started if it is stopped, so after a binary-only update restart it yourself, for example with `systemctl --user restart idlemax-agent.service`.
+After an update, restart the background services so they run the new binary: `idlemax service install` restarts every installed idlemax service, coordinator first, on both macOS and Linux.
 `idlemax setup` restarts only a service whose unit file changed.
 Upgrade the coordinator before (or together with) the agents: an older agent with a newer coordinator cannot mark some interruptions as retryable.
 

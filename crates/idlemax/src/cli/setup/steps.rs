@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 use idlemax_core::config::Edit;
-use idlemax_core::install::service::{render, ServiceKind};
+use idlemax_core::install::service::{render, Restart, ServiceKind};
 use idlemax_core::install::setup::{
     unit_change, ConfigPlan, SetupPlan, StatuslinePlan, TokenPlan, UnitChange,
 };
@@ -269,7 +269,14 @@ fn service_step(kind: ServiceKind, plan: &SetupPlan, env: &Env<'_>) -> StepRepor
         UnitChange::Update => "changed, then restarted",
     };
     let detail = how.to_string();
-    match service::install(ctx, env.paths, env.runner, &[kind], env.dry_run) {
+    match service::install(
+        ctx,
+        env.paths,
+        env.runner,
+        &[kind],
+        env.dry_run,
+        Restart::IfChanged,
+    ) {
         Ok(mut done) => {
             let Some(install) = done.pop() else {
                 return report(
