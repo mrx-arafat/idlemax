@@ -1,4 +1,5 @@
-//! End to end: `idlemax coord` and `idlemax agent` in a temp IDLEMAX_HOME run one tiny job.
+//! End to end: `idlemax coord` and `idlemax agent` in a temp IDLEMAX_HOME run one tiny job, and a
+//! new allowlist reaches the coordinator without waiting for the next heartbeat.
 #![cfg(unix)]
 
 use std::fs::File;
@@ -357,6 +358,75 @@ where
             "timed out after {timeout:?} waiting for {what}"
         );
         tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// `config set` applies a new allowlist to the agent at once, so the coordinator must learn it at
+/// once too, not at the next heartbeat (30 s by default), or the `job add` that follows is refused.
+#[test]
+fn a_new_allowlist_reaches_the_coordinator_before_the_next_heartbeat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let state = tmp.path().join("state");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&state).unwrap();
+    let paths = Paths::new(&state);
+    let (coord_port, agent_port) = (free_port(), free_port());
+    let coord = format!("http://127.0.0.1:{coord_port}");
+    let config = format!(
+        "[coordinator]\nlisten = \"127.0.0.1:{coord_port}\"\nurl = \"{coord}\"\n\n\
+         [agent]\ndevice_id = \"{DEVICE}\"\nlisten = \"127.0.0.1:{agent_port}\"\n\
+         heartbeat_secs = 30\nadvisor_inputs_secs = 0\ndispatch_inputs_secs = 0\ncommand_allowlist = []\n\n\
+         [advisor]\nenabled = false\n\n\
+         [guard]\n{PERMISSIVE_GUARD}"
+    );
+    std::fs::write(paths.config_file(), config).unwrap();
+    let init = idlemax(&home, &state, &["init"], None);
+    assert!(
+        init.status.success(),
+        "idlemax init: {}",
+        text(&init.stderr)
+    );
+    let _coord = spawn("coord", &home, &state);
+    let agent = spawn("agent", &home, &state);
+
+    // The first heartbeat, with the empty allowlist, must reach the coordinator first.
+    let started = Instant::now();
+    while !std::fs::read_to_string(&agent.log)
+        .unwrap_or_default()
+        .contains("coordinator reachable")
+    {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "the agent never reached the coordinator"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let set = idlemax(
+        &home,
+        &state,
+        &["config", "set", "agent.command_allowlist", "/bin/echo"],
+        None,
+    );
+    assert!(set.status.success(), "config set: {}", text(&set.stderr));
+    let started = Instant::now();
+    loop {
+        let add = idlemax(
+            &home,
+            &state,
+            &["job", "add", "--", "/bin/echo", "hi"],
+            None,
+        );
+        let said = text(&add.stderr) + &text(&add.stdout);
+        if !said.contains("no device allows") {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the coordinator still has the old allowlist: {said}"
+        );
+        std::thread::sleep(Duration::from_millis(250));
     }
 }
 

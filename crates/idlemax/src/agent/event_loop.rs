@@ -240,7 +240,7 @@ impl Agent {
                 biased;
                 () = &mut shutdown => break,
                 Some(first) = control.recv() => self.on_local_controls(first, &mut control).await,
-                Some(request) = reload.recv() => self.on_reload(request).await,
+                Some(request) = reload.recv() => beat_due |= self.on_reload(request).await,
                 Some(done) = join(&mut trip) => {
                     trip = None;
                     self.on_trip(done).await;

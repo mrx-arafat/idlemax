@@ -11,14 +11,26 @@ use super::Agent;
 use crate::agent::api::ReloadRequest;
 use crate::state;
 
+/// A change the coordinator reads from the heartbeat: the allowlist (in the device info) and the
+/// guard verdict. `config set` applies it to the agent at once, so the coordinator must hear it at
+/// once too, or the `job add` that follows is refused for a whole heartbeat interval.
+fn tells_coordinator(report: &ReloadReport) -> bool {
+    report.guard_changed()
+        || report.applies("agent.command_allowlist")
+        || report.applies("agent.keep_awake")
+}
+
 impl Agent {
-    pub(super) async fn on_reload(&mut self, request: ReloadRequest) {
+    /// Applies a reload and answers the caller; true when a heartbeat should go out now.
+    pub(super) async fn on_reload(&mut self, request: ReloadRequest) -> bool {
         let answer = self.reload_config().await;
         if let Err(why) = &answer {
             warn!("config reload refused, the agent keeps its settings: {why}");
         }
+        let beat_now = answer.as_ref().is_ok_and(tells_coordinator);
         // The caller may have given up waiting; nothing to do then.
         let _ = request.reply.send(answer);
+        beat_now
     }
 
     async fn reload_config(&mut self) -> Result<ReloadReport, String> {
@@ -77,7 +89,7 @@ impl Agent {
             "config reloaded"
         );
         self.config = new;
-        if report.guard_changed() || allowlist || report.applies("agent.keep_awake") {
+        if tells_coordinator(&report) {
             // Take a verdict now, so the new rule shows in the status and can start work at once.
             self.on_sample().await;
         }
