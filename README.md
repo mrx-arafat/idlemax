@@ -24,6 +24,8 @@ A guard on that device runs it at the lowest priority the OS offers and backs of
 > A production server rollout and a real install on a Mac (`idlemax setup` with its launchd services) are still unproven.
 > The details are in the [FAQ](docs/manual/12-faq.md#what-has-been-tested-and-what-has-not).
 
+**New here?** Do the [Quick start](#quick-start-5-minutes) once, then [Using it every day](#using-it-every-day) is all you need.
+
 ## How it works
 
 ```mermaid
@@ -151,10 +153,19 @@ ran: 1.0s on laptop
 Still queued after a minute? That is the guard protecting you: on a Mac (profile `laptop`) it waits for 10 idle minutes on AC power, while Linux defaults to the `production` profile, which has no idle wait and holds only for machine health: load, memory or I/O pressure, swap-in, heat or low disk.
 `idlemax why 1` says exactly what holds it and how to change it.
 
-**4. Open the dashboard** at <http://127.0.0.1:7878/> and paste your token from `cat ~/.idlemax/token`.
-Or stay in the terminal with `idlemax tui`.
+**4. Open the dashboard** at <http://127.0.0.1:7878/>.
+It asks once for your token: the key your CLI, agents and dashboard use to talk to the coordinator.
+Setup saved it in a file:
 
-**5. Your first dispatcher plan**, which launches nothing in the default `propose` mode:
+```sh
+cat ~/.idlemax/token          # print it
+pbcopy < ~/.idlemax/token     # macOS: copy it, then paste it with Cmd+V
+```
+
+Paste it, press **Connect**, and the browser remembers it.
+Or stay in the terminal with `idlemax tui`, which needs no token.
+
+**5. Optional: your first dispatcher plan**, for AI workers later; it launches nothing in the default `propose` mode:
 
 ```sh
 idlemax device list                                           # find this device's id (its hostname)
@@ -167,6 +178,62 @@ idlemax plan
 ```
 
 Ready for workers? Read [the dispatcher chapter](docs/manual/05-dispatcher.md) before `idlemax mode auto`.
+
+## Using it every day
+
+idlemax is a to-do list your computer works through while you are away.
+You add commands, and it runs them only when the machine has room: on a Mac, after 10 minutes away from the keyboard on AC power; on a Linux server, whenever the machine is not under pressure.
+A running job pauses the moment you come back, and goes on by itself when the machine is free again.
+
+**1. Allow the programs you trust** (once):
+
+```sh
+idlemax config set agent.command_allowlist git,cargo,/bin/echo
+```
+
+No job can start until its program is on this list.
+`set` replaces the whole list, so name every program each time.
+Avoid shells and interpreters (`sh`, `bash`, `python3`): they would let a job run any code.
+
+**2. Add a job:**
+
+```sh
+idlemax job add -- /bin/echo "hello from idlemax"   # everything after -- is the command
+idlemax job add --cwd . -- cargo test               # run it in this folder
+idlemax job add --cwd . --wait -- cargo test        # and wait here for the result
+```
+
+The command runs as written, never through a shell.
+
+**3. Walk away.**
+Go to lunch, or leave it overnight on the charger.
+A Mac that sleeps runs nothing, so if yours sleeps sooner than 10 minutes, run `idlemax config set agent.keep_awake ac`.
+
+**4. Check on it:**
+
+| You want to know | Run |
+|---|---|
+| everything at a glance | `idlemax` |
+| your jobs and their status | `idlemax jobs` |
+| why a job has not started | `idlemax why <id>` |
+| what a job printed | `idlemax logs <id>` |
+| whether the setup is healthy | `idlemax doctor` |
+
+Or use the dashboard ([quick start step 4](#quick-start-5-minutes) shows where the token is) or `idlemax tui`.
+The [job life chart](#a-jobs-life) shows every status a job can reach.
+
+**When something looks wrong:**
+
+- **A job never starts:** `idlemax why <id>` names the reason and the fix. The usual ones: you are at the machine (wait), the Mac is on battery, or the program is not on the allowlist.
+- **Stop one job:** `idlemax job cancel <id>`.
+- **Stop everything now:** `idlemax stop-all` kills running jobs and holds new ones until `idlemax resume`. `touch ~/.idlemax/PAUSE` pauses this device without the network; `rm ~/.idlemax/PAUSE` lets it go on.
+- **Anything else:** run `idlemax doctor`, then see [Troubleshooting](docs/manual/11-troubleshooting.md).
+
+**Later, when the basics feel normal:**
+
+- Repeat a job every day: [schedules](docs/manual/04-jobs.md).
+- Let AI workers spend leftover Claude or Codex quota: [the dispatcher](docs/manual/05-dispatcher.md) and [quota and the Budget](docs/manual/06-quota-and-budget.md).
+- Add a server: [Servers](docs/manual/08-servers.md).
 
 ## The safety promise
 
