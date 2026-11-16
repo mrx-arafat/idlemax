@@ -54,6 +54,55 @@ flowchart LR
 - **Jobs are leased, not pushed.** A lease no heartbeat renews within 120 s goes back in the queue, and job updates are journaled so they survive crashes.
 - **The dispatcher** finds leftover tasks in projects you switched on, a short orchestrator pass picks which ones fill the free room, and each worker runs in its own git worktree, commits locally only, and is checked before you hear about it.
 
+### A job's life
+
+A plain job, a command you queue, moves through these steps.
+Start at the dot on top and follow the arrows.
+
+```mermaid
+stateDiagram-v2
+  s0: Waiting (queued)
+  s1: Failed, killed or cancelled
+  s2: Starting on a device (leased)
+  s3: Running
+  s4: Paused
+  s5: Succeeded
+  s6: Needs you (parked)
+  [*] --> s0
+  s0 --> s2: a device has room
+  s2 --> s3: it starts
+  s3 --> s0: the device drops it
+  s3 --> s4: the machine gets busy
+  s3 --> s1: it fails or hits a limit
+  s3 --> s5: exit 0
+  s4 --> s3: the machine is free again
+  s3 --> s6: dropped too many times
+  class s0 blue
+  class s1 orange
+  class s2 blue
+  class s3 blue
+  class s4 yellow
+  class s5 teal
+  class s6 pink
+  classDef blue fill:#c3e0ff,stroke:#5b8ec4,color:#1c1c1c
+  classDef yellow fill:#f6e2b3,stroke:#c49a3c,color:#1c1c1c
+  classDef teal fill:#bfe3df,stroke:#4f9d93,color:#1c1c1c
+  classDef orange fill:#f0d3bf,stroke:#c4825a,color:#1c1c1c
+  classDef pink fill:#ffcbe6,stroke:#cc6fa0,color:#1c1c1c
+```
+
+- **Colors:** blue is still going, yellow is on hold, green succeeded, orange stopped for good, and pink waits for you.
+- **Paused** is the guard at work: the job freezes the moment you come back or the machine is under pressure, and carries on by itself when the machine is free again.
+- **The device drops it** covers every ending that is not the job's fault: the device went offline, the agent or coordinator restarted, or the guard had to stop it.
+  The job goes back in line after a backoff (2 minutes, then 4, 8 and so on, at most an hour).
+  After `max_attempts` drops in a row it is parked for you to look at, and an AI job is parked at once.
+  This can also happen while the job is starting or paused.
+- **You can cancel at any point** with `idlemax job cancel <id>`, and the job ends as cancelled.
+- **A job's own result is final:** idlemax never retries a crash, a non-zero exit, or a job that went over its own memory or time limit.
+
+Every status and the retry rules are in [the jobs chapter](docs/manual/04-jobs.md#what-a-jobs-status-means).
+The chart is drawn from a model that the TLC model checker verifies: see [docs/statechart](docs/statechart/README.md).
+
 ## Why you would want it
 
 - 💤 **Your idle hardware does real work:** test suites, index rebuilds, repo health checks, backups, overnight.

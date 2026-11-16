@@ -28,7 +28,8 @@ crates/idlemax/tests/      e2e.rs, examples.rs, doctor.rs, logs_inbox.rs and oth
 examples/  packaging/  scripts/   example configs and jobs, service units, install and changelog scripts
 skills/                    the generated agent skill (see Traps)
 docs/                      API.md, ROADMAP.md, ROLLOUT.md, RELEASING.md,
-                           DISPATCHER.md (the agreed dispatcher decisions), plans/ (its specs)
+                           DISPATCHER.md (the agreed dispatcher decisions), plans/ (its specs),
+                           statechart/ (the TLA+ model behind the README's job chart)
 ```
 
 Rules that keep it clean:
@@ -105,6 +106,7 @@ idlemax init
   After changing the description or command list there, run `idlemax skill > skills/idlemax/SKILL.md`; CI runs `idlemax skill --check`.
 - Wire formats and lease or control semantics live in `docs/API.md`; change the code and that file together.
   `README.md` is the user-facing doc: update the section a behaviour change makes wrong, and nothing else.
+  A change to job statuses or their transitions also changes the model in `docs/statechart/` and the README chart drawn from it.
 
 ## Commits
 
