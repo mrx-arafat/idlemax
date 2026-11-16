@@ -177,7 +177,7 @@ A 401 there usually means another idlemax home's agent holds that port, so it re
 Give this home's agent its own loopback port with `idlemax config set agent.listen 127.0.0.1:<port>`.
 That saves the value without asking the agent at the old address, and says so.
 Then restart this home's agent, because `agent.listen` is read only at start ([chapter 6](06-quota-and-budget.md) has the restart commands).
-`idlemax service install` restarts an installed service only when its unit file changed, so use the restart command from chapter 6.
+`idlemax service install agent` restarts it too, on macOS and on Linux.
 If the agent on that address is this home's own, check the token in `$IDLEMAX_HOME/token` instead.
 
 ### The service warns about a cargo `target` folder
