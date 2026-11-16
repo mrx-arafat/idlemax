@@ -243,23 +243,29 @@ mod tests {
     fn a_connection_that_sends_no_head_is_closed_and_one_over_the_cap_gets_503() {
         let dir = tempfile::tempdir().unwrap();
         let sock = dir.path().join("p.sock");
+        // The head timeout stays well above the accept loop's POLL, so the idle connection
+        // still holds the slot when the second one is accepted.
         let limits = Limits {
-            head_timeout: Duration::from_millis(200),
+            head_timeout: Duration::from_secs(1),
             max_conns: 1,
         };
         let _proxy = Proxy::start(&sock, 7, Vec::new(), dial_tcp, limits).unwrap();
 
-        // A half-sent head holds the one slot until the timeout closes it.
+        // A half-sent head holds the one slot until the timeout closes it. Its read timeout is
+        // set before the proxy can close it: macOS refuses SO_RCVTIMEO on a closed socket.
         let mut idle = UnixStream::connect(&sock).unwrap();
+        idle.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         idle.write_all(b"CONNECT x").unwrap();
         std::thread::sleep(Duration::from_millis(50));
         let (status, _) = ask(&sock, "CONNECT model.test:443 HTTP/1.1\r\n\r\n");
         assert!(status.starts_with("HTTP/1.1 503"), "{status}");
 
-        idle.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let started = std::time::Instant::now();
         let mut buf = [0u8; 1];
         assert_eq!(idle.read(&mut buf).unwrap_or(0), 0, "closed by the proxy");
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "closed by the head timeout, not ours"
+        );
     }
 }
