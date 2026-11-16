@@ -154,6 +154,19 @@ pub fn unit_path(platform: Platform, kind: ServiceKind, home: &Path) -> PathBuf 
     }
 }
 
+/// The services a bare `service install` acts on, given which ones have a unit file: every
+/// installed one, coordinator first as the manual's update order asks, or the agent when neither is.
+pub fn install_targets(installed: &[ServiceKind]) -> Vec<ServiceKind> {
+    let mut targets: Vec<ServiceKind> = [ServiceKind::Coord, ServiceKind::Agent]
+        .into_iter()
+        .filter(|kind| installed.contains(kind))
+        .collect();
+    if targets.is_empty() {
+        targets.push(ServiceKind::Agent);
+    }
+    targets
+}
+
 /// A warning when the binary sits in a cargo build directory that a rebuild or `cargo clean` replaces.
 pub fn bin_warning(bin: &Path) -> Option<&'static str> {
     let parts: Vec<_> = bin.components().map(|c| c.as_os_str()).collect();

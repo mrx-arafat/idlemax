@@ -4,6 +4,9 @@
 use std::path::Path;
 use std::process::Command;
 
+use idlemax_core::install::service::{unit_path, Platform, ServiceKind};
+use idlemax_core::types::Os;
+
 const BIN: &str = env!("CARGO_BIN_EXE_idlemax");
 const SETTINGS: &str = "{\n  \"model\": \"opus\",\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/statusline.sh\"\n  }\n}\n";
 
@@ -43,4 +46,25 @@ fn statusline_round_trips_and_service_dry_run_writes_nothing() {
     );
     assert!(ok && text.contains("dry run"), "{text}");
     assert!(!home.join("Library").exists() && !home.join(".config").exists());
+
+    // Both services installed: a bare `service install` lists the coordinator first and writes nothing.
+    let platform = Platform::for_os(Os::current()).unwrap();
+    let (coord, agent) = (
+        unit_path(platform, ServiceKind::Coord, &home),
+        unit_path(platform, ServiceKind::Agent, &home),
+    );
+    std::fs::create_dir_all(coord.parent().unwrap()).unwrap();
+    std::fs::write(&coord, "stub\n").unwrap();
+    std::fs::write(&agent, "stub\n").unwrap();
+    let (ok, text) = idlemax(
+        &home,
+        &["--format", "table", "service", "install", "--dry-run"],
+    );
+    let at = |p: &Path| text.find(&format!("file: {}", p.display()));
+    assert!(
+        ok && at(&coord).is_some() && at(&agent).is_some() && at(&coord) < at(&agent),
+        "{text}"
+    );
+    assert_eq!(std::fs::read_to_string(&coord).unwrap(), "stub\n");
+    assert_eq!(std::fs::read_to_string(&agent).unwrap(), "stub\n");
 }

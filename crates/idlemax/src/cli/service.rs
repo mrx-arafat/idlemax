@@ -9,8 +9,8 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use idlemax_core::install::service::{
-    bin_warning, install_steps, parse_status, removal, render, status_step, unit_path, Platform,
-    Probe, ServiceEnv, ServiceKind, ServiceStatus, Step, PASSTHROUGH_VARS,
+    bin_warning, install_steps, install_targets, parse_status, removal, render, status_step,
+    unit_path, Platform, Probe, ServiceEnv, ServiceKind, ServiceStatus, Step, PASSTHROUGH_VARS,
 };
 use idlemax_core::install::setup::{unit_change, UnitChange};
 use idlemax_core::types::Os;
@@ -48,9 +48,9 @@ enum ServiceCmd {
         #[arg(long, value_name = "PATH")]
         state_dir: Option<PathBuf>,
     },
-    /// Write the service file for this OS and start it; running it again restarts it if the file changed
+    /// Write the service file for this OS and start it; running it again restarts it (on Linux, only if the file changed)
     Install {
-        /// Which service [default: agent]
+        /// Which service [default: every installed one, coordinator first; the agent if none is installed]
         which: Option<Unit>,
         /// Absolute path of the idlemax binary the service runs [default: this binary]
         #[arg(long, value_name = "PATH")]
@@ -180,7 +180,7 @@ pub fn run(paths: &Paths, args: ServiceArgs, out: &Out) -> Result<()> {
             out.emit(&unit, |u| u.content.clone(), &[])?;
         }
         ServiceCmd::Install { which, dry_run, .. } => {
-            let kinds = kinds(which, &[ServiceKind::Agent]);
+            let kinds = install_kinds(&ctx, which);
             let reports = install(&ctx, paths, &SystemRunner, &kinds, dry_run)?;
             out.emit_with(
                 &reports,
@@ -218,6 +218,21 @@ fn named<T: Serialize>(reports: &[T]) -> Result<Node> {
 
 fn kinds(which: Option<Unit>, default: &[ServiceKind]) -> Vec<ServiceKind> {
     which.map_or_else(|| default.to_vec(), |u| vec![u.into()])
+}
+
+/// The services `service install` acts on: the one named, else what `install_targets` picks from
+/// the unit files that are present.
+fn install_kinds(ctx: &Ctx, which: Option<Unit>) -> Vec<ServiceKind> {
+    match which {
+        Some(unit) => vec![unit.into()],
+        None => {
+            let installed: Vec<ServiceKind> = ServiceKind::ALL
+                .into_iter()
+                .filter(|&kind| unit_path(ctx.platform, kind, &ctx.env.home).exists())
+                .collect();
+            install_targets(&installed)
+        }
+    }
 }
 
 fn var(name: &str) -> Option<std::ffi::OsString> {

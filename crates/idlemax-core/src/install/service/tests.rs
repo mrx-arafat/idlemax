@@ -309,3 +309,12 @@ fn rendered_agent_tasks_max_follows_profile() {
     let unit = render_system(ServiceKind::Agent, &prod_env).unwrap();
     assert!(unit.content.contains("TasksMax=256"), "{}", unit.content);
 }
+
+#[test]
+fn bare_install_acts_on_every_installed_service_coordinator_first() {
+    use ServiceKind::{Agent, Coord};
+    assert_eq!(install_targets(&[]), [Agent]);
+    assert_eq!(install_targets(&[Agent, Coord]), [Coord, Agent]);
+    assert_eq!(install_targets(&[Agent]), [Agent]);
+    assert_eq!(install_targets(&[Coord]), [Coord]);
+}
