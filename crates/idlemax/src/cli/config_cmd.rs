@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use super::dispatch::token;
 use super::out::toon::Node;
-use super::{files, hint, out, print, ApiClient, CliError, ClientError, Out, Peer};
+use super::{files, out, print, ApiClient, CliError, ClientError, Out};
 
 #[derive(Args, Debug)]
 pub(super) struct ConfigArgs {
@@ -171,11 +171,14 @@ async fn ask_agent(paths: &Paths, running: &str) -> Result<Agent> {
             message,
             ..
         }) => Err(CliError::runtime(
-            format!("saved, but the agent refused the file and keeps its old settings: {message}"),
+            format!(
+                "saved, but agent reload failed at {}: the agent refused the file and keeps its old settings: {message}",
+                config.agent.listen
+            ),
             "idlemax doctor",
         )
         .into()),
-        Err(e) => Err(hint(e, Peer::Agent)),
+        Err(e) => Err(out::reload_failed(&config.agent.listen, &e).into()),
     }
 }
 

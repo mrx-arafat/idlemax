@@ -27,7 +27,7 @@ use anyhow::{Context, Result};
 use clap::ValueEnum;
 use serde::Serialize;
 
-pub use failure::{unreachable, CliError, Peer, OWNER_ONLY_HELP};
+pub use failure::{reload_failed, unreachable, CliError, Peer, OWNER_ONLY_HELP};
 use toon::Node;
 pub use usage::{sniff_format, usage_error};
 

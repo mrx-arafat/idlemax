@@ -165,6 +165,20 @@ Other setup refusals, all before anything is written:
 - A `--coord-url` that disagrees with the existing `config.toml`, or a `--token-stdin` token that differs from the existing token file: fix or move the old one first ([chapter 8](08-servers.md#rotating-a-token)).
 - With `--role coord` or `--role both`, the `--coord-url` host must be an IP address or `localhost`, because the coordinator binds it.
 
+### `saved, but agent reload failed`
+
+```text
+error: saved, but agent reload failed at 127.0.0.1:7879: the agent did not accept this home's token; it may be another idlemax home's agent: check agent.listen (idlemax config set agent.listen 127.0.0.1:<port>) and the token in $IDLEMAX_HOME/token
+```
+
+The setting is saved in `config.toml`; only the live reload failed.
+The address in the message is the `agent.listen` idlemax asked.
+A 401 there usually means another idlemax home's agent holds that port, so it refuses this home's token.
+Give this home's agent its own loopback port with `idlemax config set agent.listen 127.0.0.1:<port>`.
+That reload still goes to the old address and fails the same way, but the value is saved.
+Then restart this home's agent, because `agent.listen` is read only at start ([chapter 6](06-quota-and-budget.md) has the restart commands).
+If the agent on that address is this home's own, check the token in `$IDLEMAX_HOME/token` instead.
+
 ### The service warns about a cargo `target` folder
 
 ```text

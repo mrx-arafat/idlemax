@@ -107,6 +107,22 @@ pub fn unreachable(peer: Peer, url: &str) -> CliError {
     }
 }
 
+/// The config was saved, but the agent at `listen` (`config.agent.listen`) did not reload it.
+/// The message names that address. A 401 there means the server answering it does not accept
+/// this home's token, which is what happens when another idlemax home's agent holds the port.
+pub fn reload_failed(listen: &str, error: &ClientError) -> CliError {
+    match error {
+        ClientError::Api { status: 401, .. } => CliError::runtime(
+            format!("saved, but agent reload failed at {listen}: the agent did not accept this home's token"),
+            "it may be another idlemax home's agent: check agent.listen (idlemax config set agent.listen 127.0.0.1:<port>) and the token in $IDLEMAX_HOME/token",
+        ),
+        other => CliError::runtime(
+            format!("saved, but agent reload failed at {listen}: {}", other.describe()),
+            "run idlemax doctor",
+        ),
+    }
+}
+
 fn from_client(e: &ClientError) -> CliError {
     match e {
         ClientError::Api {

@@ -8,7 +8,7 @@ use idlemax_core::types::Os;
 use idlemax_core::{Config, Paths};
 
 use super::report::{Status, StepReport};
-use crate::cli::{files, ApiClient, CliError, ClientError};
+use crate::cli::{files, out, ApiClient, CliError, ClientError};
 use crate::state;
 
 pub(super) const NEXT: &str = "idlemax config set agent.command_allowlist git,cargo";
@@ -74,7 +74,7 @@ async fn reload(paths: &Paths) -> Result<()> {
     )?;
     match client.local_reload().await {
         Ok(_) | Err(ClientError::Unreachable { .. }) => Ok(()),
-        Err(e) => Err(e.into()),
+        Err(e) => Err(out::reload_failed(&config.agent.listen, &e).into()),
     }
 }
 
@@ -101,7 +101,14 @@ pub(super) async fn reload_existing(
     };
     if let Err(error) = reload(paths).await {
         step.status = Status::Failed;
-        step.detail = format!("saved, but agent reload failed: {error}; run idlemax doctor");
+        step.detail = match error.downcast_ref::<CliError>() {
+            Some(failed) => format!(
+                "{}; {}",
+                failed.what,
+                failed.help.as_deref().unwrap_or_default()
+            ),
+            None => format!("saved, but agent reload failed: {error}; run idlemax doctor"),
+        };
     }
 }
 
@@ -147,5 +154,48 @@ mod tests {
         }
         server.abort();
         let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn a_rejected_token_names_the_agent_address_and_agent_listen() {
+        use axum::{http::StatusCode, routing::post, Json, Router};
+        use idlemax_core::protocol::ApiError;
+
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::new(root.path().join("state"));
+        crate::cli::init::init(&paths, &crate::cli::init::InitOptions::default()).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let mut config = state::load_config(&paths).unwrap();
+        config.agent.listen = address.clone();
+        std::fs::write(paths.config_file(), config.to_toml_string().unwrap()).unwrap();
+        let app = Router::new().route(
+            "/v1/local/reload",
+            post(|| async {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ApiError::new("missing or wrong bearer token")),
+                )
+            }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut steps = vec![StepReport::new(
+            "allowlist",
+            Status::Done,
+            "saved",
+            NEXT.into(),
+        )];
+        reload_existing(&paths, Role::Both, false, &mut steps).await;
+        server.abort();
+        let _ = server.await;
+        assert_eq!(steps[0].status, Status::Failed);
+        assert!(steps[0].detail.contains(&address), "{}", steps[0].detail);
+        assert!(
+            steps[0].detail.contains("agent.listen"),
+            "{}",
+            steps[0].detail
+        );
     }
 }
