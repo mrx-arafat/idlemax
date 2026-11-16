@@ -203,6 +203,7 @@ ok    launchd-agent  agent running; its previous start ended with OS_REASON_CODE
 
 If the check says a service is not running, wait for launchd's retry and run `idlemax doctor` again.
 If it stays down, run `idlemax service install` to reload it.
+If the check names another plist path, another idlemax home on this Mac owns that service, and `idlemax service install` here would replace it.
 
 ### The Linux service stops when I log out
 

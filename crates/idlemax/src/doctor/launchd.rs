@@ -26,25 +26,27 @@ pub async fn check(report: &mut Report, home: Option<&Path>) {
     let Some(home) = home else {
         return;
     };
-    let declared: Vec<(&str, &str)> = JOBS
+    let declared: Vec<(&str, &str, String)> = JOBS
         .into_iter()
-        .filter(|(_, label)| {
+        .filter_map(|(kind, label)| {
             let plist = home
                 .join("Library/LaunchAgents")
                 .join(format!("{label}.plist"));
-            facts::read_text(&plist).is_some_and(|text| launchd::declares_label(&text, label))
+            let text = facts::read_text(&plist)?;
+            launchd::declares_label(&text, label)
+                .then(|| (kind, label, plist.display().to_string()))
         })
         .collect();
     if declared.is_empty() {
         return;
     }
     let uid = user_id().await;
-    for (kind, label) in declared {
+    for (kind, label, plist) in declared {
         let print = match uid {
             Some(uid) => print(uid, label).await,
             None => Print::Unavailable("could not read your user id"),
         };
-        report.push(launchd::verdict(kind, label, print));
+        report.push(launchd::verdict(kind, label, &plist, print));
     }
 }
 

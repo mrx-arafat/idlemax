@@ -17,6 +17,8 @@ pub enum Print {
 /// The keys launchd prints at the top level of a job's dump.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Job {
+    /// The plist file launchd loaded this job from.
+    pub path: Option<String>,
     pub state: Option<String>,
     pub runs: Option<u32>,
     pub last_exit_code: Option<String>,
@@ -52,6 +54,7 @@ pub fn parse(dump: &str) -> Job {
         };
         let value = value.trim();
         match key {
+            "path" => job.path = Some(value.to_string()),
             "state" => job.state = Some(value.to_string()),
             "runs" => job.runs = value.parse().ok(),
             "last exit code" => job.last_exit_code = Some(value.to_string()),
@@ -72,8 +75,10 @@ pub fn declares_label(plist: &str, label: &str) -> bool {
         .is_some_and(|rest| rest.starts_with("</string>"))
 }
 
-/// The doctor check for one idlemax LaunchAgent. `kind` is "agent" or "coordinator".
-pub fn verdict(kind: &str, label: &str, print: Print) -> Check {
+/// The doctor check for one idlemax LaunchAgent. `kind` is "agent" or "coordinator";
+/// `home_plist` is this home's plist for `label`. launchd keeps one job per label per session,
+/// so a job loaded from another idlemax home is not judged here.
+pub fn verdict(kind: &str, label: &str, home_plist: &str, print: Print) -> Check {
     let id = format!("launchd-{kind}");
     match print {
         Print::Unavailable(why) => Check::warn(
@@ -88,6 +93,25 @@ pub fn verdict(kind: &str, label: &str, print: Print) -> Check {
         ),
         Print::Dump(dump) => {
             let job = parse(&dump);
+            match job.path.as_deref() {
+                Some(path) if path == home_plist => {}
+                Some(path) => {
+                    return Check::warn(
+                        id,
+                        format!("launchd runs {label} from {path}, not from this home's {home_plist}"),
+                        "that label belongs to another idlemax home, so this home's service is not loaded; `idlemax service install` here would replace that service, so run it only on purpose",
+                    );
+                }
+                None => {
+                    return Check::warn(
+                        id,
+                        format!("launchd did not say which plist runs {label}"),
+                        format!(
+                            "run `launchctl print gui/$(id -u)/{label}` by hand to see the job"
+                        ),
+                    );
+                }
+            }
             let failure = job.previous_failure();
             if job.state.as_deref() != Some("running") {
                 let detail = match failure {
@@ -122,6 +146,8 @@ mod tests {
     use crate::doctor::Level;
 
     const LABEL: &str = "com.idlemax.agent";
+    /// This home's plist, the path the sample dump was loaded from.
+    const HOME_PLIST: &str = "/Users/x/Library/LaunchAgents/com.idlemax.agent.plist";
 
     /// `launchctl print` output for a LaunchAgent whose first start was killed by the kernel
     /// and which has started again since. Top-level keys sit one tab deep; nested blocks deeper.
@@ -143,6 +169,7 @@ mod tests {
     #[test]
     fn parse_reads_the_top_level_keys_and_skips_nested_blocks() {
         let job = parse(RESTARTED);
+        assert_eq!(job.path.as_deref(), Some(HOME_PLIST));
         assert_eq!(job.state.as_deref(), Some("running"));
         assert_eq!(job.runs, Some(3));
         assert_eq!(
@@ -154,7 +181,7 @@ mod tests {
 
     #[test]
     fn a_running_job_is_ok_and_notes_a_failed_previous_start() {
-        let noted = verdict("agent", LABEL, Print::Dump(RESTARTED.into()));
+        let noted = verdict("agent", LABEL, HOME_PLIST, Print::Dump(RESTARTED.into()));
         assert_eq!(noted.level, Level::Ok);
         assert!(
             noted.detail.contains("OS_REASON_CODESIGNING"),
@@ -164,7 +191,7 @@ mod tests {
         assert_eq!(noted.fix, None);
 
         let clean = RESTARTED.replace("\tlast exit reason = OS_REASON_CODESIGNING\n", "");
-        let clean = verdict("agent", LABEL, Print::Dump(clean));
+        let clean = verdict("agent", LABEL, HOME_PLIST, Print::Dump(clean));
         assert_eq!(clean.level, Level::Ok);
         assert_eq!(clean.detail, "agent running");
     }
@@ -172,7 +199,7 @@ mod tests {
     #[test]
     fn a_job_that_is_not_running_fails_and_names_the_last_exit_reason() {
         let stopped = RESTARTED.replace("\tstate = running\n", "\tstate = not running\n");
-        let check = verdict("agent", LABEL, Print::Dump(stopped));
+        let check = verdict("agent", LABEL, HOME_PLIST, Print::Dump(stopped));
         assert_eq!(check.level, Level::Fail);
         assert!(
             check.detail.contains("OS_REASON_CODESIGNING"),
@@ -184,9 +211,43 @@ mod tests {
 
     #[test]
     fn a_job_launchd_does_not_know_fails_and_an_unanswered_launchctl_only_warns() {
-        assert_eq!(verdict("agent", LABEL, Print::NotLoaded).level, Level::Fail);
+        assert_eq!(
+            verdict("agent", LABEL, HOME_PLIST, Print::NotLoaded).level,
+            Level::Fail
+        );
         let unanswered = Print::Unavailable("launchctl did not answer");
-        assert_eq!(verdict("agent", LABEL, unanswered).level, Level::Warn);
+        assert_eq!(
+            verdict("agent", LABEL, HOME_PLIST, unanswered).level,
+            Level::Warn
+        );
+    }
+
+    #[test]
+    fn a_job_loaded_from_another_home_warns_without_judging_its_state() {
+        let other = RESTARTED.replace(
+            HOME_PLIST,
+            "/Users/other/Library/LaunchAgents/com.idlemax.agent.plist",
+        );
+        let check = verdict("agent", LABEL, HOME_PLIST, Print::Dump(other));
+        assert_eq!(check.level, Level::Warn);
+        assert!(
+            check
+                .detail
+                .contains("/Users/other/Library/LaunchAgents/com.idlemax.agent.plist"),
+            "{}",
+            check.detail
+        );
+        assert!(
+            !check.detail.contains("OS_REASON_CODESIGNING"),
+            "{}",
+            check.detail
+        );
+        assert!(check.fix.unwrap().contains("another idlemax home"));
+
+        // Without a path launchd does not say whose job it is, so it is not judged either.
+        let pathless = RESTARTED.replace(&format!("\tpath = {HOME_PLIST}\n"), "");
+        let check = verdict("agent", LABEL, HOME_PLIST, Print::Dump(pathless));
+        assert_eq!(check.level, Level::Warn);
     }
 
     #[test]
