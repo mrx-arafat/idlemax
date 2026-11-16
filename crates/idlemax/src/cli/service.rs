@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
@@ -93,9 +94,17 @@ pub struct Output {
     pub stderr: String,
 }
 
+/// The wait between two tries of a step that may be retried.
+const RETRY_PAUSE: Duration = Duration::from_millis(500);
+
 /// Runs the planned commands; a fake stands in for it in tests.
 pub trait Runner {
     fn run(&self, step: &Step) -> std::io::Result<Output>;
+
+    /// Waits before a step is tried again.
+    fn pause(&self, wait: Duration) {
+        std::thread::sleep(wait);
+    }
 }
 
 pub(super) struct SystemRunner;
@@ -387,10 +396,8 @@ enum File {
 
 fn run_steps(runner: &dyn Runner, steps: &[Step], file: &Path, state: File) -> Result<()> {
     for step in steps {
-        let failure = match runner.run(step) {
-            Ok(out) if out.ok => continue,
-            Ok(out) => out.stderr.trim().to_string(),
-            Err(e) => e.to_string(),
+        let Some(failure) = run_retried(runner, step) else {
+            continue;
         };
         if step.ignore_failure {
             continue;
@@ -406,6 +413,24 @@ fn run_steps(runner: &dyn Runner, steps: &[Step], file: &Path, state: File) -> R
         }
     }
     Ok(())
+}
+
+/// Runs `step`, trying it again up to `step.retries` times after a pause; the last failure, or
+/// None once it succeeds.
+fn run_retried(runner: &dyn Runner, step: &Step) -> Option<String> {
+    let mut tries_left = step.retries;
+    loop {
+        let failure = match runner.run(step) {
+            Ok(out) if out.ok => return None,
+            Ok(out) => out.stderr.trim().to_string(),
+            Err(e) => e.to_string(),
+        };
+        if tries_left == 0 {
+            return Some(failure);
+        }
+        tries_left -= 1;
+        runner.pause(RETRY_PAUSE);
+    }
 }
 
 fn uninstall(

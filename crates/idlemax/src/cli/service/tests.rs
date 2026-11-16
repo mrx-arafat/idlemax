@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use super::*;
 
@@ -6,13 +6,19 @@ use super::*;
 struct Fake {
     seen: RefCell<Vec<String>>,
     fail_on: Option<&'static str>,
+    /// How many more times a matching command fails.
+    fail_left: Cell<u32>,
+    pauses: Cell<u32>,
     show: &'static str,
 }
 
 impl Runner for Fake {
     fn run(&self, step: &Step) -> std::io::Result<Output> {
         let line = step.to_string();
-        let fail = self.fail_on.is_some_and(|f| line.contains(f));
+        let fail = self.fail_on.is_some_and(|f| line.contains(f)) && self.fail_left.get() > 0;
+        if fail {
+            self.fail_left.set(self.fail_left.get() - 1);
+        }
         self.seen.borrow_mut().push(step.argv.join(" "));
         Ok(Output {
             ok: !fail,
@@ -24,14 +30,45 @@ impl Runner for Fake {
             },
         })
     }
+
+    fn pause(&self, _wait: Duration) {
+        self.pauses.set(self.pauses.get() + 1);
+    }
 }
 
 fn fake(fail_on: Option<&'static str>) -> Fake {
     Fake {
         seen: RefCell::default(),
         fail_on,
+        fail_left: Cell::new(u32::MAX),
+        pauses: Cell::new(0),
         show: "LoadState=loaded\nActiveState=active\n",
     }
+}
+
+#[test]
+fn a_launchd_bootstrap_that_races_the_bootout_is_tried_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut ctx, paths) = ctx(dir.path());
+    ctx.platform = Platform::Launchd;
+    let runner = fake(Some("bootstrap"));
+    runner.fail_left.set(2);
+    install(
+        &ctx,
+        &paths,
+        &runner,
+        &[ServiceKind::Agent],
+        false,
+        Restart::Always,
+    )
+    .expect("the third bootstrap succeeds");
+    let bootstraps = runner
+        .seen
+        .borrow()
+        .iter()
+        .filter(|c| c.starts_with("launchctl bootstrap"))
+        .count();
+    assert_eq!((bootstraps, runner.pauses.get()), (3, 2));
 }
 
 fn ctx(root: &Path) -> (Ctx, Paths) {

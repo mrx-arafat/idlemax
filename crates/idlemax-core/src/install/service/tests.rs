@@ -190,7 +190,7 @@ fn commands_per_platform() {
         )),
         [
             "launchctl bootout gui/501/com.idlemax.agent  # a failure here is fine",
-            "launchctl bootstrap gui/501 /home/u/Library/LaunchAgents/com.idlemax.agent.plist",
+            "launchctl bootstrap gui/501 /home/u/Library/LaunchAgents/com.idlemax.agent.plist  # tried up to 11 times",
         ]
     );
     let systemd = |change, restart| {

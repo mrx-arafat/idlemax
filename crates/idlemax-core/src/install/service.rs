@@ -103,12 +103,24 @@ pub fn tasks_max(profile: DeviceProfile) -> u32 {
     }
 }
 
+/// `launchctl bootout` returns before launchd has removed the job, and a `bootstrap` in that
+/// window fails with `5: Input/output error` (issue #14), so the bootstrap is tried again.
+/// The CLI pauses half a second between tries, which gives launchd about five seconds.
+const BOOTSTRAP_RETRIES: u32 = 10;
+
 /// One external command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Step {
     pub argv: Vec<String>,
     /// Failure is fine, e.g. unloading a service that is not loaded.
     pub ignore_failure: bool,
+    /// How many more times a failed command is tried, after a pause, before it counts.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub retries: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 impl Step {
@@ -116,7 +128,13 @@ impl Step {
         Step {
             argv: argv.iter().map(|s| s.to_string()).collect(),
             ignore_failure,
+            retries: 0,
         }
+    }
+
+    fn retried(mut self, retries: u32) -> Self {
+        self.retries = retries;
+        self
     }
 }
 
@@ -126,6 +144,9 @@ impl fmt::Display for Step {
         write!(f, "{}", words.join(" "))?;
         if self.ignore_failure {
             write!(f, "  # a failure here is fine")?;
+        }
+        if self.retries > 0 {
+            write!(f, "  # tried up to {} times", self.retries + 1)?;
         }
         Ok(())
     }
@@ -320,7 +341,8 @@ pub fn install_steps(
                 Step::new(
                     &["launchctl", "bootstrap", &domain, &file.to_string_lossy()],
                     false,
-                ),
+                )
+                .retried(BOOTSTRAP_RETRIES),
             ]
         }
         Platform::SystemdUser => {
